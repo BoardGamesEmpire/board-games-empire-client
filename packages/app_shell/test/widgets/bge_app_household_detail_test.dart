@@ -65,12 +65,12 @@ Finder _inYourRole(String text) => find.descendant(
 /// one pins the **builder's own guard** and the list → detail path a user
 /// actually walks.
 ///
-/// The guard is [HouseholdRepository] **alone**, matching the list's (#269
-/// D4) and deliberately not the create route's: the detail screen reads the
-/// local cache and never calls the server to show itself, so a container
-/// without a `HouseholdRemoteDataSource` must still reach it. The member
-/// actions it offers (#480) do call the server, and are left out where the
-/// member client is not registered.
+/// The guard is [HouseholdRepository] **alone**, matching the list's (#269) and
+/// deliberately not the create route's: the detail screen reads the local cache
+/// and never calls the server to show itself, so a container without a
+/// `HouseholdRemoteDataSource` must still reach it. The member actions it
+/// offers (#480) do call the server, and are left out where the member client
+/// is not registered.
 void main() {
   late _MockAppBootstrapCubit cubit;
   late Storage storage;
@@ -235,7 +235,7 @@ void main() {
     });
 
     testWidgets('reaches the detail screen with no HouseholdRemoteDataSource '
-        '— it never calls the server to show itself (#269 D4)', (tester) async {
+        '— it never calls the server to show itself (#269)', (tester) async {
       // No test in this file registers a HouseholdRemoteDataSource.
       // Reinstating that requirement in the detail guard would fail here and
       // nowhere else.

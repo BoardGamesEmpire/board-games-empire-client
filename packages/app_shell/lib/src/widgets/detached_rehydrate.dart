@@ -5,14 +5,14 @@ import 'package:observability/observability.dart';
 
 final BgeLogger _log = BgeLogger('bge.shell.session_rehydrate');
 
-/// Starts a re-hydrate pass nobody is waiting on, and swallows — loudly —
-/// every way that can fail (#302, #300 D13).
+/// Starts a re-hydrate pass nobody is waiting on, and swallows — loudly — every
+/// way that can fail (#302, #300).
 ///
-/// The shell has two callers with little else in common: the ambient
-/// triggers in `SessionRehydrateTrigger` (a connectivity edge, an app
-/// resume) and the household list's entry (#300 D14). What they share is
-/// this error handling, and it is subtle enough that two copies of it
-/// would be two places to get it wrong.
+/// The shell has two callers with little else in common: the ambient triggers
+/// in `SessionRehydrateTrigger` (a connectivity edge, an app resume) and the
+/// household list's entry (#300). What they share is this error handling, and
+/// it is subtle enough that two copies of it would be two places to get it
+/// wrong.
 ///
 /// [resolve] returns the session's [SessionRehydrator], or null where this
 /// composition has no re-hydrate seam at all (shell tests) or the scope it
@@ -20,10 +20,9 @@ final BgeLogger _log = BgeLogger('bge.shell.session_rehydrate');
 /// resolving from a container disposed since the last active-server event
 /// is logged rather than thrown from.
 ///
-/// [trigger] names the caller in the logs and does nothing else. The
-/// registry decides what work a pass does, and a pass arriving while one is
-/// in flight joins it (#302 D3), so no caller has to know who else is
-/// asking.
+/// [trigger] names the caller in the logs and does nothing else. The registry
+/// decides what work a pass does, and a pass arriving while one is in flight
+/// joins it (#302), so no caller has to know who else is asking.
 ///
 /// ## Why both halves are guarded
 ///
@@ -40,7 +39,7 @@ final BgeLogger _log = BgeLogger('bge.shell.session_rehydrate');
 /// here instead of on the future's error channel.
 ///
 /// Between them, nothing escapes — which is what makes this callable from
-/// inside a `build`, as the #300 entry trigger is (D14).
+/// inside a `build`, as the #300 entry trigger is.
 void startDetachedRehydrate({
   required SessionRehydrator? Function() resolve,
   required String trigger,

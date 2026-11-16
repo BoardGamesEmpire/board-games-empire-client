@@ -8,7 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 ///
 /// - **Localized, reassuring copy** from `ShellLocalizations`; never raw
 ///   exception text in release configuration.
-/// - **Debug diagnostics** (decision 1a): the exception summary is
+/// - **Debug diagnostics** (#66): the exception summary is
 ///   appended below the friendly message when [BuildErrorView.showDiagnostics]
 ///   is true; the parameter defaults to `kDebugMode`.
 /// - **Live-region semantics** so screen readers announce the failure
@@ -117,7 +117,7 @@ void main() {
     });
 
     testWidgets('appends the exception summary when diagnostics are on '
-        '(debug behaviour, decision 1a)', (tester) async {
+        '(debug behaviour, #66)', (tester) async {
       await tester.pumpWidget(
         localizedHarness(
           // The default is kDebugMode; the test pins the value explicitly.

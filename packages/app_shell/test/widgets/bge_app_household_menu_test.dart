@@ -26,10 +26,10 @@ class _MockHouseholdRemoteDataSource extends Mock
 /// menu's (#414).
 ///
 /// The entry is the **household list** (#269), replacing #129's
-/// create-household entry — create moved to the list's own FAB. That
-/// changes the gate, and the change is the point of this file: the list
-/// reads the local cache, so it is gated on [HouseholdRepository] **alone**
-/// (#269 D4), where create needed a [HouseholdRemoteDataSource] as well.
+/// create-household entry — create moved to the list's own FAB. That changes
+/// the gate, and the change is the point of this file: the list reads the local
+/// cache, so it is gated on [HouseholdRepository] **alone** (#269), where
+/// create needed a [HouseholdRemoteDataSource] as well.
 ///
 /// The two dependencies live in *different* scopes (#135), which is what
 /// makes the distinction observable rather than theoretical:
@@ -109,7 +109,7 @@ void main() {
     });
 
     testWidgets('shows the households entry with no household client — the '
-        'list reads the cache (#269 D4)', (tester) async {
+        'list reads the cache (#269)', (tester) async {
       await pumpHomeDrawer(tester, withRepository: true, withRemote: false);
 
       // The case the old create-only gate got wrong. Reinstating

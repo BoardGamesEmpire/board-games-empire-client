@@ -856,12 +856,11 @@ class _BgeAppState extends State<BgeApp> {
     // (#137), so the same "exactly while a session is active" reading holds
     // there.
     //
-    // The repository ALONE (#269 D4): this entry opens the list, which
-    // renders from the local cache. A missing create path (the
-    // SyncOperationSender since #121, the HouseholdRemoteDataSource before
-    // it) costs the list its create affordance, not its existence — so gating
-    // the entry on it, as the create entry this replaces had to, would
-    // hide a screen that works.
+    // The repository ALONE (#269): this entry opens the list, which renders
+    // from the local cache. A missing create path (the SyncOperationSender
+    // since #121, the HouseholdRemoteDataSource before it) costs the list its
+    // create affordance, not its existence — so gating the entry on it, as the
+    // create entry this replaces had to, would hide a screen that works.
     //
     // Web was the composition where that reading bit: between #137 and
     // #125 it registered the repository and no household client, so this
@@ -1155,10 +1154,10 @@ class _BgeAppState extends State<BgeApp> {
   /// refresh should say the list may be stale and offer nothing to press,
   /// rather than a button that does nothing.
   ///
-  /// Not the [SessionRehydrator] the shell drives on a connectivity edge:
-  /// that seam skips an entry whose pass is already running (#302 D4),
-  /// which is right for a trigger nobody pressed and wrong for a button
-  /// someone is waiting on. Both end at the same pass and the same status.
+  /// Not the [SessionRehydrator] the shell drives on a connectivity edge: that
+  /// seam skips an entry whose pass is already running (#302), which is right
+  /// for a trigger nobody pressed and wrong for a button someone is waiting on.
+  /// Both end at the same pass and the same status.
   ///
   /// Resolved per route build, like everything else here — a callback
   /// captured across a session change would hold a disposed scope's
@@ -1168,19 +1167,18 @@ class _BgeAppState extends State<BgeApp> {
       ? container.get<HouseholdRefresher>().refresh
       : null;
 
-  /// The #300 re-hydrate-on-entry trigger (D1, D13): the session's
-  /// [SessionRehydrator], or null where this composition has no re-hydrate
-  /// seam at all. Both platforms compose one now (#302 native, #137 web);
-  /// shell tests without a user scope do not.
+  /// The #300 re-hydrate-on-entry trigger: the session's [SessionRehydrator],
+  /// or null where this composition has no re-hydrate seam at all. Both
+  /// platforms compose one now (#302 native, #137 web); shell tests without a
+  /// user scope do not.
   ///
-  /// **The opposite call from [_householdRetry], on purpose.** A press gets
-  /// the household's own pass, because the rehydrator drops a pass while
-  /// one is running (#302 D4) and "I pressed it and nothing happened" is
-  /// the one outcome a manual affordance cannot afford. An entry gets the
-  /// rehydrator, because that skip is exactly right for something nobody
-  /// pressed, and because the staleness window that decides whether to do
-  /// any work lives in the registry's `isStale` (#300 D8) rather than being
-  /// re-answered here.
+  /// **The opposite call from [_householdRetry], on purpose.** A press gets the
+  /// household's own pass, because the rehydrator drops a pass while one is
+  /// running (#302) and "I pressed it and nothing happened" is the one outcome
+  /// a manual affordance cannot afford. An entry gets the rehydrator, because
+  /// that skip is exactly right for something nobody pressed, and because the
+  /// staleness window that decides whether to do any work lives in the
+  /// registry's `isStale` (#300) rather than being re-answered here.
   ///
   /// On both platforms the rehydrator also holds the sync-queue drain (#121,
   /// #447), so entering the household list drives that too, when it has
@@ -1190,12 +1188,12 @@ class _BgeAppState extends State<BgeApp> {
     if (!container.isRegistered<SessionRehydrator>()) return null;
     final rehydrator = container.get<SessionRehydrator>();
 
-    // Resolved per route build, like the retry above, and the pass itself
-    // goes through the shell's shared guard. That guard is what makes this
-    // safe to call from a `BlocProvider.create` (#300 D14) — it runs during
-    // a build, so nothing here may throw into that frame, and nothing may
-    // emit synchronously either. Neither does: the drain's first status
-    // update is delivered by a broadcast controller.
+    // Resolved per route build, like the retry above, and the pass itself goes
+    // through the shell's shared guard. That guard is what makes this safe to
+    // call from a `BlocProvider.create` (#300) — it runs during a build, so
+    // nothing here may throw into that frame, and nothing may emit
+    // synchronously either. Neither does: the drain's first status update is
+    // delivered by a broadcast controller.
     return () => startDetachedRehydrate(
       trigger: 'household_entry',
       resolve: () => rehydrator,
@@ -1205,10 +1203,10 @@ class _BgeAppState extends State<BgeApp> {
   /// The #269 household-list wiring: resolves the [HouseholdRepository]
   /// (per-user session scope, #135) from the *active server's* scoped
   /// container, plus the optional [HouseholdHydrationStatus] the hydrate
-  /// installer publishes (#267/#269 D1). Null (→ `NotYetAvailableScreen`)
-  /// when no active server is resolvable or its container carries no
-  /// repository (tests without a scope; no active user session — on either
-  /// platform, since #137 gave web the same user tier).
+  /// installer publishes (#267/#269). Null (→ `NotYetAvailableScreen`) when no
+  /// active server is resolvable or its container carries no repository (tests
+  /// without a scope; no active user session — on either platform, since #137
+  /// gave web the same user tier).
   ///
   /// Two things are deliberately *optional* here where the create route
   /// requires them:
@@ -1257,11 +1255,11 @@ class _BgeAppState extends State<BgeApp> {
 
   /// The #270 household-detail wiring. Resolves the same user-session
   /// [HouseholdRepository] and optional [HouseholdHydrationStatus] as
-  /// [_buildHouseholdListRoute], and guards on the repository alone for
-  /// the same reason (#269 D4): the detail screen reads the local cache
-  /// and never calls the server to show itself. The invite, edit and member
-  /// actions it offers (#455, #476, #480, #478) and its Leave row (#479) do,
-  /// and each is left out where its client is not registered.
+  /// [_buildHouseholdListRoute], and guards on the repository alone for the
+  /// same reason (#269): the detail screen reads the local cache and never
+  /// calls the server to show itself. The invite, edit and member actions it
+  /// offers (#455, #476, #480, #478) and its Leave row (#479) do, and each is
+  /// left out where its client is not registered.
   ///
   /// [householdId] arrives from the path, unvalidated. Nothing checks it
   /// here — an unreadable id is exactly what the screen's not-found state
@@ -1618,23 +1616,23 @@ class _BgeAppState extends State<BgeApp> {
       // #271: the new household's own screen takes the place of the spent
       // form, so back can never land on it again (#162).
       //
-      // `pushReplacement`, not `replace` (#271 D1): both drop the top-most
-      // page, but `replace` reuses its page key and runs no animation —
-      // that is for swapping a route for a variant of itself, not for
-      // substituting an unrelated screen.
+      // `pushReplacement`, not `replace` (#271): both drop the top-most page,
+      // but `replace` reuses its page key and runs no animation — that is for
+      // swapping a route for a variant of itself, not for substituting an
+      // unrelated screen.
       //
       // Either way in, the list route is beneath the form, so back pops onto
       // it: the pushed one on the drawer path (list → FAB → create), and the
       // one go_router builds for a `go` straight to the create route, which
       // is the list's child (#308).
       onCreated: (ctx, householdId) {
-        // #300 D3/D9: a create makes the local set stale by definition, so
-        // the next entry to the list re-hydrates rather than waiting out
-        // the remaining window. Cleared here, before the navigation, and
-        // not inside the household feature — the invalidation belongs to
-        // *mutation*, and this is where mutations are already wired. A
-        // member's role change or removal (#480, #122) does the same from
-        // the detail route, through `refreshAfterMembershipChange`.
+        // #300: a create makes the local set stale by definition, so the next
+        // entry to the list re-hydrates rather than waiting out the remaining
+        // window. Cleared here, before the navigation, and not inside the
+        // household feature — the invalidation belongs to *mutation*, and this
+        // is where mutations are already wired. A member's role change or
+        // removal (#480, #122) does the same from the detail route, through
+        // `refreshAfterMembershipChange`.
         //
         // Absent on a composition that runs no drain (a container with no
         // household client): nothing to invalidate, and a create must not

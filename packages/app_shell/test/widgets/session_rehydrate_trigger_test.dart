@@ -154,7 +154,7 @@ void main() {
     );
   }
 
-  group('SessionRehydrateTrigger — the connectivity edge (#302 D1)', () {
+  group('SessionRehydrateTrigger — the connectivity edge (#302)', () {
     testWidgets('an offline → online transition asks for a pass', (
       tester,
     ) async {
@@ -211,7 +211,7 @@ void main() {
     });
   });
 
-  group('SessionRehydrateTrigger — app resume (#302 D1)', () {
+  group('SessionRehydrateTrigger — app resume (#302)', () {
     /// The lifecycle transition the shell's resume trigger listens for.
     Future<void> resume(WidgetTester tester) async {
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
@@ -253,9 +253,9 @@ void main() {
     testWidgets('an edge with no rehydrator registered does nothing', (
       tester,
     ) async {
-      // The registry lives in the user-session scope, so its absence IS
-      // "no session is active" (#302 D2) — after sign-out there is
-      // nothing to call, with no separate gate to keep in step.
+      // The registry lives in the user-session scope, so its absence IS "no
+      // session is active" (#302) — after sign-out there is nothing to call,
+      // with no separate gate to keep in step.
       await pump(tester, registerRehydrator: false);
 
       connectivity.emit(ConnectivityState.offline);

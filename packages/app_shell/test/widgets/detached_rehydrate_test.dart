@@ -2,7 +2,7 @@ import 'package:app_shell/src/widgets/detached_rehydrate.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/orchestration.dart';
 
-/// The guard both of the shell's re-hydrate callers share (#302, #300 D13).
+/// The guard both of the shell's re-hydrate callers share (#302, #300).
 ///
 /// `SessionRehydrateTrigger` and the household list's entry trigger each
 /// have their own tests for *when* they fire. What is pinned here is what
