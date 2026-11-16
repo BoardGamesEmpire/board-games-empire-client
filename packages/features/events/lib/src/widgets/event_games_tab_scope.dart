@@ -583,10 +583,15 @@ class EventGamesTabController extends ChangeNotifier {
 /// Holds the Games tab's [EventGamesTabController] above the detail's
 /// builder (#516), under the screen's `DefaultTabController` and its blocs.
 ///
-/// It tells [onFirstShown] the first time the Games tab is chosen, which
-/// reads the pool and the nominations (#517) and answers whether the tab
-/// showed on a ready detail; only then is the tab
-/// [EventGamesTabController.shown].
+/// It tells [onFirstShown] whenever the Games tab is chosen and hasn't yet
+/// shown: as it is chosen; after the scope's first frame, as the screen's
+/// location can open it on Games (#856); and on each of the detail's states, so
+/// Games chosen while the detail loads shows once the detail is ready on the
+/// server. An event only this device knows has no Games tab to show, and the
+/// screen takes its tabs back to Details (#856), so Games doesn't wait on it
+/// for the event to reach the server. [onFirstShown] reads the pool and the
+/// nominations (#517) and answers whether the tab showed on a ready detail;
+/// only then is the tab [EventGamesTabController.shown].
 ///
 /// It watches the pool, and tells the controller each state as the pool
 /// emits it, before the frame that builds it and on either tab: how the last
@@ -632,8 +637,9 @@ class EventGamesTabScope extends StatefulWidget {
   });
 
   /// Reads the pool and the nominations for the tab's first showing, and
-  /// answers whether it showed on a ready detail. Given the scope's
-  /// controller, which its context, above the scope's own, can't look up.
+  /// answers whether it showed on a ready detail. Asked again, as above,
+  /// until it does. Given the scope's controller, which its context, above
+  /// the scope's own, can't look up.
   final bool Function(
     BuildContext context,
     EventGamesTabController controller,
@@ -642,7 +648,9 @@ class EventGamesTabScope extends StatefulWidget {
 
   final Widget child;
 
-  /// The sub-tab the Games tab opens on (#945).
+  /// The sub-tab the Games tab opens on (#945): the one the screen's
+  /// location names, if it names one (#856). Read once, as the sub-tabs'
+  /// controller is made.
   final EventGamesSection initialSection;
 
   /// The controller of the scope above [context].
@@ -660,6 +668,8 @@ class _EventGamesTabScopeState extends State<EventGamesTabScope>
   TabController? _tabs;
   TabController? _sections;
   int _notifiedSection = 0;
+  EventDetailBloc? _detailBloc;
+  StreamSubscription<EventDetailState>? _detail;
   EventGamesBloc? _bloc;
   StreamSubscription<EventGamesState>? _pool;
   EventGamesState _last = const EventGamesState();
@@ -668,16 +678,35 @@ class _EventGamesTabScopeState extends State<EventGamesTabScope>
   EventNominationsState _lastNominations = const EventNominationsState();
 
   @override
+  void initState() {
+    super.initState();
+    // The screen can open on Games (#856), with no tab change to say so.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _firstShowing());
+  }
+
+  @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     final tabs = DefaultTabController.of(context);
     if (tabs != _tabs) {
-      _tabs?.removeListener(_tabChanged);
-      _tabs = tabs..addListener(_tabChanged);
+      _tabs?.removeListener(_firstShowing);
+      _tabs = tabs..addListener(_firstShowing);
     }
     _useSections(
       BgeMotion.durationOf(context, BgeTokens.of(context).motionMedium),
     );
+    final detail = context.read<EventDetailBloc>();
+    if (detail != _detailBloc) {
+      unawaited(_detail?.cancel());
+      _detailBloc = detail;
+      // Games chosen before the detail is ready shows once it is. This rests on
+      // the bloc's first Ready of an event the server knows carrying
+      // `reading: true`, as every open starts a read: the first showing then
+      // reads neither the pool nor the nominations, and leaves them to that
+      // read's end (the screen's `_readPoolAgain`), rather than reading them
+      // beside it.
+      _detail = detail.stream.listen((_) => _firstShowing());
+    }
     final bloc = context.read<EventGamesBloc>();
     if (bloc != _bloc) {
       unawaited(_pool?.cancel());
@@ -731,7 +760,9 @@ class _EventGamesTabScopeState extends State<EventGamesTabScope>
     _controller.sectionChanged();
   }
 
-  void _tabChanged() {
+  /// Asks [EventGamesTabScope.onFirstShown] for the Games tab's first
+  /// showing, where Games is chosen and hasn't yet shown on a ready detail.
+  void _firstShowing() {
     if (_controller.shown ||
         _tabs?.index != EventDetailTab.games.index ||
         !mounted) {
@@ -766,8 +797,9 @@ class _EventGamesTabScopeState extends State<EventGamesTabScope>
 
   @override
   void dispose() {
-    _tabs?.removeListener(_tabChanged);
+    _tabs?.removeListener(_firstShowing);
     _sections?.dispose();
+    unawaited(_detail?.cancel());
     unawaited(_pool?.cancel());
     unawaited(_nominations?.cancel());
     _controller.dispose();

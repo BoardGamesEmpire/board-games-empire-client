@@ -81,8 +81,36 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// so both show Details alone, with no bar. Choosing a tab swaps what is
 /// under the bar and keeps the bar, so focus stays on the tab chosen. The
 /// selected tab is held above the detail's builder, so no read, write or
-/// clock tick sets it back. It isn't in the route: the screen opens on
-/// Details.
+/// clock tick sets it back.
+///
+/// ## The tab and the location
+///
+/// The screen opens on the tab its location names (#856): [tab], the location's
+/// `tab` parameter, read once by [EventScreenTab.parse], so none, or a value
+/// that names no tab, opens Details, and `games` opens Games on Nominations.
+/// Opened on Games, the screen reads the pool and the nominations once the
+/// detail is ready, as a press of Games would. A screen with no games bloc
+/// shows Details whatever the location names. An event made offline shows
+/// Details alone, with no bar, and drops a Games tab the location names: it
+/// puts its tabs back on Details, and the sub-tabs on their first, at once, and
+/// tells [onTabChanged] Details, so the location loses the tab. Once the event
+/// reaches the server, the bar shows with Details chosen.
+///
+/// Each tab the user chooses, or sub-tab under Games, is told to [onTabChanged]
+/// once the change has settled, and only where it differs from the tab last
+/// told or taken from the location, so the caller can put it in the location.
+/// Only while the screen's route is the current one in its own navigator: a
+/// change that settles under a route over it there is told once that route has
+/// gone, and one that settles as the screen leaves isn't told. A pop-up on the
+/// root navigator over the app's shell, as [showBgePopup] and [showDialog] open
+/// one, leaves the screen's route current in the shell's navigator, so a change
+/// that settles under it is told at once; the app's router puts it in the
+/// location only while the top location is still the event's (#856). A later
+/// [tab] that names another tab moves the bars there, and isn't told back.
+/// Comparing it with the tab last told, rather than the tab shown, leaves the
+/// user's newer choice in place when the location an earlier report asked for
+/// comes back after it. The screen is never built anew for a new [tab]: its
+/// blocs and its state stay.
 ///
 /// ## Which actions it offers
 ///
@@ -97,12 +125,12 @@ import 'package:ui_tokens/ui_tokens.dart';
 ///
 /// ## The Games tab
 ///
-/// Two sub-tabs (#945): Nominations, where it opens, then Pool, the games
-/// the attendees offer to bring, one row per offered copy, with a search, a
-/// filter by person, the shared filter sheet (#851), and Take back on the
-/// viewer's own rows ([EventGamesTab], #516). The pool isn't cached:
-/// the [EventGamesBloc] holds what was read last, and the tab filters it on
-/// the device.
+/// Two sub-tabs (#945): Nominations, where it opens unless the location names
+/// Pool (#856), then Pool, the games the attendees offer to bring, one row per
+/// offered copy, with a search, a filter by person, the shared filter sheet
+/// (#851), and Take back on the viewer's own rows ([EventGamesTab], #516). The
+/// pool isn't cached: the [EventGamesBloc] holds what was read last, and the
+/// tab filters it on the device.
 ///
 /// It is read the first time the tab shows on a ready event, or, where a read
 /// of the event is running then, once that read ends, and so once; and again
@@ -371,6 +399,8 @@ class EventDetailScreen extends StatelessWidget {
     this.onAddAttendee,
     this.onOfferGames,
     this.now,
+    this.tab,
+    this.onTabChanged,
     super.key,
   });
 
@@ -838,6 +868,16 @@ class EventDetailScreen extends StatelessWidget {
   /// device's.
   final DateTime Function()? now;
 
+  /// The tab the location names, as its `tab` parameter carries it, read by
+  /// [EventScreenTab.parse] (#856). See "The tab and the location" above.
+  final String? tab;
+
+  /// Tells, with this screen's context, each tab the user's choice settles
+  /// on, where it differs from the one last told or taken from [tab]
+  /// (#856). The feature package doesn't know the route table. Null tells
+  /// nobody, and the location still moves the bars.
+  final EventTabChanged? onTabChanged;
+
   @override
   Widget build(BuildContext context) {
     return _EventDetailBlocs(
@@ -1006,6 +1046,9 @@ class _EventDetailBlocsState extends State<_EventDetailBlocs> {
         now: screen.now ?? DateTime.now,
         hasActions: provided != null,
         say: _messenger.say,
+        // Read once, here, where it enters the screen.
+        screenTab: EventScreenTab.parse(screen.tab),
+        onTabChanged: screen.onTabChanged,
       ),
     );
   }
@@ -1016,10 +1059,12 @@ class _EventDetailView extends StatelessWidget {
     required this.now,
     required this.hasActions,
     required this.say,
+    required this.screenTab,
     this.onBack,
     this.onWhoAnswered,
     this.onAddAttendee,
     this.onOfferGames,
+    this.onTabChanged,
   });
 
   final DateTime Function() now;
@@ -1027,6 +1072,12 @@ class _EventDetailView extends StatelessWidget {
   final void Function(BuildContext context)? onWhoAnswered;
   final _OpenAddAttendee? onAddAttendee;
   final OpenOfferGames? onOfferGames;
+
+  /// The tab [EventDetailScreen.tab] names (#856).
+  final EventScreenTab screenTab;
+
+  /// [EventDetailScreen.onTabChanged] (#856).
+  final EventTabChanged? onTabChanged;
 
   /// Whether an [EventActionsBloc] is provided above, which is whether the
   /// screen has a server and a way back. Looking it up where it isn't would
@@ -1081,21 +1132,28 @@ class _EventDetailView extends StatelessWidget {
     if (!hasActions) return page;
 
     // The selected tab (#516), held above the detail's builder so that no
-    // read, write or clock tick under it sets it back to Details. Not in the
-    // route: the screen opens on Details. Under reduced motion the bar's
-    // indicator moves at once; the controller keeps its tab when that
-    // setting changes. Beside it, what the Games tab keeps: its filter, and
-    // whether it has shown, which decides whether a detail read reads the
-    // pool and the nominations.
+    // read, write or clock tick under it sets it back to Details. It opens
+    // on the tab the location names (#856), read only as the controllers
+    // are made, and a later location moves it through _EventTabLocation.
+    // Under reduced motion the bar's indicator moves at once; the controller
+    // keeps its tab when that setting changes. Beside it, what the Games tab
+    // keeps: its sub-tab, its filter, and whether it has shown, which decides
+    // whether a detail read reads the pool and the nominations.
     return DefaultTabController(
       length: EventDetailTab.values.length,
+      initialIndex: screenTab.tab.index,
       animationDuration: BgeMotion.durationOf(
         context,
         BgeTokens.of(context).motionMedium,
       ),
       child: EventGamesTabScope(
         onFirstShown: _gamesFirstShown,
-        child: _listeners(page),
+        initialSection: screenTab.section ?? EventGamesSection.nominations,
+        child: _EventTabLocation(
+          tab: screenTab,
+          onTabChanged: onTabChanged,
+          child: _listeners(page),
+        ),
       ),
     );
   }
@@ -1198,6 +1256,170 @@ class _EventDetailView extends StatelessWidget {
     }
     if (outcome.rereads) _retry(context);
   }
+}
+
+/// Keeps the screen's tabs and its location in step (#856), under the
+/// screen's tab controller and the Games tab's scope, whose sub-tabs'
+/// controller it follows.
+///
+/// A tab the user chooses is reported through [onTabChanged] once the change
+/// has settled, with neither bar's indicator moving, where the tab the bars
+/// stand on, and on Games the sub-tab, differs from the one last reported or
+/// taken from the location. A change cut short by a new controller, as the
+/// motion setting replaces either, is checked once that frame has ended, since
+/// the new one never says it settled. Only while the screen's route is current
+/// in its own navigator ([ModalRoute.isCurrent]): a report puts the tab in the
+/// location, which belongs to the route over the screen while one covers it
+/// there, and to the next one while the screen leaves. A change that settles
+/// under such a route is reported once the screen's route is current again. A
+/// pop-up on the root navigator over the app's shell, as [showBgePopup] and
+/// [showDialog] open one, leaves the route current, so a change under it is
+/// reported at once, and the caller keeps the location to the event's
+/// ([EventDetailScreen.onTabChanged]).
+///
+/// A [tab] that names another tab than the location did, and than the one last
+/// reported or taken, moves the bars there, and becomes the one taken. Its move
+/// isn't reported. It is compared with that, not with the tab shown: the
+/// location a report asked for can come back after the user has chosen again,
+/// and would otherwise take the bars back. Built again with the location it
+/// had, as it can be before a report's location comes back, the screen stays
+/// where the user is. The sub-tab moves first, then the screen's tab, so Games
+/// never shows the sub-tab it is leaving. A tab the page can't show, as an
+/// event made offline shows Details alone, doesn't wait in the controllers: the
+/// page puts them back on Details at once ([_ReadyPage]), and that move is
+/// reported as the user's are, so the location drops the tab.
+class _EventTabLocation extends StatefulWidget {
+  const _EventTabLocation({
+    required this.tab,
+    required this.onTabChanged,
+    required this.child,
+  });
+
+  /// The tab [EventDetailScreen.tab] names.
+  final EventScreenTab tab;
+
+  /// [EventDetailScreen.onTabChanged].
+  final EventTabChanged? onTabChanged;
+
+  final Widget child;
+
+  @override
+  State<_EventTabLocation> createState() => _EventTabLocationState();
+}
+
+class _EventTabLocationState extends State<_EventTabLocation> {
+  TabController? _tabs;
+  EventGamesTabController? _games;
+  TabController? _sections;
+  ModalRoute<Object?>? _route;
+
+  /// The tab last reported, or last taken from the location.
+  late EventScreenTab _last;
+
+  /// Whether the location is moving the bars, whose changes aren't the
+  /// user's to report.
+  bool _moving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _last = widget.tab;
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Heard again as the route comes back on top.
+    _route = ModalRoute.of(context);
+    _follow();
+    _changedAfterFrame();
+  }
+
+  @override
+  void didUpdateWidget(_EventTabLocation oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final wanted = widget.tab;
+    // Built again with the location it had, as before a report's location
+    // comes back, it stays where the user is.
+    if (wanted == oldWidget.tab || wanted == _last) return;
+    _last = wanted;
+    // The screen's controller can have been replaced in this same build,
+    // before this widget hears of it.
+    _follow();
+    _moving = true;
+    try {
+      if (wanted.section case final section?) {
+        _sections!.animateTo(section.index);
+      }
+      _tabs!.animateTo(wanted.tab.index);
+    } finally {
+      _moving = false;
+    }
+  }
+
+  @override
+  void dispose() {
+    _tabs?.removeListener(_changed);
+    _sections?.removeListener(_changed);
+    _games?.removeListener(_followSections);
+    super.dispose();
+  }
+
+  /// Listens to the screen's tab controller and the sub-tabs', moving to
+  /// either one that has been replaced.
+  void _follow() {
+    final tabs = DefaultTabController.of(context);
+    if (tabs != _tabs) {
+      final replaced = _tabs != null;
+      _tabs?.removeListener(_changed);
+      _tabs = tabs..addListener(_changed);
+      if (replaced) _changedAfterFrame();
+    }
+    final games = EventGamesTabScope.of(context);
+    if (games != _games) {
+      _games?.removeListener(_followSections);
+      // It says when it replaces the sub-tabs' controller.
+      _games = games..addListener(_followSections);
+    }
+    _followSections();
+  }
+
+  void _followSections() {
+    final sections = _games!.sections;
+    if (sections == _sections) return;
+    final replaced = _sections != null;
+    _sections?.removeListener(_changed);
+    _sections = sections..addListener(_changed);
+    if (replaced) _changedAfterFrame();
+  }
+
+  /// Checks for a settled change once this frame has ended: the controllers
+  /// are replaced, and the route comes back on top, while the screen builds,
+  /// when nothing may be reported.
+  void _changedAfterFrame() =>
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _changed();
+      });
+
+  void _changed() {
+    final tabs = _tabs;
+    final sections = _sections;
+    if (_moving || tabs == null || sections == null) return;
+    // Only from the top: while another route covers the screen, or the
+    // screen is leaving, the location is someone else's.
+    if (!(_route?.isCurrent ?? true)) return;
+    if (tabs.indexIsChanging || sections.indexIsChanging) return;
+    final shown = EventScreenTab.of(
+      EventDetailTab.values[tabs.index],
+      EventGamesSection.values[sections.index],
+    );
+    if (shown == _last) return;
+    _last = shown;
+    widget.onTabChanged?.call(context, shown);
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }
 
 /// Whether [state] holds a delete the server accepted. The screen is leaving
@@ -1308,7 +1530,10 @@ void _readPoolAgain(BuildContext context, EventDetailState state) {
 
 /// Reads the games pool (#516) and the nominations (#517) for the Games
 /// tab's first showing, and answers whether it showed on a ready detail of
-/// an event the server knows. Only that counts as having shown.
+/// an event the server knows. Only that counts as having shown. Asked while
+/// Games is chosen, until it answers yes: as Games is chosen, once the screen
+/// has opened, which can be on Games (#856), and on each of the detail's
+/// states ([EventGamesTabScope]).
 ///
 /// While a detail read is running, as the one every open starts may be,
 /// neither is read here: that read's end reads both ([_readPoolAgain]), as
@@ -1438,8 +1663,10 @@ void _readNominations(BuildContext context, EventDetailReady state) {
 ///
 /// The bar shows where the screen has its actions' blocs and the event is
 /// one the server knows: an event made offline has nothing on the server to
-/// offer games to. Without the bar the page is Details alone, whatever the
-/// controller holds.
+/// offer games to. Without the bar the page is Details alone. Where the
+/// controller stands on Games then, as the location can open the screen
+/// there (#856), the page puts it back on Details once the frame has ended
+/// ([_leaveGames]).
 class _ReadyPage extends StatelessWidget {
   const _ReadyPage({
     required this.state,
@@ -1531,6 +1758,30 @@ class _ReadyPage extends StatelessWidget {
     );
   }
 
+  /// Puts the screen's tabs back on Details, and the Games tab's sub-tabs on
+  /// their first, once this frame has ended, where the page draws Details
+  /// alone while the tabs stand on Games (#856): the location named a tab
+  /// this event, made offline, can't show. The tab is dropped rather than
+  /// held for once the event reaches the server, which would swap Games in
+  /// under the reader, a change of context they didn't ask for; the bar
+  /// shows on Details then. Each moves at once, with no animation, the
+  /// screen's tab first, so the change is reported as the user's are, as
+  /// Details alone, and the location loses the tab ([_EventTabLocation]).
+  ///
+  /// Both controllers are looked up once the frame has ended, not taken
+  /// from the build: the motion setting replaces either, and a replaced
+  /// controller is disposed.
+  static void _leaveGames(BuildContext context) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!context.mounted) return;
+      final tabs = DefaultTabController.of(context);
+      if (tabs.index != EventDetailTab.games.index) return;
+      tabs.index = EventDetailTab.details.index;
+      EventGamesTabScope.of(context).sections.index =
+          EventGamesSection.values.first.index;
+    });
+  }
+
   /// [actionsState], [pollState], [gamesState], [nominationsState] and
   /// [tabs] are null where there are no such blocs, and then the app bar
   /// offers no menu, no poll shows and there are no tabs.
@@ -1556,6 +1807,11 @@ class _ReadyPage extends StatelessWidget {
     final deletes = state.actions.contains(EventAction.delete);
     // The bar shows only where there is a server that knows the event.
     final shownTabs = event.isLocalOnly ? null : tabs;
+    if (tabs != null &&
+        shownTabs == null &&
+        tabs.index == EventDetailTab.games.index) {
+      _leaveGames(context);
+    }
     final tab = shownTabs == null
         ? EventDetailTab.details
         : EventDetailTab.values[shownTabs.index];

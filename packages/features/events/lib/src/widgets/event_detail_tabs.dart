@@ -22,6 +22,65 @@ enum EventGamesSection {
   pool,
 }
 
+/// Where the event screen stands, as its location names it (#856): Details,
+/// or one of the Games tab's sub-tabs. Each one's [name] is its value of the
+/// location's `tab` parameter.
+enum EventScreenTab {
+  /// The Details tab, which a location with no `tab` names.
+  details,
+
+  /// The Games tab, on Nominations.
+  nominations,
+
+  /// The Games tab, on Pool.
+  pool;
+
+  /// Where the screen stands with its tab bar on [tab] and the Games tab's
+  /// sub-tabs on [section]: Details whatever the sub-tabs stand on, and on
+  /// Games the sub-tab.
+  factory EventScreenTab.of(EventDetailTab tab, EventGamesSection section) =>
+      switch (tab) {
+        EventDetailTab.details => EventScreenTab.details,
+        EventDetailTab.games => switch (section) {
+          EventGamesSection.nominations => EventScreenTab.nominations,
+          EventGamesSection.pool => EventScreenTab.pool,
+        },
+      };
+
+  /// The tab the location's `tab` parameter, [value], names: none, `details`
+  /// or a value that names no tab is Details, and `games` is the Games tab
+  /// on its first sub-tab. Case matters.
+  static EventScreenTab parse(String? value) => switch (value) {
+    'games' => nominations,
+    final value? => values.asNameMap()[value] ?? details,
+    null => details,
+  };
+
+  /// The location's `tab` parameter for this tab: none for Details, which a
+  /// location names by leaving it out, and otherwise its [name].
+  String? get query => this == details ? null : name;
+
+  /// The screen's tab this names: Details, or Games for a sub-tab.
+  EventDetailTab get tab => switch (this) {
+    EventScreenTab.details => EventDetailTab.details,
+    EventScreenTab.nominations || EventScreenTab.pool => EventDetailTab.games,
+  };
+
+  /// The Games tab's sub-tab this names, or null for Details.
+  EventGamesSection? get section => switch (this) {
+    EventScreenTab.details => null,
+    EventScreenTab.nominations => EventGamesSection.nominations,
+    EventScreenTab.pool => EventGamesSection.pool,
+  };
+}
+
+/// How the event screen tells where the user's choice has settled it (#856):
+/// [EventDetailScreen.onTabChanged], with the screen's context.
+typedef EventTabChanged = void Function(
+  BuildContext context,
+  EventScreenTab tab,
+);
+
 /// The event screen's tab bar (#516): Details, then Games.
 ///
 /// Material's [TabBar], not scrollable, so each tab has the tab role, says
