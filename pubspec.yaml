@@ -104,6 +104,7 @@ workspace:
   - packages/core/observability
   - packages/core/hydration
   - packages/core/access
+  - packages/core/analytics
   - packages/features/auth
   - packages/features/catalog
   - packages/features/collection
