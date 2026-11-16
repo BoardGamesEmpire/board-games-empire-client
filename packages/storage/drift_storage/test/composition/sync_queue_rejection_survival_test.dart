@@ -12,16 +12,16 @@ import 'package:models/dto.dart';
 
 import '../support/fixed_clock.dart';
 
-/// #98 (locked decision D8): writes queued under an optimistic offline
-/// session survive that session's rejection.
+/// #98: writes queued under an optimistic offline session survive that
+/// session's rejection.
 ///
 /// The scenario: a user enters on a cached session (#98), queues writes
 /// while offline, reconnects, and revalidation returns 401 — the session
 /// is genuinely gone. The repository clears the token, the shell pops the
-/// user-session scope (#135), and the user lands on the sign-in form. D8
-/// locks that the queued writes are NOT discarded in that teardown,
-/// consistent with the standing "permanent server rejections stay queued"
-/// rule: the rejection was of the SESSION, not of the work.
+/// user-session scope (#135), and the user lands on the sign-in form. The
+/// retention rule (#98) is that the queued writes are NOT discarded in that
+/// teardown, consistent with the standing "permanent server rejections stay
+/// queued" rule: the rejection was of the SESSION, not of the work.
 ///
 /// Mechanically, survival rests on the queue's storage being per-server
 /// while the repository OBJECT over it is per-user: the scope pop disposes
@@ -177,7 +177,7 @@ void main() {
   }
 
   test('writes queued under an unverified session survive its rejection '
-      'and are drainable after the same user signs back in (D8)', () async {
+      'and are drainable after the same user signs back in (#98)', () async {
     await enterOptimistically(_kUserA);
 
     // Queue an offline write the way the household bloc does: through the
@@ -200,7 +200,7 @@ void main() {
     // teardown may delete it.
     final db = context.container.get<ServerDatabase>();
     final surviving = await db.select(db.syncQueueTable).get();
-    expect(surviving, hasLength(1), reason: 'D8: rejection never discards');
+    expect(surviving, hasLength(1), reason: '#98: rejection never discards');
 
     // The same user signs back in (a real credential grant this time); the
     // rebuilt scope sees the queued write as pending, ready for the drain

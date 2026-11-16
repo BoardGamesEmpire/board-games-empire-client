@@ -85,7 +85,7 @@ class RoutingAdapter implements HttpClientAdapter {
 /// all and so always got Dio's throwing default. Unifying on `cannedDio`'s
 /// spelling and default means one name and one meaning across the package;
 /// the `dio_network` call sites that relied on throwing now say
-/// `permissiveStatus: false` where they always meant it (#354 D2).
+/// `permissiveStatus: false` where they always meant it (#354).
 Dio routingDio(
   Map<String, (String, int)> byPathSuffix, {
   bool permissiveStatus = true,

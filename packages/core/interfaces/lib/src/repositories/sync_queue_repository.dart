@@ -13,12 +13,12 @@ import 'package:models/domain.dart';
 /// [remapCollectionId] — operates only on entries the session's user
 /// enqueued. Entries belonging to other users of the same server are
 /// invisible and untouchable through this interface: on a shared device a
-/// departed user's queued offline writes lie dormant (intact, per the D8
-/// retention rule from #98/#142) until that user signs back in, and a
-/// drain worker (#121) operating through this interface can never push
-/// one user's writes under another user's session. The scoping lives in
-/// the data model (a stamped, filtered user id), not in consumer
-/// discipline; the method signatures are deliberately unchanged.
+/// departed user's queued offline writes lie dormant (intact, per the retention
+/// rule from #98/#142) until that user signs back in, and a drain worker (#121)
+/// operating through this interface can never push one user's writes under
+/// another user's session. The scoping lives in the data model (a stamped,
+/// filtered user id), not in consumer discipline; the method signatures are
+/// deliberately unchanged.
 abstract class SyncQueueRepository {
   /// Enqueues a new operation. Returns the created entry.
   Future<SyncQueueEntry> enqueue(SyncOperation operation);

@@ -905,10 +905,10 @@ void main() {
         findsOneWidget,
       );
 
-      // A delta rather than a total: this test walks to the household list,
-      // and entering it is itself a trigger now (#300 D13). What is being
-      // pinned here is that the *resume* still reaches the rehydrator from
-      // the list, which the absolute count would conflate.
+      // A delta rather than a total: this test walks to the household list, and
+      // entering it is itself a trigger now (#300). What is being pinned here
+      // is that the *resume* still reaches the rehydrator from the list, which
+      // the absolute count would conflate.
       final before = rehydrator.passes;
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);

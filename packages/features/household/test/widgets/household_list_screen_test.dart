@@ -315,7 +315,7 @@ void main() {
     testWidgets('renders one row per household, in the order given', (
       tester,
     ) async {
-      // The repository orders (#269 D3). A screen that re-sorted would be a
+      // The repository orders (#269). A screen that re-sorted would be a
       // second, invisible ordering rule.
       await tester.pumpWidget(harness());
       households.add([
@@ -430,8 +430,8 @@ void main() {
     });
 
     testWidgets('opens a household when its row is tapped', (tester) async {
-      // #269 D5 kept rows inert because no detail route existed. #270
-      // built it, so the row is a control.
+      // #269 kept rows inert because no detail route existed. #270 built it, so
+      // the row is a control.
       final opened = <String>[];
       await tester.pumpWidget(harness(onOpen: (_, id) => opened.add(id)));
       households.add([_household('h-1'), _household('h-2')]);
@@ -537,8 +537,8 @@ void main() {
       tester,
     ) async {
       // Not a leftover: a composition that cannot reach the detail screen
-      // should not offer a tap that does nothing (#269 D5's judgement,
-      // now a condition rather than an era).
+      // should not offer a tap that does nothing (#269's judgement, now a
+      // condition rather than an era).
       await tester.pumpWidget(harness());
       households.add([_household('h-1')]);
       await tester.pump();
@@ -1112,8 +1112,8 @@ void main() {
     testWidgets('clears when a re-hydrate refreshes the list, with nothing '
         'asked of the user (#302)', (tester) async {
       // The #302 re-run drives the same status holder the screen is
-      // already watching (#270 D5), so the banner going away is the whole
-      // of what the household feature had to do for that issue.
+      // already watching (#270), so the banner going away is the whole of what
+      // the household feature had to do for that issue.
       await tester.pumpWidget(harness());
       households.add([_household('h-1')]);
       status.finished(HydrateOutcome.failed);
@@ -1138,7 +1138,7 @@ void main() {
       expect(find.byKey(HouseholdListScreen.rowKey('h-1')), findsOneWidget);
     });
 
-    testWidgets('offers a retry where the composition can run one (#300 D5)', (
+    testWidgets('offers a retry where the composition can run one (#300)', (
       tester,
     ) async {
       await tester.pumpWidget(harness(onRetry: () async {}));
@@ -1152,8 +1152,8 @@ void main() {
 
     testWidgets('offers none where it cannot (#137)', (tester) async {
       // A container with no household client has no drain to re-run, and a
-      // button that does nothing is worse than no button (#269 D5's
-      // reasoning, applied to this control).
+      // button that does nothing is worse than no button (#269's reasoning,
+      // applied to this control).
       await tester.pumpWidget(harness());
       households.add([_household('h-1')]);
       status.finished(HydrateOutcome.failed);
@@ -1163,7 +1163,7 @@ void main() {
       expect(find.byKey(HouseholdListScreen.refreshRetryKey), findsNothing);
     });
 
-    testWidgets('pressing it runs a pass and says so (#300 D6)', (
+    testWidgets('pressing it runs a pass and says so (#300)', (
       tester,
     ) async {
       final pass = Completer<void>();
@@ -1204,7 +1204,7 @@ void main() {
       expect(find.text(_refreshFailedCopy), findsNothing);
     });
 
-    testWidgets('a pass nobody asked for is not announced (#300 D6)', (
+    testWidgets('a pass nobody asked for is not announced (#300)', (
       tester,
     ) async {
       // #302's triggers re-hydrate on a connectivity edge and on app
@@ -1267,9 +1267,9 @@ void main() {
       status.started();
       await tester.pump();
 
-      // #269 D1: an empty cache being refilled is unknown, not empty. The
-      // whole surface becomes the spinner rather than an empty state
-      // wearing a "refreshing" banner.
+      // #269: an empty cache being refilled is unknown, not empty. The whole
+      // surface becomes the spinner rather than an empty state wearing a
+      // "refreshing" banner.
       expect(find.byKey(HouseholdListScreen.loadingKey), findsOneWidget);
       expect(find.byKey(HouseholdListScreen.emptyKey), findsNothing);
       expect(find.text(_refreshingCopy), findsNothing);
@@ -1486,7 +1486,7 @@ void main() {
     );
   });
 
-  group('the entry trigger (#300 D1, D13, D14)', () {
+  group('the entry trigger (#300)', () {
     testWidgets('asks for a pass once, on entry', (tester) async {
       var entries = 0;
       await tester.pumpWidget(harness(onEnter: () => entries++));
@@ -1496,12 +1496,12 @@ void main() {
     });
 
     testWidgets('a rebuild does not ask for a second pass', (tester) async {
-      // The reason this lives here rather than in the route builder (#300
-      // D14). go_router re-runs a route's builder whenever the router
-      // rebuilds, and builds every page in the match stack — so a side
-      // effect there fires on rebuilds and on pushing a child route, which
-      // is a poll rather than an entry. `BlocProvider.create` runs once per
-      // provider insertion, which is what "on entry" actually means.
+      // The reason this lives here rather than in the route builder (#300).
+      // go_router re-runs a route's builder whenever the router rebuilds, and
+      // builds every page in the match stack — so a side effect there fires on
+      // rebuilds and on pushing a child route, which is a poll rather than an
+      // entry. `BlocProvider.create` runs once per provider insertion, which is
+      // what "on entry" actually means.
       var entries = 0;
       await tester.pumpWidget(harness(onEnter: () => entries++));
       await tester.pump();
@@ -1530,9 +1530,9 @@ void main() {
     });
 
     testWidgets('the pass it starts is not narrated', (tester) async {
-      // #300 D6: only a press narrates. An entry is not a press, so the
-      // screen says nothing while the pass it started runs.
-      // The failure it may be about to clear stays up until it does (#453).
+      // #300: only a press narrates. An entry is not a press, so the screen
+      // says nothing while the pass it started runs. The failure it may be
+      // about to clear stays up until it does (#453).
       await tester.pumpWidget(harness(onEnter: () {}));
       households.add([_household('h-1')]);
       status.finished(HydrateOutcome.failed);

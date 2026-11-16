@@ -88,7 +88,7 @@ void main() {
     });
 
     test('permissiveStatus defaults to true, matching cannedDio — the two '
-        'copies this replaced disagreed here (#354 D2)', () async {
+        'copies this replaced disagreed here (#354)', () async {
       final res = await routingDio({
         '/a': ('{}', 409),
       }).get<Map<String, dynamic>>('/a');

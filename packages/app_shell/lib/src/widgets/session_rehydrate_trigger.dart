@@ -6,14 +6,13 @@ import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/services.dart';
 
 /// Asks the active session's [SessionRehydrator] for a pass when something
-/// suggests the server is worth trying again (#302 D1).
+/// suggests the server is worth trying again (#302).
 ///
-/// A session that activates while the server is unreachable used to have
-/// no route back: `hydrate()` had exactly one call site, so the client
-/// never asked again for the life of that session and the user's only fix
-/// was signing out and in. This is the general trigger; the caches
-/// register themselves (#302 D2), so nothing here knows what a household
-/// is.
+/// A session that activates while the server is unreachable used to have no
+/// route back: `hydrate()` had exactly one call site, so the client never asked
+/// again for the life of that session and the user's only fix was signing out
+/// and in. This is the general trigger; the caches register themselves (#302),
+/// so nothing here knows what a household is.
 ///
 /// ## Why the trigger is composed here
 ///
@@ -58,8 +57,8 @@ import 'package:interfaces/services.dart';
 ///   way to cellular is `online → online`, suppressed as a duplicate (#9),
 ///   even though it is the moment the request would start working;
 /// - an edge **consumed by a still-running pass**: a drain hanging on a
-///   socket timeout is not stale (#302 D4), so the trigger is dropped, and
-///   the pass then fails with nothing left to re-trigger it.
+///   socket timeout is not stale (#302), so the trigger is dropped, and the
+///   pass then fails with nothing left to re-trigger it.
 ///
 /// #300's manual retry is the answer for all three today. #311 is the
 /// bounded retry that would cover them without the user, which is why it
@@ -140,9 +139,9 @@ class _SessionRehydrateTriggerState extends State<SessionRehydrateTrigger> {
   /// re-hydrate callers use: no caller is waiting, and the pass reports
   /// what it achieved through each cache's own status holder.
   ///
-  /// Overlapping triggers are the registry's problem, not this widget's —
-  /// a pass arriving while one is in flight joins it (#302 D3), so a
-  /// flapping connection cannot fan out into concurrent drains.
+  /// Overlapping triggers are the registry's problem, not this widget's — a
+  /// pass arriving while one is in flight joins it (#302), so a flapping
+  /// connection cannot fan out into concurrent drains.
   ///
   /// The scope is read **per trigger** rather than captured: see the class
   /// doc on [SessionRehydrateTrigger.scopeSource]. A container disposed

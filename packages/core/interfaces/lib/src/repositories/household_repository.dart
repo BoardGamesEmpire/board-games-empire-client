@@ -99,7 +99,7 @@ enum HouseholdRosterWrite {
 abstract class HouseholdRepository {
   /// Returns all households the current user is a member of, ordered by
   /// [Household.name] ascending (case-insensitively), oldest
-  /// [Household.createdAt] first on a tie (#269 D3).
+  /// [Household.createdAt] first on a tie (#269).
   ///
   /// The order is part of the contract, not an implementation detail: the
   /// list screen renders it directly, and [watchHouseholds] must agree

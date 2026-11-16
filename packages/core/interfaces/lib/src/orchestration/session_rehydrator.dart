@@ -71,8 +71,8 @@ abstract interface class SessionRehydrator {
   /// Re-runs every registered hydrate that reports itself stale.
   ///
   /// Never throws, whatever the entries do. A pass triggered while one is
-  /// in flight **joins** it rather than starting a second (#302 D3): a
-  /// flapping connection would otherwise fan out into overlapping drains,
-  /// and the install-time pass a trigger races is itself unawaited.
+  /// in flight **joins** it rather than starting a second (#302): a flapping
+  /// connection would otherwise fan out into overlapping drains, and the
+  /// install-time pass a trigger races is itself unawaited.
   Future<void> rehydrateStale();
 }

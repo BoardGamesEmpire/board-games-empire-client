@@ -193,9 +193,9 @@ class HouseholdDetailScreen extends StatelessWidget {
   /// Key on the not-found surface's return-to-list button.
   static const Key notFoundBackKey = Key('household_detail.not_found_back');
 
-  /// Key on the refresh banner's retry button (#300 D10). One key for both
-  /// banners — the ready one and the not-found one — because it is one
-  /// control on one screen, in whichever place the screen currently is.
+  /// Key on the refresh banner's retry button (#300). One key for both banners
+  /// — the ready one and the not-found one — because it is one control on one
+  /// screen, in whichever place the screen currently is.
   static const Key refreshRetryKey = Key('household_detail.refresh_retry');
 
   /// Key on the failed-read surface.
@@ -286,7 +286,7 @@ class HouseholdDetailScreen extends StatelessWidget {
   final SessionLease session;
 
   /// What the hydrate is doing, when this composition runs one. Null reads
-  /// as settled rather than as forever-loading (#269 D1).
+  /// as settled rather than as forever-loading (#269).
   final Stream<Hydration>? hydration;
 
   /// Returns to the household list from the not-found state, as that
@@ -303,8 +303,8 @@ class HouseholdDetailScreen extends StatelessWidget {
   final void Function(BuildContext context)? onBack;
 
   /// Runs one more hydrate pass, or null where this composition has none
-  /// (#300 D5, D10). The same callback the list screen takes, driving the
-  /// same status — this screen and that one are two views of one refresh.
+  /// (#300). The same callback the list screen takes, driving the same status —
+  /// this screen and that one are two views of one refresh.
   final Future<void> Function()? onRetry;
 
   /// The per-server invite client, for the awaiting-approval count. Null
@@ -351,7 +351,7 @@ class HouseholdDetailScreen extends StatelessWidget {
   final Future<void> Function()? onMembershipChanged;
 
   /// The reserved create segment. `/household/create` is a route of its
-  /// own, declared first; this is the belt to that braces (#270 D6).
+  /// own, declared first; this is the belt to that braces (#270).
   static const String _reservedCreateId = 'create';
 
   @override
@@ -593,7 +593,7 @@ class _HouseholdDetailView extends StatelessWidget {
 
   final void Function(BuildContext context)? onBack;
 
-  /// Whether this composition can re-run the drain at all (#300 D5).
+  /// Whether this composition can re-run the drain at all (#300).
   final bool canRetry;
 
   final HouseholdInviteRemoteDataSource? invites;
@@ -847,9 +847,9 @@ class _ReadyPage extends StatelessWidget {
             const BgeGap.lg(),
           ],
           _Roster(state: state, hasMemberActionsBloc: hasMemberActionsBloc),
-          // Omitted entirely when there is no role to state (#270 D4):
-          // a null binding, or an identity we could not resolve. An empty
-          // "Your role" label would be a question the screen asks itself.
+          // Omitted entirely when there is no role to state (#270): a null
+          // binding, or an identity we could not resolve. An empty "Your role"
+          // label would be a question the screen asks itself.
           if (state.role != null) ...[
             const BgeGap.lg(),
             _RoleBlock(role: state.role!),
@@ -2032,9 +2032,9 @@ class _NotFoundPage extends StatelessWidget {
   final void Function(BuildContext context)? onBack;
 
   /// Whether a retry can be offered. This is the surface where it is worth
-  /// the most (#300 D10): a household absent from a cache whose last pass
-  /// failed may well be on the server, so asking again can change what is
-  /// on screen rather than only how fresh it is.
+  /// the most (#300): a household absent from a cache whose last pass failed
+  /// may well be on the server, so asking again can change what is on screen
+  /// rather than only how fresh it is.
   ///
   /// Once the pass reports `running`, the bloc stops asserting an absence
   /// no pass has confirmed, and this page gives way to the spinner, which
@@ -2099,8 +2099,8 @@ class _NotFoundPage extends StatelessWidget {
   }
 }
 
-/// This screen's half of the shared refresh banner (#300 D10): its own
-/// copy and key, and a press routed to its own bloc.
+/// This screen's half of the shared refresh banner (#300): its own copy and
+/// key, and a press routed to its own bloc.
 ///
 /// [canRetry] is threaded down rather than the callback itself, because
 /// the dispatch needs a context under the [BlocProvider] — which the

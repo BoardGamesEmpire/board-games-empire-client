@@ -283,10 +283,10 @@ void main() {
     ];
 
     // Two queued rows in different states — both unattributed at v2,
-    // both dropped at v3. A pending row is the D8-sensitive case (a
-    // departed user's surviving offline write); pinning its removal
-    // documents that the pre-alpha destructive default was chosen over
-    // a wrong backfill, not overlooked.
+    // both dropped at v3. A pending row is the case #98's retention rule
+    // protects (a departed user's surviving offline write); pinning its removal
+    // documents that the pre-alpha destructive default was chosen over a wrong
+    // backfill, not overlooked.
     const payload =
         '{"type":"create_household","local_id":"hh_local_1","name":"HQ"}';
     final oldSyncQueueData = <v2.SyncQueueData>[

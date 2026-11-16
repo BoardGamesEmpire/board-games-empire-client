@@ -22,7 +22,7 @@ import 'package:web_platform/src/build_info/package_info_build_info_reader.dart'
 /// builds at compile time, and vice versa. `connectivity_platform` is
 /// the deliberate exception to the twin-package split: the plugin is
 /// federated (js_interop on web), so one shared package serves both
-/// composition roots without dependency bleed (#9 design decision 1).
+/// composition roots without dependency bleed (#9).
 ///
 /// Contract (see `PlatformBootstrap.createRootContainer`): registrations
 /// must be defensive — a recoverable platform-read failure registers a

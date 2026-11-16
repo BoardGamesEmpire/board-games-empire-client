@@ -1,7 +1,7 @@
 import 'package:equatable/equatable.dart';
 import 'package:models/domain.dart';
 
-/// What the household list screen is showing (#269 D6).
+/// What the household list screen is showing (#269).
 ///
 /// Three states, not four: *empty* is [HouseholdListReady] with no rows.
 /// Splitting it out would have made the screen ask which of two states to
@@ -15,7 +15,7 @@ sealed class HouseholdListState extends Equatable {
 }
 
 /// Nothing to show yet: either the cache has not emitted, or it emitted
-/// nothing while a hydrate is still filling it (#269 D1).
+/// nothing while a hydrate is still filling it (#269).
 final class HouseholdListLoading extends HouseholdListState {
   const HouseholdListLoading();
 }
@@ -29,14 +29,14 @@ final class HouseholdListLoading extends HouseholdListState {
 /// refresh failed is both empty *and* unverified, and the screen says
 /// both.
 ///
-/// [refreshing] says a pass **the user asked for** is running (#300 D6).
-/// It is not "a pass is running": the #302 triggers re-hydrate on a
-/// connectivity edge and on app resume, and a screen that announces work
-/// nobody asked for is noise. The two flags can both be true: a retry over
-/// a failure is `refreshFailed && refreshing` by design, and the banner
-/// shows its refreshing copy over the failure it is trying to clear
-/// (#453). Nothing here ties either flag to the other, because the state's
-/// job is to report what is true rather than to police it.
+/// [refreshing] says a pass **the user asked for** is running (#300). It is not
+/// "a pass is running": the #302 triggers re-hydrate on a connectivity edge and
+/// on app resume, and a screen that announces work nobody asked for is noise.
+/// The two flags can both be true: a retry over a failure is `refreshFailed &&
+/// refreshing` by design, and the banner shows its refreshing copy over the
+/// failure it is trying to clear (#453). Nothing here ties either flag to the
+/// other, because the state's job is to report what is true rather than to
+/// police it.
 final class HouseholdListReady extends HouseholdListState {
   const HouseholdListReady({
     required this.households,

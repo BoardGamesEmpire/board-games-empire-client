@@ -154,9 +154,9 @@ class HouseholdHydrator {
         // class must never do is throw.
         //
         // Transient and permanent are logged the same and neither retries
-        // here: user-session activate is the retry point, and #266 D4
-        // classifies a list 404 transient precisely so a routing fault does
-        // not end hydration for the life of the process.
+        // here: user-session activate is the retry point, and #266 classifies a
+        // list 404 transient precisely so a routing fault does not end
+        // hydration for the life of the process.
         _logger.warn(
           'Household hydrate stopped on a failed page',
           error: error,

@@ -13,7 +13,7 @@ import 'package:models/dto.dart';
 
 import '../support/auth_test_fixtures.dart';
 
-/// Lets a `blocTest` `build` hand its sign-out gate to `act` (#280 D1).
+/// Lets a `blocTest` `build` hand its sign-out gate to `act` (#280).
 Completer<void>? _signOutGate;
 
 void main() {
@@ -838,7 +838,7 @@ void main() {
         ),
       );
 
-      // ── #280 D1: the terminal emit must not clobber a live session ──
+      // ── #280: the terminal emit must not clobber a live session ─────
       //
       // `_onSignIn` and `_onSignOut` are separate droppable handlers, so
       // they interleave freely. Both repositories publish unauthenticated
@@ -850,7 +850,7 @@ void main() {
 
       blocTest<AuthBloc, AuthBlocState>(
         'a sign-in that completes while the sign-out is in flight is NOT '
-        'clobbered by the terminal emit (#280 D1)',
+        'clobbered by the terminal emit (#280)',
         build: () {
           final signOutGate = Completer<void>();
           when(() => mockRepo.signOut()).thenAnswer((_) => signOutGate.future);
@@ -885,7 +885,7 @@ void main() {
 
       blocTest<AuthBloc, AuthBlocState>(
         'the guard is narrow: with no sign-in in the window the sign-out '
-        'still lands on unauthenticated (#280 D1)',
+        'still lands on unauthenticated (#280)',
         build: () {
           final signOutGate = Completer<void>();
           when(() => mockRepo.signOut()).thenAnswer((_) => signOutGate.future);
@@ -907,7 +907,7 @@ void main() {
 
       blocTest<AuthBloc, AuthBlocState>(
         'a failed sign-in in the window does not block the sign-out from '
-        'landing (#280 D1)',
+        'landing (#280)',
         build: () {
           final signOutGate = Completer<void>();
           when(() => mockRepo.signOut()).thenAnswer((_) => signOutGate.future);

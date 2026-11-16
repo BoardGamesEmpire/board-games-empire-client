@@ -63,8 +63,8 @@ const _onlineOnlyCopy = "Available when you're online";
 const _unknownRoleCopy = "A role this app doesn't recognise";
 
 /// Pins the #270 detail screen against a mocked repository and hand-driven
-/// streams: the four surfaces, the role rendering D4 specifies, the
-/// staleness banner, and the reserved-`create`-id guard.
+/// streams: the four surfaces, the role rendering #270 specifies, the staleness
+/// banner, and the reserved-`create`-id guard.
 void main() {
   late _MockHouseholdRepository repository;
   late StreamController<List<Household>> households;
@@ -243,7 +243,7 @@ void main() {
     });
   });
 
-  group('the current user role (D4)', () {
+  group('the current user role (#270)', () {
     testWidgets('names a known role', (tester) async {
       await tester.pumpWidget(harness());
       await settleWith(
@@ -258,9 +258,9 @@ void main() {
     testWidgets('says an unknown role is unrecognised, not absent', (
       tester,
     ) async {
-      // Post-#266 D2 this is real data about a custom-role deployment —
-      // the adapter throws on a malformed role rather than degrading into
-      // `unknown` — so the screen reports it instead of hiding it.
+      // Post-#266 this is real data about a custom-role deployment — the
+      // adapter throws on a malformed role rather than degrading into `unknown`
+      // — so the screen reports it instead of hiding it.
       await tester.pumpWidget(harness());
       await settleWith(
         tester,
@@ -707,8 +707,8 @@ void main() {
     testWidgets('answers a literal `create` id without asking the repository', (
       tester,
     ) async {
-      // Belt to the route table's braces (#270 D6). `create` is a route of
-      // its own; if it ever resolves as an id, it must not become a query.
+      // Belt to the route table's braces (#270). `create` is a route of its
+      // own; if it ever resolves as an id, it must not become a query.
       await tester.pumpWidget(harness(householdId: 'create'));
       await tester.pumpAndSettle();
 
@@ -934,7 +934,7 @@ void main() {
     await tester.pumpAndSettle();
   });
 
-  group('the retry on the refresh banner (#300 D10)', () {
+  group('the retry on the refresh banner (#300)', () {
     testWidgets('runs a pass and says so, over the household', (tester) async {
       final pass = Completer<void>();
       var calls = 0;
@@ -974,7 +974,7 @@ void main() {
     });
 
     testWidgets('is offered on an unverified absence, where it is worth the '
-        'most (#300 D10)', (tester) async {
+        'most (#300)', (tester) async {
       // A household missing from a cache whose last pass failed may well
       // exist on the server. This is the one surface where the retry can
       // change what is on screen rather than only how fresh it is.
@@ -1085,7 +1085,7 @@ void main() {
       expect(find.byKey(HouseholdDetailScreen.refreshRetryKey), findsNothing);
     });
 
-    testWidgets('a pass nobody asked for is not announced (#300 D6)', (
+    testWidgets('a pass nobody asked for is not announced (#300)', (
       tester,
     ) async {
       status.finished(HydrateOutcome.failed);

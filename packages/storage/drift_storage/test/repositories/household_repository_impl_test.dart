@@ -116,7 +116,7 @@ void main() {
         },
       );
 
-      // #269 D3. There was no ORDER BY here at all, so the list rendered in
+      // #269. There was no ORDER BY here at all, so the list rendered in
       // SQLite's natural order and could reshuffle on any upsert — a
       // list-screen bug independent of which order wins.
       test('orders by name, case-insensitively', () async {
@@ -136,7 +136,7 @@ void main() {
       test('breaks a name tie on createdAt, oldest first', () async {
         // The tiebreak is deliberately NOT the id: a cuid2 sorts by an
         // opaque token nobody can predict, which is arbitrary order wearing
-        // determinism (#269 D3).
+        // determinism (#269).
         await _seedHousehold(
           db,
           id: 'h-newer',
@@ -725,7 +725,7 @@ void main() {
       );
 
       test('cacheMember replaces a synthesized owner row when the server row '
-          'carries a different id (#267 D4)', () async {
+          'carries a different id (#267)', () async {
         // Same collision as the batch writer below, through the
         // single-row path. `cacheMember` is the writer a role change's
         // answer goes through (#480, #122), so it must resolve the
@@ -758,7 +758,7 @@ void main() {
       });
 
       test('cacheMembers replaces a synthesized owner row when the server row '
-          'carries a different id (#267 D4)', () async {
+          'carries a different id (#267)', () async {
         // The create flow synthesizes an owner member row with a
         // CLIENT-generated id, and reconcileCreatedHousehold
         // deliberately keeps that id (this upsert is what replaces
@@ -1110,7 +1110,7 @@ void main() {
 
       // Same order as getHouseholds() — they share one selectable, and a
       // screen that reads the stream must not disagree with a screen that
-      // reads the future (#269 D3).
+      // reads the future (#269).
       test('emits in the same order getHouseholds() returns', () async {
         await _seedHousehold(db, id: 'h-1', name: 'zulu');
         await _seedHousehold(db, id: 'h-2', name: 'Alpha');

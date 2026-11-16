@@ -106,9 +106,9 @@ void main() {
   });
 
   test('install does not wait for the drain to finish', () async {
-    // THE decision that matters (#267 D2). Scope activation is the
-    // bootstrap gate: awaiting a slow or hanging fetch here would stall
-    // sign-in behind the network.
+    // THE decision that matters (#267). Scope activation is the bootstrap gate:
+    // awaiting a slow or hanging fetch here would stall sign-in behind the
+    // network.
     final blocked = Completer<PaginatedResult<HouseholdWithMembers>>();
     when(
       () => remote.fetchHouseholds(
@@ -145,7 +145,7 @@ void main() {
     await Future<void>.delayed(Duration.zero);
   });
 
-  group('hydration status (#269 D1)', () {
+  group('hydration status (#269)', () {
     test('install publishes a status the list screen can read', () async {
       when(
         () => remote.fetchHouseholds(
@@ -215,8 +215,8 @@ void main() {
     });
 
     test('publishes no status where there is no household client', () async {
-      // Absent reads as idle (#269 D1). Registering a permanently-idle
-      // status instead would be a lie the screen cannot see through.
+      // Absent reads as idle (#269). Registering a permanently-idle status
+      // instead would be a lie the screen cannot see through.
       final bare = DependencyContainerImpl()
         ..registerSingleton<HouseholdRepository>(repo);
       addTearDown(bare.dispose);
@@ -272,7 +272,7 @@ void main() {
     );
   });
 
-  group('re-hydrate registration (#302 D2, D4)', () {
+  group('re-hydrate registration (#302)', () {
     /// A container carrying the session rehydrator the leading installer
     /// registers in production.
     Future<SessionRehydrator> withRehydrator() async {
@@ -357,7 +357,7 @@ void main() {
 
         expect(status.state, equals(HydrationState.refreshed));
         // The banner clears because the same holder moved, with no second
-        // status and nothing for the screen to re-subscribe to (#270 D5).
+        // status and nothing for the screen to re-subscribe to (#270).
         expect(
           seen,
           containsAllInOrder(<HydrationState>[
@@ -400,10 +400,10 @@ void main() {
     test('a trigger arriving during the install-time pass adds no second '
         'drain', () async {
       // Pinned here at the seam that actually decides it: `running` is not
-      // stale (#302 D4), so the entry is skipped and the trigger is
-      // dropped rather than joined. `HydratePass`'s own single-flight
-      // (#302) is the backstop for callers that do reach it, and is pinned
-      // in the hydration package's tests.
+      // stale (#302), so the entry is skipped and the trigger is dropped rather
+      // than joined. `HydratePass`'s own single-flight (#302) is the backstop
+      // for callers that do reach it, and is pinned in the hydration package's
+      // tests.
       final rehydrator = await withRehydrator();
       final blocked = Completer<PaginatedResult<HouseholdWithMembers>>();
       when(
@@ -485,7 +485,7 @@ void main() {
     });
   });
 
-  group('the retry the screens call (#300 D5)', () {
+  group('the retry the screens call (#300)', () {
     test('registers a refresher that re-runs the drain', () async {
       when(
         () => remote.fetchHouseholds(
@@ -545,7 +545,7 @@ void main() {
       await Future<void>.delayed(Duration.zero);
 
       // The retry is not a second status: the banner the screens are
-      // already watching is what clears (#302 D2's reasoning, and #270 D5).
+      // already watching is what clears (#302's reasoning, and #270).
       expect(seen, [
         HydrationState.failed,
         HydrationState.running,
@@ -604,7 +604,7 @@ void main() {
     });
   });
 
-  group('the staleness window (#300 D1, D2, D8, D15)', () {
+  group('the staleness window (#300)', () {
     /// A container carrying the session rehydrator, as in production.
     Future<SessionRehydrator> withRehydrator() async {
       await const SessionRehydratorInstaller().install(
@@ -643,9 +643,9 @@ void main() {
       expected ? verify(call).called(1) : verifyNever(call);
     }
 
-    test('the window is the five minutes D2 recorded', () {
+    test('the window is the five minutes #300 recorded', () {
       // Pinned so the figure is a decision someone can argue with rather
-      // than a constant to reverse-engineer. D2 recorded it as a guess.
+      // than a constant to reverse-engineer. #300 recorded it as a guess.
       expect(
         HouseholdHydrateInstaller.staleAfter,
         equals(const Duration(minutes: 5)),
@@ -689,7 +689,7 @@ void main() {
     });
 
     test('a create clears the window, so the next trigger drains '
-        'inside it (#300 D9)', () async {
+        'inside it (#300)', () async {
       final rehydrator = await withRehydrator();
       answerWithEmptyPage();
 
@@ -710,11 +710,11 @@ void main() {
     test('a retry that fails inside the window leaves the next trigger '
         'stale', () async {
       // The one path that reaches `failed` with a *young* stamp: the manual
-      // retry (#300 D5) runs whatever the window says, so a press a minute
-      // after a success can fail with the successful pass's timestamp still
-      // well inside the window. The status keeps that stamp on purpose --
-      // the rows on screen are that old -- so what has to make this stale
-      // is the state arm, not the age.
+      // retry (#300) runs whatever the window says, so a press a minute after a
+      // success can fail with the successful pass's timestamp still well inside
+      // the window. The status keeps that stamp on purpose -- the rows on
+      // screen are that old -- so what has to make this stale is the state arm,
+      // not the age.
       final rehydrator = await withRehydrator();
       answerWithEmptyPage();
 
@@ -751,7 +751,7 @@ void main() {
     });
 
     test('a failed pass is stale regardless of the clock', () async {
-      // `failed` is stale by state (#302 D4). The window only ever makes a
+      // `failed` is stale by state (#302). The window only ever makes a
       // `refreshed` entry stale; it must not make a failed one fresh.
       final rehydrator = await withRehydrator();
       when(

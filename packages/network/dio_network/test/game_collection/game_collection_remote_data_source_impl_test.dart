@@ -47,7 +47,7 @@ Map<String, dynamic> _entryJson({
   'deleteReason': deleteReason,
   'createdAt': '2026-01-15T10:30:00.000Z',
   'updatedAt': '2026-02-02T09:00:00.000Z',
-  // Fields the server sends that the domain model doesn't carry (#253 D5):
+  // Fields the server sends that the domain model doesn't carry (#253):
   'visibility': 'Private',
   'platformGame': {
     'id': 'pg_1',

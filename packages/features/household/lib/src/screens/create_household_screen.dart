@@ -66,11 +66,11 @@ class CreateHouseholdScreen extends StatefulWidget {
   /// confirmed it, the optimistic local one when it stayed queued.
   ///
   /// **Required**, unlike the list screen's `onCreate` / `onOpen` and the
-  /// detail screen's `onBack` (#271 D2). Those degrade to something coherent
-  /// when absent — an inert row, a screen with no back button. A successful
-  /// create with nowhere to go does not: it is #162, the user left staring
-  /// at the form that just succeeded. The screen therefore cannot be built
-  /// without an answer, and there is no pop fallback to hide a missing one.
+  /// detail screen's `onBack` (#271). Those degrade to something coherent when
+  /// absent — an inert row, a screen with no back button. A successful create
+  /// with nowhere to go does not: it is #162, the user left staring at the form
+  /// that just succeeded. The screen therefore cannot be built without an
+  /// answer, and there is no pop fallback to hide a missing one.
   final void Function(BuildContext context, String householdId) onCreated;
 
   @override

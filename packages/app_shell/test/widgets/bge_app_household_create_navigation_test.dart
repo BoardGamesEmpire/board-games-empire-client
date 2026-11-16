@@ -403,7 +403,7 @@ void main() {
     });
   });
 
-  group('a create clears the staleness window (#300 D3, D9)', () {
+  group('a create clears the staleness window (#300)', () {
     /// A status whose last pass succeeded and has not aged out — the state
     /// in which the window would otherwise suppress the next entry's pass.
     HouseholdHydrationStatus freshlyRefreshed() {
@@ -418,12 +418,12 @@ void main() {
     }
 
     testWidgets('creating a household drops the timestamp', (tester) async {
-      // D3's reasoning: a create makes the local set stale by definition, so
-      // the next entry re-hydrates rather than waiting out the remaining
-      // minutes. The invalidation belongs to *mutation*, and the
-      // composition root is where mutations are already wired (#300 D9) —
-      // which is the hook a membership change reaches too, through
-      // `refreshAfterMembershipChange` (#480, #122).
+      // A create makes the local set stale by definition, so the next entry
+      // re-hydrates rather than waiting out the remaining minutes. The
+      // invalidation belongs to *mutation*, and the composition root is where
+      // mutations are already wired (#300) — which is the hook a membership
+      // change reaches too, through `refreshAfterMembershipChange` (#480,
+      // #122).
       final status = freshlyRefreshed();
       expect(status.sinceRefresh, isNotNull);
 

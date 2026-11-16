@@ -19,7 +19,7 @@ const kVerticalScrollActions = <SemanticsAction>{
 /// Nothing in the tree scrolls horizontally yet, so this is not the default.
 /// It exists so that when something does, the change is an argument at the call
 /// site rather than an edit to [scrollChildCountOnScrollingNode] — which is how
-/// the two copies this replaces came to disagree (#354 D3).
+/// the two copies this replaces came to disagree (#354).
 const kHorizontalScrollActions = <SemanticsAction>{
   SemanticsAction.scrollLeft,
   SemanticsAction.scrollRight,

@@ -41,7 +41,7 @@ final class HouseholdListCacheEnded extends HouseholdListEvent {
   const HouseholdListCacheEnded();
 }
 
-/// The hydrate reported a change (#269 D1).
+/// The hydrate reported a change (#269).
 final class HouseholdListHydrationUpdated extends HouseholdListEvent {
   const HouseholdListHydrationUpdated(this.hydration);
 
@@ -51,12 +51,12 @@ final class HouseholdListHydrationUpdated extends HouseholdListEvent {
   List<Object?> get props => [hydration];
 }
 
-/// The user asked for another hydrate pass (#300 D5).
+/// The user asked for another hydrate pass (#300).
 ///
 /// Distinct from a pass arriving on [HouseholdListHydrationUpdated]: this
 /// one was asked for, which is what licenses the screen to narrate it
-/// (#300 D6). A pass started by a #302 trigger reports through the status
-/// stream like any other and is not announced.
+/// (#300). A pass started by a #302 trigger reports through the status stream
+/// like any other and is not announced.
 final class HouseholdListRetryRequested extends HouseholdListEvent {
   const HouseholdListRetryRequested();
 }

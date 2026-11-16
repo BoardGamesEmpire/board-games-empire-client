@@ -68,7 +68,7 @@ void installBuildErrorView() {
 /// merged live region so screen readers announce the failure when it
 /// appears; the raw exception summary is excluded from semantics.
 ///
-/// ## Diagnostics (decision 1a)
+/// ## Diagnostics (#66)
 ///
 /// When [showDiagnostics] is true — defaulting to [kDebugMode] — the
 /// exception summary is appended below the friendly message, preserving

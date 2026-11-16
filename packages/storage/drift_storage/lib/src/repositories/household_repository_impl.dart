@@ -741,7 +741,7 @@ class HouseholdRepositoryImpl
   /// for the stream) so the id is never read inside a synchronous query
   /// builder on a stream path.
   ///
-  /// ## Order (#269 D3)
+  /// ## Order (#269)
   ///
   /// `name` ascending, compared lower-cased, with `createdAt` breaking a
   /// tie. Both readers share this selectable, so the list screen's stream
@@ -859,7 +859,7 @@ class HouseholdRepositoryImpl
   );
 
   /// The conflict target for member upserts: the `(householdId, userId)`
-  /// unique index, **not** the primary key (#267 D4).
+  /// unique index, **not** the primary key (#267).
   ///
   /// A member's primary key is its id, but a person's membership of a
   /// household is unique on `(householdId, userId)` — and the two ids for

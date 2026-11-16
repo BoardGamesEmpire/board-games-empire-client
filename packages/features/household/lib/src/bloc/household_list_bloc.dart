@@ -8,18 +8,17 @@ import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:observability/observability.dart';
 
-/// Drives the household list (#269 D6): the cached rows, plus what the
-/// hydrate is doing to them.
+/// Drives the household list (#269): the cached rows, plus what the hydrate is
+/// doing to them.
 ///
 /// ## Why a bloc and not a `StreamBuilder`
 ///
-/// Two reasons, neither of them house style. The screen's state is a
-/// *function of two streams* — the cache and the hydrate (#269 D1) — and
-/// nesting one builder inside another spreads that function across the
-/// widget tree. And the cache stream ends in two ways that are not rows —
-/// an error (an unauthenticated read) and a close (session teardown) —
-/// which a builder rendering `data` alone drops on the floor, while a
-/// sealed state has somewhere to put both.
+/// Two reasons, neither of them house style. The screen's state is a *function
+/// of two streams* — the cache and the hydrate (#269) — and nesting one builder
+/// inside another spreads that function across the widget tree. And the cache
+/// stream ends in two ways that are not rows — an error (an unauthenticated
+/// read) and a close (session teardown) — which a builder rendering `data`
+/// alone drops on the floor, while a sealed state has somewhere to put both.
 ///
 /// ## What the two sources mean together
 ///
@@ -64,7 +63,7 @@ import 'package:observability/observability.dart';
 /// (a container with no household client, #125). That reads as settled,
 /// not as perpetually loading.
 ///
-/// ## The retry, and why the bloc runs it (#300 D5)
+/// ## The retry, and why the bloc runs it (#300)
 ///
 /// A null `onRetry` is a composition that cannot re-run the drain — the
 /// same #125 case that leaves `hydration` null — and the screen offers no
@@ -145,7 +144,7 @@ class HouseholdListBloc extends Bloc<HouseholdListEvent, HouseholdListState> {
   /// rather than merely unverified (#300).
   Hydration _hydration = const Hydration();
 
-  /// Whether a pass **this screen asked for** is still running (#300 D6).
+  /// Whether a pass **this screen asked for** is still running (#300).
   ///
   /// Not derived from the hydration state: `running` says a pass is in
   /// flight, not who started it.

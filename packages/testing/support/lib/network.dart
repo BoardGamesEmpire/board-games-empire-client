@@ -7,7 +7,7 @@
 /// Needs only `dio`. Kept separate from `widgets.dart` so a consumer that wants
 /// the transport helpers does not pull the `flutter_test` surface into scope —
 /// and so this library could be split into its own package unchanged if a
-/// pure-Dart consumer ever appears (#354 D1).
+/// pure-Dart consumer ever appears (#354).
 library;
 
 export 'src/network/canned_adapter.dart';

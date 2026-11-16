@@ -64,7 +64,7 @@ typedef GameCollectionWithSummary = ({
 /// cached platform game, since the local add could not have been made without
 /// one.
 ///
-/// ## What the mapping drops (#253 D5)
+/// ## What the mapping drops (#253)
 ///
 /// Still dropped: `visibility` and `deleteReason`, which the domain model has
 /// no field for (#264); the `release` summary, which has no local table yet
@@ -84,7 +84,7 @@ typedef GameCollectionWithSummary = ({
 /// the row's identity server-side, and changing a game's medium means adding a
 /// second entry.
 ///
-/// ## Null means "leave unchanged", never "clear" (#253 D4)
+/// ## Null means "leave unchanged", never "clear" (#253)
 ///
 /// The backend PATCH follows standard REST semantics: an omitted field is
 /// preserved, an explicit `null` **clears** it. The client's own contract is
@@ -101,7 +101,7 @@ typedef GameCollectionWithSummary = ({
 /// Every **transport** failure is wrapped as a [GameCollectionRemoteException]
 /// — callers never see a raw `DioException`. Four variants, mirroring
 /// `HouseholdRemoteException`'s transient/permanent split plus the 404 contexts
-/// this API has (#253 D6):
+/// this API has (#253):
 ///
 /// - [GameCollectionRemoteTransientException] (**retryable**): connection
 ///   errors, timeouts, 401 (a session can expire mid-flight), 407, 408, 429,

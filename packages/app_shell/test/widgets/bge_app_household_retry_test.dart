@@ -56,16 +56,16 @@ HouseholdMember _member(String userId) => HouseholdMember(
   updatedAt: DateTime.utc(2026),
 );
 
-/// Exercises #300's two screen-facing seams through the real composition:
-/// the **retry** (D5, D10) — route builders resolving [HouseholdRefresher]
-/// off the active server's container, and the banner button reaching it —
-/// and the **entry trigger** (D1, D13, D14), which resolves
-/// [SessionRehydrator] from the same container instead.
+/// Exercises #300's two screen-facing seams through the real composition: the
+/// **retry** — route builders resolving [HouseholdRefresher] off the active
+/// server's container, and the banner button reaching it — and the **entry
+/// trigger**, which resolves [SessionRehydrator] from the same container
+/// instead.
 ///
-/// Two seams and not one, deliberately. D5 rejected the rehydrator for the
-/// button because it skips an entry a pass is already running for (#302
-/// D4), which is right for a trigger nobody pressed and wrong for a control
-/// someone is waiting on. These tests are where that split is visible.
+/// Two seams and not one, deliberately. The button does not go through the
+/// rehydrator, which skips an entry a pass is already running for (#302). That
+/// is right for a trigger nobody pressed and wrong for a control someone is
+/// waiting on. These tests are where that split is visible.
 ///
 /// The screens' own behaviour is pinned in the household package; what can
 /// only be checked here is that the callbacks the screens are handed are the
@@ -151,7 +151,7 @@ void main() {
       expect(calls, 1);
     });
 
-    testWidgets('the detail banner reaches the same refresher (#300 D10)', (
+    testWidgets('the detail banner reaches the same refresher (#300)', (
       tester,
     ) async {
       var calls = 0;
@@ -182,7 +182,7 @@ void main() {
     });
   });
 
-  group('BgeApp household entry trigger (#300 D1, D13, D14)', () {
+  group('BgeApp household entry trigger (#300)', () {
     testWidgets('opening the list asks the session for a stale pass', (
       tester,
     ) async {
@@ -201,10 +201,10 @@ void main() {
     testWidgets('pushing the detail route does not fire a second pass', (
       tester,
     ) async {
-      // The #300 D14 hazard, at the composition it actually happens in.
+      // The #300 rebuild hazard, at the composition it actually happens in.
       // go_router builds every page in the match stack, so the list route's
-      // builder runs again when the detail route goes on top of it — which
-      // is why the trigger lives in the screen's provider rather than there.
+      // builder runs again when the detail route goes on top of it — which is
+      // why the trigger lives in the screen's provider rather than there.
       final rehydrator = _RecordingRehydrator();
       await pumpHome(tester, rehydrator: rehydrator);
       await openTheList(tester);
@@ -219,9 +219,9 @@ void main() {
     testWidgets('leaving the household section and coming back fires again', (
       tester,
     ) async {
-      // What #300 D1 is for: "navigate away and back" has to mean
-      // something. Whether the pass does any *work* is the registry's
-      // answer via the staleness window, not the screen's.
+      // What #300's entry trigger is for: "navigate away and back" has to mean
+      // something. Whether the pass does any *work* is the registry's answer
+      // via the staleness window, not the screen's.
       final rehydrator = _RecordingRehydrator();
       await pumpHome(tester, rehydrator: rehydrator);
       await openTheList(tester);
@@ -263,12 +263,12 @@ void main() {
     testWidgets('popping back from the detail screen does not re-fire', (
       tester,
     ) async {
-      // Not a gap in "navigate away and back" (#300 D1) — the detail screen
-      // is not away. It reads the same cache through the same repository
-      // and watches the same `HouseholdHydrationStatus`, carrying its own
-      // banner and its own retry over them (#270, #300 D10), so the
-      // household data was never out of view. The list route is still in
-      // the stack throughout, which is why its provider is not rebuilt.
+      // Not a gap in "navigate away and back" (#300) — the detail screen is not
+      // away. It reads the same cache through the same repository and watches
+      // the same `HouseholdHydrationStatus`, carrying its own banner and its
+      // own retry over them (#270, #300), so the household data was never out
+      // of view. The list route is still in the stack throughout, which is why
+      // its provider is not rebuilt.
       //
       // Leaving the section entirely is the gesture that re-fires, and it
       // does — see above.

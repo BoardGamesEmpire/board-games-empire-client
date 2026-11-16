@@ -646,7 +646,7 @@ void main() {
       // route always exists in a deployed server, so a 404 says the request
       // did not arrive, not that there is nothing to list. Permanent here
       // would kill the hydrate until the app restarts, even after the server
-      // is fixed. Same call as the collection list route (#253 D6).
+      // is fixed. Same call as the collection list route (#253).
       stubGetThrows(
         dioError(
           DioExceptionType.badResponse,
