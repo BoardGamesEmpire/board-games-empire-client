@@ -66,9 +66,6 @@ class GameDetailScreen extends StatelessWidget {
   static Key platformKey(String platformGameId) =>
       Key('catalog_detail.platform_$platformGameId');
 
-  /// The legend under the platforms that says what the check means.
-  static const Key ownedLegendKey = Key('catalog_detail.owned_legend');
-
   /// The one add button, under the platforms.
   static const Key addKey = Key('catalog_detail.add');
 

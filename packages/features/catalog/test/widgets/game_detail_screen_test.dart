@@ -682,7 +682,6 @@ void main() {
       matching: find.byType(ActionChip),
     );
     final addButton = find.byKey(GameDetailScreen.addKey);
-    final ownedLegend = find.byKey(GameDetailScreen.ownedLegendKey);
 
     Future<void> tapChip(WidgetTester tester, String platformGameId) async {
       await tester.ensureVisible(chip(platformGameId));
@@ -697,7 +696,6 @@ void main() {
       expect(find.byType(ActionChip), findsNothing);
       expect(find.byType(Chip), findsNWidgets(2));
       expect(find.byIcon(Icons.check), findsNothing);
-      expect(ownedLegend, findsNothing);
       expect(addButton, findsNothing);
       expect(find.bySemanticsLabel(RegExp('collection')), findsNothing);
       expect(find.bySemanticsLabel('Tabletop'), findsOneWidget);
@@ -864,7 +862,7 @@ void main() {
       expect(addButton, findsNothing);
     });
 
-    testWidgets('the legend shows only when something is owned', (
+    testWidgets('only an owned platform draws a check, and says so', (
       tester,
     ) async {
       final owned = StreamController<List<GameCollection>>();
@@ -875,35 +873,26 @@ void main() {
 
       owned.add(const []);
       await tester.pumpAndSettle();
-      expect(ownedLegend, findsNothing);
+      expect(find.byIcon(Icons.check), findsNothing);
       expect(addButton, findsOneWidget);
 
       owned.add([entry('pg_2', GameMedium.digital)]);
       await tester.pumpAndSettle();
-      expect(ownedLegend, findsOneWidget);
+      expect(checkOn('pg_2'), findsOneWidget);
+      expect(checkOn('pg_1'), findsNothing);
+      expect(find.byIcon(Icons.check), findsOneWidget);
       expect(
-        find.descendant(
-          of: ownedLegend,
-          matching: find.text('In your collection'),
-        ),
+        find.bySemanticsLabel('Steam, in your collection, opens your copy'),
         findsOneWidget,
       );
+    });
 
-      // The legend shows the chips' own mark, as large, in the surface's ink,
-      // and says only its words: the mark is decoration.
-      final legendCheck = tester.widget<Icon>(
-        find.descendant(of: ownedLegend, matching: find.byIcon(Icons.check)),
-      );
-      final chipCheck = tester.widget<Icon>(checkOn('pg_2'));
-      final scheme = Theme.of(tester.element(ownedLegend)).colorScheme;
-      expect(legendCheck.size, isNotNull);
-      expect(legendCheck.size, chipCheck.size);
-      expect(legendCheck.color, scheme.onSurface);
-      expect(legendCheck.semanticLabel, isNull);
-      expect(
-        tester.getSemantics(find.bySemanticsLabel('In your collection')),
-        isSemantics(label: 'In your collection'),
-      );
+    testWidgets('no ownership legend under the chips', (tester) async {
+      await showOwning(tester, [entry('pg_1', GameMedium.physical)]);
+
+      expect(checkOn('pg_1'), findsOneWidget);
+      expect(find.text('In your collection'), findsNothing);
+      expect(find.bySemanticsLabel('In your collection'), findsNothing);
     });
 
     testWidgets('a chip focused from the keyboard is ringed, owned or not', (
@@ -1139,7 +1128,6 @@ void main() {
       owned.add(const []);
       await tester.pumpAndSettle();
       expect(checkOn('pg_1'), findsNothing);
-      expect(ownedLegend, findsNothing);
       expect(addButton, findsOneWidget);
       expect(find.bySemanticsLabel(notOwnedSpoken), findsOneWidget);
 
@@ -1147,7 +1135,6 @@ void main() {
       await tester.pumpAndSettle();
       expect(checkOn('pg_1'), findsOneWidget);
       expect(find.bySemanticsLabel(ownedSpoken), findsOneWidget);
-      expect(ownedLegend, findsOneWidget);
       expect(addButton, findsOneWidget);
 
       owned.add([
@@ -1158,8 +1145,8 @@ void main() {
       expect(checkOn('pg_2'), findsOneWidget);
       expect(addButton, findsNothing);
 
-      // The entry page removes the copies: the chips say add again, the legend
-      // goes and the button comes back.
+      // The entry page removes the copies: the chips say add again, the checks
+      // go and the button comes back.
       owned.add(const []);
       await tester.pumpAndSettle();
       expect(checkOn('pg_1'), findsNothing);
@@ -1168,7 +1155,6 @@ void main() {
         find.bySemanticsLabel('Tabletop, not in your collection, add'),
         findsOneWidget,
       );
-      expect(ownedLegend, findsNothing);
       expect(addButton, findsOneWidget);
 
       // One watch over the page's platforms, whatever it answers.
@@ -1266,7 +1252,7 @@ void main() {
           for (final medium in GameMedium.values) entry(id, medium),
       ]);
       await tester.pumpAndSettle();
-      expect(ownedLegend, findsOneWidget);
+      expect(checkOn('pg_1'), findsOneWidget);
       expect(addButton, findsNothing);
 
       owned.addError(StateError('the cache is gone'));
@@ -1276,7 +1262,6 @@ void main() {
       expect(find.byType(ActionChip), findsNothing);
       expect(find.byType(Chip), findsNWidgets(2));
       expect(find.byIcon(Icons.check), findsNothing);
-      expect(ownedLegend, findsNothing);
       expect(find.bySemanticsLabel(RegExp('in your collection')), findsNothing);
       expect(find.bySemanticsLabel('Tabletop'), findsOneWidget);
 
@@ -1457,7 +1442,6 @@ void main() {
         chip('pg_2'),
         chip('pg_3'),
         chip('pg_4'),
-        ownedLegend,
         addButton,
       ]) {
         await tester.ensureVisible(target);
@@ -1710,12 +1694,18 @@ void main() {
       },
     );
 
-    // Tabletop owned: the legend only an owned platform draws, a chip of
+    // Tabletop owned: the check only an owned platform draws, a chip of
     // each kind, and the button.
     Future<void> showOwning(WidgetTester tester, ThemeData theme) async {
       readyWithOwnership();
       await show(tester, theme: theme, collection: owningTabletop());
-      expect(find.byKey(GameDetailScreen.ownedLegendKey), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byKey(GameDetailScreen.platformKey('pg_1')),
+          matching: find.byIcon(Icons.check),
+        ),
+        findsOneWidget,
+      );
       expect(find.byType(ActionChip), findsNWidgets(2));
       expect(find.byKey(GameDetailScreen.addKey), findsOneWidget);
     }
@@ -1728,7 +1718,7 @@ void main() {
       arrange: scrollPageToEnd,
     );
 
-    // The watch has not answered: plain chips, no legend, no button.
+    // The watch has not answered: plain chips, no check, no button.
     Future<void> showUnanswered(WidgetTester tester, ThemeData theme) async {
       final pending = StreamController<List<GameCollection>>();
       addTearDown(pending.close);
@@ -1736,7 +1726,7 @@ void main() {
       await show(tester, theme: theme, collection: watching(pending.stream));
       expect(find.byType(Chip), findsNWidgets(2));
       expect(find.byType(ActionChip), findsNothing);
-      expect(find.byKey(GameDetailScreen.ownedLegendKey), findsNothing);
+      expect(find.byIcon(Icons.check), findsNothing);
       expect(find.byKey(GameDetailScreen.addKey), findsNothing);
     }
 
@@ -1760,7 +1750,7 @@ void main() {
       );
       expect(find.byType(Chip), findsNWidgets(2));
       expect(find.byType(ActionChip), findsNothing);
-      expect(find.byKey(GameDetailScreen.ownedLegendKey), findsNothing);
+      expect(find.byIcon(Icons.check), findsNothing);
       expect(find.byKey(GameDetailScreen.addKey), findsOneWidget);
     }
 
@@ -1772,7 +1762,7 @@ void main() {
       arrange: scrollPageToEnd,
     );
 
-    // Everything owned in both mediums: the legend, and no button.
+    // Everything owned in both mediums: a check on each chip, and no button.
     Future<void> showAllOwned(WidgetTester tester, ThemeData theme) async {
       readyWithOwnership();
       await show(
@@ -1786,7 +1776,7 @@ void main() {
         ),
       );
       expect(find.byType(ActionChip), findsNWidgets(2));
-      expect(find.byKey(GameDetailScreen.ownedLegendKey), findsOneWidget);
+      expect(find.byIcon(Icons.check), findsNWidgets(2));
       expect(find.byKey(GameDetailScreen.addKey), findsNothing);
     }
 

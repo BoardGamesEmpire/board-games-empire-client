@@ -583,10 +583,6 @@
       }
     }
   },
-  "catalogDetailOwnedLegend": "In your collection",
-  "@catalogDetailOwnedLegend": {
-    "description": "A legend under a game's platforms, shown when the user owns the game on at least one of them. A check mark is drawn as an icon before it: the same mark drawn on each platform the user owns the game on, so the legend says what that mark means. The icon is not part of this text."
-  },
   "catalogImportStarting": "Sending the import to the server…",
   "@catalogImportStarting": {
     "description": "Shown and announced in the import dialog while the request to import a game from a data source is on its way to the server. The dialog's title is the game's name."

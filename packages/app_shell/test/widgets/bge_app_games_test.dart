@@ -742,7 +742,10 @@ void main() {
 
   group("the detail page's collection (#45, #708)", () {
     final addButton = find.byKey(GameDetailScreen.addKey);
-    final ownedLegend = find.byKey(GameDetailScreen.ownedLegendKey);
+    final ownedCheck = find.descendant(
+      of: find.byKey(GameDetailScreen.platformKey('pg_1')),
+      matching: find.byIcon(Icons.check),
+    );
     const tabletopOwned = 'Tabletop, in your collection, opens your copy';
     const tabletopNotOwned = 'Tabletop, not in your collection, add';
 
@@ -825,7 +828,7 @@ void main() {
       );
       await openCatan(tester);
       expect(find.bySemanticsLabel(tabletopNotOwned), findsOneWidget);
-      expect(ownedLegend, findsNothing);
+      expect(ownedCheck, findsNothing);
 
       await tester.tap(addButton);
       await tester.pumpAndSettle();
@@ -834,7 +837,7 @@ void main() {
       expect(find.byKey(AddToCollectionSheet.sheetKey), findsNothing);
       expect(find.bySemanticsLabel(tabletopOwned), findsOneWidget);
       expect(find.bySemanticsLabel(tabletopNotOwned), findsNothing);
-      expect(ownedLegend, findsOneWidget);
+      expect(ownedCheck, findsOneWidget);
       // Digital is still free on Tabletop.
       expect(addButton, findsOneWidget);
     });
@@ -863,7 +866,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.bySemanticsLabel(tabletopOwned), findsOneWidget);
-      expect(ownedLegend, findsOneWidget);
+      expect(ownedCheck, findsOneWidget);
     });
 
     testWidgets('after a failed first refresh, ownership is unknown: plain '
@@ -884,7 +887,7 @@ void main() {
 
       expect(find.bySemanticsLabel(tabletopNotOwned), findsNothing);
       expect(find.bySemanticsLabel(tabletopOwned), findsNothing);
-      expect(ownedLegend, findsNothing);
+      expect(ownedCheck, findsNothing);
       await tester.ensureVisible(addButton);
       await tester.pumpAndSettle();
       await tester.tap(addButton);
