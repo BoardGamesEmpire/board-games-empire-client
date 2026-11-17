@@ -400,32 +400,14 @@ const reservedDeepLinkPathPatterns = <String>[
 
 /// The reserved patterns that open without a session. Every pattern in
 /// [reservedDeepLinkPathPatterns] that is not here needs one (#82). The
-/// router's bootstrap redirect reads it through [isPublicDeepLinkLocation]:
-/// a location matching one opens while the app is starting and while it
-/// waits for sign-in, instead of being pinned to splash or sign-in (#83).
+/// router's bootstrap redirect compares the matched route's full path with
+/// these: a location matching one opens while the app is starting and
+/// while it waits for sign-in, instead of being pinned to splash or
+/// sign-in (#83). Each is a top-level route, so its full path is the
+/// pattern itself.
 const publicDeepLinkPathPatterns = <String>{
   '/server/:serverId/collection/:userId',
 };
-
-/// Whether [location]'s path matches a [publicDeepLinkPathPatterns] entry
-/// segment for segment: a `:name` segment matches any non-empty one, any
-/// other must be equal. The query is ignored.
-bool isPublicDeepLinkLocation(String location) {
-  final segments = Uri.parse(location).pathSegments;
-  return publicDeepLinkPathPatterns.any((pattern) {
-    final patternSegments = Uri.parse(pattern).pathSegments;
-    if (patternSegments.length != segments.length) return false;
-    for (var i = 0; i < segments.length; i++) {
-      final expected = patternSegments[i];
-      final actual = segments[i];
-      final matches = expected.startsWith(':')
-          ? actual.isNotEmpty
-          : actual == expected;
-      if (!matches) return false;
-    }
-    return true;
-  });
-}
 
 /// Builds the real server-add screen subtree (#36) for the
 /// [AppRoutes.serverAdd] route. Always supplied by `BgeApp`; returns null
@@ -863,15 +845,18 @@ void reflectPushedRoutesInUrl() =>
 ///
 /// Redirects are driven entirely by [bootstrapCubit]'s state: while
 /// bootstrap is unresolved every location is forced to the state's route,
-/// deep links included, except a public link ([isPublicDeepLinkLocation]),
+/// deep links included, except a public link ([publicDeepLinkPathPatterns]),
 /// which opens while the app starts and while it waits for sign-in (#83).
 /// A native link waits in the pending-link slot instead, and
-/// `DeepLinkConsumer` routes it once the app is ready (#82). On web the
-/// first redirect writes the location the page was loaded at to that same
-/// slot, [pendingDeepLinkHolder], so a reload or a bookmark opens once the
-/// app is ready (#83). Each move the bootstrap redirect makes takes the
-/// browser's current history entry rather than adding one, so Back never
-/// returns to a bootstrap screen (#916). Once ready, bootstrap-owned
+/// `DeepLinkConsumer` routes it once the app is ready (#82). On web, when
+/// a redirect takes the app away from the location the page was loaded at
+/// while it still shows, it writes that location to the same slot,
+/// [pendingDeepLinkHolder], so a reload or a bookmark opens once the app is
+/// ready (#83). Each bootstrap move takes the browser's current history
+/// entry rather than adding one, so Back never returns to a bootstrap
+/// screen (#916). A redirect of the visitor's own navigation from a page
+/// they chose adds its entry, so Back returns to that page. Once ready,
+/// bootstrap-owned
 /// locations bounce to home and the reserved deep-link paths resolve (the
 /// event link to the event's detail, the others to [NotYetAvailableScreen]
 /// until real features land). #37 feeds authenticated-session state into
@@ -924,10 +909,18 @@ GoRouter buildAppRouter({
   // A context beneath the Router, for the redirect's replace (#916).
   final rootNavigatorKey = GlobalKey<NavigatorState>();
   // The first redirect is handed the location the router starts from: on
-  // web, the address the page was loaded at (#83). Per router, so each
-  // router built starts fresh.
+  // web, the address the page was loaded at (#83). It is remembered while
+  // the page still shows it, and held once a redirect takes the app away
+  // from it. Per router, so each router built starts fresh.
   var coldLoadSeen = false;
-  return GoRouter(
+  Uri? coldLoad;
+  // The bootstrap state the previous redirect saw. A redirect that sees
+  // another runs for a bootstrap change, not for the visitor's own
+  // navigation (#916).
+  AppBootstrapState? lastState;
+  late final GoRouter router;
+  // Named so the redirect can read the location that shows.
+  return router = GoRouter(
     initialLocation: AppRoutes.splash,
     navigatorKey: rootNavigatorKey,
     observers: [modalGuard.rootObserver],
@@ -938,33 +931,51 @@ GoRouter buildAppRouter({
     // caller could dispose.
     refreshListenable: refreshListenable,
     redirect: (context, routerState) {
-      if (!coldLoadSeen) {
-        coldLoadSeen = true;
-        _holdColdLoad(routerState, pendingDeepLinkHolder);
-      }
       final location = routerState.matchedLocation;
-      final target = switch (bootstrapCubit.state) {
-        // A public link needs no session, and its page needs nothing
-        // bootstrap composes, so it opens while the app starts and while
-        // it waits for sign-in (#83).
+      final state = bootstrapCubit.state;
+      final bootstrapChanged = !identical(state, lastState);
+      lastState = state;
+      // A public link needs no session, and its page needs nothing
+      // bootstrap composes, so it opens while the app starts and while it
+      // waits for sign-in (#83).
+      final public = publicDeepLinkPathPatterns.contains(routerState.fullPath);
+      final target = switch (state) {
         AppBootstrapInitializing() =>
-          location == AppRoutes.splash || isPublicDeepLinkLocation(location)
-              ? null
-              : AppRoutes.splash,
+          location == AppRoutes.splash || public ? null : AppRoutes.splash,
         AppBootstrapFailed() =>
           location == AppRoutes.error ? null : AppRoutes.error,
         AppBootstrapNeedsServer() =>
           location == AppRoutes.serverAdd ? null : AppRoutes.serverAdd,
         AppBootstrapNeedsAuth() =>
-          location == AppRoutes.auth || isPublicDeepLinkLocation(location)
-              ? null
-              : AppRoutes.auth,
+          location == AppRoutes.auth || public ? null : AppRoutes.auth,
         AppBootstrapReady() =>
           AppRoutes.bootstrapLocations.contains(location)
               ? AppRoutes.home
               : null,
       };
-      if (target != null) _reportAsReplace(rootNavigatorKey);
+      if (!coldLoadSeen) {
+        coldLoadSeen = true;
+        coldLoad = routerState.uri;
+      }
+      if (routerState.uri != coldLoad) {
+        // The page no longer shows it: the visitor went elsewhere, or a
+        // redirect has already taken the app away and held it.
+        coldLoad = null;
+      } else if (target != null) {
+        coldLoad = null;
+        _holdColdLoad(routerState, pendingDeepLinkHolder);
+      }
+      // A bootstrap move: one a bootstrap change makes, one made while a
+      // bootstrap screen shows, or one off a bootstrap location, such as a
+      // Back onto a stale sign-in entry. A move the visitor's own
+      // navigation makes from a page they chose adds its entry.
+      final showing = router.routerDelegate.currentConfiguration.uri.path;
+      if (target != null &&
+          (bootstrapChanged ||
+              AppRoutes.bootstrapLocations.contains(showing) ||
+              AppRoutes.bootstrapLocations.contains(location))) {
+        _reportAsReplace(rootNavigatorKey);
+      }
       return target;
     },
     // An unknown location, reachable only once ready: before that the
@@ -1795,9 +1806,16 @@ class _LeaveForEventState extends State<_LeaveForEvent> {
 }
 
 /// Holds the location a web page was loaded at in [holder], so that it opens
-/// once the app is ready, after bootstrap and sign-in (#83). Until then the
-/// bootstrap redirect pins every location to a bootstrap screen, and the
-/// address would be lost. `DeepLinkConsumer` lands it on Ready.
+/// once the app is ready, after bootstrap and sign-in (#83). The bootstrap
+/// redirect calls it when it takes the app away from that location, to a
+/// bootstrap screen, and the address would otherwise be lost. That can be
+/// the first redirect, or a later bootstrap change while the page still
+/// shows it, as when a public link opened at start-up meets a failed
+/// start. `DeepLinkConsumer` lands it on Ready.
+///
+/// A location the redirect lets through is not held while it shows: it has
+/// landed. Once the visitor leaves it themselves it is never held, so a
+/// public link left for sign-in does not come back afterwards.
 ///
 /// Only a location that matches a declared route is held: an unknown one
 /// would resume into a not-found page. Home and the bootstrap screens are
@@ -1811,10 +1829,17 @@ void _holdColdLoad(GoRouterState routerState, PendingDeepLinkHolder? holder) {
 
 /// Makes the router's next report to the browser take the current history
 /// entry's place instead of adding one (#916). The bootstrap redirect calls
-/// it for each move it makes: onto a bootstrap location, or off one to
-/// home. Those are screens the app passes through, so no history entry may
-/// hold one: Back from home after a fresh load leaves the app, and Back
-/// after signing in never returns to the sign-in form.
+/// it for each bootstrap move: one a bootstrap change makes, onto a
+/// bootstrap location or off one to home, one made while a bootstrap screen
+/// shows, and one off a bootstrap location the browser returned to. Those
+/// are screens the app passes through, so
+/// no history entry may hold one: Back from home after a fresh load leaves
+/// the app, and Back after signing in never returns to the sign-in form.
+///
+/// A redirect of the visitor's own navigation from a page they chose is
+/// not a bootstrap move. Go home from a public link signed out pushes the
+/// sign-in screen, and the bounce to home after sign-in takes its place,
+/// so Back returns to the public link.
 ///
 /// The move is the redirect's, made on a bootstrap refresh with no app call
 /// to wrap, so this marks the report from inside it, as [Router.neglect]

@@ -133,6 +133,37 @@ void main() {
     expect(history.reported.where((l) => l == newer.location), hasLength(1));
   });
 
+  // The public link opens signed out, so it has landed: leaving it for
+  // sign-in must not bring the visitor back to it afterwards. The visitor
+  // left it themselves, so its entry stays, and Back returns to it.
+  testWidgets("the public page's Go home leads home after sign-in", (
+    tester,
+  ) async {
+    final history = FakeBrowserHistory.install(tester);
+    final holder = buildHolder();
+    final repo = FakeAuthRepository(); // no session
+    final cubit = buildWebCubit(repo);
+    const publicLink = '/server/s1/collection/u1';
+    await loadAt(tester, publicLink, cubit, holder);
+    expect(find.byType(NotYetAvailableScreen), findsOneWidget);
+
+    await tester.tap(find.byKey(NotYetAvailableScreen.homeButtonKey));
+    await tester.pumpAndSettle();
+    expect(routerOf(tester).state.uri.toString(), AppRoutes.auth);
+    expect(history.locations, [publicLink, AppRoutes.auth]);
+    await signIn(tester, repo);
+
+    expect(routerOf(tester).state.uri.toString(), AppRoutes.home);
+    expect(history.locations, [publicLink, AppRoutes.home]);
+    expect(holder.peek, isNull);
+
+    await history.back();
+    await tester.pumpAndSettle();
+
+    expect(routerOf(tester).state.uri.toString(), publicLink);
+    expect(find.byType(NotYetAvailableScreen), findsOneWidget);
+  });
+
   testWidgets('back from a resumed screen leaves the app', (tester) async {
     final history = FakeBrowserHistory.install(tester);
     final holder = buildHolder();

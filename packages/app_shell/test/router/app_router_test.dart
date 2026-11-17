@@ -383,56 +383,44 @@ void main() {
     });
   });
 
-  group('isPublicDeepLinkLocation', () {
-    test('matches the collection link', () {
-      expect(isPublicDeepLinkLocation('/server/s1/collection/u1'), isTrue);
-    });
+  group('buildAppRouter — a public link before sign-in (#83)', () {
+    const publicLink = '/server/s1/collection/u1';
 
-    test('ignores the query', () {
-      expect(isPublicDeepLinkLocation('/server/s1/collection/u1?x=1'), isTrue);
-    });
+    for (final location in [publicLink, '$publicLink?x=1']) {
+      testWidgets('a cold load at $location opens it signed out', (
+        tester,
+      ) async {
+        await pumpRouter(
+          tester,
+          initialState: const AppBootstrapNeedsAuth(),
+          coldLoad: location,
+        );
+
+        expect(find.byType(NotYetAvailableScreen), findsOneWidget);
+        expect(find.text('Sign in'), findsNothing);
+      });
+    }
 
     for (final location in [
       '/server/s1/event/e1',
       '/server/s1/game/g1',
       '/server/s1/collection',
       '/server/s1/collection/u1/extra',
-      '/server//collection/u1',
       '/collection/u1',
     ]) {
-      test('does not match $location', () {
-        expect(isPublicDeepLinkLocation(location), isFalse);
+      testWidgets('a cold load at $location waits for sign-in', (
+        tester,
+      ) async {
+        await pumpRouter(
+          tester,
+          initialState: const AppBootstrapNeedsAuth(),
+          coldLoad: location,
+        );
+
+        expect(find.byType(NotYetAvailableScreen), findsNothing);
+        expect(find.text('Sign in'), findsOneWidget);
       });
     }
-  });
-
-  group('buildAppRouter — a public link before sign-in (#83)', () {
-    const publicLink = '/server/s1/collection/u1';
-
-    testWidgets('a cold load at the public link opens it signed out', (
-      tester,
-    ) async {
-      await pumpRouter(
-        tester,
-        initialState: const AppBootstrapNeedsAuth(),
-        coldLoad: publicLink,
-      );
-
-      expect(find.byType(NotYetAvailableScreen), findsOneWidget);
-      expect(find.text('Sign in'), findsNothing);
-    });
-
-    testWidgets('a cold load at a link that needs a session waits for '
-        'sign-in', (tester) async {
-      await pumpRouter(
-        tester,
-        initialState: const AppBootstrapNeedsAuth(),
-        coldLoad: '/server/s1/game/g1',
-      );
-
-      expect(find.byType(NotYetAvailableScreen), findsNothing);
-      expect(find.text('Sign in'), findsOneWidget);
-    });
 
     testWidgets('the public link opens while the app is still starting', (
       tester,
@@ -470,6 +458,110 @@ void main() {
         router.routerDelegate.currentConfiguration.uri.toString(),
         publicLink,
       );
+    });
+
+    for (final state in const <AppBootstrapState>[
+      AppBootstrapInitializing(),
+      AppBootstrapNeedsAuth(),
+    ]) {
+      testWidgets('a public cold load that opens in ${state.runtimeType} is '
+          'not held: it has landed', (tester) async {
+        final holder = PendingDeepLinkHolder();
+
+        await pumpRouter(
+          tester,
+          initialState: state,
+          pendingDeepLinkHolder: holder,
+          coldLoad: publicLink,
+        );
+
+        expect(find.byType(NotYetAvailableScreen), findsOneWidget);
+        expect(holder.peek, isNull);
+      });
+    }
+
+    // A web page starts in Initializing, so the public link has opened
+    // before the start fails.
+    testWidgets('a public cold load a failed start pins away is held', (
+      tester,
+    ) async {
+      final holder = PendingDeepLinkHolder();
+      final states = StreamController<AppBootstrapState>();
+      addTearDown(states.close);
+      await pumpRouter(
+        tester,
+        initialState: const AppBootstrapInitializing(),
+        stream: states.stream,
+        pendingDeepLinkHolder: holder,
+        coldLoad: publicLink,
+      );
+      expect(holder.peek, isNull);
+
+      states.add(
+        AppBootstrapFailed(
+          error: Exception('boom'),
+          attemptCount: 1,
+          canOfferReset: false,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byType(BootstrapErrorScreen), findsOneWidget);
+      expect(holder.peek?.location, publicLink);
+    });
+
+    testWidgets('a public cold load the visitor left is not held when the '
+        'start fails', (tester) async {
+      final holder = PendingDeepLinkHolder();
+      final states = StreamController<AppBootstrapState>();
+      addTearDown(states.close);
+      final router = await pumpRouter(
+        tester,
+        initialState: const AppBootstrapInitializing(),
+        stream: states.stream,
+        pendingDeepLinkHolder: holder,
+        coldLoad: publicLink,
+      );
+
+      router.go(AppRoutes.home);
+      // Splash's spinner never settles.
+      await tester.pump();
+      expect(find.byType(SplashScreen), findsOneWidget);
+      states.add(
+        AppBootstrapFailed(
+          error: Exception('boom'),
+          attemptCount: 1,
+          canOfferReset: false,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byType(BootstrapErrorScreen), findsOneWidget);
+      expect(holder.peek, isNull);
+    });
+
+    testWidgets('a public cold load stays open and unheld once ready', (
+      tester,
+    ) async {
+      final holder = PendingDeepLinkHolder();
+      final states = StreamController<AppBootstrapState>();
+      addTearDown(states.close);
+      final router = await pumpRouter(
+        tester,
+        initialState: const AppBootstrapInitializing(),
+        stream: states.stream,
+        pendingDeepLinkHolder: holder,
+        coldLoad: publicLink,
+      );
+
+      states.add(const AppBootstrapReady());
+      await tester.pumpAndSettle();
+
+      expect(
+        router.routerDelegate.currentConfiguration.uri.toString(),
+        publicLink,
+      );
+      expect(holder.peek, isNull);
     });
 
     testWidgets('a failed start still shows the error over the public link', (
