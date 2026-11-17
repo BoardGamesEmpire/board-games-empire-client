@@ -194,10 +194,10 @@ const List<LocalizationsDelegate<dynamic>> bgeFeatureLocalizationsDelegates = [
 /// Seams left deliberately open for sibling issues:
 /// - [pendingDeepLinkHolder] (#10) — drained by a [DeepLinkConsumer] this
 ///   widget starts (#82): on each link that arrives, and on the shell's
-///   authenticated signal, which is also how the app enters Ready. #83 keeps
-///   web's half, holding a
-///   cold load's location through bootstrap and sign-in; web has no link
-///   source, so nothing fills the slot there yet.
+///   authenticated signal, which is also how the app enters Ready. The
+///   router is handed it too: on web, which has no link source, the
+///   router's first redirect holds the location the page was loaded at, so
+///   a reload or a bookmark opens once the app is ready (#83).
 ///
 /// Deliberately free of process-global side effects: `ErrorWidget.builder`
 /// (#66) and the uncaught-error hooks (#34) are installed by `runBgeApp`,

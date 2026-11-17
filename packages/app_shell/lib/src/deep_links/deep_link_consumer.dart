@@ -43,7 +43,8 @@ import 'package:observability/observability.dart';
 ///
 /// Web passes no lookup and no orchestrator (single-origin, the server
 /// segment is carried but ignored), so a link there goes straight to its
-/// location.
+/// location. The only link web holds is the location the page was loaded
+/// at, which the router writes to the slot on its first redirect (#83).
 class DeepLinkConsumer {
   DeepLinkConsumer({
     required this._holder,

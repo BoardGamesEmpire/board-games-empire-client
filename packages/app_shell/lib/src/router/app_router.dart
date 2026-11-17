@@ -851,9 +851,11 @@ typedef AdminHouseholdDetailScreenBuilder = Widget? Function(
 ///
 /// go_router reports each location change, pops and replacements included,
 /// as a new browser history entry that carries its whole stack, and restores
-/// that stack when Back or Forward returns to the entry. Restoring a screen
-/// on reload, or from a bookmark, needs the location kept through bootstrap
-/// and sign-in, which is #83's.
+/// that stack when Back or Forward returns to the entry. The bootstrap
+/// redirect's own moves, and a held location landing, take the current
+/// entry's place instead (#916). A reload or a bookmark opens its location
+/// once the app is ready: [buildAppRouter] holds it through bootstrap and
+/// sign-in (#83).
 void reflectPushedRoutesInUrl() =>
     GoRouter.optionURLReflectsImperativeAPIs = true;
 
@@ -861,14 +863,19 @@ void reflectPushedRoutesInUrl() =>
 ///
 /// Redirects are driven entirely by [bootstrapCubit]'s state: while
 /// bootstrap is unresolved every location is forced to the state's route,
-/// deep links included. A native link waits in the pending-link slot
-/// instead, and `DeepLinkConsumer` routes it once the app is ready (#82);
-/// keeping a web cold load's location through bootstrap and sign-in is
-/// #83's. Once ready, bootstrap-owned locations bounce to home and the
-/// reserved deep-link paths resolve (the event link to the event's detail,
-/// the others to [NotYetAvailableScreen] until real features land). #37
-/// feeds authenticated-session state into this same seam by emitting
-/// [AppBootstrapReady] / [AppBootstrapNeedsAuth].
+/// deep links included, except a public link ([isPublicDeepLinkLocation]),
+/// which opens while the app starts and while it waits for sign-in (#83).
+/// A native link waits in the pending-link slot instead, and
+/// `DeepLinkConsumer` routes it once the app is ready (#82). On web the
+/// first redirect writes the location the page was loaded at to that same
+/// slot, [pendingDeepLinkHolder], so a reload or a bookmark opens once the
+/// app is ready (#83). Each move the bootstrap redirect makes takes the
+/// browser's current history entry rather than adding one, so Back never
+/// returns to a bootstrap screen (#916). Once ready, bootstrap-owned
+/// locations bounce to home and the reserved deep-link paths resolve (the
+/// event link to the event's detail, the others to [NotYetAvailableScreen]
+/// until real features land). #37 feeds authenticated-session state into
+/// this same seam by emitting [AppBootstrapReady] / [AppBootstrapNeedsAuth].
 GoRouter buildAppRouter({
   required AppBootstrapCubit bootstrapCubit,
   required BootstrapStreamListenable refreshListenable,
