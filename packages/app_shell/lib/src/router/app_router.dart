@@ -889,8 +889,11 @@ GoRouter buildAppRouter({
   // #414: a modal on the root navigator leaves with the navigation shell
   // page it was opened over. One per router.
   final modalGuard = ShellModalGuard();
+  // A context beneath the Router, for the redirect's replace (#916).
+  final rootNavigatorKey = GlobalKey<NavigatorState>();
   return GoRouter(
     initialLocation: AppRoutes.splash,
+    navigatorKey: rootNavigatorKey,
     observers: [modalGuard.rootObserver],
     // go_router removes its listener on dispose but never disposes the
     // listenable itself. It is therefore a required parameter: the caller
@@ -900,7 +903,7 @@ GoRouter buildAppRouter({
     refreshListenable: refreshListenable,
     redirect: (context, routerState) {
       final location = routerState.matchedLocation;
-      return switch (bootstrapCubit.state) {
+      final target = switch (bootstrapCubit.state) {
         AppBootstrapInitializing() =>
           location == AppRoutes.splash ? null : AppRoutes.splash,
         AppBootstrapFailed() =>
@@ -914,6 +917,8 @@ GoRouter buildAppRouter({
               ? AppRoutes.home
               : null,
       };
+      if (target != null) _reportAsReplace(rootNavigatorKey);
+      return target;
     },
     // An unknown location, reachable only once ready: before that the
     // redirect above pins every location to a bootstrap screen.
@@ -1740,6 +1745,25 @@ class _LeaveForEventState extends State<_LeaveForEvent> {
 
   @override
   Widget build(BuildContext context) => const SizedBox.shrink();
+}
+
+/// Makes the router's next report to the browser take the current history
+/// entry's place instead of adding one (#916). The bootstrap redirect calls
+/// it for each move it makes: onto a bootstrap location, or off one to
+/// home. Those are screens the app passes through, so no history entry may
+/// hold one: Back from home after a fresh load leaves the app, and Back
+/// after signing in never returns to the sign-in form.
+///
+/// The move is the redirect's, made on a bootstrap refresh with no app call
+/// to wrap, so this marks the report from inside it, as [Router.neglect]
+/// does for `_LeaveForEvent`. That needs a context beneath the Router, and
+/// the redirect is handed the Router's own; the root navigator's serves.
+/// Before the navigator is built there is nothing to mark: go_router's
+/// first report always takes the browser's entry.
+void _reportAsReplace(GlobalKey<NavigatorState> rootNavigatorKey) {
+  final context = rootNavigatorKey.currentContext;
+  if (context == null) return;
+  Router.neglect(context, () {});
 }
 
 /// Builds [child]'s page with [create], from the values go_router's own
