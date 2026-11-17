@@ -62,8 +62,21 @@ class FakeBrowserHistory {
     return null;
   }
 
+  /// Whether a [back] went past the first entry. A browser leaves the app
+  /// then, for whatever page came before it, so the router is handed
+  /// nothing.
+  bool get leftApp => _leftApp;
+  var _leftApp = false;
+
   /// Browser Back: the router is handed the entry before the current one.
-  Future<void> back() => _restore(_entries[--_current]);
+  /// From the first entry, the app is left ([leftApp]).
+  Future<void> back() async {
+    if (_current <= 0) {
+      _leftApp = true;
+      return;
+    }
+    await _restore(_entries[--_current]);
+  }
 
   /// Browser Forward: the router is handed the entry after the current one.
   Future<void> forward() => _restore(_entries[++_current]);

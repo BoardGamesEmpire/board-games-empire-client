@@ -9,6 +9,15 @@ import '../support/active_server_fakes.dart';
 import '../support/fake_browser_history.dart';
 import '../support/fake_platform_bootstrap.dart';
 
+/// A web page as a test loads it: its history, the pending-link slot, the
+/// session behind it and the bootstrap that runs it.
+typedef _WebPage = ({
+  FakeBrowserHistory history,
+  PendingDeepLinkHolder holder,
+  FakeAuthRepository repo,
+  AppBootstrapCubit cubit,
+});
+
 /// A web reload or bookmark opens the screen the address named, once the
 /// app is ready, and Back from it leaves the app (#83, #916).
 ///
@@ -19,13 +28,20 @@ void main() {
 
   Future<void> noopHydrated(PlatformBootstrap _) async {}
 
-  PendingDeepLinkHolder buildHolder() {
+  /// Loads the page at [location], as a reload or a bookmark does, and
+  /// starts bootstrap. Signed out unless [signedIn], when the session
+  /// restores at once.
+  Future<_WebPage> loadAt(
+    WidgetTester tester,
+    String location, {
+    bool signedIn = false,
+  }) async {
+    final history = FakeBrowserHistory.install(tester);
     final holder = PendingDeepLinkHolder();
     addTearDown(holder.dispose);
-    return holder;
-  }
-
-  AppBootstrapCubit buildWebCubit(FakeAuthRepository repo) {
+    final repo = FakeAuthRepository(
+      initialSession: signedIn ? testAuthResponse() : null,
+    );
     final cubit = AppBootstrapCubit(
       platformBootstrap: FakePlatformBootstrap(
         activeServerScope: FakeActiveServerScope(buildActiveServer(repo)),
@@ -33,17 +49,6 @@ void main() {
       hydratedStorageInitializer: noopHydrated,
     );
     addTearDown(cubit.close);
-    return cubit;
-  }
-
-  /// Loads the page at [location], as a reload or a bookmark does, and
-  /// starts bootstrap.
-  Future<void> loadAt(
-    WidgetTester tester,
-    String location,
-    AppBootstrapCubit cubit,
-    PendingDeepLinkHolder holder,
-  ) async {
     final dispatcher = tester.binding.platformDispatcher
       ..defaultRouteNameTestValue = location;
     addTearDown(dispatcher.clearDefaultRouteNameTestValue);
@@ -52,6 +57,7 @@ void main() {
     );
     await cubit.initialize();
     await tester.pumpAndSettle();
+    return (history: history, holder: holder, repo: repo, cubit: cubit);
   }
 
   Future<void> signIn(WidgetTester tester, FakeAuthRepository repo) async {
@@ -63,74 +69,59 @@ void main() {
       GoRouter.of(tester.element(find.byType(Navigator).first));
 
   testWidgets('a cold load resumes after sign-in', (tester) async {
-    FakeBrowserHistory.install(tester);
-    final holder = buildHolder();
-    final repo = FakeAuthRepository(); // no session
-    final cubit = buildWebCubit(repo);
-    await loadAt(tester, coldLoad, cubit, holder);
-    expect(cubit.state, isA<AppBootstrapNeedsAuth>());
-    expect(holder.peek?.location, coldLoad);
+    final page = await loadAt(tester, coldLoad);
+    expect(page.cubit.state, isA<AppBootstrapNeedsAuth>());
+    expect(page.holder.peek?.location, coldLoad);
 
-    await signIn(tester, repo);
+    await signIn(tester, page.repo);
 
-    expect(cubit.state, isA<AppBootstrapReady>());
+    expect(page.cubit.state, isA<AppBootstrapReady>());
     final router = routerOf(tester);
     expect(router.state.fullPath, AppRoutes.householdDetail);
     expect(router.state.uri.toString(), coldLoad);
-    expect(holder.peek, isNull);
+    expect(page.holder.peek, isNull);
   });
 
   testWidgets('resume leaves no bootstrap entries', (tester) async {
-    final history = FakeBrowserHistory.install(tester);
-    final holder = buildHolder();
-    final repo = FakeAuthRepository(); // no session
-    final cubit = buildWebCubit(repo);
-    await loadAt(tester, coldLoad, cubit, holder);
+    final page = await loadAt(tester, coldLoad);
 
-    await signIn(tester, repo);
+    await signIn(tester, page.repo);
 
     for (final bootstrap in AppRoutes.bootstrapLocations) {
-      expect(history.allLocations, isNot(contains(bootstrap)));
+      expect(page.history.allLocations, isNot(contains(bootstrap)));
     }
-    expect(history.locations.last, coldLoad);
+    expect(page.history.locations.last, coldLoad);
   });
 
   testWidgets('a session that restores at once still resumes', (
     tester,
   ) async {
-    final history = FakeBrowserHistory.install(tester);
-    final holder = buildHolder();
-    final cubit = buildWebCubit(
-      FakeAuthRepository(initialSession: testAuthResponse()),
-    );
+    final page = await loadAt(tester, coldLoad, signedIn: true);
 
-    await loadAt(tester, coldLoad, cubit, holder);
-
-    expect(cubit.state, isA<AppBootstrapReady>());
+    expect(page.cubit.state, isA<AppBootstrapReady>());
     expect(routerOf(tester).state.uri.toString(), coldLoad);
-    expect(holder.peek, isNull);
-    expect(history.allLocations, [coldLoad]);
+    expect(page.holder.peek, isNull);
+    expect(page.history.allLocations, [coldLoad]);
   });
 
   testWidgets('a newer link wins over the held location', (tester) async {
-    final history = FakeBrowserHistory.install(tester);
-    final holder = buildHolder();
-    final repo = FakeAuthRepository(); // no session
-    final cubit = buildWebCubit(repo);
-    await loadAt(tester, coldLoad, cubit, holder);
+    final page = await loadAt(tester, coldLoad);
     const newer = NormalizedDeepLink(
       serverId: webColdLoadServerId,
       location: '/household/h2',
     );
 
-    holder.set(newer);
+    page.holder.set(newer);
     await tester.pumpAndSettle();
-    await signIn(tester, repo);
+    await signIn(tester, page.repo);
 
     expect(routerOf(tester).state.uri.toString(), newer.location);
-    expect(holder.peek, isNull);
-    expect(history.reported, isNot(contains(coldLoad)));
-    expect(history.reported.where((l) => l == newer.location), hasLength(1));
+    expect(page.holder.peek, isNull);
+    expect(page.history.reported, isNot(contains(coldLoad)));
+    expect(
+      page.history.reported.where((l) => l == newer.location),
+      hasLength(1),
+    );
   });
 
   // The public link opens signed out, so it has landed: leaving it for
@@ -139,23 +130,20 @@ void main() {
   testWidgets("the public page's Go home leads home after sign-in", (
     tester,
   ) async {
-    final history = FakeBrowserHistory.install(tester);
-    final holder = buildHolder();
-    final repo = FakeAuthRepository(); // no session
-    final cubit = buildWebCubit(repo);
     const publicLink = '/server/s1/collection/u1';
-    await loadAt(tester, publicLink, cubit, holder);
+    final page = await loadAt(tester, publicLink);
+    final history = page.history;
     expect(find.byType(NotYetAvailableScreen), findsOneWidget);
 
     await tester.tap(find.byKey(NotYetAvailableScreen.homeButtonKey));
     await tester.pumpAndSettle();
     expect(routerOf(tester).state.uri.toString(), AppRoutes.auth);
     expect(history.locations, [publicLink, AppRoutes.auth]);
-    await signIn(tester, repo);
+    await signIn(tester, page.repo);
 
     expect(routerOf(tester).state.uri.toString(), AppRoutes.home);
     expect(history.locations, [publicLink, AppRoutes.home]);
-    expect(holder.peek, isNull);
+    expect(page.holder.peek, isNull);
 
     await history.back();
     await tester.pumpAndSettle();
@@ -165,14 +153,12 @@ void main() {
   });
 
   testWidgets('back from a resumed screen leaves the app', (tester) async {
-    final history = FakeBrowserHistory.install(tester);
-    final holder = buildHolder();
-    final repo = FakeAuthRepository(); // no session
-    final cubit = buildWebCubit(repo);
-    await loadAt(tester, coldLoad, cubit, holder);
+    final page = await loadAt(tester, coldLoad);
+    await signIn(tester, page.repo);
+    expect(page.history.locations, [coldLoad]);
 
-    await signIn(tester, repo);
+    await page.history.back();
 
-    expect(history.locations, [coldLoad]);
+    expect(page.history.leftApp, isTrue);
   });
 }

@@ -29,6 +29,12 @@ void main() {
     cubit = _MockAppBootstrapCubit();
   });
 
+  PendingDeepLinkHolder buildHolder() {
+    final holder = PendingDeepLinkHolder();
+    addTearDown(holder.dispose);
+    return holder;
+  }
+
   Future<GoRouter> pumpRouter(
     WidgetTester tester, {
     required AppBootstrapState initialState,
@@ -290,7 +296,7 @@ void main() {
 
   group('buildAppRouter — a web cold load (#83)', () {
     testWidgets('a cold load at a declared location is held', (tester) async {
-      final holder = PendingDeepLinkHolder();
+      final holder = buildHolder();
 
       await pumpRouter(
         tester,
@@ -305,7 +311,7 @@ void main() {
     });
 
     testWidgets('a cold load keeps its query and token', (tester) async {
-      final holder = PendingDeepLinkHolder();
+      final holder = buildHolder();
 
       await pumpRouter(
         tester,
@@ -318,7 +324,7 @@ void main() {
     });
 
     testWidgets('a cold load at an unknown path is not held', (tester) async {
-      final holder = PendingDeepLinkHolder();
+      final holder = buildHolder();
 
       await pumpRouter(
         tester,
@@ -332,7 +338,7 @@ void main() {
 
     for (final location in [AppRoutes.home, AppRoutes.auth]) {
       testWidgets('a cold load at $location is not held', (tester) async {
-        final holder = PendingDeepLinkHolder();
+        final holder = buildHolder();
 
         await pumpRouter(
           tester,
@@ -345,8 +351,8 @@ void main() {
       });
     }
 
-    testWidgets('only the first location is captured', (tester) async {
-      final holder = PendingDeepLinkHolder();
+    testWidgets('only the first location is held', (tester) async {
+      final holder = buildHolder();
       final router = await pumpRouter(
         tester,
         initialState: const AppBootstrapInitializing(),
@@ -367,7 +373,7 @@ void main() {
     testWidgets('a location reached after the cold load is never held', (
       tester,
     ) async {
-      final holder = PendingDeepLinkHolder();
+      final holder = buildHolder();
       final router = await pumpRouter(
         tester,
         initialState: const AppBootstrapInitializing(),
@@ -466,7 +472,7 @@ void main() {
     ]) {
       testWidgets('a public cold load that opens in ${state.runtimeType} is '
           'not held: it has landed', (tester) async {
-        final holder = PendingDeepLinkHolder();
+        final holder = buildHolder();
 
         await pumpRouter(
           tester,
@@ -485,7 +491,7 @@ void main() {
     testWidgets('a public cold load a failed start pins away is held', (
       tester,
     ) async {
-      final holder = PendingDeepLinkHolder();
+      final holder = buildHolder();
       final states = StreamController<AppBootstrapState>();
       addTearDown(states.close);
       await pumpRouter(
@@ -512,7 +518,7 @@ void main() {
 
     testWidgets('a public cold load the visitor left is not held when the '
         'start fails', (tester) async {
-      final holder = PendingDeepLinkHolder();
+      final holder = buildHolder();
       final states = StreamController<AppBootstrapState>();
       addTearDown(states.close);
       final router = await pumpRouter(
@@ -543,7 +549,7 @@ void main() {
     testWidgets('a public cold load stays open and unheld once ready', (
       tester,
     ) async {
-      final holder = PendingDeepLinkHolder();
+      final holder = buildHolder();
       final states = StreamController<AppBootstrapState>();
       addTearDown(states.close);
       final router = await pumpRouter(

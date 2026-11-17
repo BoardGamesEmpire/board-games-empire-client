@@ -690,19 +690,8 @@ class _BgeAppState extends State<BgeApp> {
   /// current browser history entry's place on web (#83, #916): that entry
   /// is the sign-in screen or home the link waited on, and Back from the
   /// landed screen must leave the app, not walk back through them.
-  ///
-  /// [Router.neglect] needs a context beneath the Router: the root
-  /// navigator's, which the bootstrap redirect's replace uses too. Before
-  /// the navigator is built nothing has been reported, so a plain `go` is
-  /// the same.
-  void _landDeepLink(String location) {
-    final navigatorContext = _router.routerDelegate.navigatorKey.currentContext;
-    if (navigatorContext == null) {
-      _router.go(location);
-      return;
-    }
-    Router.neglect(navigatorContext, () => _router.go(location));
-  }
+  void _landDeepLink(String location) =>
+      replacingHistoryEntry(_router, () => _router.go(location));
 
   /// Resolves an **optional** device-global service from
   /// [BgeApp.rootContainer], or null when there is no container, [T] is not
