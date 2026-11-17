@@ -40,10 +40,17 @@ class FakeBrowserHistory {
   /// Every entry, the ones Forward returns to included, oldest first.
   List<String> get allLocations => [for (final entry in _entries) entry.uri];
 
+  /// Every location the router reported, in order, whether it added an
+  /// entry or took the current one's place. A replaced report leaves no
+  /// entry behind, so only this shows that it happened.
+  List<String> get reported => List.unmodifiable(_reported);
+  final _reported = <String>[];
+
   Future<Object?> _record(MethodCall call) async {
     if (call.method != 'routeInformationUpdated') return null;
     final arguments = call.arguments as Map<Object?, Object?>;
     final entry = (uri: arguments['uri']! as String, state: arguments['state']);
+    _reported.add(entry.uri);
     if (arguments['replace'] == true && _current >= 0) {
       _entries[_current] = entry;
     } else {
