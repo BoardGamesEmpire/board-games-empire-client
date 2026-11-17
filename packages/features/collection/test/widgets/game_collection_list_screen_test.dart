@@ -1944,6 +1944,7 @@ void main() {
       String platformName, {
       GameMedium medium = GameMedium.physical,
       bool? favorite,
+      PlatformType? platformType,
     }) => listItem(
       id,
       gameId: 'g-wingspan',
@@ -1951,6 +1952,7 @@ void main() {
       platformName: platformName,
       medium: medium,
       favorite: favorite,
+      platformType: platformType,
     );
 
     final twice = [wingspan('e-1', 'Tabletop'), wingspan('e-2', 'Steam')];
@@ -2098,8 +2100,13 @@ void main() {
       'an existing Tabletop · Digital entry still shows (#797)',
       (tester) async {
         await show(tester, [
-          wingspan('e-1', 'Tabletop'),
-          wingspan('e-2', 'Tabletop', medium: GameMedium.digital),
+          wingspan('e-1', 'Tabletop', platformType: PlatformType.tabletop),
+          wingspan(
+            'e-2',
+            'Tabletop',
+            medium: GameMedium.digital,
+            platformType: PlatformType.tabletop,
+          ),
         ]);
 
         final stack = find.byKey(

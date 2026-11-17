@@ -737,6 +737,7 @@ void main() {
           gameId: 'g-wingspan',
           title: 'Wingspan',
           platformName: 'Tabletop',
+          platformType: PlatformType.tabletop,
           medium: GameMedium.digital,
         ),
       );
