@@ -576,6 +576,50 @@ void main() {
         },
       );
 
+      test(
+        'for another registered server makes that server active once the '
+        'switch completes, then waits for its sign-in outcome',
+        () async {
+          const other = NormalizedDeepLink(
+            serverId: 'bge-2',
+            location: '/server/bge-2/event/e3',
+          );
+          lookup = _FakeLookup(const {'bge-1': 'local-1', 'bge-2': 'local-2'});
+          var active = 'local-0';
+          when(
+            () => orchestrator.connectServer(
+              any(),
+              makeActive: any(named: 'makeActive'),
+            ),
+          ).thenAnswer((invocation) async {
+            active = invocation.positionalArguments.single as String;
+          });
+          final switching = Completer<void>();
+          final consumer = await setNewerDuringOlderSwitch(
+            switching,
+            newerLink: other,
+          );
+          when(() => orchestrator.activeServerId).thenAnswer((_) => active);
+
+          // The orchestrator commits the target before its Future completes.
+          active = 'local-1';
+          switching.complete();
+          await pumpEventQueue();
+
+          // `local-2` has no context, so it is connected and made active.
+          verify(
+            () => orchestrator.connectServer('local-2', makeActive: true),
+          ).called(1);
+          expect(gone, isEmpty);
+          expect(holder.peek, other);
+
+          await consumer.drain();
+
+          expect(gone, [other.location]);
+          expect(holder.peek, isNull);
+        },
+      );
+
       test('that fails drops the older link, not the newer one', () async {
         final switching = Completer<void>();
         final consumer = await setNewerDuringOlderSwitch(switching);
