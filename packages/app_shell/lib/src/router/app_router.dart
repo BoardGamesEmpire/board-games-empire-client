@@ -399,11 +399,33 @@ const reservedDeepLinkPathPatterns = <String>[
 ];
 
 /// The reserved patterns that open without a session. Every pattern in
-/// [reservedDeepLinkPathPatterns] that is not here needs one (#82). Nothing
-/// reads this set yet: #83's web gate will read it.
+/// [reservedDeepLinkPathPatterns] that is not here needs one (#82). The
+/// router's bootstrap redirect reads it through [isPublicDeepLinkLocation]:
+/// a location matching one opens while the app is starting and while it
+/// waits for sign-in, instead of being pinned to splash or sign-in (#83).
 const publicDeepLinkPathPatterns = <String>{
   '/server/:serverId/collection/:userId',
 };
+
+/// Whether [location]'s path matches a [publicDeepLinkPathPatterns] entry
+/// segment for segment: a `:name` segment matches any non-empty one, any
+/// other must be equal. The query is ignored.
+bool isPublicDeepLinkLocation(String location) {
+  final segments = Uri.parse(location).pathSegments;
+  return publicDeepLinkPathPatterns.any((pattern) {
+    final patternSegments = Uri.parse(pattern).pathSegments;
+    if (patternSegments.length != segments.length) return false;
+    for (var i = 0; i < segments.length; i++) {
+      final expected = patternSegments[i];
+      final actual = segments[i];
+      final matches = expected.startsWith(':')
+          ? actual.isNotEmpty
+          : actual == expected;
+      if (!matches) return false;
+    }
+    return true;
+  });
+}
 
 /// Builds the real server-add screen subtree (#36) for the
 /// [AppRoutes.serverAdd] route. Always supplied by `BgeApp`; returns null
@@ -915,14 +937,21 @@ GoRouter buildAppRouter({
       }
       final location = routerState.matchedLocation;
       final target = switch (bootstrapCubit.state) {
+        // A public link needs no session, and its page needs nothing
+        // bootstrap composes, so it opens while the app starts and while
+        // it waits for sign-in (#83).
         AppBootstrapInitializing() =>
-          location == AppRoutes.splash ? null : AppRoutes.splash,
+          location == AppRoutes.splash || isPublicDeepLinkLocation(location)
+              ? null
+              : AppRoutes.splash,
         AppBootstrapFailed() =>
           location == AppRoutes.error ? null : AppRoutes.error,
         AppBootstrapNeedsServer() =>
           location == AppRoutes.serverAdd ? null : AppRoutes.serverAdd,
         AppBootstrapNeedsAuth() =>
-          location == AppRoutes.auth ? null : AppRoutes.auth,
+          location == AppRoutes.auth || isPublicDeepLinkLocation(location)
+              ? null
+              : AppRoutes.auth,
         AppBootstrapReady() =>
           AppRoutes.bootstrapLocations.contains(location)
               ? AppRoutes.home
