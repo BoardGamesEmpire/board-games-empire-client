@@ -482,8 +482,10 @@ class _AddToCollectionSheetState extends State<_AddToCollectionSheet> {
               formControlName: _medium,
               label: l10n.addToCollectionMediumLabel,
               hint: l10n.addToCollectionMediumHint,
-              // Nothing to offer until a platform is chosen.
-              readOnly: busy || option == null,
+              // Nothing to offer until a platform is chosen, and nothing to
+              // choose between when it has one medium free (#797).
+              readOnly:
+                  busy || option == null || option.freeMediums.length == 1,
               items: [
                 // In the order the enum gives, whatever the set's.
                 for (final medium in GameMedium.values)

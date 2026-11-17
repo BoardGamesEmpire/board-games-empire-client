@@ -2077,22 +2077,46 @@ void main() {
 
     testWidgets('two mediums on one platform are a stack', (tester) async {
       await show(tester, [
-        wingspan('e-1', 'Tabletop'),
-        wingspan('e-2', 'Tabletop', medium: GameMedium.digital),
+        wingspan('e-1', 'Steam'),
+        wingspan('e-2', 'Steam', medium: GameMedium.digital),
       ]);
 
       final stack = find.byKey(GameCollectionListScreen.stackKey('g-wingspan'));
       expect(stack, findsOneWidget);
       expect(
-        find.text('2 copies: Tabletop · Physical, Tabletop · Digital'),
+        find.text('2 copies: Steam · Physical, Steam · Digital'),
         findsOneWidget,
       );
       // No comma inside an entry: it would read as a third copy.
       expect(
         tester.getSemantics(stack).label,
-        contains('2 copies: Tabletop Physical, Tabletop Digital'),
+        contains('2 copies: Steam Physical, Steam Digital'),
       );
     });
+
+    testWidgets(
+      'an existing Tabletop · Digital entry still shows (#797)',
+      (tester) async {
+        await show(tester, [
+          wingspan('e-1', 'Tabletop'),
+          wingspan('e-2', 'Tabletop', medium: GameMedium.digital),
+        ]);
+
+        final stack = find.byKey(
+          GameCollectionListScreen.stackKey('g-wingspan'),
+        );
+        expect(stack, findsOneWidget);
+        expect(
+          find.text('2 copies: Tabletop · Physical, Tabletop · Digital'),
+          findsOneWidget,
+        );
+        // No comma inside an entry: it would read as a third copy.
+        expect(
+          tester.getSemantics(stack).label,
+          contains('2 copies: Tabletop Physical, Tabletop Digital'),
+        );
+      },
+    );
 
     final oneFavorite = [
       wingspan('e-1', 'Tabletop'),

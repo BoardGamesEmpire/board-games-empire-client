@@ -689,7 +689,7 @@
   },
   "collectionPickerEntryWithMediumSpoken": "{platform} {medium}",
   "@collectionPickerEntryWithMediumSpoken": {
-    "description": "What a screen reader says for one copy in the pop-up listing a game's copies, in place of collectionPickerEntryWithMedium, whose dot would be read out, for example 'Tabletop Physical'. It is the name of the button that opens that copy. Keep a comma out of it: a list of copies, such as the collection's name for a game owned twice, 'Wingspan, 2 copies: Tabletop Physical, Tabletop Digital', joins these with collectionListDetailSpokenSeparator, and a comma inside each would make two copies sound like four.",
+    "description": "What a screen reader says for one copy in the pop-up listing a game's copies, in place of collectionPickerEntryWithMedium, whose dot would be read out, for example 'Tabletop Physical'. It is the name of the button that opens that copy. Keep a comma out of it: a list of copies, such as the collection's name for a game owned twice, 'Wingspan, 2 copies: Steam Physical, Steam Digital', joins these with collectionListDetailSpokenSeparator, and a comma inside each would make two copies sound like four.",
     "placeholders": {
       "platform": {
         "type": "String",

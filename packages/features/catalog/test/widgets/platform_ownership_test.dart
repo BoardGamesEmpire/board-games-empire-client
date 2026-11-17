@@ -3,14 +3,16 @@ import 'package:game_catalog/src/widgets/platform_ownership.dart';
 import 'package:models/domain.dart';
 
 void main() {
-  PlatformGame platform(String id, String name) => PlatformGame(
-    id: id,
-    gameId: 'g_catan',
-    platformId: 'plat_$id',
-    platformName: name,
-    createdAt: DateTime.utc(2026),
-    updatedAt: DateTime.utc(2026),
-  );
+  PlatformGame platform(String id, String name, [PlatformType? type]) =>
+      PlatformGame(
+        id: id,
+        gameId: 'g_catan',
+        platformId: 'plat_$id',
+        platformName: name,
+        platformType: type,
+        createdAt: DateTime.utc(2026),
+        updatedAt: DateTime.utc(2026),
+      );
 
   GameCollection entry(
     String platformGameId,
@@ -85,5 +87,56 @@ void main() {
 
     expect(ownership.addOptions, isEmpty);
     expect(ownership.entriesOn('pg_1'), hasLength(2));
+  });
+
+  // A digital edition of a board game is its own listing on another platform
+  // (#797), so a Tabletop platform never offers Digital.
+  group('a Tabletop platform', () {
+    final board = platform('pg_3', 'Tabletop', PlatformType.tabletop);
+
+    test('a Tabletop platform offers Physical only', () {
+      final ownership = PlatformOwnership.of(
+        platformGames: [board],
+        entries: const [],
+      );
+
+      expect(ownership.addOptions.single.freeMediums, {GameMedium.physical});
+    });
+
+    test('a Tabletop platform owned as Physical has nothing to add', () {
+      final ownership = PlatformOwnership.of(
+        platformGames: [board],
+        entries: [entry('pg_3', GameMedium.physical)],
+      );
+
+      expect(ownership.addOptions, isEmpty);
+      expect(ownership.owns('pg_3'), isTrue);
+    });
+
+    test('a Tabletop platform owned only as Digital still offers '
+        'Physical', () {
+      final ownership = PlatformOwnership.of(
+        platformGames: [board],
+        entries: [entry('pg_3', GameMedium.digital)],
+      );
+
+      expect(ownership.addOptions.single.freeMediums, {GameMedium.physical});
+      expect(ownership.owns('pg_3'), isTrue);
+    });
+  });
+
+  test('an unknown or missing type keeps both mediums', () {
+    for (final type in [PlatformType.unknown, null]) {
+      final ownership = PlatformOwnership.of(
+        platformGames: [platform('pg_4', 'Other', type)],
+        entries: const [],
+      );
+
+      expect(
+        ownership.addOptions.single.freeMediums,
+        {GameMedium.physical, GameMedium.digital},
+        reason: '$type',
+      );
+    }
   });
 }

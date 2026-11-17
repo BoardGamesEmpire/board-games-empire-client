@@ -61,15 +61,16 @@ class BgeDropdownItem<T> {
 /// ## Why read-only doesn't open, and isn't disabled
 ///
 /// [readOnly] is the in-flight state: the value was captured at submit, and a
-/// pick would be dropped, so the menu doesn't open. The field is otherwise
-/// left alone, drawn enabled and in the focus order, as a read-only
-/// `BgeTextField` is, and read as read-only. A disabled field leaves the
-/// focus order, so a keyboard or screen-reader user would have it vanish
-/// mid-form, and the in-flight signal is the submit button's, not a
-/// greyed-out form (STYLE_GUIDE, "In-flight forms"). `ReactiveDropdownField`
-/// drew it disabled. Only a disabled control is drawn disabled and takes no
-/// focus. A menu open when the field becomes either is closed, and takes no
-/// pick meanwhile.
+/// pick would be dropped, so the menu doesn't open. It is also the state of a
+/// field with nothing to choose, one item or none, where a menu would only
+/// repeat what the field shows. The field is otherwise left alone, drawn
+/// enabled and in the focus order, as a read-only `BgeTextField` is, and read
+/// as read-only. A disabled field leaves the focus order, so a keyboard or
+/// screen-reader user would have it vanish mid-form, and the in-flight signal
+/// is the submit button's, not a greyed-out form (STYLE_GUIDE, "In-flight
+/// forms"). `ReactiveDropdownField` drew it disabled. Only a disabled control
+/// is drawn disabled and takes no focus. A menu open when the field becomes
+/// either is closed, and takes no pick meanwhile.
 ///
 /// ## Why opening the menu doesn't touch the field
 ///
@@ -108,8 +109,9 @@ class BgeDropdownField<T> extends StatefulWidget {
   /// Shown in the closed field while the control's value matches no item.
   final String? hint;
 
-  /// Whether the field takes no pick: the menu doesn't open. It stays focusable
-  /// and isn't drawn disabled; see the class doc.
+  /// Whether the field takes no pick: the menu doesn't open. Set it while a
+  /// submit is in flight, or when there is nothing to choose between. It stays
+  /// focusable and isn't drawn disabled; see the class doc.
   final bool readOnly;
 
   /// The error text for each validation error key.

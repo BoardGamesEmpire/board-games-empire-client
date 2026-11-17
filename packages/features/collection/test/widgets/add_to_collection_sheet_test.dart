@@ -72,11 +72,21 @@ void main() {
     PlatformType.tabletop,
   );
   final onSteam = platformGame('pg_steam', 'Steam', PlatformType.pc);
+  final onOther = platformGame('pg_other', 'Other', null);
 
+  /// An option for [platformGame], offering what the catalog would: a Tabletop
+  /// platform Physical only (#797), any other both unless [free] says less.
   CollectionAddOption option(
     PlatformGame platformGame, [
-    Set<GameMedium> free = _both,
-  ]) => CollectionAddOption(platformGame: platformGame, freeMediums: free);
+    Set<GameMedium>? free,
+  ]) => CollectionAddOption(
+    platformGame: platformGame,
+    freeMediums:
+        free ??
+        (platformGame.platformType == PlatformType.tabletop
+            ? {GameMedium.physical}
+            : _both),
+  );
 
   GameCollection entry({
     String platformGameId = 'pg_1',
@@ -388,6 +398,38 @@ void main() {
     semantics.dispose();
   });
 
+  // A field with nothing to choose is read-only, not disabled (STYLE_GUIDE
+  // §4), whatever the platform (#797).
+  for (final (name, platform, free, shown) in [
+    ('Tabletop', onTabletop, {GameMedium.physical}, 'Physical'),
+    ('Steam', onSteam, {GameMedium.digital}, 'Digital'),
+  ]) {
+    testWidgets('a platform with one free medium shows it read-only '
+        '($name)', (tester) async {
+      final semantics = tester.ensureSemantics();
+      await open(tester, options: [option(platform, free)]);
+
+      final field = find.byKey(AddToCollectionSheet.mediumKey);
+      expect(shows(AddToCollectionSheet.mediumKey, shown), findsOneWidget);
+      expect(
+        find.semantics.byLabel(RegExp('^Medium')).evaluate().single,
+        isSemantics(isReadOnly: true, isFocusable: true, isButton: true),
+      );
+
+      await tester.ensureVisible(field);
+      await tester.pumpAndSettle();
+      await tester.tap(field, warnIfMissed: false);
+      await tester.pumpAndSettle();
+
+      final menu = tester.widget<MenuAnchor>(
+        find.descendant(of: field, matching: find.byType(MenuAnchor)),
+      );
+      expect(menu.controller!.isOpen, isFalse);
+      expect(offered(shown), findsNothing);
+      semantics.dispose();
+    });
+  }
+
   testWidgets('a preselected platform from a chip is chosen', (tester) async {
     await open(
       tester,
@@ -401,19 +443,14 @@ void main() {
     verifyAdded('pg_steam', GameMedium.digital);
   });
 
-  testWidgets('the medium field lists only the free mediums', (tester) async {
-    await open(
-      tester,
-      options: [
-        option(onTabletop, {GameMedium.digital}),
-      ],
-    );
+  testWidgets('the medium field lists the free mediums when there is more '
+      'than one', (tester) async {
+    await open(tester, options: [option(onSteam)]);
 
-    // Tabletop would start on Physical, which is owned already.
     expect(shows(AddToCollectionSheet.mediumKey, 'Digital'), findsOneWidget);
     await tapInView(tester, find.byKey(AddToCollectionSheet.mediumKey));
     expect(offered('Digital'), findsOneWidget);
-    expect(offered('Physical'), findsNothing);
+    expect(offered('Physical'), findsOneWidget);
   });
 
   testWidgets('Tabletop starts on Physical, Steam on Digital, an untyped '
@@ -454,15 +491,15 @@ void main() {
   });
 
   testWidgets('the user can change the starting medium', (tester) async {
-    await open(tester, options: [option(onTabletop)]);
-    expect(shows(AddToCollectionSheet.mediumKey, 'Physical'), findsOneWidget);
-
-    // A board game bought as an app.
-    await pick(tester, AddToCollectionSheet.mediumKey, 'Digital');
-
+    await open(tester, options: [option(onSteam)]);
     expect(shows(AddToCollectionSheet.mediumKey, 'Digital'), findsOneWidget);
+
+    // A Steam game bought on a disc.
+    await pick(tester, AddToCollectionSheet.mediumKey, 'Physical');
+
+    expect(shows(AddToCollectionSheet.mediumKey, 'Physical'), findsOneWidget);
     await submit(tester);
-    verifyAdded('pg_tabletop', GameMedium.digital);
+    verifyAdded('pg_steam', GameMedium.physical);
   });
 
   testWidgets('platform change re-applies the start unless the user picked a '
@@ -495,22 +532,21 @@ void main() {
     await open(
       tester,
       options: [
-        option(onTabletop),
-        option(onSteam, {GameMedium.digital}),
+        option(onSteam),
+        option(onSwitch, {GameMedium.digital}),
       ],
-      platformGameId: 'pg_tabletop',
+      platformGameId: 'pg_steam',
     );
     // Picked by the user, not left at the start.
-    await pick(tester, AddToCollectionSheet.mediumKey, 'Digital');
     await pick(tester, AddToCollectionSheet.mediumKey, 'Physical');
 
-    await pick(tester, AddToCollectionSheet.platformKey, 'Steam');
+    await pick(tester, AddToCollectionSheet.platformKey, 'Switch');
 
     expect(shows(AddToCollectionSheet.mediumKey, 'Digital'), findsOneWidget);
     expect(shows(AddToCollectionSheet.mediumKey, 'Choose one'), findsNothing);
     // What the field shows is what is sent.
     await submit(tester);
-    verifyAdded('pg_steam', GameMedium.digital);
+    verifyAdded('pg_1', GameMedium.digital);
   });
 
   testWidgets('a medium the sheet had to change is no longer kept as the '
@@ -518,20 +554,20 @@ void main() {
     await open(
       tester,
       options: [
-        option(onTabletop),
-        option(onSteam, {GameMedium.digital}),
+        option(onSteam),
+        option(onSwitch, {GameMedium.digital}),
+        option(onOther),
       ],
-      platformGameId: 'pg_tabletop',
+      platformGameId: 'pg_steam',
     );
-    await pick(tester, AddToCollectionSheet.mediumKey, 'Digital');
     await pick(tester, AddToCollectionSheet.mediumKey, 'Physical');
-    await pick(tester, AddToCollectionSheet.platformKey, 'Steam');
+    await pick(tester, AddToCollectionSheet.platformKey, 'Switch');
 
-    // Digital was Steam's only room, not the user's choice, so Tabletop
-    // starts again.
-    await pick(tester, AddToCollectionSheet.platformKey, 'Tabletop');
+    // Digital was Switch's only room, not the user's choice, so a platform
+    // with no start starts on nothing.
+    await pick(tester, AddToCollectionSheet.platformKey, 'Other');
 
-    expect(shows(AddToCollectionSheet.mediumKey, 'Physical'), findsOneWidget);
+    expect(shows(AddToCollectionSheet.mediumKey, 'Choose one'), findsOneWidget);
   });
 
   testWidgets('a medium owned after opening shows the existing note', (

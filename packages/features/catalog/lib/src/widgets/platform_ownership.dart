@@ -34,14 +34,26 @@ final class PlatformOwnership {
   /// Platform games with a free medium, in `platformGames` order.
   List<CollectionAddOption> get addOptions => [
     for (final platformGame in _platformGames)
-      if (_freeMediums(platformGame.id) case final free when free.isNotEmpty)
+      if (_freeMediums(platformGame) case final free when free.isNotEmpty)
         CollectionAddOption(platformGame: platformGame, freeMediums: free),
   ];
 
-  Set<GameMedium> _freeMediums(String platformGameId) {
-    final owned = {for (final entry in entriesOn(platformGameId)) entry.medium};
+  /// The mediums [platformGame] offers that no owned entry holds.
+  ///
+  /// A Tabletop platform offers Physical only: a digital edition of a board
+  /// game is its own listing on another platform (#797). An entry already
+  /// held as Tabletop · Digital still counts as owned and still shows, it is
+  /// just never offered again. A platform with no type, or one this client
+  /// can't read, offers both.
+  Set<GameMedium> _freeMediums(PlatformGame platformGame) {
+    final owned = {
+      for (final entry in entriesOn(platformGame.id)) entry.medium,
+    };
+    final offered = platformGame.platformType == PlatformType.tabletop
+        ? const [GameMedium.physical]
+        : GameMedium.values;
     return {
-      for (final medium in GameMedium.values)
+      for (final medium in offered)
         if (!owned.contains(medium)) medium,
     };
   }
