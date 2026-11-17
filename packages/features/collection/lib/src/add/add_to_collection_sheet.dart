@@ -158,7 +158,10 @@ Future<CollectionSync?> showAddToCollectionSheet(
 /// and the copies added together can't pass 2147483647, and plus stops there.
 /// The form counts the copies from the medium's lookup, which a quick submit
 /// can beat; the repository checks the total against the entry as stored,
-/// and an add past it fails as any failed add does.
+/// and an add past it shows the copies field's error, as the form's own check
+/// does, with focus on the field and what was typed kept (#676). The entry is
+/// then looked up again, so the copies, the plus button's limit and the note
+/// count the entry the refusal counted.
 ///
 /// A button at its limit stays enabled and does nothing, so one pressed down
 /// to its limit keeps the focus. Its semantics say it is disabled. After a
@@ -319,10 +322,17 @@ class _AddToCollectionSheetState extends State<_AddToCollectionSheet> {
   GameMedium? _startFor(CollectionAddOption option) =>
       startingMedium(option.platformGame.platformType, option.freeMediums);
 
+  /// Drops a limit error the repository put on the copies (#676): it was
+  /// about the entry before this choice, and the validators decide afresh.
+  /// The field's touched state is left as it is, so an untouched field shows
+  /// nothing.
+  void _revalidateCopies() => _form.control(_quantity).updateValueAndValidity();
+
   /// Starts the medium for the platform picked, unless the user picked the
   /// medium and the new platform has it free.
   void _onPlatformPicked(String? platformGameId) {
     if (!mounted || platformGameId == null) return;
+    _revalidateCopies();
     final option = _optionFor(platformGameId);
     if (option == null) return;
 
@@ -357,6 +367,7 @@ class _AddToCollectionSheetState extends State<_AddToCollectionSheet> {
   /// (#776).
   void _onMediumPicked(GameMedium? medium) {
     if (!mounted || medium == null) return;
+    _revalidateCopies();
     final option = _option;
     if (option == null) return;
     _bloc.add(
@@ -409,7 +420,21 @@ class _AddToCollectionSheetState extends State<_AddToCollectionSheet> {
               previous.existing != current.existing,
           listener: (context, state) {
             _existing = state.existing?.quantity ?? 0;
-            _form.control(_quantity).updateValueAndValidity();
+            _revalidateCopies();
+          },
+        ),
+        // The repository refused the copies. `setErrors` leaves the error to
+        // the field, and `rejectSubmit` doesn't run the validators again, so
+        // it survives until the copies are edited, or the entry looked up
+        // again after the refusal is counted, when the form's own check takes
+        // it over.
+        BlocListener<AddToCollectionBloc, AddToCollectionState>(
+          listenWhen: (previous, current) =>
+              previous.status != current.status &&
+              current.status == AddToCollectionStatus.quantityTooMany,
+          listener: (context, _) {
+            _form.control(_quantity).setErrors({_quantityTooMany: true});
+            _form.rejectSubmit();
           },
         ),
         // [showAddToCollectionSheet] says what became of the add.

@@ -79,11 +79,12 @@ import 'package:observability/observability.dart';
 /// ## What it never throws
 ///
 /// A write that throws (the session ended, or the entry was removed
-/// elsewhere) is logged and ends `saveFailed` or `removeFailed`; nothing is
-/// thrown out of the bloc. A removal that throws once the watch has answered
-/// null, before the removal (`gone`) or while it was under way, ends
-/// `removed` instead, with no sync: the entry is not in the collection, which
-/// is what was asked.
+/// elsewhere) is logged and ends `saveFailed` or `removeFailed`, except an
+/// edit past the most copies an entry holds, which ends `saveQuantityTooMany`
+/// (#676); nothing is thrown out of the bloc. A removal that throws once the
+/// watch has answered null, before the removal (`gone`) or while it was under
+/// way, ends `removed` instead, with no sync: the entry is not in the
+/// collection, which is what was asked.
 class CollectionEntryBloc
     extends Bloc<CollectionEntryEvent, CollectionEntryState> {
   CollectionEntryBloc({
@@ -305,6 +306,12 @@ class CollectionEntryBloc
         favorite: favorite,
         comment: comment,
       );
+    } on CollectionQuantityLimitExceeded catch (error) {
+      _logger.info(
+        'The edit passes the most copies an entry holds',
+        error: error,
+      );
+      return emit(state.withAction(CollectionEntryAction.saveQuantityTooMany));
     } on Object catch (error, stackTrace) {
       _logger.warn(
         'Updating the collection entry failed',
@@ -378,6 +385,7 @@ class CollectionEntryBloc
     switch (state.action) {
       case CollectionEntryAction.saved ||
           CollectionEntryAction.saveFailed ||
+          CollectionEntryAction.saveQuantityTooMany ||
           CollectionEntryAction.removeFailed:
         emit(state.withAction(CollectionEntryAction.idle));
       case CollectionEntryAction.removed:

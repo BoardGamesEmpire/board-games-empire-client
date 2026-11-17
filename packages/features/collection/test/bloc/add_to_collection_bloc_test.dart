@@ -552,6 +552,99 @@ void main() {
   );
 
   blocTest<AddToCollectionBloc, AddToCollectionState>(
+    'an add refused at the limit ends quantityTooMany',
+    setUp: () => answerAdd(
+      () async => throw const CollectionQuantityLimitExceeded(
+        quantity: 2,
+        held: GameCollectionRepository.maxQuantity - 1,
+      ),
+    ),
+    build: build,
+    act: (bloc) => bloc.add(
+      const AddToCollectionSubmitted(
+        platformGameId: 'pg_1',
+        medium: GameMedium.physical,
+        quantity: 2,
+      ),
+    ),
+    expect: () => [
+      const AddToCollectionState(status: AddToCollectionStatus.submitting),
+      const AddToCollectionState(status: AddToCollectionStatus.quantityTooMany),
+    ],
+    errors: () => isEmpty,
+    verify: (_) => verifyNever(() => sender.deliver(any(), any())),
+  );
+
+  blocTest<AddToCollectionBloc, AddToCollectionState>(
+    'an add refused at the limit looks the entry up again',
+    setUp: () {
+      var lookups = 0;
+      // The first lookup is older than the entry the refusal counts.
+      answerLookup(
+        GameMedium.physical,
+        () async => entry(
+          quantity: ++lookups == 1 ? 5 : GameCollectionRepository.maxQuantity,
+        ),
+      );
+      answerAdd(
+        () async => throw const CollectionQuantityLimitExceeded(
+          quantity: 2,
+          held: GameCollectionRepository.maxQuantity,
+        ),
+      );
+    },
+    build: build,
+    act: (bloc) async {
+      bloc.add(choice(GameMedium.physical));
+      await pumpEventQueue();
+      bloc.add(
+        const AddToCollectionSubmitted(
+          platformGameId: 'pg_1',
+          medium: GameMedium.physical,
+          quantity: 2,
+        ),
+      );
+    },
+    skip: 3,
+    expect: () => [
+      AddToCollectionState(
+        platformGameId: 'pg_1',
+        medium: GameMedium.physical,
+        existing: entry(quantity: 5),
+        status: AddToCollectionStatus.quantityTooMany,
+      ),
+      AddToCollectionState(
+        platformGameId: 'pg_1',
+        medium: GameMedium.physical,
+        existing: entry(quantity: GameCollectionRepository.maxQuantity),
+        status: AddToCollectionStatus.quantityTooMany,
+      ),
+    ],
+    errors: () => isEmpty,
+  );
+
+  blocTest<AddToCollectionBloc, AddToCollectionState>(
+    'a form change clears quantityTooMany',
+    setUp: () => answerAdd(
+      () async => throw const CollectionQuantityLimitExceeded(quantity: 2),
+    ),
+    build: build,
+    act: (bloc) async {
+      bloc.add(
+        const AddToCollectionSubmitted(
+          platformGameId: 'pg_1',
+          medium: GameMedium.physical,
+          quantity: 2,
+        ),
+      );
+      await pumpEventQueue();
+      bloc.add(const AddToCollectionFailureCleared());
+    },
+    skip: 2,
+    expect: () => [const AddToCollectionState()],
+  );
+
+  blocTest<AddToCollectionBloc, AddToCollectionState>(
     'editing with no failure shown changes nothing',
     build: build,
     act: (bloc) => bloc.add(const AddToCollectionFailureCleared()),

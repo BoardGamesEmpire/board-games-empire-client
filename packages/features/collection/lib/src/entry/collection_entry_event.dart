@@ -50,8 +50,9 @@ final class CollectionEntryRemoveConfirmed extends CollectionEntryEvent {
 }
 
 /// The screen has shown a failed or finished save or removal and is done with
-/// it. Takes `saved`, `saveFailed`, `removeFailed` and `removed` back to
-/// `idle`; does nothing while a save or a removal is under way.
+/// it. Takes `saved`, `saveFailed`, `saveQuantityTooMany`, `removeFailed`
+/// and `removed` back to `idle`; does nothing while a save or a removal is
+/// under way.
 ///
 /// A screen clears `removed` only when it couldn't close on it, because
 /// another route covered it. The view is then `gone` once the row is absent,

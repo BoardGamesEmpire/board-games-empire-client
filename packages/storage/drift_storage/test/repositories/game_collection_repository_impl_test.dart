@@ -529,7 +529,8 @@ void main() {
       });
 
       test(
-        'update refuses a quantity past maxQuantity before the transaction',
+        'update past the max throws CollectionQuantityLimitExceeded before '
+        'the transaction',
         () async {
           final entry = (await repo.addToCollection(
             platformGameId: kFixturePlatformGameId,
@@ -541,7 +542,7 @@ void main() {
               id: entry.id,
               quantity: GameCollectionRepository.maxQuantity + 1,
             ),
-            throwsA(isA<ArgumentError>()),
+            throwsA(isA<CollectionQuantityLimitExceeded>()),
           );
 
           expect((await repo.getCollection()).single.quantity, 1);
@@ -694,15 +695,15 @@ void main() {
         },
       );
 
-      test('addToCollection throws ArgumentError on a quantity past what the '
-          'server stores', () async {
+      test('addToCollection throws CollectionQuantityLimitExceeded on a '
+          'quantity past what the server stores', () async {
         await expectLater(
           () => repo.addToCollection(
             platformGameId: kFixturePlatformGameId,
             medium: _kMedium,
             quantity: GameCollectionRepository.maxQuantity + 1,
           ),
-          throwsA(isA<ArgumentError>()),
+          throwsA(isA<CollectionQuantityLimitExceeded>()),
         );
 
         expect(await repo.getCollection(), isEmpty);
@@ -712,8 +713,9 @@ void main() {
       // The form checks the total too, but against a lookup that may not
       // have answered yet: the live row is read here, in the transaction.
       test(
-        'addToCollection throws ArgumentError when a live row and the copies '
-        'added pass what the server stores, and leaves the row as it was',
+        'an add whose total passes the max throws '
+        'CollectionQuantityLimitExceeded with the held copies, and leaves the '
+        'row as it was',
         () async {
           const have = GameCollectionRepository.maxQuantity - 7;
           await repo.addToCollection(
@@ -729,7 +731,11 @@ void main() {
               medium: _kMedium,
               quantity: 8,
             ),
-            throwsA(isA<ArgumentError>()),
+            throwsA(
+              isA<CollectionQuantityLimitExceeded>()
+                  .having((e) => e.held, 'held', have)
+                  .having((e) => e.quantity, 'quantity', 8),
+            ),
           );
 
           final rows = await repo.getCollection();

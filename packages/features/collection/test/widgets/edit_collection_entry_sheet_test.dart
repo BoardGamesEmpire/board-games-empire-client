@@ -436,6 +436,62 @@ void main() {
     expect(find.text(_failedTitle), findsNothing);
   });
 
+  testWidgets('an edit refused at the limit shows the copies error', (
+    tester,
+  ) async {
+    when(
+      () => repository.updateCollectionEntry(
+        id: any(named: 'id'),
+        quantity: any(named: 'quantity'),
+        rating: any(named: 'rating'),
+        playAgain: any(named: 'playAgain'),
+        favorite: any(named: 'favorite'),
+        comment: any(named: 'comment'),
+      ),
+    ).thenThrow(const CollectionQuantityLimitExceeded(quantity: 3));
+    await open(tester);
+    await type(tester, EditCollectionEntrySheet.quantityKey, '3');
+
+    await submit(tester);
+
+    expect(bloc.state.action, CollectionEntryAction.saveQuantityTooMany);
+    expect(find.text(_quantityTooMany), findsOneWidget);
+    expect(find.text(_failedTitle), findsNothing);
+    expect(find.byKey(EditCollectionEntrySheet.sheetKey), findsOneWidget);
+    expect(
+      within(EditCollectionEntrySheet.quantityKey, find.text('3')),
+      findsOneWidget,
+    );
+    expect(
+      tester
+          .widget<EditableText>(
+            find.descendant(
+              of: find.byKey(EditCollectionEntrySheet.quantityKey),
+              matching: find.byType(EditableText),
+            ),
+          )
+          .focusNode
+          .hasFocus,
+      isTrue,
+    );
+
+    // Editable again, and editing the copies retires the error.
+    await type(tester, EditCollectionEntrySheet.quantityKey, '4');
+    expect(find.text(_quantityTooMany), findsNothing);
+
+    await submit(tester);
+    verify(
+      () => repository.updateCollectionEntry(
+        id: any(named: 'id'),
+        quantity: 4,
+        rating: any(named: 'rating'),
+        playAgain: any(named: 'playAgain'),
+        favorite: any(named: 'favorite'),
+        comment: any(named: 'comment'),
+      ),
+    ).called(1);
+  });
+
   testWidgets('one save carries a changed rating, favorite and play again', (
     tester,
   ) async {

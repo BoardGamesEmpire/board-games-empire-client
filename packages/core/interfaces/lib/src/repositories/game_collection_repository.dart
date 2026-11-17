@@ -60,9 +60,10 @@ abstract class GameCollectionRepository {
   /// passing `quantity: 0`.
   ///
   /// The entry's quantity after the add can't pass [maxQuantity].
-  /// Implementations throw [ArgumentError] before the transaction for a
-  /// [quantity] past it, and inside it, before writing anything, when a
-  /// live entry's copies and [quantity] together would pass it. The second
+  /// Implementations throw [CollectionQuantityLimitExceeded] before the
+  /// transaction for a [quantity] past it, and inside it, before writing
+  /// anything, when a live entry's copies and [quantity] together would
+  /// pass it (with `held` set to those copies). The second
   /// check reads the live entry in the transaction, so a caller's own check
   /// against an earlier read can't let a total through.
   ///
@@ -132,8 +133,9 @@ abstract class GameCollectionRepository {
   ///
   /// Only non-null fields are updated. [quantity] must be `> 0` when
   /// provided and no more than [maxQuantity], the bound [addToCollection]
-  /// keeps the entry within; implementations should throw [ArgumentError]
-  /// before opening the transaction for a value outside it, and likewise
+  /// keeps the entry within; implementations should throw
+  /// [CollectionQuantityLimitExceeded] before opening the transaction for a
+  /// value past it, and [ArgumentError] for zero or less and likewise
   /// when every field is `null`, since that update has nothing to send.
   /// Enqueues [UpdateCollectionOperation].
   ///
@@ -599,4 +601,26 @@ abstract class GameCollectionRepository {
   Stream<List<GameCollection>> watchEntriesForPlatformGames(
     Set<String> platformGameIds,
   );
+}
+
+/// An add or edit would take an entry past
+/// [GameCollectionRepository.maxQuantity].
+///
+/// [quantity] is the copies the call asked for. [held] is the copies the
+/// live entry already had when the check ran inside the transaction, and `0`
+/// when the quantity alone passed the limit (#676).
+final class CollectionQuantityLimitExceeded implements Exception {
+  const CollectionQuantityLimitExceeded({
+    required this.quantity,
+    this.held = 0,
+  });
+
+  final int quantity;
+  final int held;
+
+  @override
+  String toString() =>
+      'CollectionQuantityLimitExceeded: $quantity copies with $held already '
+      'held pass the most one entry can hold '
+      '(${GameCollectionRepository.maxQuantity})';
 }

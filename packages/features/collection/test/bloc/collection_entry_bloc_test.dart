@@ -402,6 +402,33 @@ void main() {
       verify: (_) => verifyNoSend(),
     );
 
+    blocTest<CollectionEntryBloc, CollectionEntryState>(
+      'an edit refused at the limit ends saveQuantityTooMany, sends nothing '
+      'and is no failure',
+      setUp: () => when(callUpdate).thenThrow(
+        const CollectionQuantityLimitExceeded(quantity: 3),
+      ),
+      build: build,
+      act: (bloc) async {
+        await show(bloc, row());
+        bloc.add(edit(quantity: 3));
+      },
+      skip: 2,
+      expect: () => [
+        ready(row(), action: CollectionEntryAction.saveQuantityTooMany),
+      ],
+      verify: (_) {
+        verifyNoSend();
+        verifyNever(
+          () => logger.warn(
+            any(),
+            error: any(named: 'error'),
+            stackTrace: any(named: 'stackTrace'),
+          ),
+        );
+      },
+    );
+
     // The sheet's form is frozen when it opens, so a row that changed under
     // it (a hydrate bringing another device's edit) must not make the fields
     // nobody touched look changed, nor have them written back over it.
@@ -695,6 +722,22 @@ void main() {
   });
 
   group('clearing the action', () {
+    blocTest<CollectionEntryBloc, CollectionEntryState>(
+      'saveQuantityTooMany goes idle',
+      setUp: () => when(callUpdate).thenThrow(
+        const CollectionQuantityLimitExceeded(quantity: 3),
+      ),
+      build: build,
+      act: (bloc) async {
+        await show(bloc, row());
+        bloc.add(edit(quantity: 3));
+        await pumpEventQueue();
+        bloc.add(const CollectionEntryActionCleared());
+      },
+      skip: 3,
+      expect: () => [ready(row())],
+    );
+
     for (final failed in [
       CollectionEntryAction.saveFailed,
       CollectionEntryAction.removeFailed,

@@ -1287,6 +1287,147 @@ void main() {
     expect(find.text(_failedTitle), findsNothing);
   });
 
+  group('an add refused at the limit (#676)', () {
+    /// The repository refusing the first add, and taking any after it.
+    void refuseFirstAdd() {
+      var refused = false;
+      when(
+        () => repository.addToCollection(
+          platformGameId: any(named: 'platformGameId'),
+          medium: any(named: 'medium'),
+          quantity: any(named: 'quantity'),
+          rating: any(named: 'rating'),
+          comment: any(named: 'comment'),
+        ),
+      ).thenAnswer((invocation) async {
+        if (!refused) {
+          refused = true;
+          throw const CollectionQuantityLimitExceeded(
+            quantity: 10,
+            held: _storedMax - 7,
+          );
+        }
+        return (entry: entry(), syncQueueId: 'sq_1', operation: _queuedOp);
+      });
+    }
+
+    bool copiesFocused(WidgetTester tester) => tester
+        .widget<EditableText>(
+          find.descendant(
+            of: find.byKey(AddToCollectionSheet.quantityKey),
+            matching: find.byType(EditableText),
+          ),
+        )
+        .focusNode
+        .hasFocus;
+
+    testWidgets('a submit that beats the lookup and passes the limit shows '
+        'the copies error', (tester) async {
+      refuseFirstAdd();
+      // The lookup never answers, so the form has no entry to check against.
+      final lookup = Completer<GameCollection?>();
+      when(
+        () => repository.getCollectionEntry(
+          platformGameId: any(named: 'platformGameId'),
+          medium: any(named: 'medium'),
+        ),
+      ).thenAnswer((_) => lookup.future);
+      await open(tester);
+      await pick(tester, AddToCollectionSheet.mediumKey, 'Physical');
+      await type(tester, AddToCollectionSheet.quantityKey, '10');
+
+      await submit(tester);
+
+      expect(find.text(_quantityTooMany), findsOneWidget);
+      expect(find.text(_failedTitle), findsNothing);
+      expect(find.byKey(AddToCollectionSheet.sheetKey), findsOneWidget);
+      expect(copiesText(tester), '10');
+      expect(copiesFocused(tester), isTrue);
+      expect(resolved, isFalse);
+      lookup.complete(null);
+    });
+
+    testWidgets('picking another medium after a refusal drops the error and '
+        'the next submit is sent', (tester) async {
+      refuseFirstAdd();
+      await open(tester);
+      await pick(tester, AddToCollectionSheet.mediumKey, 'Physical');
+      await type(tester, AddToCollectionSheet.quantityKey, '10');
+      await submit(tester);
+      expect(find.text(_quantityTooMany), findsOneWidget);
+
+      await pick(tester, AddToCollectionSheet.mediumKey, 'Digital');
+      expect(find.text(_quantityTooMany), findsNothing);
+
+      await submit(tester);
+
+      verify(
+        () => repository.addToCollection(
+          platformGameId: 'pg_1',
+          medium: GameMedium.digital,
+          quantity: 10,
+        ),
+      ).called(1);
+    });
+
+    testWidgets('after a refusal the copies count the entry it counted', (
+      tester,
+    ) async {
+      refuseFirstAdd();
+      owning(GameMedium.physical, 5);
+      await open(tester);
+      await pick(tester, AddToCollectionSheet.mediumKey, 'Physical');
+      await type(tester, AddToCollectionSheet.quantityKey, '10');
+      // Stored since the lookup: the refusal counts these.
+      owning(GameMedium.physical, _storedMax - 7);
+
+      await submit(tester);
+      expect(find.text(_quantityTooMany), findsOneWidget);
+
+      // Past what the stored entry leaves room for, the form's own check
+      // keeps the error rather than sending what will be refused again.
+      await type(tester, AddToCollectionSheet.quantityKey, '8');
+      expect(find.text(_quantityTooMany), findsOneWidget);
+      await submit(tester);
+      verify(
+        () => repository.addToCollection(
+          platformGameId: any(named: 'platformGameId'),
+          medium: any(named: 'medium'),
+          quantity: any(named: 'quantity'),
+          rating: any(named: 'rating'),
+          comment: any(named: 'comment'),
+        ),
+      ).called(1);
+
+      await type(tester, AddToCollectionSheet.quantityKey, '7');
+      expect(find.text(_quantityTooMany), findsNothing);
+    });
+
+    testWidgets('editing the copies clears the error and the next submit is '
+        'sent', (tester) async {
+      refuseFirstAdd();
+      await open(tester);
+      await pick(tester, AddToCollectionSheet.mediumKey, 'Physical');
+      await type(tester, AddToCollectionSheet.quantityKey, '10');
+      await submit(tester);
+      expect(find.text(_quantityTooMany), findsOneWidget);
+
+      await type(tester, AddToCollectionSheet.quantityKey, '3');
+      expect(find.text(_quantityTooMany), findsNothing);
+
+      await submit(tester);
+
+      verify(
+        () => repository.addToCollection(
+          platformGameId: 'pg_1',
+          medium: GameMedium.physical,
+          quantity: 3,
+        ),
+      ).called(1);
+      expect(resolved, isTrue);
+    });
+  });
+
   testWidgets('the comment field ends above the keyboard', (tester) async {
     useViewSize(tester, const Size(400, 800));
     tester.view.viewInsets = const FakeViewPadding(bottom: 300);
