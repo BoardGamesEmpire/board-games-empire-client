@@ -70,6 +70,21 @@ class BgeDropdownItem<T> {
 /// drew it disabled. Only a disabled control is drawn disabled and takes no
 /// focus. A menu open when the field becomes either is closed, and takes no
 /// pick meanwhile.
+///
+/// ## Why opening the menu doesn't touch the field
+///
+/// reactive_forms marks a control touched whenever its focus node loses focus,
+/// and opening the menu moves focus to the landing item, so an empty required
+/// field showed its error the moment its menu opened (#775). A control that
+/// wasn't touched when the menu opened has that touch undone. The menu closing
+/// touches it, so Escape or a tap outside with nothing chosen shows the error,
+/// as does a pick. The touch waits for the frame after the close: a pick lands
+/// after that frame (`MenuItemButton` defers it), and touched before it, an
+/// empty required field would draw and announce its error for one frame
+/// before the value arrived. Tab and Shift+Tab stay inside the open menu, so
+/// focus has no other way out of it. The field's own focus node stays
+/// reactive_forms', so `control.focus()` still reaches it (#230), and the
+/// landing item keeps its autofocus.
 class BgeDropdownField<T> extends StatefulWidget {
   /// Creates a field bound to [formControlName] in the enclosing
   /// `ReactiveForm`, or to [formControl].
@@ -181,6 +196,10 @@ class _BgeDropdownBindingState<T>
     extends ReactiveFocusableFormFieldState<T, T> {
   final _menu = MenuController();
 
+  /// Whether the control was untouched when the menu opened, so a touch made
+  /// by focus moving into the menu is the menu's, not the user's (#775).
+  bool _untouchedAtOpen = false;
+
   /// The menu's width: the field's, measured as the menu opens.
   double? _menuWidth;
 
@@ -193,6 +212,34 @@ class _BgeDropdownBindingState<T>
     ),
   };
 
+  /// The node [_undoMenuTouch] is attached to. The base class builds a new
+  /// focus controller and node, and disposes the old ones, each time it
+  /// subscribes to a control, which it does in `initState` and again when the
+  /// control it resolves changes. The widget's own `focusNode`, which it also
+  /// swaps in `build`, is never passed here.
+  FocusNode? _listenedNode;
+
+  @override
+  void subscribeControl() {
+    super.subscribeControl();
+    // Added after the focus controller's own listener, which marks the control
+    // touched on this same notification, so this undoes it before a frame.
+    _listenedNode = focusNode..addListener(_undoMenuTouch);
+  }
+
+  @override
+  void unsubscribeControl() {
+    _listenedNode?.removeListener(_undoMenuTouch);
+    _listenedNode = null;
+    super.unsubscribeControl();
+  }
+
+  void _undoMenuTouch() {
+    if (!focusNode.hasFocus && _menu.isOpen && _untouchedAtOpen) {
+      control.markAsUntouched();
+    }
+  }
+
   BgeDropdownField<T> get _field => (widget as _BgeDropdownBinding<T>).field;
 
   void _toggle() => _menu.isOpen ? _menu.close() : _open();
@@ -204,6 +251,7 @@ class _BgeDropdownBindingState<T>
     // size (`RawMenuAnchor`), which is when the field's width would.
     final box = context.findRenderObject() as RenderBox?;
     setState(() => _menuWidth = box?.size.width);
+    _untouchedAtOpen = !control.touched;
     _menu.open();
   }
 
@@ -250,6 +298,16 @@ class _BgeDropdownBindingState<T>
       children: [
         MenuAnchor(
           controller: _menu,
+          // Closed by any route with nothing chosen leaves the field touched,
+          // so a required one shows its error (#775). After the next frame,
+          // by which time a pick has set its value: the pick runs after it.
+          onClose: () {
+            if (!mounted) return;
+            _untouchedAtOpen = false;
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) control.markAsTouched();
+            }, debugLabel: 'BgeDropdownField.touchOnClose');
+          },
           // Opening the menu focuses the field first (`RawMenuAnchor.open`),
           // so however it was opened, the page's focus scope has the field
           // to give focus back to after Escape, a pick or a tap outside.
