@@ -119,7 +119,10 @@ class AddToCollectionBloc
     // Any later choice owns the note now, even one back to this same pair:
     // comparing the pair would let this older answer overwrite its newer one
     // (#773).
-    if (existing == null || lookup != _lookup) return;
+    if (lookup != _lookup) return;
+    // A choice already shows no entry, but the lookup after a refusal may
+    // find the one shown removed since, and must clear it (#676).
+    if (existing == null && state.existing == null) return;
     emit(
       AddToCollectionState(
         platformGameId: platformGameId,

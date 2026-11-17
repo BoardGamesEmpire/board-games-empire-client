@@ -624,6 +624,51 @@ void main() {
   );
 
   blocTest<AddToCollectionBloc, AddToCollectionState>(
+    'an entry gone by the refusal lookup clears the entry shown',
+    setUp: () {
+      var lookups = 0;
+      // Removed between the refusal and its lookup, say by a sync.
+      answerLookup(
+        GameMedium.physical,
+        () async => ++lookups == 1 ? entry(quantity: 5) : null,
+      );
+      answerAdd(
+        () async => throw const CollectionQuantityLimitExceeded(
+          quantity: 2,
+          held: GameCollectionRepository.maxQuantity,
+        ),
+      );
+    },
+    build: build,
+    act: (bloc) async {
+      bloc.add(choice(GameMedium.physical));
+      await pumpEventQueue();
+      bloc.add(
+        const AddToCollectionSubmitted(
+          platformGameId: 'pg_1',
+          medium: GameMedium.physical,
+          quantity: 2,
+        ),
+      );
+    },
+    skip: 3,
+    expect: () => [
+      AddToCollectionState(
+        platformGameId: 'pg_1',
+        medium: GameMedium.physical,
+        existing: entry(quantity: 5),
+        status: AddToCollectionStatus.quantityTooMany,
+      ),
+      const AddToCollectionState(
+        platformGameId: 'pg_1',
+        medium: GameMedium.physical,
+        status: AddToCollectionStatus.quantityTooMany,
+      ),
+    ],
+    errors: () => isEmpty,
+  );
+
+  blocTest<AddToCollectionBloc, AddToCollectionState>(
     'a form change clears quantityTooMany',
     setUp: () => answerAdd(
       () async => throw const CollectionQuantityLimitExceeded(quantity: 2),
