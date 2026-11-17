@@ -483,6 +483,8 @@ class _BgeAppState extends State<BgeApp> {
       adminHouseholdListBuilder: _buildAdminHouseholdListRoute,
       serverSettingsBuilder: _buildServerSettingsRoute,
       adminHouseholdDetailBuilder: _buildAdminHouseholdDetailRoute,
+      // #83: a web cold load's location waits here for the consumer below.
+      pendingDeepLinkHolder: widget.pendingDeepLinkHolder,
     );
     // #82: the lookup and the orchestrator exist only once bootstrap has
     // succeeded, so they are read when a drain runs, not captured now.

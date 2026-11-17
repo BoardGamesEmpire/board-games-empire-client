@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:app_shell/src/bootstrap/app_bootstrap_cubit.dart';
 import 'package:app_shell/src/bootstrap/app_bootstrap_state.dart';
 import 'package:app_shell/src/bootstrap/local_data_in_use_error.dart';
+import 'package:app_shell/src/deep_links/pending_deep_link_holder.dart';
+import 'package:app_shell/src/deep_links/web_cold_load.dart';
 import 'package:app_shell/src/navigation/shell_modal_guard.dart';
 import 'package:app_shell/src/screens/bootstrap_error_screen.dart';
 import 'package:app_shell/src/screens/not_yet_available_screen.dart';
@@ -885,12 +887,17 @@ GoRouter buildAppRouter({
   AdminHouseholdListScreenBuilder? adminHouseholdListBuilder,
   AdminHouseholdDetailScreenBuilder? adminHouseholdDetailBuilder,
   ServerSettingsScreenBuilder? serverSettingsBuilder,
+  PendingDeepLinkHolder? pendingDeepLinkHolder,
 }) {
   // #414: a modal on the root navigator leaves with the navigation shell
   // page it was opened over. One per router.
   final modalGuard = ShellModalGuard();
   // A context beneath the Router, for the redirect's replace (#916).
   final rootNavigatorKey = GlobalKey<NavigatorState>();
+  // The first redirect is handed the location the router starts from: on
+  // web, the address the page was loaded at (#83). Per router, so each
+  // router built starts fresh.
+  var coldLoadSeen = false;
   return GoRouter(
     initialLocation: AppRoutes.splash,
     navigatorKey: rootNavigatorKey,
@@ -902,6 +909,10 @@ GoRouter buildAppRouter({
     // caller could dispose.
     refreshListenable: refreshListenable,
     redirect: (context, routerState) {
+      if (!coldLoadSeen) {
+        coldLoadSeen = true;
+        _holdColdLoad(routerState, pendingDeepLinkHolder);
+      }
       final location = routerState.matchedLocation;
       final target = switch (bootstrapCubit.state) {
         AppBootstrapInitializing() =>
@@ -1745,6 +1756,21 @@ class _LeaveForEventState extends State<_LeaveForEvent> {
 
   @override
   Widget build(BuildContext context) => const SizedBox.shrink();
+}
+
+/// Holds the location a web page was loaded at in [holder], so that it opens
+/// once the app is ready, after bootstrap and sign-in (#83). Until then the
+/// bootstrap redirect pins every location to a bootstrap screen, and the
+/// address would be lost. `DeepLinkConsumer` lands it on Ready.
+///
+/// Only a location that matches a declared route is held: an unknown one
+/// would resume into a not-found page. Home and the bootstrap screens are
+/// not held either ([coldLoadLinkFor]). Native always starts at splash, so
+/// nothing is held there.
+void _holdColdLoad(GoRouterState routerState, PendingDeepLinkHolder? holder) {
+  if (holder == null || routerState.error != null) return;
+  final link = coldLoadLinkFor(routerState.uri);
+  if (link != null) holder.set(link);
 }
 
 /// Makes the router's next report to the browser take the current history

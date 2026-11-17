@@ -32,6 +32,7 @@ export 'src/deep_links/deep_link_redaction.dart';
 export 'src/deep_links/deep_link_source.dart';
 export 'src/deep_links/known_server_lookup.dart';
 export 'src/deep_links/pending_deep_link_holder.dart';
+export 'src/deep_links/web_cold_load.dart';
 export 'src/i18n/active_locale.dart';
 export 'src/navigation/menu_drawer.dart';
 export 'src/navigation/nav_destination.dart';

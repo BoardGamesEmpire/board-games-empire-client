@@ -35,16 +35,25 @@ void main() {
     Stream<AppBootstrapState>? stream,
     AuthScopeBuilder? authScopeBuilder,
     NavigationShellBuilder? navigationShellBuilder,
+    PendingDeepLinkHolder? pendingDeepLinkHolder,
+    String? coldLoad,
   }) async {
     whenListen(
       cubit,
       stream ?? const Stream<AppBootstrapState>.empty(),
       initialState: initialState,
     );
+    // The address a web page was loaded at, which go_router starts from.
+    if (coldLoad != null) {
+      final dispatcher = tester.binding.platformDispatcher
+        ..defaultRouteNameTestValue = coldLoad;
+      addTearDown(dispatcher.clearDefaultRouteNameTestValue);
+    }
     final listenable = BootstrapStreamListenable(cubit.stream);
     final router = buildAppRouter(
       bootstrapCubit: cubit,
       refreshListenable: listenable,
+      pendingDeepLinkHolder: pendingDeepLinkHolder,
       // The production home body (HomeScreen) needs an active-server scope
       // this router-level test does not build. Supply a minimal stand-in so
       // the redirect assertions can recognize the home destination — the
@@ -276,6 +285,101 @@ void main() {
         reservedDeepLinkPathPatterns,
         containsAll(publicDeepLinkPathPatterns),
       );
+    });
+  });
+
+  group('buildAppRouter — a web cold load (#83)', () {
+    testWidgets('a cold load at a declared location is held', (tester) async {
+      final holder = PendingDeepLinkHolder();
+
+      await pumpRouter(
+        tester,
+        initialState: const AppBootstrapInitializing(),
+        pendingDeepLinkHolder: holder,
+        coldLoad: '/household/h1',
+      );
+
+      expect(holder.peek!.location, '/household/h1');
+      expect(holder.peek!.serverId, webColdLoadServerId);
+      expect(find.byType(SplashScreen), findsOneWidget);
+    });
+
+    testWidgets('a cold load keeps its query and token', (tester) async {
+      final holder = PendingDeepLinkHolder();
+
+      await pumpRouter(
+        tester,
+        initialState: const AppBootstrapInitializing(),
+        pendingDeepLinkHolder: holder,
+        coldLoad: '/server/s1/event/e1/rsvp/tok?c=1',
+      );
+
+      expect(holder.peek!.location, '/server/s1/event/e1/rsvp/tok?c=1');
+    });
+
+    testWidgets('a cold load at an unknown path is not held', (tester) async {
+      final holder = PendingDeepLinkHolder();
+
+      await pumpRouter(
+        tester,
+        initialState: const AppBootstrapInitializing(),
+        pendingDeepLinkHolder: holder,
+        coldLoad: '/nope',
+      );
+
+      expect(holder.peek, isNull);
+    });
+
+    for (final location in [AppRoutes.home, AppRoutes.auth]) {
+      testWidgets('a cold load at $location is not held', (tester) async {
+        final holder = PendingDeepLinkHolder();
+
+        await pumpRouter(
+          tester,
+          initialState: const AppBootstrapInitializing(),
+          pendingDeepLinkHolder: holder,
+          coldLoad: location,
+        );
+
+        expect(holder.peek, isNull);
+      });
+    }
+
+    testWidgets('only the first location is captured', (tester) async {
+      final holder = PendingDeepLinkHolder();
+      final router = await pumpRouter(
+        tester,
+        initialState: const AppBootstrapInitializing(),
+        stream: Stream.fromIterable(const [AppBootstrapNeedsAuth()]),
+        pendingDeepLinkHolder: holder,
+        coldLoad: '/household/h1',
+      );
+      await tester.pumpAndSettle();
+      final held = holder.peek;
+
+      router.go(AppRoutes.household);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Sign in'), findsOneWidget);
+      expect(holder.peek, same(held));
+    });
+
+    testWidgets('a location reached after the cold load is never held', (
+      tester,
+    ) async {
+      final holder = PendingDeepLinkHolder();
+      final router = await pumpRouter(
+        tester,
+        initialState: const AppBootstrapInitializing(),
+        stream: Stream.fromIterable(const [AppBootstrapNeedsAuth()]),
+        pendingDeepLinkHolder: holder,
+      );
+      await tester.pumpAndSettle();
+
+      router.go(AppRoutes.household);
+      await tester.pumpAndSettle();
+
+      expect(holder.peek, isNull);
     });
   });
 
