@@ -26,10 +26,10 @@ import 'package:observability/observability.dart';
 /// overwrites the old quantity. A choice with no medium has nothing to look
 /// up, and clears the entry shown.
 ///
-/// A lookup answering after the platform or the medium changed again is
-/// dropped, so the entry shown is always the one for the choice on screen. A
-/// failed lookup is logged and shows no entry: the add itself still works,
-/// or fails on its own.
+/// A lookup answering after any later choice is dropped (#773), so the entry
+/// shown is always the one for the choice on screen. A failed lookup is
+/// logged and shows no entry: the add itself still works, or fails on its
+/// own.
 ///
 /// ## The add
 ///
@@ -68,10 +68,16 @@ class AddToCollectionBloc
   final SyncOperationSender _sender;
   final BgeLogger _logger;
 
+  /// The latest choice's number; a lookup answers only while it is still the
+  /// latest (#773).
+  int _lookup = 0;
+
   Future<void> _onChoiceChanged(
     AddToCollectionChoiceChanged event,
     Emitter<AddToCollectionState> emit,
   ) async {
+    // Taken before the early return, so a cleared medium retires older lookups.
+    final lookup = ++_lookup;
     final platformGameId = event.platformGameId;
     final medium = event.medium;
     emit(
@@ -97,12 +103,10 @@ class AddToCollectionBloc
       );
     }
 
-    // A later choice's lookup owns the note now.
-    if (existing == null ||
-        state.platformGameId != platformGameId ||
-        state.medium != medium) {
-      return;
-    }
+    // Any later choice owns the note now, even one back to this same pair:
+    // comparing the pair would let this older answer overwrite its newer one
+    // (#773).
+    if (existing == null || lookup != _lookup) return;
     emit(
       AddToCollectionState(
         platformGameId: platformGameId,

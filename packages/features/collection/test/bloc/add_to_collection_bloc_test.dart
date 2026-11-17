@@ -238,6 +238,61 @@ void main() {
     );
   });
 
+  test('A → B → A: the first A lookup finishing last is dropped', () async {
+    // Completers are made here, not in setUp: fake async.
+    final a1 = Completer<GameCollection?>();
+    final b = Completer<GameCollection?>();
+    final a2 = Completer<GameCollection?>();
+    final physicalLookups = [a1, a2];
+    answerLookup(GameMedium.physical, () => physicalLookups.removeAt(0).future);
+    answerLookup(GameMedium.digital, () => b.future);
+
+    final bloc = build();
+    addTearDown(bloc.close);
+    final states = <AddToCollectionState>[];
+    final sub = bloc.stream.listen(states.add);
+    addTearDown(sub.cancel);
+
+    bloc
+      ..add(choice(GameMedium.physical))
+      ..add(choice(GameMedium.digital))
+      ..add(choice(GameMedium.physical));
+    await pumpEventQueue();
+
+    a2.complete(entry());
+    await pumpEventQueue();
+    b.complete(null);
+    await pumpEventQueue();
+    a1.complete(entry(quantity: 1));
+    await pumpEventQueue();
+
+    expect(bloc.state.existing?.quantity, 2);
+    final afterA2 = states.indexWhere((s) => s.existing?.quantity == 2);
+    expect(afterA2, isNonNegative);
+    expect(
+      states.skip(afterA2).map((s) => s.existing?.quantity),
+      everyElement(2),
+    );
+  });
+
+  test('a choice with no medium retires the lookup before it', () async {
+    final first = Completer<GameCollection?>();
+    answerLookup(GameMedium.physical, () => first.future);
+
+    final bloc = build();
+    addTearDown(bloc.close);
+
+    bloc.add(choice(GameMedium.physical));
+    await pumpEventQueue();
+    bloc.add(choice(null));
+    await pumpEventQueue();
+    first.complete(entry());
+    await pumpEventQueue();
+
+    expect(bloc.state.medium, isNull);
+    expect(bloc.state.existing, isNull);
+  });
+
   blocTest<AddToCollectionBloc, AddToCollectionState>(
     'a choice with no medium clears the existing entry',
     setUp: () => answerLookup(GameMedium.physical, () async => entry()),
