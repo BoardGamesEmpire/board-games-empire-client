@@ -235,6 +235,9 @@ const Map<String, List<String>> _allowlist = {
   'packages/ui/tokens/lib/src/bge_color_schemes.dart': ['color'],
   // The helper itself: the one place the queue is cleared before showing.
   'packages/ui/widgets/lib/src/banners/bge_snack_bars.dart': ['snackbar'],
+  // A test fixture, not UI: the banded image's two colours are pixels of a
+  // picture a golden draws, and must not follow any theme.
+  'packages/testing/support/lib/src/images/image_host.dart': ['color'],
 };
 
 // This list started at seven entries covering most of the token package, and

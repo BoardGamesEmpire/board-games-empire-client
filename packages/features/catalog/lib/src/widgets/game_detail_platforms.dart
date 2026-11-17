@@ -24,7 +24,6 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// other platform is an outlined chip, and opens the add with that platform
 /// chosen. Fill against outline is what the eye sees, and the check and each
 /// chip's spoken name carry the meaning, so colour is never the only sign.
-/// The legend under the chips draws the same check, at the same size.
 ///
 /// A chip focused from the keyboard is ringed, owned or not, because a focus
 /// tint barely shows on a filled chip. See [_ChipSlot] for where the ring and
@@ -77,8 +76,7 @@ class GameDetailPlatforms extends StatefulWidget {
 class _GameDetailPlatformsState extends State<GameDetailPlatforms> {
   static final BgeLogger _log = BgeLogger('bge.catalog.detail.ownership');
 
-  /// The check's size: a Material chip's avatar size, set on both the chips
-  /// and the legend so they draw the same mark.
+  /// The check's size: a Material chip's avatar size, set on the chips.
   static const double _checkSize = 18;
 
   /// The platform game ids the watch is over.
@@ -219,19 +217,16 @@ class _GameDetailPlatformsState extends State<GameDetailPlatforms> {
             platformGames: widget.platformGames,
             entries: entries,
           );
-    final ownsAny =
-        ownership != null &&
-        widget.platformGames.any((p) => ownership.owns(p.id));
     final addOptions = _addOptionsFor(entries);
 
     // One shape whether or not ownership is known, so the chips' row keeps
-    // its element as the answer lands; the legend and the button follow it.
+    // its element as the answer lands; the button follows it.
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // No spacing of its own: each slot's margin, spaceXs a side, makes
         // the spaceSm between two chips. Drawn back by that margin so that
-        // the chips line up with the heading, the legend and the button, and
+        // the chips line up with the heading and the button, and
         // only a ring stands in the page's padding.
         Transform.translate(
           offset: Offset(
@@ -267,29 +262,6 @@ class _GameDetailPlatformsState extends State<GameDetailPlatforms> {
             ],
           ),
         ),
-        if (ownsAny) ...[
-          const BgeGap.sm(),
-          // The chips' check, on the page's surface, and decoration only: the
-          // words say it, and each chip's spoken name says it again.
-          Row(
-            key: GameDetailScreen.ownedLegendKey,
-            mainAxisSize: MainAxisSize.min,
-            spacing: tokens.spaceSm,
-            children: [
-              Icon(
-                Icons.check,
-                size: _checkSize,
-                color: Theme.of(context).colorScheme.onSurface,
-              ),
-              Flexible(
-                child: Text(
-                  l10n.catalogDetailOwnedLegend,
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-              ),
-            ],
-          ),
-        ],
         if (collection != null && addOptions.isNotEmpty) ...[
           const BgeGap.md(),
           FilledButton.tonal(

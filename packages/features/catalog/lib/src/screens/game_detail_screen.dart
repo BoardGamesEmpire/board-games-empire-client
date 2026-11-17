@@ -66,9 +66,6 @@ class GameDetailScreen extends StatelessWidget {
   static Key platformKey(String platformGameId) =>
       Key('catalog_detail.platform_$platformGameId');
 
-  /// The legend under the platforms that says what the check means.
-  static const Key ownedLegendKey = Key('catalog_detail.owned_legend');
-
   /// The one add button, under the platforms.
   static const Key addKey = Key('catalog_detail.add');
 
@@ -227,7 +224,11 @@ class _GameDetailBody extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = GameCatalogLocalizations.of(context);
     final theme = Theme.of(context);
-    final facts = _facts(l10n, GameFiltersLocalizations.of(context));
+    final facts = detailFacts(
+      l10n,
+      GameFiltersLocalizations.of(context),
+      game,
+    );
     final subtitle = game.subtitle;
     final description = game.description;
 
@@ -247,6 +248,7 @@ class _GameDetailBody extends StatelessWidget {
             url: game.image ?? game.thumbnail,
             extent: _imageExtent,
             placeholderIcon: Icons.casino_outlined,
+            whole: true,
           ),
           coverExtent: _imageExtent,
           titleFontSize:
@@ -263,7 +265,7 @@ class _GameDetailBody extends StatelessWidget {
                 Text(subtitle, style: theme.textTheme.titleMedium),
               if (facts.isNotEmpty) ...[
                 const BgeGap.sm(),
-                CatalogFactsText(facts, key: GameDetailScreen.factsKey),
+                CatalogFactList(facts, key: GameDetailScreen.factsKey),
               ],
             ],
           ),
@@ -286,19 +288,5 @@ class _GameDetailBody extends StatelessWidget {
         ],
       ],
     );
-  }
-
-  List<GameFact> _facts(
-    GameCatalogLocalizations l10n,
-    GameFiltersLocalizations filterL10n,
-  ) {
-    final year = game.publishYear;
-    final type = contentTypeLabel(filterL10n, game.contentType);
-    return [
-      if (type != null) sameFact(type),
-      if (year != null)
-        sameFact(l10n.catalogDetailPublished(yearText(filterL10n, year))),
-      ...playFacts(l10n, filterL10n, game),
-    ];
   }
 }

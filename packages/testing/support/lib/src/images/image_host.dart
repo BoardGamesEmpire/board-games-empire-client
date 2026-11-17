@@ -15,13 +15,36 @@ import 'package:flutter_test/flutter_test.dart';
 /// fails a test that leaves the hook set, and a cached image would answer
 /// the next test's request.
 Future<T> servingImages<T>(Uint8List png, Future<T> Function() body) async {
-  debugNetworkImageHttpClientProvider = () => _ImageHost(png);
+  debugNetworkImageHttpClientProvider = () => _ImageHost((_) => png);
   try {
     return await body();
   } finally {
     debugNetworkImageHttpClientProvider = null;
     imageCache.clear();
   }
+}
+
+/// Starts answering each network image request with the PNG [pngs] holds
+/// for its URL, an error for any other, until [stopServingImages] runs.
+///
+/// For a golden, whose `pumpBeforeTest` cannot wrap a [servingImages] body
+/// around the render: set it there, and call [stopServingImages] before the
+/// test body ends (for a golden, at the end of `pumpBeforeTest`, in a
+/// `finally`), not in a `tearDown`: the binding verifies its debug variables
+/// (`debugAssertAllPaintingVarsUnset`) before package:test tearDowns run, and
+/// a hook still set then fails the test.
+void serveImages(Map<String, Uint8List> pngs) {
+  debugNetworkImageHttpClientProvider = () => _ImageHost(
+    (url) =>
+        pngs[url.toString()] ?? (throw HttpException('no image', uri: url)),
+  );
+}
+
+/// Undoes [serveImages]: sets the hook back to null and clears the image
+/// cache, for the reasons [servingImages] gives.
+void stopServingImages() {
+  debugNetworkImageHttpClientProvider = null;
+  imageCache.clear();
 }
 
 /// A solid [width] x [height] PNG, in `Paint`'s default black. It encodes
@@ -33,6 +56,27 @@ Future<Uint8List> solidPng(int width, int height) async {
     Rect.fromLTWH(0, 0, width.toDouble(), height.toDouble()),
     Paint(),
   );
+  final image = await recorder.endRecording().toImage(width, height);
+  final data = await image.toByteData(format: ui.ImageByteFormat.png);
+  return data!.buffer.asUint8List();
+}
+
+/// A [width] x [height] PNG whose top quarter is one colour (blue) and whose
+/// rest is another (orange), so a crop that loses the top shows in a golden.
+/// Fixed colours, no theme. Needs real async work, like [solidPng].
+Future<Uint8List> bandedPng(int width, int height) async {
+  final recorder = ui.PictureRecorder();
+  final canvas = Canvas(recorder);
+  final band = height / 4;
+  canvas
+    ..drawRect(
+      Rect.fromLTWH(0, 0, width.toDouble(), band),
+      Paint()..color = Colors.blue.shade800,
+    )
+    ..drawRect(
+      Rect.fromLTWH(0, band, width.toDouble(), height - band),
+      Paint()..color = Colors.orange.shade800,
+    );
   final image = await recorder.endRecording().toImage(width, height);
   final data = await image.toByteData(format: ui.ImageByteFormat.png);
   return data!.buffer.asUint8List();
@@ -62,15 +106,15 @@ Future<Size> pumpUntilDecoded(
 }
 
 class _ImageHost extends Fake implements HttpClient {
-  _ImageHost(this._png);
+  _ImageHost(this._pngFor);
 
-  final Uint8List _png;
+  final Uint8List Function(Uri url) _pngFor;
 
   @override
   bool autoUncompress = false;
 
   @override
-  Future<HttpClientRequest> getUrl(Uri url) async => _Request(_png);
+  Future<HttpClientRequest> getUrl(Uri url) async => _Request(_pngFor(url));
 }
 
 class _Request extends Fake implements HttpClientRequest {

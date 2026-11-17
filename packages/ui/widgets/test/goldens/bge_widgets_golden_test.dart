@@ -1,7 +1,9 @@
 import 'dart:async';
 
 import 'package:alchemist/alchemist.dart';
+import 'package:bge_test_support/images.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
@@ -35,12 +37,14 @@ void main() {
       goldenTest(
         'Bge widgets render in $themeName at 1.0 and 2.0 text scale',
         fileName: 'bge_widgets_$themeName',
-        // `pumpOnce`, not the default pump-and-settle. The in-flight submit
-        // button contains an indeterminate `CircularProgressIndicator`, which
-        // never stops animating — pumping until settled simply times out.
-        // One frame is also what makes the spinner's rotation deterministic
-        // rather than dependent on how long the run took.
-        pumpBeforeTest: pumpOnce,
+        // Zero-duration pumps, not the default pump-and-settle. The in-flight
+        // submit button contains an indeterminate `CircularProgressIndicator`,
+        // which never stops animating — pumping until settled simply times
+        // out. Zero-duration pumps never advance the fake clock, and
+        // `runAsync` does not either, so the spinner's rotation is
+        // deterministic rather than dependent on how long the run took.
+        pumpWidget: _pumpServingCovers,
+        pumpBeforeTest: _pumpUntilCoversDecoded,
         builder: () => GoldenTestGroup(
           columns: 2,
           scenarioConstraints: const BoxConstraints(maxWidth: 320),
@@ -146,11 +150,86 @@ void main() {
                   ),
                 ),
               ),
+              GoldenTestScenario(
+                // A real portrait and a real landscape image, banded so the
+                // top shows: the square crop keeps the top band, and whole
+                // draws everything, top-aligned, with no bars (#937).
+                name: 'thumbnail · cover crop and whole · ${scale}x',
+                child: _Host(
+                  theme: theme,
+                  scale: scale,
+                  child: Wrap(
+                    spacing: BgeTokens.standard.spaceSm,
+                    runSpacing: BgeTokens.standard.spaceSm,
+                    children: [
+                      for (final url in [_portraitUrl, _landscapeUrl]) ...[
+                        BgeThumbnail(url: url),
+                        BgeThumbnail(url: url, whole: true),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
             ],
           ],
         ),
       ),
     );
+  }
+}
+
+const _portraitUrl = 'https://example.com/portrait.png';
+const _landscapeUrl = 'https://example.com/landscape.png';
+
+/// Serves the two banded cover images, then pumps the scenarios in.
+///
+/// The hook has to be set before the first pump: an `Image` that failed on
+/// the test binding's 400 keeps its error, so serving afterwards is too
+/// late. The images are made here, outside fake time, as they need real
+/// async work.
+Future<void> _pumpServingCovers(WidgetTester tester, Widget widget) async {
+  final portrait = (await tester.runAsync(() => bandedPng(60, 100)))!;
+  final landscape = (await tester.runAsync(() => bandedPng(100, 60)))!;
+  serveImages({_portraitUrl: portrait, _landscapeUrl: landscape});
+  try {
+    await onlyPumpWidget(tester, widget);
+  } on Object {
+    // _pumpUntilCoversDecoded never runs, so its `finally` can't clear the
+    // hook, and a hook still set would bury this error under the binding's.
+    stopServingImages();
+    rethrow;
+  }
+}
+
+/// Pumps until every thumbnail has decoded its image, then stops serving.
+///
+/// The load and the decode run outside fake time, so each attempt lets real
+/// time pass first. The hook is cleared here, not in a `tearDown`: the
+/// binding checks for a set hook before tearDowns run. The images stay in
+/// the widgets.
+Future<void> _pumpUntilCoversDecoded(WidgetTester tester) async {
+  final thumbnails = find.byType(BgeThumbnail);
+  final decoded = find.descendant(
+    of: thumbnails,
+    matching: find.byType(RawImage),
+  );
+  try {
+    for (var i = 0; i < 20; i++) {
+      await pumpOnce(tester);
+      if (decoded.evaluate().length == thumbnails.evaluate().length) {
+        break;
+      }
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 20)),
+      );
+    }
+    expect(
+      decoded,
+      findsNWidgets(thumbnails.evaluate().length),
+      reason: 'covers did not decode',
+    );
+  } finally {
+    stopServingImages();
   }
 }
 

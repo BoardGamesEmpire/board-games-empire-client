@@ -4,6 +4,15 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// A remote image at one fixed square size, or a placeholder while it loads,
 /// when it fails, and when there is none.
 ///
+/// ## Cropping
+///
+/// The square crops its image to fill it, and anchors the crop at the top,
+/// because box art prints its title there: a portrait cover loses its
+/// bottom, not its name. Every caller gets this. [whole] draws the image
+/// uncropped instead, for a cover shown on its own, anchored at the top start
+/// so it shares the top edge of the title beside it, or the start edge of the
+/// title and facts below it (#937).
+///
 /// Moved here from the collection list (#44) when the game catalog (#42)
 /// wanted the same thumbnail.
 ///
@@ -35,7 +44,7 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// Twice, not once: under `BoxFit.cover` an image's shorter side has to
 /// span the square, and a bound of the square itself would leave that side
 /// short, and blurred, for any image that is not square. Twice keeps an
-/// image sharp up to 2:1.
+/// image sharp up to 2:1. The bound holds in both modes.
 ///
 /// Decorative to a screen reader: the text beside it names what it shows.
 class BgeThumbnail extends StatelessWidget {
@@ -45,6 +54,7 @@ class BgeThumbnail extends StatelessWidget {
     this.extent = listExtent,
     this.placeholderIcon = Icons.image_outlined,
     this.placeholderKey,
+    this.whole = false,
     super.key,
   });
 
@@ -66,42 +76,63 @@ class BgeThumbnail extends StatelessWidget {
   /// Key on every placeholder, so a test can find one.
   final Key? placeholderKey;
 
+  /// Draws the image uncropped: no crop, and no letterbox bars. It fits
+  /// inside the square, anchored at the top start (the top left, or the top
+  /// right in a right-to-left language), with transparent space around it,
+  /// and the rounded clip follows the image rather than the square. The
+  /// placeholder still fills the square. Known limit: an image smaller than
+  /// the square on both sides is drawn at its own size, not enlarged to fit,
+  /// as an `Image` with no size does under loose constraints.
+  final bool whole;
+
   @override
   Widget build(BuildContext context) {
     final url = this.url;
     final decodeBound =
         (extent * MediaQuery.devicePixelRatioOf(context) * decodeHeadroom)
             .ceil();
-    final placeholder = _Placeholder(
-      key: placeholderKey,
-      icon: placeholderIcon,
+    final placeholder = SizedBox.expand(
+      child: _Placeholder(key: placeholderKey, icon: placeholderIcon),
     );
+
+    final radius = BorderRadius.circular(BgeTokens.of(context).radiusSm);
+    final image = url == null
+        ? null
+        : Image(
+            image: ResizeImage(
+              NetworkImage(
+                url,
+                webHtmlElementStrategy: WebHtmlElementStrategy.fallback,
+              ),
+              width: decodeBound,
+              height: decodeBound,
+              policy: ResizeImagePolicy.fit,
+            ),
+            fit: whole ? BoxFit.contain : BoxFit.cover,
+            alignment: whole
+                ? AlignmentDirectional.topStart
+                : Alignment.topCenter,
+            excludeFromSemantics: true,
+            // Keyed on the first frame, not on load progress: a request
+            // that has no response yet reports no progress at all.
+            frameBuilder: (context, child, frame, wasSynchronouslyLoaded) =>
+                frame == null ? placeholder : child,
+            errorBuilder: (context, error, stackTrace) => placeholder,
+          );
 
     return SizedBox.square(
       dimension: extent,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(BgeTokens.of(context).radiusSm),
-        child: url == null
-            ? placeholder
-            : Image(
-                image: ResizeImage(
-                  NetworkImage(
-                    url,
-                    webHtmlElementStrategy: WebHtmlElementStrategy.fallback,
-                  ),
-                  width: decodeBound,
-                  height: decodeBound,
-                  policy: ResizeImagePolicy.fit,
-                ),
-                fit: BoxFit.cover,
-                excludeFromSemantics: true,
-                // Keyed on the first frame, not on load progress: a request
-                // that has no response yet reports no progress at all.
-                frameBuilder: (context, child, frame, wasSynchronouslyLoaded) =>
-                    frame == null ? placeholder : child,
-                errorBuilder: (context, error, stackTrace) => placeholder,
+      child: whole
+          // Loose constraints, so the image keeps its shape and the clip
+          // follows it; the placeholder expands to the square.
+          ? Align(
+              alignment: AlignmentDirectional.topStart,
+              child: ClipRRect(
+                borderRadius: radius,
+                child: image ?? placeholder,
               ),
-      ),
+            )
+          : ClipRRect(borderRadius: radius, child: image ?? placeholder),
     );
   }
 }
