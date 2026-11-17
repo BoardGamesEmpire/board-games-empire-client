@@ -437,6 +437,26 @@
       }
     }
   },
+  "catalogPlayTimeFact": "Play time {duration}",
+  "@catalogPlayTimeFact": {
+    "description": "The play time in the quick look's one line of facts, after the players and before the age, so a reader knows what the duration is. The duration is already a play time, for example '30–45 min', which gives 'Play time 30–45 min'. The duration can also be a lower bound, such as '30 min+'; an upper bound has its own string, catalogPlayTimeUpToFact. 'Play time' must match catalogDetailFactPlayTime.",
+    "placeholders": {
+      "duration": {
+        "type": "String",
+        "example": "30–45 min"
+      }
+    }
+  },
+  "catalogPlayTimeUpToFact": "Play time up to {duration}",
+  "@catalogPlayTimeUpToFact": {
+    "description": "catalogPlayTimeFact for a game with only its longest play time known, as in 'Play time up to 2 hr'. Its own string, so the bound reads as part of the phrase rather than as the start of a new one. The duration is already a play time, abbreviated. 'Play time' must match catalogDetailFactPlayTime.",
+    "placeholders": {
+      "duration": {
+        "type": "String",
+        "example": "2 hr"
+      }
+    }
+  },
   "catalogDetailPlayersRange": "{min}–{max}",
   "@catalogDetailPlayersRange": {
     "description": "Value of the Players row in the game page's list of facts when a game takes a range, for example '3–4'.",

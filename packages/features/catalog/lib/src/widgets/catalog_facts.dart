@@ -27,9 +27,24 @@ List<GameFact> playFacts(
   Game game,
 ) {
   final age = game.minAge;
+  final time = playTimeFact(filterL10n, game);
   return [
     ?playersFact(filterL10n, game.minPlayers, game.maxPlayers),
-    ?playTimeFact(filterL10n, game),
+    if (time != null)
+      (
+        // "Up to 2 hr" is written to stand alone; after the label it takes
+        // its own string, so it doesn't read as "Play time Up to 2 hr".
+        shown: switch ((game.minPlayTime, game.maxPlayTime)) {
+          (null, final int max) => l10n.catalogPlayTimeUpToFact(
+            durationFact(filterL10n, max).shown,
+          ),
+          _ => l10n.catalogPlayTimeFact(time.shown),
+        },
+        spoken: l10n.catalogDetailFactSpoken(
+          l10n.catalogDetailFactPlayTime,
+          time.spoken,
+        ),
+      ),
     if (age != null)
       (
         shown: l10n.catalogDetailMinAge('$age'),

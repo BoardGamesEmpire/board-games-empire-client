@@ -58,8 +58,17 @@ void main() {
 
       expect(playFacts(l10n, filterL10n, game), [
         (shown: '1–5 players', spoken: '1 to 5 players'),
-        (shown: '30–45 min', spoken: '30 to 45 minutes'),
+        (shown: 'Play time 30–45 min', spoken: 'Play time, 30 to 45 minutes'),
         (shown: 'Ages 10+', spoken: 'Ages 10 and up'),
+      ]);
+    });
+
+    test('a play time with only its longest time reads as one phrase', () {
+      expect(playFacts(l10n, filterL10n, timed(max: 120)), [
+        (shown: 'Play time up to 2 hr', spoken: 'Play time, Up to 2 hours'),
+      ]);
+      expect(playFacts(l10n, filterL10n, timed(min: 30)), [
+        (shown: 'Play time 30 min+', spoken: 'Play time, 30 minutes or more'),
       ]);
     });
 

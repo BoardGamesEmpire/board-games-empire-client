@@ -62,7 +62,7 @@ void main() {
   const summary = GameSummary(id: 'g_wingspan', title: 'Wingspan');
 
   /// Wingspan's players, play time and age, as shown.
-  const wingspanFacts = '1–5 players · 30–45 min · Ages 10+';
+  const wingspanFacts = '1–5 players · Play time 30–45 min · Ages 10+';
 
   /// A button on a page that opens [seed]'s quick look, as a cover does.
   Widget opener(
@@ -391,7 +391,7 @@ void main() {
 
     expect(find.byKey(GameQuickLook.partialKey), findsOneWidget);
     expect(find.text('Wingspan (second edition)'), findsOneWidget);
-    expect(factsShown(tester), '1–5 players · 40–55 min · Ages 10+');
+    expect(factsShown(tester), '1–5 players · Play time 40–55 min · Ages 10+');
     expect(find.text('Published 2019'), findsOneWidget);
     expect(find.textContaining('wildlife preserves'), findsNothing);
   });
