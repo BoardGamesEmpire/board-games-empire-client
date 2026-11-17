@@ -354,8 +354,11 @@ class _BgeDropdownBindingState<T>
                     ? null
                     : () {
                         // `MenuItemButton` calls this after a frame, by which
-                        // time the field may be gone, its control with it.
+                        // time the field may be gone, its control with it,
+                        // or inert: a closed menu's item keeps the callback
+                        // it was built with.
                         if (!mounted) return;
+                        if (_field.readOnly || control.disabled) return;
                         didChange(item.value);
                         control.markAsTouched();
                         field.onPicked?.call(item.value);

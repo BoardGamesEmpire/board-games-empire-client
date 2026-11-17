@@ -943,6 +943,42 @@ void main() {
       expect(picked, isEmpty);
     });
 
+    testWidgets('a pick that lands once the field is read-only changes '
+        'nothing', (tester) async {
+      final control = FormControl<String>(value: 'b');
+      final form = _form(control);
+      final picked = <String>[];
+      await tester.pumpWidget(_host(form, _fruit, onPicked: picked.add));
+
+      await _open(tester);
+      await tester.tap(find.text('Cherry').last);
+      // A submit starts in the frame before the pick lands.
+      await tester.pumpWidget(
+        _host(form, _fruit, readOnly: true, onPicked: picked.add),
+      );
+      await tester.pumpAndSettle();
+
+      expect(control.value, 'b');
+      expect(picked, isEmpty);
+    });
+
+    testWidgets('a pick that lands once the control is disabled changes '
+        'nothing', (tester) async {
+      final control = FormControl<String>(value: 'b');
+      final picked = <String>[];
+      await tester.pumpWidget(
+        _host(_form(control), _fruit, onPicked: picked.add),
+      );
+
+      await _open(tester);
+      await tester.tap(find.text('Cherry').last);
+      control.markAsDisabled();
+      await tester.pumpAndSettle();
+
+      expect(control.value, 'b');
+      expect(picked, isEmpty);
+    });
+
     testWidgets('a touched field keeps its error while the menu is open', (
       tester,
     ) async {
