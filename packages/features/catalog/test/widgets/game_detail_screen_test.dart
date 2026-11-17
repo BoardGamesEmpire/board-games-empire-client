@@ -92,6 +92,17 @@ void main() {
     }
   }
 
+  /// The rows of the facts list, each as it is drawn.
+  List<String> factRows(WidgetTester tester) => [
+    for (final row in tester.widgetList<RichText>(
+      find.descendant(
+        of: find.byKey(GameDetailScreen.factsKey),
+        matching: find.byType(RichText),
+      ),
+    ))
+      row.text.toPlainText(),
+  ];
+
   testWidgets("shows the game's facts", (tester) async {
     remote.onFetchGame = (_) async =>
         (game: catan, platformGames: const <PlatformGame>[]);
@@ -100,17 +111,83 @@ void main() {
 
     expect(find.text('Trade, build, settle'), findsOneWidget);
     expect(find.byKey(GameDetailScreen.factsKey), findsOneWidget);
-    expect(
-      tester
-          .widget<Text>(
-            find.descendant(
-              of: find.byKey(GameDetailScreen.factsKey),
-              matching: find.byType(Text),
-            ),
-          )
-          .data,
-      'Base game · Published 1995 · 3–4 players · 1 hr 30 min · Ages 10+',
+    expect(factRows(tester), [
+      'Type Base game',
+      'Published 1995',
+      'Players 3–4',
+      'Play time 1 hr 30 min',
+      'Age 10+',
+    ]);
+  });
+
+  testWidgets('a screen reader reads each fact as its label, then its value', (
+    tester,
+  ) async {
+    final handle = tester.ensureSemantics();
+    remote.onFetchGame = (_) async =>
+        (game: catan, platformGames: const <PlatformGame>[]);
+
+    await show(tester);
+
+    expect(find.bySemanticsLabel('Players, 3 to 4'), findsOneWidget);
+    expect(find.bySemanticsLabel('Age, 10 and up'), findsOneWidget);
+    handle.dispose();
+  });
+
+  testWidgets('facts wrap at 200% text in a 320dp window', (tester) async {
+    tester.view.physicalSize = const Size(320, 640);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final expansion = Game(
+      id: 'g_exp',
+      title: 'Seafarers',
+      contentType: ContentType.standaloneExpansion,
+      minPlayTime: 45,
+      maxPlayTime: 90,
+      createdAt: DateTime.utc(2026),
+      updatedAt: DateTime.utc(2026),
     );
+    remote.onFetchGame = (_) async =>
+        (game: expansion, platformGames: const <PlatformGame>[]);
+
+    await tester.pumpWidget(
+      MediaQuery(
+        data: const MediaQueryData(
+          size: Size(320, 640),
+          textScaler: TextScaler.linear(2),
+        ),
+        child: catalogApp(
+          GameDetailScreen(
+            gameId: 'g_exp',
+            remote: remote,
+            openLink: (uri) async => opened.add(uri),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(factRows(tester), [
+      'Type Standalone expansion',
+      'Play time 45 min–1 hr 30 min',
+    ]);
+    final rows = find.descendant(
+      of: find.byKey(GameDetailScreen.factsKey),
+      matching: find.byType(RichText),
+    );
+    // The scaler reached the facts, and the long row wrapped within its row.
+    for (final row in tester.widgetList<RichText>(rows)) {
+      expect(row.textScaler.scale(10), 20);
+    }
+    final playTime = tester.renderObject<RenderParagraph>(rows.at(1));
+    final lines = {
+      for (final box in playTime.getBoxesForSelection(
+        const TextSelection(baseOffset: 0, extentOffset: 28),
+      ))
+        box.top,
+    };
+    expect(lines.length, greaterThan(1));
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets("reads an imported game's play time from its range", (
@@ -130,29 +207,19 @@ void main() {
 
     await show(tester, gameId: 'g_brass');
 
-    expect(
-      tester
-          .widget<Text>(
-            find.descendant(
-              of: find.byKey(GameDetailScreen.factsKey),
-              matching: find.byType(Text),
-            ),
-          )
-          .data,
-      'Base game · 1–2 hr',
-    );
+    expect(factRows(tester), ['Type Base game', 'Play time 1–2 hr']);
   });
 
   for (final (bound, game, facts) in [
     (
       'a lone minimum',
       (minPlayTime: 30, maxPlayTime: null),
-      'Base game · 30 min+',
+      'Play time 30 min+',
     ),
     (
       'a lone maximum',
       (minPlayTime: null, maxPlayTime: 120),
-      'Base game · Up to 2 hr',
+      'Play time Up to 2 hr',
     ),
   ]) {
     testWidgets('reads $bound as a bound, not as the playing time', (
@@ -171,17 +238,7 @@ void main() {
 
       await show(tester, gameId: 'g_bounded');
 
-      expect(
-        tester
-            .widget<Text>(
-              find.descendant(
-                of: find.byKey(GameDetailScreen.factsKey),
-                matching: find.byType(Text),
-              ),
-            )
-            .data,
-        facts,
-      );
+      expect(factRows(tester).last, facts);
     });
   }
 
@@ -1551,7 +1608,7 @@ void main() {
           expect(heard[subtitle - 1], 'Wingspan', reason: '$heard at $scale');
           expect(
             heard[subtitle + 1],
-            startsWith('Base game'),
+            startsWith('Type, Base game'),
             reason: '$heard at $scale',
           );
           await tester.pumpWidget(const SizedBox.shrink());

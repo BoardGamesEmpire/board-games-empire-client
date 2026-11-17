@@ -71,6 +71,48 @@ void main() {
     });
   });
 
+  group('detailFacts', () {
+    test('label each fact, without the words its label already says', () {
+      final catan = timed(
+        min: 90,
+        max: 90,
+      ).copyWith(publishYear: 1995, minPlayers: 3, maxPlayers: 4, minAge: 10);
+
+      expect(detailFacts(l10n, filterL10n, catan), [
+        (label: 'Type', value: (shown: 'Base game', spoken: 'Base game')),
+        (label: 'Published', value: (shown: '1995', spoken: '1995')),
+        (label: 'Players', value: (shown: '3–4', spoken: '3 to 4')),
+        (
+          label: 'Play time',
+          value: (shown: '1 hr 30 min', spoken: '1 hour 30 minutes'),
+        ),
+        (label: 'Age', value: (shown: '10+', spoken: '10 and up')),
+      ]);
+    });
+
+    test('leave out what is not known', () {
+      expect(detailFacts(l10n, filterL10n, timed(min: 30)), [
+        (label: 'Type', value: (shown: 'Base game', spoken: 'Base game')),
+        (
+          label: 'Play time',
+          value: (shown: '30 min+', spoken: '30 minutes or more'),
+        ),
+      ]);
+    });
+  });
+
+  group('playersValue', () {
+    test('reads the players without the word', () {
+      expect(playersValue(l10n, 2, 2), (shown: '2', spoken: '2'));
+      expect(playersValue(l10n, 2, null), (shown: '2+', spoken: '2 or more'));
+      expect(
+        playersValue(l10n, null, 4),
+        (shown: 'Up to 4', spoken: 'Up to 4'),
+      );
+      expect(playersValue(l10n, null, null), isNull);
+    });
+  });
+
   group('yearText', () {
     test('a row shows a year before the common era as BCE', () {
       expect(rowFacts(filterL10n, year: -3000), [

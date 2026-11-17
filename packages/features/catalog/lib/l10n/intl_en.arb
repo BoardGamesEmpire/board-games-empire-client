@@ -403,6 +403,118 @@
       }
     }
   },
+  "catalogDetailFactType": "Type",
+  "@catalogDetailFactType": {
+    "description": "Label of the row that names what kind of release a game is, in the game page's list of facts, for example 'Type Base game'."
+  },
+  "catalogDetailFactPublished": "Published",
+  "@catalogDetailFactPublished": {
+    "description": "Label of the row that gives the year a game was published, in the game page's list of facts, for example 'Published 1995'."
+  },
+  "catalogDetailFactPlayers": "Players",
+  "@catalogDetailFactPlayers": {
+    "description": "Label of the row that gives how many people play, in the game page's list of facts, for example 'Players 3–4'."
+  },
+  "catalogDetailFactPlayTime": "Play time",
+  "@catalogDetailFactPlayTime": {
+    "description": "Label of the row that gives how long a game takes, in the game page's list of facts, for example 'Play time 1 hr 30 min'. The quick look's one line of facts also uses this label, through its play time fact, so it must match catalogPlayTimeFact's 'Play time'."
+  },
+  "catalogDetailFactAge": "Age",
+  "@catalogDetailFactAge": {
+    "description": "Label of the row that gives the youngest age a game is for, in the game page's list of facts, for example 'Age 10+'."
+  },
+  "catalogDetailFactSpoken": "{label}, {value}",
+  "@catalogDetailFactSpoken": {
+    "description": "One row of the game page's list of facts as a screen reader reads it: the label, a pause, then the value, for example 'Players, 3 to 4'. The quick look's one line of facts uses it too, through playFacts, where the spoken fact sits inside a line joined by catalogDetailSpokenSeparator, so the pause between label and value should read naturally mid-sentence.",
+    "placeholders": {
+      "label": {
+        "type": "String",
+        "example": "Players"
+      },
+      "value": {
+        "type": "String",
+        "example": "3 to 4"
+      }
+    }
+  },
+  "catalogDetailPlayersRange": "{min}–{max}",
+  "@catalogDetailPlayersRange": {
+    "description": "Value of the Players row in the game page's list of facts when a game takes a range, for example '3–4'.",
+    "placeholders": {
+      "min": {
+        "type": "String",
+        "example": "3"
+      },
+      "max": {
+        "type": "String",
+        "example": "4"
+      }
+    }
+  },
+  "catalogDetailPlayersRangeSpoken": "{min} to {max}",
+  "@catalogDetailPlayersRangeSpoken": {
+    "description": "catalogDetailPlayersRange as a screen reader reads it, in the game page's list of facts, for example 'Players, 3 to 4'.",
+    "placeholders": {
+      "min": {
+        "type": "String",
+        "example": "3"
+      },
+      "max": {
+        "type": "String",
+        "example": "4"
+      }
+    }
+  },
+  "catalogDetailPlayersAtLeast": "{min}+",
+  "@catalogDetailPlayersAtLeast": {
+    "description": "Value of the Players row in the game page's list of facts when only the fewest players is known, for example '2+'.",
+    "placeholders": {
+      "min": {
+        "type": "String",
+        "example": "2"
+      }
+    }
+  },
+  "catalogDetailPlayersAtLeastSpoken": "{min} or more",
+  "@catalogDetailPlayersAtLeastSpoken": {
+    "description": "catalogDetailPlayersAtLeast as a screen reader reads it, in the game page's list of facts, for example 'Players, 2 or more'.",
+    "placeholders": {
+      "min": {
+        "type": "String",
+        "example": "2"
+      }
+    }
+  },
+  "catalogDetailPlayersUpTo": "Up to {max}",
+  "@catalogDetailPlayersUpTo": {
+    "description": "Value of the Players row in the game page's list of facts when only the most players is known, for example 'Up to 4'.",
+    "placeholders": {
+      "max": {
+        "type": "String",
+        "example": "4"
+      }
+    }
+  },
+  "catalogDetailAgeValue": "{age}+",
+  "@catalogDetailAgeValue": {
+    "description": "Value of the Age row in the game page's list of facts, for example '10+'.",
+    "placeholders": {
+      "age": {
+        "type": "String",
+        "example": "10"
+      }
+    }
+  },
+  "catalogDetailAgeValueSpoken": "{age} and up",
+  "@catalogDetailAgeValueSpoken": {
+    "description": "catalogDetailAgeValue as a screen reader reads it, in the game page's list of facts, for example 'Age, 10 and up'.",
+    "placeholders": {
+      "age": {
+        "type": "String",
+        "example": "10"
+      }
+    }
+  },
   "catalogDetailDescription": "About this game",
   "@catalogDetailDescription": {
     "description": "Heading over a game's description."
