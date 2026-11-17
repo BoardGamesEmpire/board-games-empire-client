@@ -1,28 +1,37 @@
 import 'package:app_shell/src/deep_links/deep_link_normalizer.dart';
+import 'package:flutter/foundation.dart';
 
 /// Single-slot, latest-wins store for a deep link that cannot be acted on
 /// yet (#10 decision: one slot, no queue, no TTL).
 ///
 /// Links can arrive before the app is able to route them — before
 /// bootstrap completes, or (for authenticated resources) before sign-in.
-/// The `DeepLinkHandler` writes every successfully normalized link here;
-/// draining is deliberately out of #10's scope: #82 consumes the slot for
-/// server switching/affordances and #83 drains it after sign-in. Until
-/// those land, a held link is simply the most recent one received.
+/// The `DeepLinkHandler` writes every successfully normalized link here.
+/// `BgeApp`'s `DeepLinkConsumer` (#82) drains it on every platform,
+/// listening for each arrival: on native through a server switch where the
+/// link needs one, on web straight to its location. Web has no link source,
+/// so nothing fills the slot there yet; #83 will, holding a cold load's
+/// location through bootstrap and sign-in. A held link is the most recent
+/// one received until the consumer takes it.
+///
+/// Listeners are told when a link arrives ([set]), never when the slot
+/// empties. The creator owns the holder's lifetime.
 ///
 /// Not thread-safe and doesn't need to be: all access happens on the
 /// platform event loop.
-class PendingDeepLinkHolder {
+class PendingDeepLinkHolder extends ChangeNotifier {
   NormalizedDeepLink? _slot;
 
   /// The held link without consuming it, or null when the slot is empty.
   NormalizedDeepLink? get peek => _slot;
 
-  /// Stores [link], replacing any previously held link (latest wins).
-  // The slot's verbs are set/take/clear/peek, and a setter could not pair
-  // with the `peek` getter by name; the call sites read as verbs.
-  // ignore: use_setters_to_change_properties
-  void set(NormalizedDeepLink link) => _slot = link;
+  /// Stores [link], replacing any previously held link (latest wins), and
+  /// notifies listeners, even for a link equal to the held one: an equal
+  /// link re-delivered must land again.
+  void set(NormalizedDeepLink link) {
+    _slot = link;
+    notifyListeners();
+  }
 
   /// Returns the held link and empties the slot, or null when empty.
   /// Consumption is single-shot: a taken link is gone.
@@ -30,6 +39,14 @@ class PendingDeepLinkHolder {
     final link = _slot;
     _slot = null;
     return link;
+  }
+
+  /// Takes the held link only when it equals [expected]: empties the slot
+  /// and returns it. Otherwise leaves the slot alone and returns null, so a
+  /// newer link that replaced [expected] is not swallowed.
+  NormalizedDeepLink? takeIf(NormalizedDeepLink expected) {
+    if (_slot != expected) return null;
+    return take();
   }
 
   /// Empties the slot without returning the link.

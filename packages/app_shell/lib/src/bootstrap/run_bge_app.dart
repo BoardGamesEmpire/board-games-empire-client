@@ -82,11 +82,12 @@ import 'package:observability/observability.dart';
 /// [PlatformBootstrap.initialize] — the underlying plugin must be
 /// instantiated early to buffer the cold-start launch link. When a source
 /// exists (native), a [DeepLinkHandler] normalizes each link into the
-/// [PendingDeepLinkHolder]; the holder is created on **every** platform,
-/// web included, because #83's auth-gate stashes redirect-bounced
-/// locations into the same slot. Draining the slot is #82/#83 scope. The
-/// app widget owns the handler's lifecycle
-/// ([BgeApp.disposeDeepLinkHandlerOnDispose]).
+/// [PendingDeepLinkHolder]. The holder is created on **every** platform,
+/// web included, and [BgeApp]'s `DeepLinkConsumer` drains it on every
+/// platform (#82). Web has no link source, so nothing fills the slot there
+/// yet; #83's auth gate will, stashing redirect-bounced locations in it.
+/// The app widget owns the handler's lifecycle
+/// ([BgeApp.disposeDeepLinkHandlerOnDispose]), but never the holder's.
 ///
 /// Error capture (issue #34) is [installGlobalErrorHooks]: the two
 /// catch-all surfaces the Flutter team recommends, with **no custom

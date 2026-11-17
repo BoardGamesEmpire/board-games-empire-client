@@ -44,6 +44,7 @@ class FakePlatformBootstrap implements PlatformBootstrap {
     this.countsTowardResetWhen = _countsEveryFailure,
     this._orchestrator,
     this._activeServerScope,
+    this._knownServerLookup,
     this.rootContainerOutcome,
     this.onCreateRootContainer,
     this.deepLinkSource,
@@ -52,6 +53,7 @@ class FakePlatformBootstrap implements PlatformBootstrap {
   final List<Object> _outcomes;
   final ServerOrchestrator? _orchestrator;
   final ActiveServerScope? _activeServerScope;
+  final KnownServerLookup? _knownServerLookup;
 
   @override
   final bool supportsReset;
@@ -132,6 +134,7 @@ class FakePlatformBootstrap implements PlatformBootstrap {
         hasServer: true,
         orchestrator: _orchestrator,
         activeServerScope: _activeServerScope,
+        knownServerLookup: _knownServerLookup,
       );
     }
     final outcome = _outcomes.length == 1

@@ -4,6 +4,7 @@ import 'package:app_shell/src/bootstrap/app_bootstrap_state.dart';
 import 'package:app_shell/src/bootstrap/local_data_in_use_error.dart';
 import 'package:app_shell/src/bootstrap/platform_bootstrap.dart';
 import 'package:app_shell/src/bootstrap/server_add_composition_error.dart';
+import 'package:app_shell/src/deep_links/known_server_lookup.dart';
 import 'package:hydrated_bloc/hydrated_bloc.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:network_interface/network_interface.dart';
@@ -89,12 +90,18 @@ class AppBootstrapCubit extends Cubit<AppBootstrapState> {
   /// more (#218).
   int _failuresTowardReset = 0;
   ServerOrchestrator? _orchestrator;
+  KnownServerLookup? _knownServerLookup;
   ActiveServerScope? _activeServerScope;
 
   /// The platform's [ServerOrchestrator] once bootstrap has succeeded;
   /// `null` before that and always `null` on web (single-server by
   /// construction, no orchestration).
   ServerOrchestrator? get orchestrator => _orchestrator;
+
+  /// The platform's [KnownServerLookup] once bootstrap has succeeded (#82);
+  /// `null` before that and always `null` on web (single-origin, no server
+  /// registry).
+  KnownServerLookup? get knownServerLookup => _knownServerLookup;
 
   /// The platform's [ActiveServerScope] once bootstrap has succeeded (#37)
   /// — the seam the shell provisions the auth bloc from. `null` before
@@ -304,6 +311,7 @@ class AppBootstrapCubit extends Cubit<AppBootstrapState> {
       if (isClosed) return;
       if (!result.hasServer) _checkServerAddComposition();
       _orchestrator = result.orchestrator;
+      _knownServerLookup = result.knownServerLookup;
       _activeServerScope = result.activeServerScope;
       _consecutiveFailures = 0;
       _failuresTowardReset = 0;

@@ -37,10 +37,11 @@ enum DeepLinkRejectionReason {
 final class NormalizedDeepLink {
   const NormalizedDeepLink({required this.serverId, required this.location});
 
-  /// The client-local server identifier from the link (the MetaDB-assigned
-  /// id, not a hostname), percent-decoded. Validated against the server
+  /// The server's `bgeServerId` from the link (the stable UUID from
+  /// `/.well-known/bge-identity`, not a hostname or the device-local
+  /// `ServerConfig.id`), percent-decoded. Resolved against the server
   /// registry by `KnownServerLookup` consumers (#82); on web it is carried
-  /// but ignored (single-origin — #10 decision).
+  /// but ignored (single-origin).
   final String serverId;
 
   /// The `go_router` location: `/server/{serverId}/{resource-path}` plus

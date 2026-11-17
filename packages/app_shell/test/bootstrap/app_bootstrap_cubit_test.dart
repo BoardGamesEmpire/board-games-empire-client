@@ -14,6 +14,11 @@ import '../support/fake_platform_bootstrap.dart';
 
 class _MockServerOrchestrator extends Mock implements ServerOrchestrator {}
 
+class _FakeKnownServerLookup implements KnownServerLookup {
+  @override
+  Future<String?> localServerIdFor(String bgeServerId) async => null;
+}
+
 class _MockActiveServerScope extends Mock implements ActiveServerScope {}
 
 class _MockWellKnownClient extends Mock implements WellKnownClient {}
@@ -140,6 +145,26 @@ void main() {
         expect: () => [
           AppBootstrapNeedsAuth(recoveredServers: [_rebuiltServer]),
         ],
+      );
+
+      test(
+        "exposes the bootstrap result's knownServerLookup once ready",
+        () async {
+          final lookup = _FakeKnownServerLookup();
+          final cubit = buildCubit(
+            bootstrap: FakePlatformBootstrap(
+              outcomes: [
+                BootstrapResult(hasServer: true, knownServerLookup: lookup),
+              ],
+            ),
+          );
+          addTearDown(cubit.close);
+
+          expect(cubit.knownServerLookup, isNull);
+          await cubit.initialize();
+
+          expect(cubit.knownServerLookup, same(lookup));
+        },
       );
 
       test('orchestrator stays null for a web-shaped bootstrap', () async {

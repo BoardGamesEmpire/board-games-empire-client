@@ -13,10 +13,10 @@ class _MockAppBootstrapCubit extends MockCubit<AppBootstrapState>
 
 /// Reserved deep-link resource paths (#10). Declared from day one so the
 /// resolution machinery exists even before any UI is behind them; every one
-/// of them resolves to [NotYetAvailableScreen] in this issue's scope.
+/// of them resolves to [NotYetAvailableScreen] in this issue's scope, except
+/// the event link, which redirects to the event's detail (#82).
 const _reservedDeepLinkPaths = <String>[
   '/server/srv-1/household/hh-1/invite/tok-1',
-  '/server/srv-1/event/ev-1',
   '/server/srv-1/event/ev-1/rsvp/tok-2',
   '/server/srv-1/game/game-1',
   '/server/srv-1/collection/user-1',
@@ -146,6 +146,32 @@ void main() {
         expect(find.byType(NotYetAvailableScreen), findsOneWidget);
         expect(find.text('Not yet available'), findsOneWidget);
       });
+
+      testWidgets('$path has nothing beneath it, so it offers a way home '
+          '(#82)', (tester) async {
+        final router = await pumpRouter(
+          tester,
+          initialState: const AppBootstrapReady(),
+        );
+
+        router.go(path);
+        await tester.pumpAndSettle();
+        final home = find.byKey(NotYetAvailableScreen.homeButtonKey);
+        expect(home, findsOneWidget);
+        expect(
+          find.descendant(of: home, matching: find.text('Go home')),
+          findsOneWidget,
+        );
+        await tester.tap(home);
+        await tester.pumpAndSettle();
+
+        expect(find.byType(NotYetAvailableScreen), findsNothing);
+        expect(find.text('Home'), findsOneWidget);
+        expect(
+          router.routerDelegate.currentConfiguration.uri.toString(),
+          AppRoutes.home,
+        );
+      });
     }
 
     testWidgets('gates deep links behind bootstrap: a reserved path visited '
@@ -160,6 +186,96 @@ void main() {
 
       expect(find.byType(NotYetAvailableScreen), findsNothing);
       expect(find.text('Sign in'), findsOneWidget);
+    });
+
+    testWidgets("the reserved event link redirects to the event's detail", (
+      tester,
+    ) async {
+      final router = await pumpRouter(
+        tester,
+        initialState: const AppBootstrapReady(),
+      );
+
+      router.go('/server/srv-1/event/ev-1');
+      await tester.pumpAndSettle();
+
+      expect(
+        router.routerDelegate.currentConfiguration.uri.toString(),
+        '/events/ev-1',
+      );
+    });
+
+    testWidgets('the reserved event link keeps the tab it names, and drops '
+        "a parameter the detail doesn't read", (tester) async {
+      final router = await pumpRouter(
+        tester,
+        initialState: const AppBootstrapReady(),
+      );
+
+      router.go('/server/srv-1/event/ev-1?tab=pool&utm=x');
+      await tester.pumpAndSettle();
+
+      expect(
+        router.routerDelegate.currentConfiguration.uri.toString(),
+        AppRoutes.eventDetailOf('ev-1', tab: AppRoutes.eventPoolTab),
+      );
+    });
+
+    testWidgets('the reserved event link encodes an id that needs it', (
+      tester,
+    ) async {
+      final router = await pumpRouter(
+        tester,
+        initialState: const AppBootstrapReady(),
+      );
+
+      router.go('/server/srv-1/event/a%20b');
+      await tester.pumpAndSettle();
+
+      expect(
+        router.routerDelegate.currentConfiguration.uri.toString(),
+        '/events/a%20b',
+      );
+    });
+
+    testWidgets('the unknown-server link screen is reachable once ready', (
+      tester,
+    ) async {
+      final router = await pumpRouter(
+        tester,
+        initialState: const AppBootstrapReady(),
+      );
+
+      router.go(AppRoutes.deepLinkUnknownServer);
+      await tester.pumpAndSettle();
+
+      expect(find.byType(UnknownServerLinkScreen), findsOneWidget);
+    });
+
+    testWidgets('the unknown-server link screen is gated behind bootstrap', (
+      tester,
+    ) async {
+      final router = await pumpRouter(
+        tester,
+        initialState: const AppBootstrapInitializing(),
+      );
+
+      router.go(AppRoutes.deepLinkUnknownServer);
+      await tester.pump();
+
+      expect(find.byType(UnknownServerLinkScreen), findsNothing);
+      expect(find.byType(SplashScreen), findsOneWidget);
+    });
+
+    test('publicDeepLinkPathPatterns names only the collection link, and '
+        'every entry is reserved', () {
+      expect(publicDeepLinkPathPatterns, {
+        '/server/:serverId/collection/:userId',
+      });
+      expect(
+        reservedDeepLinkPathPatterns,
+        containsAll(publicDeepLinkPathPatterns),
+      );
     });
   });
 
