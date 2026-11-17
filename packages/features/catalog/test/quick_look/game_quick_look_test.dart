@@ -141,6 +141,14 @@ void main() {
     matching: find.byType(TextButton),
   );
 
+  testWidgets("the cover draws the game's whole image, not a crop", (
+    tester,
+  ) async {
+    await open(tester, GameQuickLookSeed.fromSummary(summary));
+
+    expect(tester.widget<BgeThumbnail>(cover()).whole, isTrue);
+  });
+
   testWidgets('while the read runs it shows the seed', (tester) async {
     final handle = tester.ensureSemantics();
     await open(tester, GameQuickLookSeed.fromSummary(summary));

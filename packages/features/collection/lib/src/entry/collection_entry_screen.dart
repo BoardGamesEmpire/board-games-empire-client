@@ -518,6 +518,7 @@ class _Entry extends StatelessWidget {
           url: item.thumbnail,
           extent: _thumbnailExtent,
           placeholderIcon: Icons.casino_outlined,
+          whole: true,
         ),
         const BgeGap.md(),
         // The screen's name: the app bar has no title.

@@ -431,6 +431,7 @@ class _QuickLookBodyState extends State<_QuickLookBody> {
         url: cover,
         extent: _coverExtent,
         placeholderIcon: Icons.casino_outlined,
+        whole: true,
       ),
       coverExtent: _coverExtent,
       titles: titles,

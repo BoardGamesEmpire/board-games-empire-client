@@ -1504,6 +1504,14 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
+    testWidgets("the cover draws the game's whole image, not a crop", (
+      tester,
+    ) async {
+      await showAt(tester, scale: 1, width: 430);
+
+      expect(tester.widget<BgeThumbnail>(cover()).whole, isTrue);
+    });
+
     testWidgets('reading order stays cover, title, subtitle, facts', (
       tester,
     ) async {

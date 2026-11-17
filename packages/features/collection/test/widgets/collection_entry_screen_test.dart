@@ -332,6 +332,17 @@ void main() {
       expect(find.text('Best with five.'), findsOneWidget);
     });
 
+    testWidgets("the cover draws the game's whole image, not a crop", (
+      tester,
+    ) async {
+      await show(tester);
+
+      expect(
+        tester.widget<BgeThumbnail>(find.byType(BgeThumbnail)).whole,
+        isTrue,
+      );
+    });
+
     testWidgets("shows each field's empty value", (tester) async {
       await show(tester, item: bareRow());
 

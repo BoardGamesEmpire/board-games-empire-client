@@ -247,6 +247,7 @@ class _GameDetailBody extends StatelessWidget {
             url: game.image ?? game.thumbnail,
             extent: _imageExtent,
             placeholderIcon: Icons.casino_outlined,
+            whole: true,
           ),
           coverExtent: _imageExtent,
           titleFontSize:
