@@ -257,6 +257,20 @@
   "@addToCollectionMediumRequired": {
     "description": "Error under the add sheet's Medium field when the user submits without picking one."
   },
+  "addToCollectionMediumSet": "Medium set to {medium} for {platform}.",
+  "@addToCollectionMediumSet": {
+    "description": "Said by a live region under the add sheet's Medium field when picking a platform made the sheet choose the medium, for example \"Medium set to Digital for Steam.\". The medium is Physical or Digital.",
+    "placeholders": {
+      "medium": {
+        "type": "String",
+        "example": "Digital"
+      },
+      "platform": {
+        "type": "String",
+        "example": "Steam"
+      }
+    }
+  },
   "addToCollectionQuantityLabel": "Copies",
   "@addToCollectionQuantityLabel": {
     "description": "Label of the copies field, shared by the add sheet and the edit sheet. On the add sheet it is how many copies the user is adding, starting at 1; on the edit sheet it is how many copies the entry holds, starting at the entry's own count."

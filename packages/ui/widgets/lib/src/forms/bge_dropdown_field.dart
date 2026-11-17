@@ -94,6 +94,7 @@ class BgeDropdownField<T> extends StatefulWidget {
     required this.items,
     this.hint,
     this.readOnly = false,
+    this.onPicked,
     this.validationMessages = const {},
     this.formControlName,
     this.formControl,
@@ -113,6 +114,13 @@ class BgeDropdownField<T> extends StatefulWidget {
   /// submit is in flight, or when there is nothing to choose between. It stays
   /// focusable and isn't drawn disabled; see the class doc.
   final bool readOnly;
+
+  /// Called with the item's value on every pick from the menu, including a
+  /// value equal to the one the control holds. reactive_forms drops an equal
+  /// value, so the control's `valueChanges` can't report a re-pick (#776).
+  /// Called after the control is set and touched, and not at all for a pick
+  /// that lands once the field is gone.
+  final ValueChanged<T>? onPicked;
 
   /// The error text for each validation error key.
   final Map<String, String Function(Object)> validationMessages;
@@ -345,8 +353,12 @@ class _BgeDropdownBindingState<T>
                 onPressed: inert
                     ? null
                     : () {
+                        // `MenuItemButton` calls this after a frame, by which
+                        // time the field may be gone, its control with it.
+                        if (!mounted) return;
                         didChange(item.value);
                         control.markAsTouched();
+                        field.onPicked?.call(item.value);
                       },
                 // The check is only drawn, so the label says it is chosen.
                 // Inside the item, where it merges into the item's own

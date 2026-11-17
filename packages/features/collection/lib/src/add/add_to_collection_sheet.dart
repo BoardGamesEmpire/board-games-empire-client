@@ -183,6 +183,7 @@ abstract final class AddToCollectionSheet {
   );
   static const Key ratingKey = Key('collection_add.rating');
   static const Key commentKey = Key('collection_add.comment');
+  static const Key mediumSetKey = Key('collection_add.medium_set');
   static const Key existingKey = Key('collection_add.existing');
   static const Key submitKey = Key('collection_add.submit');
 }
@@ -227,10 +228,19 @@ class _AddToCollectionSheetState extends State<_AddToCollectionSheet> {
 
   /// Whether the medium in the form is one the user picked, which a new
   /// platform keeps if it has it free. The sheet sets the medium itself
-  /// without an event, so every change the medium control reports is a pick:
-  /// a flag set around the sheet's own change would be cleared before its
-  /// event arrived, since the control reports changes asynchronously.
+  /// without an event, so a pick is whatever the Medium field reports through
+  /// `onPicked`, which also reports a re-pick of the value held, as the
+  /// control's own changes don't (#776). A flag set around the sheet's own
+  /// change would be cleared before the control's event arrived, since it
+  /// reports changes asynchronously.
   bool _userPickedMedium = false;
+
+  /// The platform whose pick last made the sheet choose a medium, or null when
+  /// the medium is the user's or none was chosen. It is what the live region
+  /// under the Medium field says, so a medium the sheet changed is heard
+  /// (#776). The medium the sheet opens on was never changed, so it has no
+  /// note: the field says what it holds.
+  String? _setMediumFor;
 
   late final FormGroup _form;
 
@@ -326,7 +336,14 @@ class _AddToCollectionSheetState extends State<_AddToCollectionSheet> {
     _userPickedMedium = keep;
     // No event: only the user's picks are reported, see [_userPickedMedium].
     _mediumControl.updateValue(medium, emitEvent: false);
-    setState(() => _option = option);
+    setState(() {
+      _option = option;
+      // Named even when the value is the one the last platform got, so the
+      // note names this platform and its text changes for a screen reader.
+      _setMediumFor = !keep && medium != null
+          ? option.platformGame.platformName
+          : null;
+    });
     _bloc.add(
       AddToCollectionChoiceChanged(
         platformGameId: platformGameId,
@@ -335,9 +352,11 @@ class _AddToCollectionSheetState extends State<_AddToCollectionSheet> {
     );
   }
 
+  /// Reports the user's pick to the bloc. That it is the user's is noted by
+  /// the field's `onPicked`, which a re-pick of the value held reaches too
+  /// (#776).
   void _onMediumPicked(GameMedium? medium) {
     if (!mounted || medium == null) return;
-    _userPickedMedium = true;
     final option = _option;
     if (option == null) return;
     _bloc.add(
@@ -495,12 +514,31 @@ class _AddToCollectionSheetState extends State<_AddToCollectionSheet> {
                       label: mediumLabel(l10n, medium),
                     ),
               ],
+              onPicked: (_) => setState(() {
+                _userPickedMedium = true;
+                _setMediumFor = null;
+              }),
               validationMessages: {
                 ValidationMessage.required: (_) =>
                     l10n.addToCollectionMediumRequired,
               },
             ),
           ),
+          // Outside the keyed subtree, so a new platform doesn't remount it
+          // and its live region says the change.
+          if (_setMediumFor != null)
+            BgeFieldNote<GameMedium>(
+              formControlName: _medium,
+              textKey: AddToCollectionSheet.mediumSetKey,
+              noteFor: (medium) {
+                final platform = _setMediumFor;
+                if (medium == null || platform == null) return null;
+                return l10n.addToCollectionMediumSet(
+                  mediumLabel(l10n, medium),
+                  platform,
+                );
+              },
+            ),
           if (existing != null) ...[
             const BgeGap.sm(),
             _ExistingNote(existing: existing),

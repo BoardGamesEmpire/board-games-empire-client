@@ -33,6 +33,7 @@ Widget _host<T>(
   double scale = 1,
   bool atBottom = false,
   bool intrinsic = false,
+  ValueChanged<T>? onPicked,
 }) {
   final field = BgeDropdownField<T>(
     formControlName: 'fruit',
@@ -40,6 +41,7 @@ Widget _host<T>(
     items: items,
     hint: hint,
     readOnly: readOnly,
+    onPicked: onPicked,
     validationMessages: validationMessages,
   );
 
@@ -207,6 +209,40 @@ void main() {
       expect(control.value, 'c');
       expect(control.touched, isTrue);
       expect(_closedText('Cherry'), findsOneWidget);
+    });
+
+    testWidgets('onPicked reports a pick', (tester) async {
+      final picked = <String>[];
+      await tester.pumpWidget(
+        _host(
+          _form(FormControl<String>(value: 'b')),
+          _fruit,
+          onPicked: picked.add,
+        ),
+      );
+
+      await _pick(tester, 'Cherry');
+
+      expect(picked, ['c']);
+    });
+
+    testWidgets('onPicked reports a re-pick of the value held', (
+      tester,
+    ) async {
+      final picked = <String>[];
+      final control = FormControl<String>(value: 'c');
+      await tester.pumpWidget(
+        _host(_form(control), _fruit, onPicked: picked.add),
+      );
+      var changes = 0;
+      final sub = control.valueChanges.listen((_) => changes++);
+      addTearDown(sub.cancel);
+
+      await _pick(tester, 'Cherry');
+
+      expect(picked, ['c']);
+      // reactive_forms drops an equal value, which is why onPicked exists.
+      expect(changes, 0);
     });
 
     testWidgets('shows a value set on the untouched control', (tester) async {
@@ -885,6 +921,26 @@ void main() {
       expect(find.text(message), findsNothing);
       expect(control.value, 'c');
       expect(control.touched, isTrue);
+    });
+
+    testWidgets('a pick that lands once the field is gone changes nothing', (
+      tester,
+    ) async {
+      final control = required();
+      final picked = <String>[];
+      await tester.pumpWidget(
+        _host(_form(control), _fruit, onPicked: picked.add),
+      );
+
+      await _open(tester);
+      await tester.tap(find.text('Cherry').last);
+      // The field goes in the frame before the pick lands.
+      await tester.pumpWidget(const MaterialApp(home: SizedBox()));
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(control.value, isNull);
+      expect(picked, isEmpty);
     });
 
     testWidgets('a touched field keeps its error while the menu is open', (

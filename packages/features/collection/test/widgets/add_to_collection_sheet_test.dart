@@ -570,6 +570,100 @@ void main() {
     expect(shows(AddToCollectionSheet.mediumKey, 'Choose one'), findsOneWidget);
   });
 
+  group('a medium the sheet sets is announced (#776)', () {
+    final onConsole = platformGame(
+      'pg_console',
+      'Switch',
+      PlatformType.console,
+    );
+    final noteFinder = find.byKey(AddToCollectionSheet.mediumSetKey);
+
+    testWidgets('picking a platform that sets the medium says so', (
+      tester,
+    ) async {
+      final semantics = tester.ensureSemantics();
+      await open(tester, options: [option(onSteam), option(onConsole)]);
+
+      await pick(tester, AddToCollectionSheet.platformKey, 'Steam');
+
+      const said = 'Medium set to Digital for Steam.';
+      expect(find.text(said), findsOneWidget);
+      expect(noteFinder, findsOneWidget);
+      expect(
+        find.semantics.byLabel(said).evaluate().single,
+        isSemantics(isLiveRegion: true),
+      );
+      semantics.dispose();
+    });
+
+    testWidgets('the note names the newest platform', (tester) async {
+      await open(tester, options: [option(onSteam), option(onConsole)]);
+
+      await pick(tester, AddToCollectionSheet.platformKey, 'Steam');
+      // Switch starts on Digital too, so the value doesn't change.
+      await pick(tester, AddToCollectionSheet.platformKey, 'Switch');
+
+      expect(find.text('Medium set to Digital for Switch.'), findsOneWidget);
+      expect(find.text('Medium set to Digital for Steam.'), findsNothing);
+    });
+
+    testWidgets('a read-only medium the sheet set is said too', (
+      tester,
+    ) async {
+      await open(tester, options: [option(onTabletop), option(onSteam)]);
+
+      await pick(tester, AddToCollectionSheet.platformKey, 'Tabletop');
+
+      expect(find.text('Medium set to Physical for Tabletop.'), findsOneWidget);
+    });
+
+    testWidgets("the user's own medium pick clears the note", (tester) async {
+      await open(tester, options: [option(onSteam), option(onConsole)]);
+      await pick(tester, AddToCollectionSheet.platformKey, 'Steam');
+      expect(noteFinder, findsOneWidget);
+
+      await pick(tester, AddToCollectionSheet.mediumKey, 'Physical');
+
+      expect(noteFinder, findsNothing);
+    });
+
+    testWidgets("re-picking the starting medium counts as the user's", (
+      tester,
+    ) async {
+      await open(tester, options: [option(onSteam), option(onConsole)]);
+      await pick(tester, AddToCollectionSheet.platformKey, 'Steam');
+
+      // The value is already Digital: reactive_forms reports nothing.
+      await pick(tester, AddToCollectionSheet.mediumKey, 'Digital');
+      expect(noteFinder, findsNothing);
+      await pick(tester, AddToCollectionSheet.platformKey, 'Switch');
+
+      expect(shows(AddToCollectionSheet.mediumKey, 'Digital'), findsOneWidget);
+      expect(noteFinder, findsNothing);
+    });
+
+    testWidgets('a platform that starts on nothing leaves no note', (
+      tester,
+    ) async {
+      await open(tester, options: [option(onSteam), option(onOther)]);
+      await pick(tester, AddToCollectionSheet.platformKey, 'Steam');
+
+      await pick(tester, AddToCollectionSheet.platformKey, 'Other');
+
+      expect(noteFinder, findsNothing);
+    });
+
+    testWidgets('no note on opening', (tester) async {
+      await open(
+        tester,
+        options: [option(onSteam), option(onConsole)],
+        platformGameId: 'pg_steam',
+      );
+
+      expect(noteFinder, findsNothing);
+    });
+  });
+
   testWidgets('a medium owned after opening shows the existing note', (
     tester,
   ) async {
