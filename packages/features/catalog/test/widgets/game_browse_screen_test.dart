@@ -1298,6 +1298,34 @@ void main() {
       expect(_focusIsWithin(tester, badgeOf('D')), isTrue);
     });
 
+    testWidgets("opening a second strip keeps the tapped badge's semantics "
+        'node (#820)', (tester) async {
+      final handle = tester.ensureSemantics();
+      remote.onFetchPage = (_, _) async => pageOf([
+        game('B'),
+        expansion('E1', [under('B')]),
+        game('C'),
+        game('D'),
+        expansion('E2', [under('D')]),
+        game('F'),
+      ]);
+      await showThumbnails(tester);
+      await tester.tap(badgeOf('B'));
+      await tester.pumpAndSettle();
+      // At two columns D is in the row after B's strip, and moves to the
+      // rows before its own strip.
+      final badge = tester.getSemantics(badgeOf('D')).id;
+      final cover = coverNode(tester, 'D').id;
+
+      await tester.tap(badgeOf('D'));
+      await tester.pumpAndSettle();
+
+      expect(stripTile('D', 'E2'), findsOneWidget);
+      expect(tester.getSemantics(badgeOf('D')).id, badge);
+      expect(coverNode(tester, 'D').id, cover);
+      handle.dispose();
+    });
+
     testWidgets('a strip cover opens the quick look', (tester) async {
       final calls = <GameQuickLookSeed>[];
       remote.onFetchPage = (_, _) async => pageOf([

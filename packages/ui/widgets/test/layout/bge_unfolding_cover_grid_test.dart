@@ -1,4 +1,5 @@
 import 'package:bge_test_support/widgets.dart';
+import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -233,6 +234,36 @@ void main() {
       ),
       findsNothing,
     );
+  });
+
+  testWidgets('a tile after the strip keeps its State and focus as the strip '
+      'opens and closes (#820)', (tester) async {
+    await tester.pumpWidget(hostAtSize(tester, _grid(six), size: _window));
+    final finder = find.descendant(
+      of: _tile('e'),
+      matching: find.byType(_Tile),
+    );
+    final state = tester.state<_TileState>(finder);
+    state.focusNode.requestFocus();
+    await tester.pump();
+    expect(state.focusNode.hasPrimaryFocus, isTrue);
+
+    // e moves into the grid after a's strip, into the one before its own,
+    // back after a's, and into the one grid again.
+    for (final (step, unfolded) in [
+      ("a's strip opened", 0),
+      ('its own opened', 4),
+      ("a's opened again", 0),
+      ('closed', null),
+    ]) {
+      await tester.pumpWidget(
+        hostAtSize(tester, _grid(six, unfolded: unfolded), size: _window),
+      );
+      await tester.pump();
+
+      expect(tester.state<_TileState>(finder), same(state), reason: step);
+      expect(state.focusNode.hasPrimaryFocus, isTrue, reason: step);
+    }
   });
 
   testWidgets('another item unfolded opens a strip of its own', (tester) async {
@@ -480,7 +511,7 @@ void main() {
       );
       // a's strip, in view, pushes c's row down to 252..448, the last row
       // wholly in view. c's tile moves into the first grid as its own strip
-      // opens, and is built again there.
+      // opens.
       await tester.tap(badge('a'));
       await tester.pumpAndSettle();
       expect(controller.position.pixels, 0);
@@ -792,6 +823,393 @@ void main() {
       } finally {
         handle.dispose();
       }
+    });
+  });
+
+  group('a tile keeps its element as another strip opens (#820)', () {
+    // In [_window]: two columns, and room for every cover and a strip.
+    const names = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
+
+    /// Covers with expansions badges, each an item of its game in a focus
+    /// hand-off scope, as Games and Collection draw them.
+    Widget covers(List<String> items, {Key? key}) => BgeUnfoldingCovers<String>(
+      key: key,
+      items: items,
+      keyOf: ValueKey.new,
+      idOf: (name) => name,
+      hasStrip: (_) => true,
+      itemBuilder: (context, name, toggle, {required unfolded}) =>
+          BgeFocusHandoff(
+            identity: name,
+            child: BgeCoverTile(
+              label: name,
+              extent: null,
+              onTap: () {},
+              expansions: BgeCoverExpansions(
+                count: 1,
+                expanded: unfolded,
+                onToggle: toggle,
+                label: '$name expansions, 1',
+                showLabel: 'Show expansions',
+                hideLabel: 'Hide expansions',
+              ),
+            ),
+          ),
+      stripBuilder: (context, name) => SizedBox(
+        key: _stripKey,
+        height: _stripHeight,
+        child: Text('strip of $name'),
+      ),
+    );
+
+    Widget page(List<Widget> slivers) => Scaffold(
+      body: BgeFocusHandoffScope(child: CustomScrollView(slivers: slivers)),
+    );
+
+    Finder badge(String name, {Finder? within}) => find.descendant(
+      of: within == null
+          ? _tile(name)
+          : find.descendant(of: within, matching: _tile(name)),
+      matching: find.byKey(BgeCoverTile.expansionsBadgeKey),
+    );
+
+    /// The focus node of the badge of [name].
+    FocusNode badgeNode(WidgetTester tester, String name) => tester
+        .widget<Focus>(
+          find
+              .descendant(
+                of: badge(name),
+                matching: find.byWidgetPredicate(
+                  (widget) => widget is Focus && widget.focusNode != null,
+                ),
+              )
+              .first,
+        )
+        .focusNode!;
+
+    /// Every node that takes primary focus from now on, until the test
+    /// ends.
+    List<FocusNode?> focusChanges() {
+      final changes = <FocusNode?>[];
+      void listener() => changes.add(FocusManager.instance.primaryFocus);
+      FocusManager.instance.addListener(listener);
+      addTearDown(() => FocusManager.instance.removeListener(listener));
+      return changes;
+    }
+
+    testWidgets("with a strip open, opening a later item's strip keeps the "
+        "tapped badge's semantics node", (tester) async {
+      final handle = tester.ensureSemantics();
+      try {
+        await tester.pumpWidget(
+          hostAtSize(tester, page([covers(names)]), size: _window),
+        );
+        // As PR #809 measured it: a's strip, then the badge of a game in the
+        // grid after it. Two columns, so e opens under the third row, and
+        // moves into the grid before its own strip.
+        await tester.tap(badge('a'));
+        await tester.pumpAndSettle();
+        SemanticsNode cover() => tester.getSemantics(
+          find.descendant(of: _tile('e'), matching: find.byType(BgeThumbnail)),
+        );
+        final badgeBefore = tester.getSemantics(badge('e')).id;
+        final coverBefore = cover().id;
+
+        await tester.tap(badge('e'));
+        await tester.pumpAndSettle();
+
+        expect(find.text('strip of e'), findsOneWidget);
+        expect(tester.getSemantics(badge('e')).id, badgeBefore);
+        expect(cover().id, coverBefore);
+      } finally {
+        handle.dispose();
+      }
+    });
+
+    // A pointer's kind, or null for the keyboard's Enter.
+    for (final (how, kind) in <(String, PointerDeviceKind?)>[
+      ('from the keyboard', null),
+      ('from a click', PointerDeviceKind.mouse),
+      ('from a tap', PointerDeviceKind.touch),
+    ]) {
+      testWidgets('the badge keeps its focus node as its tile moves, with no '
+          'hand-off, opened $how', (tester) async {
+        FocusManager.instance.highlightStrategy =
+            FocusHighlightStrategy.automatic;
+        await tester.pumpWidget(
+          hostAtSize(tester, page([covers(names)]), size: _window),
+        );
+        await tester.tap(badge('a'));
+        await tester.pumpAndSettle();
+        final node = badgeNode(tester, 'e');
+        if (kind == null) {
+          node.requestFocus();
+          await tester.pump();
+        }
+        final changes = focusChanges();
+
+        if (kind == null) {
+          await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+        } else {
+          await tester.tap(badge('e'), kind: kind);
+        }
+        // Only the keyboard's focus draws the ring: a click's is a pointer's
+        // (BgePointerFocus), which the tile keeps as it moves, and a tap
+        // leaves the touch highlight mode on.
+        final ringed = kind == null;
+        // Frame by frame: focus never leaves the badge, which keeps its
+        // ring, or its lack of one, throughout.
+        for (var frame = 0; frame < 4; frame += 1) {
+          await tester.pump();
+          expect(find.text('strip of e'), findsOneWidget);
+          expect(badgeNode(tester, 'e'), same(node), reason: 'frame $frame');
+          expect(node.hasPrimaryFocus, isTrue, reason: 'frame $frame');
+          expect(
+            _ringShown(tester, badge('e')),
+            ringed,
+            reason: 'frame $frame',
+          );
+        }
+        await tester.pumpAndSettle();
+
+        expect(node.hasPrimaryFocus, isTrue);
+        expect(_ringShown(tester, badge('e')), ringed);
+        // A pointer's own focus, and nothing after it.
+        expect(changes, kind == null ? isEmpty : [node]);
+      }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
+    }
+
+    for (final (what, route) in <(String, Route<void> Function(BuildContext))>[
+      (
+        'a pop-up',
+        (context) => DialogRoute(
+          context: context,
+          builder: (context) => const Dialog(child: Text('above')),
+        ),
+      ),
+      (
+        'a page',
+        (context) => MaterialPageRoute(
+          builder: (context) => const Scaffold(body: Text('above')),
+        ),
+      ),
+    ]) {
+      testWidgets('a badge the page gives focus back to keeps it as its tile '
+          'moves under $what', (tester) async {
+        final items = ValueNotifier(names);
+        addTearDown(items.dispose);
+        await tester.pumpWidget(
+          hostAtSize(
+            tester,
+            ValueListenableBuilder(
+              valueListenable: items,
+              builder: (context, items, _) => page([covers(items)]),
+            ),
+            size: _window,
+          ),
+        );
+        await tester.tap(badge('a'));
+        await tester.pumpAndSettle();
+        final node = badgeNode(tester, 'e')..requestFocus();
+        await tester.pump();
+
+        final context = tester.element(find.byType(CustomScrollView));
+        final navigator = Navigator.of(context)..push(route(context));
+        await tester.pumpAndSettle();
+        expect(node.hasFocus, isFalse);
+
+        // a moves to the third row, and e into the grid before a's strip.
+        // Covered, the page still builds, and lays out what changed, so e's
+        // tile moves under the route.
+        items.value = ['b', 'c', 'd', 'e', 'a', 'f', 'g', 'h'];
+        await tester.pumpAndSettle();
+        // Still mounted: kept, not built again.
+        expect(node.context?.mounted, isTrue);
+        final changes = focusChanges();
+
+        navigator.pop();
+        await tester.pumpAndSettle();
+
+        expect(badgeNode(tester, 'e'), same(node));
+        expect(node.hasPrimaryFocus, isTrue);
+        // The pop's own, and no hand-off after it.
+        expect(changes, [node]);
+      });
+    }
+
+    testWidgets('two grids over the same items build together', (
+      tester,
+    ) async {
+      const first = Key('first');
+      const second = Key('second');
+      const four = ['a', 'b', 'c', 'd'];
+      await tester.pumpWidget(
+        hostAtSize(
+          tester,
+          page([
+            covers(four, key: first),
+            covers(four, key: second),
+          ]),
+          size: _window,
+        ),
+      );
+
+      // A strip open in each, and then a later one, so the same items'
+      // tiles move between the grids of both at once.
+      for (final name in ['a', 'c']) {
+        for (final grid in [first, second]) {
+          await tester.tap(badge(name, within: find.byKey(grid)));
+          await tester.pumpAndSettle();
+        }
+        expect(tester.takeException(), isNull);
+        expect(find.text('strip of $name'), findsNWidgets(2));
+      }
+    });
+
+    group('an item that leaves takes its key with it', () {
+      Finder tileOf(String name) =>
+          find.descendant(of: _tile(name), matching: find.byType(_Tile));
+
+      /// The global key the grid holds [name]'s tile under.
+      Key tileKey(WidgetTester tester, String name) => tester
+          .widget<KeyedSubtree>(
+            find.descendant(
+              of: _tile(name),
+              matching: find.byWidgetPredicate(
+                (widget) => widget is KeyedSubtree && widget.key is GlobalKey,
+              ),
+            ),
+          )
+          .key!;
+
+      /// Shows [six] with c's strip open, takes c away, and brings it back.
+      Future<void> leaveAndReturn(
+        WidgetTester tester, {
+        required void Function() before,
+      }) async {
+        await tester.pumpWidget(
+          hostAtSize(tester, _grid(six, unfolded: 2), size: _window),
+        );
+        before();
+        await tester.pumpWidget(
+          hostAtSize(
+            tester,
+            _grid([
+              for (final name in six)
+                if (name == 'c') 'x' else name,
+            ]),
+            size: _window,
+          ),
+        );
+        expect(_tile('c'), findsNothing);
+        await tester.pumpWidget(
+          hostAtSize(tester, _grid(six), size: _window),
+        );
+      }
+
+      testWidgets('so it comes back as a new tile, under a new key', (
+        tester,
+      ) async {
+        late _TileState state;
+        late Key key;
+        await leaveAndReturn(
+          tester,
+          before: () {
+            state = tester.state<_TileState>(tileOf('c'));
+            key = tileKey(tester, 'c');
+          },
+        );
+
+        expect(tester.state<_TileState>(tileOf('c')), isNot(same(state)));
+        expect(tileKey(tester, 'c'), isNot(same(key)));
+      });
+
+      testWidgets('and the tiles beside it keep their State and key', (
+        tester,
+      ) async {
+        final states = <String, _TileState>{};
+        final keys = <String, Key>{};
+        await leaveAndReturn(
+          tester,
+          before: () {
+            for (final name in ['b', 'd']) {
+              states[name] = tester.state<_TileState>(tileOf(name));
+              keys[name] = tileKey(tester, name);
+            }
+          },
+        );
+
+        for (final name in ['b', 'd']) {
+          expect(
+            tester.state<_TileState>(tileOf(name)),
+            same(states[name]),
+            reason: name,
+          );
+          expect(tileKey(tester, name), same(keys[name]), reason: name);
+        }
+      });
+    });
+
+    group('two items under one key', () {
+      const twice = ['a', 'b', 'a', 'c'];
+
+      /// Every error [pump] reports, in order, up to the tree's teardown:
+      /// the first is the one a developer reads first.
+      Future<List<Object>> errorsOf(
+        WidgetTester tester,
+        Future<void> Function() pump,
+      ) async {
+        final errors = <Object>[];
+        final onError = FlutterError.onError;
+        FlutterError.onError = (details) => errors.add(details.exception);
+        try {
+          await pump();
+          await tester.pumpWidget(const SizedBox());
+        } finally {
+          FlutterError.onError = onError;
+        }
+        return errors;
+      }
+
+      void expectNamed(List<Object> errors) => expect(
+        errors.first,
+        isA<AssertionError>().having(
+          (error) => error.message,
+          'message',
+          contains('two items have the key'),
+        ),
+      );
+
+      testWidgets('are named as the cause when the grid is built', (
+        tester,
+      ) async {
+        final errors = await errorsOf(
+          tester,
+          () => tester.pumpWidget(
+            hostAtSize(tester, _grid(twice), size: _window),
+          ),
+        );
+
+        expectNamed(errors);
+        expect(errors, hasLength(1));
+      });
+
+      // A state that throws as it updates leaves the framework an assertion
+      // of its own to report as the tree is torn down, after this one.
+      testWidgets('are named as the cause when the items change', (
+        tester,
+      ) async {
+        await tester.pumpWidget(hostAtSize(tester, _grid(six), size: _window));
+
+        final errors = await errorsOf(
+          tester,
+          () => tester.pumpWidget(
+            hostAtSize(tester, _grid(twice), size: _window),
+          ),
+        );
+
+        expectNamed(errors);
+      });
     });
   });
 }

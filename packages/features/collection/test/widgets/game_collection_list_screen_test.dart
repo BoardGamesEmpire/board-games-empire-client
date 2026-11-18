@@ -3490,6 +3490,48 @@ void main() {
       handle.dispose();
     });
 
+    testWidgets("opening a second strip keeps the tapped badge's semantics "
+        'node (#820)', (tester) async {
+      final handle = tester.ensureSemantics();
+      await showThumbnails(tester, [
+        base,
+        expansion,
+        other,
+        listItem('carcassonne-1', gameId: 'g-carc', title: 'Carcassonne'),
+        // Catan, by default.
+        listItem('catan-1', gameId: 'g-catan'),
+        listItem(
+          'seafarers-1',
+          gameId: 'g-seafarers',
+          title: 'Seafarers',
+          contentType: ContentType.expansion,
+          baseGames: const [
+            ExpansionLink(gameId: 'g-catan', isStandalone: false),
+          ],
+        ),
+      ]);
+      await tester.tap(badgeOf(tile('base-1')));
+      await tester.pumpAndSettle();
+      // At two columns Catan is in the row after Wingspan's strip, and
+      // moves to the rows before its own strip.
+      final catan = tile('catan-1');
+      final badge = tester.getSemantics(badgeOf(catan)).id;
+      final cover = coverNode(tester, catan).id;
+
+      await tester.tap(badgeOf(catan));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(
+          GameCollectionListScreen.nestedTileKey('g-catan', 'seafarers-1'),
+        ),
+        findsOneWidget,
+      );
+      expect(tester.getSemantics(badgeOf(catan)).id, badge);
+      expect(coverNode(tester, catan).id, cover);
+      handle.dispose();
+    });
+
     testWidgets("a marked cover's label says the base game isn't in the "
         'collection', (tester) async {
       await showThumbnails(tester, [

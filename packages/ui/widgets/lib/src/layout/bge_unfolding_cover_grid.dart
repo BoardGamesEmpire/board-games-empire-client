@@ -38,12 +38,21 @@ import 'package:ui_tokens/ui_tokens.dart';
 ///
 /// ## Focus
 ///
-/// The grid of the rows up to the strip stays the first sliver, folded or
-/// not, so the tiles in it keep their elements, and any focus, as the strip
-/// opens and closes. The item whose strip it is is one of them. A tile after
-/// the strip moves into a grid of its own as the strip opens, and back as it
-/// closes, so it is built again: wrap the tiles in a `BgeFocusHandoff`, which
-/// hands focus to the new one.
+/// Every tile keeps its elements as strips open and close, and with them its
+/// focus, its state and its semantics node, so a screen reader on it keeps
+/// its place (#820). The grid of the rows up to the strip stays the first
+/// sliver, folded or not, and the item whose strip it is is in it. A tile
+/// after the strip moves into a grid of its own as the strip opens, and back
+/// as it closes; as another item's strip opens instead, the tiles between
+/// the two rows move from one grid to the other. So each tile is held under
+/// a global key of its own, made for its item's [keyOf], which carries it
+/// across: a tile still built is moved, never built again. The keys are this
+/// grid's own, so two grids over the same items, built at once, never share
+/// one.
+///
+/// A tile that changes form, under a new [keyOf], is a new tile, built
+/// again: wrap the tiles in a `BgeFocusHandoff`, which hands focus to the
+/// new one.
 ///
 /// A strip for another item is a new strip, which starts at its own
 /// beginning.
@@ -54,7 +63,7 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// reader says "3 of 9" across it. The strip is not one of the covers, and
 /// takes no index. The scroll view's `semanticChildCount` is the caller's,
 /// as for any sliver page: the number of [items].
-class BgeUnfoldingCoverGrid<T> extends StatelessWidget {
+class BgeUnfoldingCoverGrid<T> extends StatefulWidget {
   /// Creates a cover grid of [items], with a strip under [unfolded]'s row.
   const BgeUnfoldingCoverGrid({
     required this.items,
@@ -72,7 +81,8 @@ class BgeUnfoldingCoverGrid<T> extends StatelessWidget {
   final List<T> items;
 
   /// The key that identifies `item` from one build to the next, as for
-  /// [BgeKeyedSliverGrid.keyOf].
+  /// [BgeKeyedSliverGrid.keyOf]. Each item's key must be its own, which a debug
+  /// build asserts: the tile is held under a global key made for it.
   final Key Function(T item) keyOf;
 
   /// Builds the tile for `item`. The tile must not carry [keyOf]'s key.
@@ -103,8 +113,73 @@ class BgeUnfoldingCoverGrid<T> extends StatelessWidget {
   final Key? stripBoxKey;
 
   @override
+  State<BgeUnfoldingCoverGrid<T>> createState() =>
+      _BgeUnfoldingCoverGridState<T>();
+}
+
+class _BgeUnfoldingCoverGridState<T> extends State<BgeUnfoldingCoverGrid<T>> {
+  /// The global key each tile is held under, by its item's
+  /// [BgeUnfoldingCoverGrid.keyOf], which carries the tile across the grid's
+  /// slivers (#820).
+  ///
+  /// Made here, one per item, rather than from the item's key, so that two
+  /// grids over the same items, built at once, never share one.
+  final _tileKeys = <Key, GlobalKey>{};
+
+  @override
+  void initState() {
+    super.initState();
+    _debugCheckKeys();
+  }
+
+  @override
+  void didUpdateWidget(BgeUnfoldingCoverGrid<T> oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _debugCheckKeys();
+    // An item that has gone takes its key with it.
+    final keys = {for (final item in widget.items) widget.keyOf(item)};
+    _tileKeys.removeWhere((key, _) => !keys.contains(key));
+  }
+
+  /// Asserts that [BgeUnfoldingCoverGrid.keyOf] gives each item a key of its
+  /// own. Two items under one key would share one tile's global key, and the
+  /// framework would only say that a global key was used twice.
+  void _debugCheckKeys() {
+    assert(
+      _debugRepeatedKey() == null,
+      'BgeUnfoldingCoverGrid: two items have the key ${_debugRepeatedKey()}. '
+      'keyOf must give each item a key of its own: each tile is held under '
+      "a global key made for its item's key (#820).",
+    );
+  }
+
+  /// The first key [BgeUnfoldingCoverGrid.keyOf] gives to two items, if any.
+  Key? _debugRepeatedKey() {
+    final seen = <Key>{};
+    for (final item in widget.items) {
+      final key = widget.keyOf(item);
+      if (!seen.add(key)) return key;
+    }
+    return null;
+  }
+
+  /// The context [item]'s tile is held in, or null when it isn't built.
+  BuildContext? _tileContextOf(T item) =>
+      _tileKeys[widget.keyOf(item)]?.currentContext;
+
+  /// The tile for [item], under its global key.
+  Widget _tile(BuildContext context, T item) => KeyedSubtree(
+    key: _tileKeys.putIfAbsent(
+      widget.keyOf(item),
+      () => GlobalKey(debugLabel: 'BgeUnfoldingCoverGrid.tile'),
+    ),
+    child: widget.itemBuilder(context, item),
+  );
+
+  @override
   Widget build(BuildContext context) {
-    final unfolded = this.unfolded;
+    final items = widget.items;
+    final unfolded = widget.unfolded;
     assert(
       unfolded == null || (unfolded >= 0 && unfolded < items.length),
       'unfolded is $unfolded, outside the ${items.length} items',
@@ -113,14 +188,16 @@ class BgeUnfoldingCoverGrid<T> extends StatelessWidget {
     BgeKeyedSliverGrid<T> grid(List<T> items, int semanticIndexOffset) =>
         BgeKeyedSliverGrid<T>(
           items: items,
-          keyOf: keyOf,
-          itemBuilder: itemBuilder,
+          keyOf: widget.keyOf,
+          itemBuilder: _tile,
           gridDelegate: delegate,
           semanticIndexOffset: semanticIndexOffset,
         );
 
     if (unfolded == null) {
-      return SliverMainAxisGroup(slivers: [grid(items, semanticIndexOffset)]);
+      return SliverMainAxisGroup(
+        slivers: [grid(items, widget.semanticIndexOffset)],
+      );
     }
 
     final columns = delegate.crossAxisCount;
@@ -129,19 +206,19 @@ class BgeUnfoldingCoverGrid<T> extends StatelessWidget {
     final spacing = BgeTokens.of(context).spaceSm;
     return SliverMainAxisGroup(
       slivers: [
-        grid(items.sublist(0, rowEnd), semanticIndexOffset),
+        grid(items.sublist(0, rowEnd), widget.semanticIndexOffset),
         SliverToBoxAdapter(
           // Keyed by the item, so another item's strip is a new one.
-          key: ValueKey<Key>((stripKeyOf ?? keyOf)(item)),
+          key: ValueKey<Key>((widget.stripKeyOf ?? widget.keyOf)(item)),
           child: Padding(
             padding: EdgeInsets.symmetric(vertical: spacing),
             child: KeyedSubtree(
-              key: stripBoxKey,
-              child: stripBuilder(context, item),
+              key: widget.stripBoxKey,
+              child: widget.stripBuilder(context, item),
             ),
           ),
         ),
-        grid(items.sublist(rowEnd), semanticIndexOffset + rowEnd),
+        grid(items.sublist(rowEnd), widget.semanticIndexOffset + rowEnd),
       ],
     );
   }
@@ -221,9 +298,10 @@ final class _StripPlace {
 /// from the strip's box and the tile's instead, as `BgeInlineBanner` works
 /// out its own reveal.
 ///
-/// The tile is found after the frame, where it was last built. A tile after
-/// an open strip is built again as its own strip opens, as it moves into
-/// the first grid, and its strip is brought into view all the same.
+/// The tile is found after the frame by its item's [idOf], under the global
+/// key the grid holds it by (#820), so a tile after an open strip, moved
+/// into the first grid as its own strip opens, is found where it moved to,
+/// and a tile that changes form in that frame is found in its new form.
 class BgeUnfoldingCovers<T> extends StatefulWidget {
   /// Creates a cover grid of [items] that opens one item's strip at a time.
   const BgeUnfoldingCovers({
@@ -304,13 +382,9 @@ class _BgeUnfoldingCoversState<T> extends State<BgeUnfoldingCovers<T>> {
   /// never takes over the box of the one before it.
   GlobalKey? _stripBoxKey;
 
-  /// The context each item's tile was last built in, by the item's
-  /// [BgeUnfoldingCovers.idOf], for a reveal to find the opened item's tile.
-  ///
-  /// The last, not the one tapped: a tile that moves between the grid's
-  /// slivers as its strip opens, as one after an open strip does, is built
-  /// again in that frame, and the one tapped has gone.
-  final _tiles = <Object, BuildContext>{};
+  /// The grid, which holds each tile under a global key, for a reveal to
+  /// find the opened item's tile by.
+  final _grid = GlobalKey<_BgeUnfoldingCoverGridState<T>>();
 
   /// The reveal whose animation runs, until it ends.
   _Reveal? _revealing;
@@ -324,8 +398,6 @@ class _BgeUnfoldingCoversState<T> extends State<BgeUnfoldingCovers<T>> {
       // still on its way stops.
       _stopRevealingAfterFrame();
     }
-    final ids = {for (final item in widget.items) widget.idOf(item)};
-    _tiles.removeWhere((id, tile) => !ids.contains(id) || !tile.mounted);
   }
 
   @override
@@ -375,8 +447,8 @@ class _BgeUnfoldingCoversState<T> extends State<BgeUnfoldingCovers<T>> {
     // frame.
     if (!mounted || strip != _stripBoxKey) return;
     final stripContext = strip.currentContext;
-    final tile = _tiles[id];
-    if (stripContext == null || tile == null || !tile.mounted) return;
+    final tile = _tileOf(id);
+    if (stripContext == null || tile == null) return;
     final stripBox = stripContext.findRenderObject();
     final tileBox = tile.findRenderObject();
     if (stripBox is! RenderBox ||
@@ -438,6 +510,17 @@ class _BgeUnfoldingCoversState<T> extends State<BgeUnfoldingCovers<T>> {
     );
   }
 
+  /// The context of the tile of the item [id], as the items now are, or null
+  /// when it isn't built.
+  BuildContext? _tileOf(Object id) {
+    for (final item in widget.items) {
+      if (widget.idOf(item) == id) {
+        return _grid.currentState?._tileContextOf(item);
+      }
+    }
+    return null;
+  }
+
   /// Stops the reveal on its way, if any, where it is.
   void _stopRevealing() {
     final reveal = _revealing;
@@ -459,6 +542,7 @@ class _BgeUnfoldingCoversState<T> extends State<BgeUnfoldingCovers<T>> {
 
   @override
   Widget build(BuildContext context) => BgeUnfoldingCoverGrid<T>(
+    key: _grid,
     items: widget.items,
     keyOf: widget.keyOf,
     unfolded: _unfoldedIndex,
@@ -467,19 +551,11 @@ class _BgeUnfoldingCoversState<T> extends State<BgeUnfoldingCovers<T>> {
     stripBoxKey: _stripBoxKey,
     itemBuilder: (context, item) {
       final id = widget.idOf(item);
-      final unfolded = _unfolded == id;
-      // A context of the tile's own, kept each time the tile is built for a
-      // reveal to find it by: the grid builds its tiles with its sliver's.
-      return Builder(
-        builder: (context) {
-          _tiles[id] = context;
-          return widget.itemBuilder(
-            context,
-            item,
-            () => _toggle(id),
-            unfolded: unfolded,
-          );
-        },
+      return widget.itemBuilder(
+        context,
+        item,
+        () => _toggle(id),
+        unfolded: _unfolded == id,
       );
     },
     stripBuilder: widget.stripBuilder,
