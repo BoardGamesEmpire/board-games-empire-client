@@ -1,6 +1,6 @@
 // A 429 on sign-in and sign-up is a rate limit with its wait (#559).
 //
-// The web twin of `dio_network/test/auth/auth_repository_rate_limit_test.dart`:
+// The web twin of `native_network/test/auth/auth_repository_rate_limit_test.dart`:
 // a resolved and a thrown 429, through a real Dio. `parseRetryAfter` is
 // unit-tested in `interfaces`, beside it; it is one shared function.
 

@@ -2,7 +2,7 @@
 //
 // The sibling suites stub `Dio` itself, so Dio's own body handling never runs
 // and they pass against the defect these cases exist for (#352). See the
-// native twin, `dio_network/test/auth/auth_repository_impl_body_test.dart` —
+// native twin, `native_network/test/auth/auth_repository_impl_body_test.dart` —
 // the mechanism is identical because both repositories drive the same Dio.
 //
 // Also covers #283, whose home is this class: a `DioException` that carries a

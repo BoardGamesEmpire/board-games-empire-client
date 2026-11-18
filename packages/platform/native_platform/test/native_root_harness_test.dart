@@ -8,10 +8,10 @@
 // Plain `test()`, not `testWidgets`: drift and the real async work under the
 // root need real time, and the widget tester's fake async would stall them.
 
-import 'package:dio_network/dio_network.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
+import 'package:native_network/native_network.dart';
 
 import 'support/native_root_harness.dart';
 

@@ -45,6 +45,8 @@ dependencies:
   logging: ^1.3.0
   models:
     path: ../../core/models
+  native_network:
+    path: ../../network/native_network
   network_interface:
     path: ../../network/network_interface
   observability:

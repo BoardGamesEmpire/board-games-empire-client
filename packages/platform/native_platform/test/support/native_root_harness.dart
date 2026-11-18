@@ -400,7 +400,7 @@ class NativeRootHarness {
 // The wire fixtures, each the success case of the suite named above it, cut
 // to the smallest answer the remote accepts.
 
-// `dio_network/test/auth/auth_repository_impl_body_test.dart`.
+// `native_network/test/auth/auth_repository_impl_body_test.dart`.
 Map<String, dynamic> _wireUser() => {
   'id': NativeRootHarness.userId,
   'name': 'testuser',

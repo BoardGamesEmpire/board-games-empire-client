@@ -3,10 +3,10 @@
 The platform-neutral network contracts for Board Games Empire.
 
 Pure Dart abstractions and their exception taxonomies — no Dio, no `dart:io`,
-no browser APIs. `dio_network` implements these for mobile and desktop,
-`web_network` for the browser; both depend on this package, and nothing here
-depends on either. A consumer that codes against these types works unchanged
-on every platform.
+no browser APIs. `native_network` implements these for mobile and desktop
+(over the shared Dio layer in `dio_network`), `web_network` for the browser;
+both depend on this package, and nothing here depends on either. A consumer
+that codes against these types works unchanged on every platform.
 
 ## Responsibilities
 

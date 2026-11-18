@@ -143,7 +143,7 @@ void main() {
       // ended writes nothing. It does not pin #433's race, a token stored
       // between `TokenStorageService.clear()` and the interceptor's read:
       // nothing here stores one, so this passes with the fix reverted.
-      // `dio_network/test/auth/auth_repository_sign_out_wire_test.dart`
+      // `native_network/test/auth/auth_repository_sign_out_wire_test.dart`
       // pins that.
       await harness.container.get<AuthRepository>().signOut();
       await harness.container.get<UserSessionScope>().deactivate();

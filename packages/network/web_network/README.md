@@ -12,7 +12,8 @@ and no orchestrator.
 Depends on `dio_network` for the platform-neutral `DioFactory` seam and the
 pieces that are genuinely shared — `WellKnownClientImpl`,
 `FeedbackDioTransport`, `HouseholdRemoteDataSourceImpl`, and two of the three
-interceptors below; the native token plumbing is not imported.
+interceptors below. The native token plumbing lives in `native_network`, which
+the browser build does not depend on.
 
 ## Responsibilities
 

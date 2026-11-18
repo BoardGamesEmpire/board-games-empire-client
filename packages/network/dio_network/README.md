@@ -1,38 +1,18 @@
 # dio_network
 
-The Dio-backed implementation of the `network_interface` contracts, for
-mobile and desktop. Web uses its own stack (`web_network`); nothing here
-may be imported from a web build.
+The shared Dio layer under the `network_interface` contracts: the
+`DioFactory` seam, the redaction-safe log and clock-skew interceptors, and the
+Dio-backed remote data sources and clients. Both the native stack
+(`native_network`) and the browser stack (`web_network`) build on it, so it
+carries no token custody and no `flutter_secure_storage`.
 
-## Composition root
-
-`registerServerNetwork({container, config, sessionTombstones})` is the one place
-that knows how the pieces fit together. It builds the **per-server** stack and
-registers it into that server's DI container:
-
-```
-TokenStorageService -> TokenInterceptor -> DioFactory -> shared Dio
-                                                      -> AuthRepository
-                                                      -> FeedbackTransport
-                                                      -> HouseholdRemoteDataSource
-```
-
-The `Dio` is registered as a shared per-server singleton so every repository
-and data source resolves the same instance and inherits the interceptor stack
-— including token attachment — with no construction-order dependency. The
-container owns the `Dio` and closes it on dispose; individual clients must not
-close a `Dio` they share.
-
-Interceptor order (see `register_server_network.dart` for the reasoning):
-`NetworkLogInterceptor` → `TokenInterceptor` → `ClockSkewInterceptor`.
+Bearer-token custody, `AuthRepositoryImpl` and the per-server composition root
+live in `native_network`.
 
 ## Contents
 
-- **`network/`** — `DioFactory`, `registerServerNetwork`,
-  `NetworkScopeInstaller`, and the interceptors (token attachment,
-  redaction-safe request logging, clock-skew sampling).
-- **`auth/`** — `AuthRepositoryImpl` (BetterAuth over the per-server Dio) and
-  `TokenStorageService` (keyed by the stable `bgeServerId`).
+- **`network/`** — `DioFactory` and the interceptors (redaction-safe request
+  logging, clock-skew sampling), plus `redactUri`.
 - **`feedback/`** — `FeedbackDioTransport`, the authenticated feedback sender.
 - **`household/`** — `HouseholdRemoteDataSourceImpl` (see below).
 - **`well_known/`** — `WellKnownClientImpl`. The one client that builds its

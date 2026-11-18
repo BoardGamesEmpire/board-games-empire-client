@@ -124,6 +124,7 @@ workspace:
   - packages/storage/storage_interface
   - packages/storage/web_storage
   - packages/network/dio_network
+  - packages/network/native_network
   - packages/network/network_interface
   - packages/network/web_network
   - packages/platform/mobile

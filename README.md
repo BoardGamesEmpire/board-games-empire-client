@@ -88,7 +88,7 @@ packages/
   features/{auth,feedback,household,server_onboarding}
   platform/{mobile,desktop,web,native_platform,connectivity_platform,build_info_platform}
   storage/{drift_storage,web_storage,key_storage,storage_interface}
-  network/{dio_network,web_network,network_interface}
+  network/{dio_network,native_network,web_network,network_interface}
   ui/{tokens,widgets}
   testing/{l10n,support}
 tool/                           check_sdk_constraints.dart, dev_proxy/
@@ -102,7 +102,8 @@ targets cannot diverge. [packages/app_shell/README.md](packages/app_shell/README
 is the best single description of how startup works.
 
 Platform differences are handled by paired implementations behind a shared
-interface — `drift_storage` ↔ `web_storage`, `dio_network` ↔ `web_network` —
+interface — `drift_storage` ↔ `web_storage`, `native_network` ↔ `web_network`
+(with `dio_network` the shared Dio layer under both) —
 rather than by conditionals in feature code.
 
 Two naming traps when writing imports:
