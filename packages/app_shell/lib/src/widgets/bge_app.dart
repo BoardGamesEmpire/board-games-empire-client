@@ -194,10 +194,10 @@ const List<LocalizationsDelegate<dynamic>> bgeFeatureLocalizationsDelegates = [
 /// Seams left deliberately open for sibling issues:
 /// - [pendingDeepLinkHolder] (#10) — drained by a [DeepLinkConsumer] this
 ///   widget starts (#82): on each link that arrives, and on the shell's
-///   authenticated signal, which is also how the app enters Ready. #83 keeps
-///   web's half, holding a
-///   cold load's location through bootstrap and sign-in; web has no link
-///   source, so nothing fills the slot there yet.
+///   authenticated signal, which is also how the app enters Ready. The
+///   router is handed it too: on web, which has no link source, the
+///   router's first redirect holds the location the page was loaded at, so
+///   a reload or a bookmark opens once the app is ready (#83).
 ///
 /// Deliberately free of process-global side effects: `ErrorWidget.builder`
 /// (#66) and the uncaught-error hooks (#34) are installed by `runBgeApp`,
@@ -483,6 +483,8 @@ class _BgeAppState extends State<BgeApp> {
       adminHouseholdListBuilder: _buildAdminHouseholdListRoute,
       serverSettingsBuilder: _buildServerSettingsRoute,
       adminHouseholdDetailBuilder: _buildAdminHouseholdDetailRoute,
+      // #83: a web cold load's location waits here for the consumer below.
+      pendingDeepLinkHolder: widget.pendingDeepLinkHolder,
     );
     // #82: the lookup and the orchestrator exist only once bootstrap has
     // succeeded, so they are read when a drain runs, not captured now.
@@ -493,7 +495,7 @@ class _BgeAppState extends State<BgeApp> {
         isReady: () => widget.bootstrapCubit.state is AppBootstrapReady,
         lookup: () => widget.bootstrapCubit.knownServerLookup,
         orchestrator: () => widget.bootstrapCubit.orchestrator,
-        go: _router.go,
+        go: _landDeepLink,
       )..start();
     }
     // #76/#105: keep the review slot honest whenever the crash draft
@@ -683,6 +685,13 @@ class _BgeAppState extends State<BgeApp> {
     widget.bootstrapCubit.onAuthenticated();
     unawaited(_deepLinkConsumer?.drain());
   }
+
+  /// Where [_deepLinkConsumer] sends a held link. The landing takes the
+  /// current browser history entry's place on web (#83, #916): that entry
+  /// is the sign-in screen or home the link waited on, and Back from the
+  /// landed screen must leave the app, not walk back through them.
+  void _landDeepLink(String location) =>
+      replacingHistoryEntry(_router, () => _router.go(location));
 
   /// Resolves an **optional** device-global service from
   /// [BgeApp.rootContainer], or null when there is no container, [T] is not

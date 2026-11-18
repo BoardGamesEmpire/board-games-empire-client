@@ -40,10 +40,17 @@ class FakeBrowserHistory {
   /// Every entry, the ones Forward returns to included, oldest first.
   List<String> get allLocations => [for (final entry in _entries) entry.uri];
 
+  /// Every location the router reported, in order, whether it added an
+  /// entry or took the current one's place. A replaced report leaves no
+  /// entry behind, so only this shows that it happened.
+  List<String> get reported => List.unmodifiable(_reported);
+  final _reported = <String>[];
+
   Future<Object?> _record(MethodCall call) async {
     if (call.method != 'routeInformationUpdated') return null;
     final arguments = call.arguments as Map<Object?, Object?>;
     final entry = (uri: arguments['uri']! as String, state: arguments['state']);
+    _reported.add(entry.uri);
     if (arguments['replace'] == true && _current >= 0) {
       _entries[_current] = entry;
     } else {
@@ -55,8 +62,21 @@ class FakeBrowserHistory {
     return null;
   }
 
+  /// Whether a [back] went past the first entry. A browser leaves the app
+  /// then, for whatever page came before it, so the router is handed
+  /// nothing.
+  bool get leftApp => _leftApp;
+  var _leftApp = false;
+
   /// Browser Back: the router is handed the entry before the current one.
-  Future<void> back() => _restore(_entries[--_current]);
+  /// From the first entry, the app is left ([leftApp]).
+  Future<void> back() async {
+    if (_current <= 0) {
+      _leftApp = true;
+      return;
+    }
+    await _restore(_entries[--_current]);
+  }
 
   /// Browser Forward: the router is handed the entry after the current one.
   Future<void> forward() => _restore(_entries[++_current]);

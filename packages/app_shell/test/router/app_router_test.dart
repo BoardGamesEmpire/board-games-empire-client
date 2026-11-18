@@ -29,22 +29,37 @@ void main() {
     cubit = _MockAppBootstrapCubit();
   });
 
+  PendingDeepLinkHolder buildHolder() {
+    final holder = PendingDeepLinkHolder();
+    addTearDown(holder.dispose);
+    return holder;
+  }
+
   Future<GoRouter> pumpRouter(
     WidgetTester tester, {
     required AppBootstrapState initialState,
     Stream<AppBootstrapState>? stream,
     AuthScopeBuilder? authScopeBuilder,
     NavigationShellBuilder? navigationShellBuilder,
+    PendingDeepLinkHolder? pendingDeepLinkHolder,
+    String? coldLoad,
   }) async {
     whenListen(
       cubit,
       stream ?? const Stream<AppBootstrapState>.empty(),
       initialState: initialState,
     );
+    // The address a web page was loaded at, which go_router starts from.
+    if (coldLoad != null) {
+      final dispatcher = tester.binding.platformDispatcher
+        ..defaultRouteNameTestValue = coldLoad;
+      addTearDown(dispatcher.clearDefaultRouteNameTestValue);
+    }
     final listenable = BootstrapStreamListenable(cubit.stream);
     final router = buildAppRouter(
       bootstrapCubit: cubit,
       refreshListenable: listenable,
+      pendingDeepLinkHolder: pendingDeepLinkHolder,
       // The production home body (HomeScreen) needs an active-server scope
       // this router-level test does not build. Supply a minimal stand-in so
       // the redirect assertions can recognize the home destination — the
@@ -276,6 +291,299 @@ void main() {
         reservedDeepLinkPathPatterns,
         containsAll(publicDeepLinkPathPatterns),
       );
+    });
+  });
+
+  group('buildAppRouter — a web cold load (#83)', () {
+    testWidgets('a cold load at a declared location is held', (tester) async {
+      final holder = buildHolder();
+
+      await pumpRouter(
+        tester,
+        initialState: const AppBootstrapInitializing(),
+        pendingDeepLinkHolder: holder,
+        coldLoad: '/household/h1',
+      );
+
+      expect(holder.peek!.location, '/household/h1');
+      expect(holder.peek!.serverId, webColdLoadServerId);
+      expect(find.byType(SplashScreen), findsOneWidget);
+    });
+
+    testWidgets('a cold load keeps its query and token', (tester) async {
+      final holder = buildHolder();
+
+      await pumpRouter(
+        tester,
+        initialState: const AppBootstrapInitializing(),
+        pendingDeepLinkHolder: holder,
+        coldLoad: '/server/s1/event/e1/rsvp/tok?c=1',
+      );
+
+      expect(holder.peek!.location, '/server/s1/event/e1/rsvp/tok?c=1');
+    });
+
+    testWidgets('a cold load at an unknown path is not held', (tester) async {
+      final holder = buildHolder();
+
+      await pumpRouter(
+        tester,
+        initialState: const AppBootstrapInitializing(),
+        pendingDeepLinkHolder: holder,
+        coldLoad: '/nope',
+      );
+
+      expect(holder.peek, isNull);
+    });
+
+    for (final location in [AppRoutes.home, AppRoutes.auth]) {
+      testWidgets('a cold load at $location is not held', (tester) async {
+        final holder = buildHolder();
+
+        await pumpRouter(
+          tester,
+          initialState: const AppBootstrapInitializing(),
+          pendingDeepLinkHolder: holder,
+          coldLoad: location,
+        );
+
+        expect(holder.peek, isNull);
+      });
+    }
+
+    testWidgets('only the first location is held', (tester) async {
+      final holder = buildHolder();
+      final router = await pumpRouter(
+        tester,
+        initialState: const AppBootstrapInitializing(),
+        stream: Stream.fromIterable(const [AppBootstrapNeedsAuth()]),
+        pendingDeepLinkHolder: holder,
+        coldLoad: '/household/h1',
+      );
+      await tester.pumpAndSettle();
+      final held = holder.peek;
+
+      router.go(AppRoutes.household);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Sign in'), findsOneWidget);
+      expect(holder.peek, same(held));
+    });
+
+    testWidgets('a location reached after the cold load is never held', (
+      tester,
+    ) async {
+      final holder = buildHolder();
+      final router = await pumpRouter(
+        tester,
+        initialState: const AppBootstrapInitializing(),
+        stream: Stream.fromIterable(const [AppBootstrapNeedsAuth()]),
+        pendingDeepLinkHolder: holder,
+      );
+      await tester.pumpAndSettle();
+
+      router.go(AppRoutes.household);
+      await tester.pumpAndSettle();
+
+      expect(holder.peek, isNull);
+    });
+  });
+
+  group('buildAppRouter — a public link before sign-in (#83)', () {
+    const publicLink = '/server/s1/collection/u1';
+
+    for (final location in [publicLink, '$publicLink?x=1']) {
+      testWidgets('a cold load at $location opens it signed out', (
+        tester,
+      ) async {
+        await pumpRouter(
+          tester,
+          initialState: const AppBootstrapNeedsAuth(),
+          coldLoad: location,
+        );
+
+        expect(find.byType(NotYetAvailableScreen), findsOneWidget);
+        expect(find.text('Sign in'), findsNothing);
+      });
+    }
+
+    for (final location in [
+      '/server/s1/event/e1',
+      '/server/s1/game/g1',
+      '/server/s1/collection',
+      '/server/s1/collection/u1/extra',
+      '/collection/u1',
+    ]) {
+      testWidgets('a cold load at $location waits for sign-in', (
+        tester,
+      ) async {
+        await pumpRouter(
+          tester,
+          initialState: const AppBootstrapNeedsAuth(),
+          coldLoad: location,
+        );
+
+        expect(find.byType(NotYetAvailableScreen), findsNothing);
+        expect(find.text('Sign in'), findsOneWidget);
+      });
+    }
+
+    testWidgets('the public link opens while the app is still starting', (
+      tester,
+    ) async {
+      await pumpRouter(
+        tester,
+        initialState: const AppBootstrapInitializing(),
+        coldLoad: publicLink,
+      );
+
+      expect(find.byType(NotYetAvailableScreen), findsOneWidget);
+      expect(find.byType(SplashScreen), findsNothing);
+    });
+
+    // A web page always starts in Initializing, so this is the order a
+    // signed-out visitor meets.
+    testWidgets('the public link stays open from start-up through to '
+        'sign-in', (tester) async {
+      final states = StreamController<AppBootstrapState>();
+      addTearDown(states.close);
+      final router = await pumpRouter(
+        tester,
+        initialState: const AppBootstrapInitializing(),
+        stream: states.stream,
+        coldLoad: publicLink,
+      );
+      expect(find.byType(NotYetAvailableScreen), findsOneWidget);
+
+      states.add(const AppBootstrapNeedsAuth());
+      await tester.pumpAndSettle();
+
+      expect(find.text('Sign in'), findsNothing);
+      expect(find.byType(NotYetAvailableScreen), findsOneWidget);
+      expect(
+        router.routerDelegate.currentConfiguration.uri.toString(),
+        publicLink,
+      );
+    });
+
+    for (final state in const <AppBootstrapState>[
+      AppBootstrapInitializing(),
+      AppBootstrapNeedsAuth(),
+    ]) {
+      testWidgets('a public cold load that opens in ${state.runtimeType} is '
+          'not held: it has landed', (tester) async {
+        final holder = buildHolder();
+
+        await pumpRouter(
+          tester,
+          initialState: state,
+          pendingDeepLinkHolder: holder,
+          coldLoad: publicLink,
+        );
+
+        expect(find.byType(NotYetAvailableScreen), findsOneWidget);
+        expect(holder.peek, isNull);
+      });
+    }
+
+    // A web page starts in Initializing, so the public link has opened
+    // before the start fails.
+    testWidgets('a public cold load a failed start pins away is held', (
+      tester,
+    ) async {
+      final holder = buildHolder();
+      final states = StreamController<AppBootstrapState>();
+      addTearDown(states.close);
+      await pumpRouter(
+        tester,
+        initialState: const AppBootstrapInitializing(),
+        stream: states.stream,
+        pendingDeepLinkHolder: holder,
+        coldLoad: publicLink,
+      );
+      expect(holder.peek, isNull);
+
+      states.add(
+        AppBootstrapFailed(
+          error: Exception('boom'),
+          attemptCount: 1,
+          canOfferReset: false,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byType(BootstrapErrorScreen), findsOneWidget);
+      expect(holder.peek?.location, publicLink);
+    });
+
+    testWidgets('a public cold load the visitor left is not held when the '
+        'start fails', (tester) async {
+      final holder = buildHolder();
+      final states = StreamController<AppBootstrapState>();
+      addTearDown(states.close);
+      final router = await pumpRouter(
+        tester,
+        initialState: const AppBootstrapInitializing(),
+        stream: states.stream,
+        pendingDeepLinkHolder: holder,
+        coldLoad: publicLink,
+      );
+
+      router.go(AppRoutes.home);
+      // Splash's spinner never settles.
+      await tester.pump();
+      expect(find.byType(SplashScreen), findsOneWidget);
+      states.add(
+        AppBootstrapFailed(
+          error: Exception('boom'),
+          attemptCount: 1,
+          canOfferReset: false,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byType(BootstrapErrorScreen), findsOneWidget);
+      expect(holder.peek, isNull);
+    });
+
+    testWidgets('a public cold load stays open and unheld once ready', (
+      tester,
+    ) async {
+      final holder = buildHolder();
+      final states = StreamController<AppBootstrapState>();
+      addTearDown(states.close);
+      final router = await pumpRouter(
+        tester,
+        initialState: const AppBootstrapInitializing(),
+        stream: states.stream,
+        pendingDeepLinkHolder: holder,
+        coldLoad: publicLink,
+      );
+
+      states.add(const AppBootstrapReady());
+      await tester.pumpAndSettle();
+
+      expect(
+        router.routerDelegate.currentConfiguration.uri.toString(),
+        publicLink,
+      );
+      expect(holder.peek, isNull);
+    });
+
+    testWidgets('a failed start still shows the error over the public link', (
+      tester,
+    ) async {
+      await pumpRouter(
+        tester,
+        initialState: AppBootstrapFailed(
+          error: Exception('boom'),
+          attemptCount: 1,
+          canOfferReset: false,
+        ),
+        coldLoad: publicLink,
+      );
+
+      expect(find.byType(BootstrapErrorScreen), findsOneWidget);
     });
   });
 

@@ -84,8 +84,8 @@ import 'package:observability/observability.dart';
 /// exists (native), a [DeepLinkHandler] normalizes each link into the
 /// [PendingDeepLinkHolder]. The holder is created on **every** platform,
 /// web included, and [BgeApp]'s `DeepLinkConsumer` drains it on every
-/// platform (#82). Web has no link source, so nothing fills the slot there
-/// yet; #83's auth gate will, stashing redirect-bounced locations in it.
+/// platform (#82). Web has no link source; there the router's first
+/// redirect holds the location the page was loaded at in it (#83).
 /// The app widget owns the handler's lifecycle
 /// ([BgeApp.disposeDeepLinkHandlerOnDispose]), but never the holder's.
 ///
@@ -301,8 +301,8 @@ Future<void> runBgeApp({
   // plugin buffers the cold-start launch link only if instantiated
   // early), after the hooks (handler faults are captured). The holder
   // exists on every platform — web's null source just means no handler
-  // feeds it from out-of-band links; #83's auth-gate feeds it from the
-  // router redirect instead.
+  // feeds it from out-of-band links; on web the router's first redirect
+  // feeds it the location the page was loaded at instead (#83).
   final pendingDeepLinkHolder = PendingDeepLinkHolder();
   final deepLinkSource = platformBootstrap.createDeepLinkSource();
   DeepLinkHandler? deepLinkHandler;

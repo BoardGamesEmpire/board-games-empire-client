@@ -6,13 +6,14 @@ import 'package:flutter/foundation.dart';
 ///
 /// Links can arrive before the app is able to route them — before
 /// bootstrap completes, or (for authenticated resources) before sign-in.
-/// The `DeepLinkHandler` writes every successfully normalized link here.
-/// `BgeApp`'s `DeepLinkConsumer` (#82) drains it on every platform,
-/// listening for each arrival: on native through a server switch where the
-/// link needs one, on web straight to its location. Web has no link source,
-/// so nothing fills the slot there yet; #83 will, holding a cold load's
-/// location through bootstrap and sign-in. A held link is the most recent
-/// one received until the consumer takes it.
+/// On native the `DeepLinkHandler` writes every successfully normalized
+/// link here. Web has no link source: there the router's first redirect
+/// writes the location the page was loaded at, so a reload or a bookmark
+/// survives bootstrap and sign-in (#83). `BgeApp`'s `DeepLinkConsumer`
+/// (#82) drains it on every platform, listening for each arrival: on native
+/// through a server switch where the link needs one, on web straight to its
+/// location. A held link is the most recent one received until the
+/// consumer takes it.
 ///
 /// Listeners are told when a link arrives ([set]), never when the slot
 /// empties. The creator owns the holder's lifetime.
