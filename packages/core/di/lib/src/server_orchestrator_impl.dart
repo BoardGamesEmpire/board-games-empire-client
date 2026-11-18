@@ -444,7 +444,7 @@ class ServerOrchestratorImpl implements ServerOrchestrator {
         }
       }
 
-      await context.dispose();
+      await _disposeQuietly(context);
       _contexts.remove(serverId);
       _configs.remove(serverId);
       _lastActiveTick.remove(serverId);
@@ -691,6 +691,17 @@ class ServerOrchestratorImpl implements ServerOrchestrator {
       ServerContextState.backgrounding,
       ServerContextState.monitoring,
     };
+
+    if (context.state == ServerContextState.transitioning) {
+      // Every lifecycle command runs through the serialized queue, so none
+      // can observe another's transition. A transitioning context here is a
+      // broken invariant; activating it would race the transition, and
+      // treating it as active would skip the activation (#174).
+      throw StateError(
+        'Server ${context.serverId} is transitioning; it is neither active '
+        'nor activatable.',
+      );
+    }
 
     if (activateableStates.contains(context.state)) {
       await context.activate();
