@@ -265,6 +265,62 @@ void main() {
       ],
     );
 
+    // The screen keys each row by its id, and a keyed list needs each key
+    // once, but nothing under the bloc drops a result a source repeats
+    // (#473).
+    blocTest<GameSearchBloc, GameSearchState>(
+      'lists a result its source sends twice once, where it first came',
+      setUp: () => remote.onSearch = (_, _, _) async => GameSearchResults(
+        local: [
+          hit('g_catan', gameId: 'g_catan', title: 'Catan'),
+          hit('g_azul', gameId: 'g_azul', title: 'Azul'),
+          hit('g_catan', gameId: 'g_catan', title: 'Catan again'),
+        ],
+        byDataGateway: {
+          'dg_bgg': [
+            hit('926', title: 'Seafarers'),
+            // Its first copy is the game this server lists, so neither copy
+            // is a row: the first copy decides for the repeat.
+            hit('13', gameId: 'g_catan'),
+            hit('927', title: 'Cities'),
+            hit('926', title: 'Seafarers again'),
+            hit('13', title: 'Catan, unlinked'),
+          ],
+          // Another DataGateway's result with the same id is a row of its
+          // own.
+          'dg_igdb': [hit('926', title: 'Something else')],
+        },
+      ),
+      build: build,
+      act: (bloc) async {
+        bloc.add(const GameSearchQueryChanged('catan'));
+        await settle();
+      },
+      skip: 1,
+      expect: () => [
+        isA<GameSearchReady>()
+            .having((s) => s.onServer, 'onServer', [
+              hit('g_catan', gameId: 'g_catan', title: 'Catan'),
+              hit('g_azul', gameId: 'g_azul', title: 'Azul'),
+            ])
+            .having((s) => s.fromSources, 'fromSources', [
+              GameSearchSourceHit(
+                source: const GameSearchSource(id: 'dg_bgg'),
+                hit: hit('926', title: 'Seafarers'),
+              ),
+              GameSearchSourceHit(
+                source: const GameSearchSource(id: 'dg_bgg'),
+                hit: hit('927', title: 'Cities'),
+              ),
+              GameSearchSourceHit(
+                source: const GameSearchSource(id: 'dg_igdb'),
+                hit: hit('926', title: 'Something else'),
+              ),
+            ])
+            .having((s) => s.resultCount, 'resultCount', 5),
+      ],
+    );
+
     blocTest<GameSearchBloc, GameSearchState>(
       'names every DataGateway that did not answer, however it failed',
       setUp: () => remote.onSearch = (_, _, _) async => results,
@@ -1345,12 +1401,18 @@ void main() {
       },
       expect: () => [
         const GameSearchLoading(query: 'catan'),
-        GameSearchReady(query: 'catan', onServer: onServer, searching: true),
+        GameSearchReady(
+          query: 'catan',
+          onServer: onServer,
+          searching: true,
+          streamed: true,
+        ),
         GameSearchReady(
           query: 'catan',
           onServer: onServer,
           fromSources: [row('dg_bgg', '926'), row('dg_igdb', 'c-1')],
           searching: true,
+          streamed: true,
         ),
         GameSearchReady(
           query: 'catan',
@@ -1360,11 +1422,74 @@ void main() {
             row('dg_bgg', '927'),
             row('dg_igdb', 'c-1'),
           ],
+          streamed: true,
         ),
       ],
       verify: (_) {
         expect(channel.calls, ['search(catan)']);
         expect(remote.calls, isEmpty);
+      },
+    );
+
+    // The screen says a streamed search's first results and its end from
+    // its footer, and an answer that came whole from the count above the
+    // results (#473), so it reads which this is from the answer itself.
+    blocTest<GameSearchBloc, GameSearchState>(
+      'says which answers came over the stream, search by search',
+      setUp: () {
+        remote.onSearch = (_, _, _) async => GameSearchResults(local: onServer);
+        // The socket can't serve the second search, so REST does.
+        channel.onListen = (search) {
+          if (search.described == 'azul') {
+            search.fail(const RealtimeUnavailableException('down'));
+          }
+        };
+      },
+      build: () => build(stream: channel),
+      act: (bloc) async {
+        bloc.add(const GameSearchQueryChanged('catan'));
+        await settle();
+        // This server's half and the end in one answer: streamed all the
+        // same.
+        channel.searches.single.answer(
+          GameSearchResults(local: onServer),
+          localDone: true,
+          done: true,
+        );
+        await settle();
+        bloc.add(const GameSearchQueryChanged('azul'));
+        await settle();
+        bloc.add(const GameSearchQueryChanged('catan'));
+        await settle();
+        channel.searches.last.answer(
+          GameSearchResults(local: onServer),
+          localDone: true,
+        );
+        await settle();
+      },
+      expect: () => [
+        const GameSearchLoading(query: 'catan'),
+        GameSearchReady(query: 'catan', onServer: onServer, streamed: true),
+        const GameSearchLoading(query: 'azul'),
+        // Over REST, in a session that has a channel: not streamed.
+        GameSearchReady(query: 'azul', onServer: onServer),
+        const GameSearchLoading(query: 'catan'),
+        GameSearchReady(
+          query: 'catan',
+          onServer: onServer,
+          searching: true,
+          streamed: true,
+        ),
+      ],
+      verify: (_) {
+        expect(channel.calls, [
+          'search(catan)',
+          'search(azul)',
+          'search(catan)',
+          // Still running as the bloc closes.
+          'cancel(catan)',
+        ]);
+        expect(remote.calls, ['search(azul)']);
       },
     );
 
@@ -1395,6 +1520,7 @@ void main() {
           onServer: onServer,
           fromSources: [row('dg_bgg', '926')],
           searching: true,
+          streamed: true,
         ),
       ],
     );
@@ -1431,10 +1557,12 @@ void main() {
           query: 'catan',
           onServer: [hit('g1', gameId: 'g1')],
           searching: true,
+          streamed: true,
         ),
         GameSearchReady(
           query: 'catan',
           onServer: [hit('g1', gameId: 'g1')],
+          streamed: true,
         ),
       ],
     );
@@ -1453,8 +1581,18 @@ void main() {
       },
       expect: () => [
         const GameSearchLoading(query: 'catan'),
-        GameSearchReady(query: 'catan', onServer: onServer, searching: true),
-        GameSearchReady(query: 'catan', onServer: onServer, cutShort: true),
+        GameSearchReady(
+          query: 'catan',
+          onServer: onServer,
+          searching: true,
+          streamed: true,
+        ),
+        GameSearchReady(
+          query: 'catan',
+          onServer: onServer,
+          cutShort: true,
+          streamed: true,
+        ),
       ],
     );
 
@@ -1489,9 +1627,14 @@ void main() {
           query: 'cat',
           onServer: [hit('older')],
           searching: true,
+          streamed: true,
         ),
         const GameSearchLoading(query: 'catan'),
-        GameSearchReady(query: 'catan', onServer: [hit('newer')]),
+        GameSearchReady(
+          query: 'catan',
+          onServer: [hit('newer')],
+          streamed: true,
+        ),
       ],
       verify: (_) => expect(channel.calls, [
         'search(cat)',
@@ -1530,12 +1673,14 @@ void main() {
           query: 'catan',
           onServer: [hit('older')],
           searching: true,
+          streamed: true,
         ),
         const GameSearchLoading(query: 'catan', filter: _expansions),
         GameSearchReady(
           query: 'catan',
           onServer: [hit('newer')],
           filter: _expansions,
+          streamed: true,
         ),
       ],
       verify: (_) => expect(channel.calls, [
@@ -1580,11 +1725,13 @@ void main() {
           query: 'catan',
           onServer: onServer,
           searching: true,
+          streamed: true,
         ),
         GameSearchReady(
           query: 'catan',
           onServer: onServer,
           fromSources: [row('dg_bgg', '926')],
+          streamed: true,
         ),
       ],
       verify: (_) => expect(channel.calls, ['search(catan)']),
@@ -1618,11 +1765,13 @@ void main() {
           query: 'catan',
           onServer: onServer,
           searching: true,
+          streamed: true,
         ),
         const GameSearchLoading(query: 'azul'),
         GameSearchReady(
           query: 'azul',
           onServer: [hit('g_azul', gameId: 'g_azul')],
+          streamed: true,
         ),
       ],
       verify: (_) => expect(channel.calls, [
@@ -1662,7 +1811,8 @@ void main() {
               'name',
               'BoardGameGeek',
             )
-            .having((s) => s.searching, 'searching', isTrue),
+            .having((s) => s.searching, 'searching', isTrue)
+            .having((s) => s.streamed, 'streamed', isTrue),
       ],
     );
 
@@ -1744,6 +1894,7 @@ void main() {
           onServer: onServer,
           dataGatewaysRefused: true,
           refusalMessage: 'm',
+          streamed: true,
         ),
       ],
       verify: (_) {
@@ -1861,10 +2012,13 @@ void main() {
           query: 'catan',
           onServer: [hit('streamed')],
           searching: true,
+          streamed: true,
         ),
+        // The device's answer comes whole: not streamed.
         isA<GameSearchReady>()
             .having((s) => s.fromCache, 'fromCache', isTrue)
             .having((s) => s.searching, 'searching', isFalse)
+            .having((s) => s.streamed, 'streamed', isFalse)
             .having((s) => s.onServer.map((h) => h.gameId), 'gameIds', [
               'g_catan',
             ]),
@@ -1897,7 +2051,12 @@ void main() {
       expect(channel.closes, 1);
       expect(states, [
         const GameSearchLoading(query: 'catan'),
-        GameSearchReady(query: 'catan', onServer: onServer, searching: true),
+        GameSearchReady(
+          query: 'catan',
+          onServer: onServer,
+          searching: true,
+          streamed: true,
+        ),
       ]);
     });
 
@@ -1960,7 +2119,7 @@ void main() {
         expect(channel.calls, ['search(catan)']);
         expect(states, [
           const GameSearchLoading(query: 'catan'),
-          GameSearchReady(query: 'catan', onServer: onServer),
+          GameSearchReady(query: 'catan', onServer: onServer, streamed: true),
         ]);
       },
     );
@@ -1983,7 +2142,8 @@ void main() {
         isA<GameSearchReady>()
             .having((s) => s.resultCount, 'resultCount', 2)
             .having((s) => s.searching, 'searching', isFalse)
-            .having((s) => s.cutShort, 'cutShort', isFalse),
+            .having((s) => s.cutShort, 'cutShort', isFalse)
+            .having((s) => s.streamed, 'streamed', isFalse),
       ],
       verify: (_) => expect(remote.calls, ['search(catan)']),
     );

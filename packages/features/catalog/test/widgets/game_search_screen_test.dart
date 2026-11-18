@@ -13,6 +13,7 @@ import 'package:network_interface/network_interface.dart';
 import 'package:ui/ui.dart';
 
 import '../support/catalog_app.dart';
+import '../support/fake_game_search_channel.dart';
 import '../support/fake_games_remote.dart';
 
 void main() {
@@ -44,12 +45,14 @@ void main() {
     ValueListenable<bool>? offline,
     ThemeData? theme,
     DataGatewaySearchReach? reach,
+    GameSearchStreamSource? streamSource,
   }) async {
     await tester.pumpWidget(
       catalogApp(
         theme: theme,
         GameSearchScreen(
           remote: remote,
+          streamSource: streamSource,
           reach: reach,
           cache: cache,
           sourceNames: sourceNames,
@@ -1621,6 +1624,958 @@ void main() {
     expect(find.byKey(GameSearchScreen.idleKey), findsOneWidget);
   });
 
+  group('as results arrive (#473)', () {
+    late FakeGameSearchChannel channel;
+
+    setUp(() => channel = FakeGameSearchChannel());
+
+    const stillSearching =
+        'Showing the first results. Still searching data sources…';
+    const cutShortNote =
+        'The search ended before every data source answered, so some '
+        'results may be missing.';
+
+    final local = GameSearchResults(
+      local: [hit('g_catan', gameId: 'g_catan', title: 'Catan')],
+    );
+    // A row from each of two data sources. The second's is a game the server
+    // holds, so it opens: a row a keyboard user can be on.
+    final found = local.copyWith(
+      byDataGateway: {
+        'dg_bgg': [hit('926', title: 'Catan: Seafarers')],
+        'dg_igdb': [hit('c-1', gameId: 'g_online', title: 'Catan Online')],
+      },
+    );
+    // A second row from the first data source. A source's rows stay
+    // together, so it lands above the second source's row.
+    final more = found.copyWith(
+      byDataGateway: {
+        'dg_bgg': [
+          hit('926', title: 'Catan: Seafarers'),
+          hit('927', title: 'Catan: Cities & Knights'),
+        ],
+        'dg_igdb': [hit('c-1', gameId: 'g_online', title: 'Catan Online')],
+      },
+    );
+
+    /// Shows the screen over [channel], types [text] and waits out the
+    /// debounce, so its search is open on the channel and not yet answered.
+    Future<FakeChannelSearch> startSearch(
+      WidgetTester tester, {
+      String text = 'catan',
+      void Function(BuildContext context, String gameId)? onOpen,
+      DataGatewaySearchReach? reach,
+      Stream<String>? gone,
+    }) async {
+      await show(
+        tester,
+        streamSource: _StreamSource(channel: channel),
+        onOpen: onOpen,
+        reach: reach,
+        gone: gone,
+      );
+      await tester.enterText(find.byKey(GameSearchScreen.fieldKey), text);
+      await tester.pump(GameSearchBloc.defaultDebounce);
+      return channel.searches.single;
+    }
+
+    /// Answers [search] with everything it has found so far, this server's
+    /// half finished, and shows the answer.
+    ///
+    /// While the search runs a spinner turns, which never settles, so this
+    /// pumps rather than settling: once for the answer to reach the screen,
+    /// which schedules a frame, and once to draw it.
+    Future<void> answer(
+      WidgetTester tester,
+      FakeChannelSearch search,
+      GameSearchResults results, {
+      bool done = false,
+      bool cutShort = false,
+    }) async {
+      search.answer(results, localDone: true, done: done, cutShort: cutShort);
+      await tester.pump();
+      await tester.pump();
+    }
+
+    SemanticsNode countNode(WidgetTester tester) =>
+        tester.getSemantics(find.byKey(GameSearchScreen.countKey));
+
+    /// The footer's word that the search goes on.
+    SemanticsNode footerStatusNode(WidgetTester tester) => tester.getSemantics(
+      find.byKey(GameSearchScreen.footerStillSearchingKey),
+    );
+
+    /// The footer's count, once a streamed search has ended.
+    SemanticsNode footerCountNode(WidgetTester tester) =>
+        tester.getSemantics(find.byKey(GameSearchScreen.footerCountKey));
+
+    /// The footer's note saying why the DataGateways were left out (#795).
+    SemanticsNode footerNoteNode(WidgetTester tester) => tester.getSemantics(
+      find.byKey(GameSearchScreen.footerDataGatewaysRefusedKey),
+    );
+
+    /// The nodes in the semantics tree that say [label], by id.
+    List<int> saying(String label) => [
+      for (final node
+          in find.semantics
+              .byPredicate((node) => node.getSemanticsData().label == label)
+              .evaluate())
+        node.id,
+    ];
+
+    testWidgets('while searching, the still-searching row shows under the '
+        'data sources heading, and the footer says it as a live region', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      final search = await startSearch(tester);
+
+      // This server's half: the data sources' heading is up before any of
+      // their rows, over the row saying they are still being searched.
+      await answer(tester, search, local);
+
+      final tail = find.byKey(GameSearchScreen.stillSearchingKey);
+      expect(
+        find.byKey(GameSearchScreen.serverRowKey('g_catan')),
+        findsOneWidget,
+      );
+      expect(tail, findsOneWidget);
+      expect(
+        tester.getTopLeft(tail).dy,
+        greaterThan(tester.getTopLeft(find.text('From data sources')).dy),
+      );
+      // The section's row is drawn there, and left out of the semantics
+      // tree: the footer, always on screen, says it, and is what is heard.
+      expect(
+        find.descendant(of: tail, matching: find.text(stillSearching)),
+        findsOneWidget,
+      );
+      expect(
+        footerStatusNode(tester),
+        isSemantics(label: stillSearching, isLiveRegion: true),
+      );
+      expect(saying(stillSearching), [footerStatusNode(tester).id]);
+      // A section's loading tail, with a small spinner of its own, and not
+      // the whole-surface wait.
+      expect(
+        find.descendant(
+          of: tail,
+          matching: find.byType(CircularProgressIndicator),
+        ),
+        findsOneWidget,
+      );
+      expect(find.byType(BgeLoadingState), findsNothing);
+
+      // Their rows arrive above it: it stays the section's last row.
+      await answer(tester, search, found);
+
+      expect(
+        tester.getTopLeft(tail).dy,
+        greaterThanOrEqualTo(
+          tester
+              .getBottomLeft(
+                find.byKey(GameSearchScreen.sourceRowKey('dg_igdb', 'c-1')),
+              )
+              .dy,
+        ),
+      );
+      handle.dispose();
+    });
+
+    testWidgets('while searching, the count is not a live region', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      final search = await startSearch(tester);
+
+      await answer(tester, search, local);
+      expect(
+        countNode(tester),
+        isSemantics(label: '1 result', isLiveRegion: false),
+      );
+
+      // A count that changes as answers arrive says nothing.
+      await answer(tester, search, found);
+      expect(
+        countNode(tester),
+        isSemantics(label: '3 results', isLiveRegion: false),
+      );
+      handle.dispose();
+    });
+
+    testWidgets('when done, the tail goes and the footer holds the count as '
+        'a live region', (tester) async {
+      final handle = tester.ensureSemantics();
+      final search = await startSearch(tester);
+      await answer(tester, search, found);
+
+      await answer(tester, search, more, done: true);
+
+      expect(find.byKey(GameSearchScreen.stillSearchingKey), findsNothing);
+      expect(
+        find.byKey(GameSearchScreen.footerStillSearchingKey),
+        findsNothing,
+      );
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+      expect(
+        footerCountNode(tester),
+        isSemantics(label: '4 results', isLiveRegion: true),
+      );
+      // The count above the results shows it too, and says nothing.
+      expect(
+        countNode(tester),
+        isSemantics(label: '4 results', isLiveRegion: false),
+      );
+      // What the data sources found stays, under their heading.
+      expect(find.text('From data sources'), findsOneWidget);
+      expect(
+        find.byKey(GameSearchScreen.sourceRowKey('dg_bgg', '927')),
+        findsOneWidget,
+      );
+      handle.dispose();
+    });
+
+    testWidgets("the count's live region is a new node in the footer when "
+        'the search finishes', (tester) async {
+      final handle = tester.ensureSemantics();
+      final search = await startSearch(tester);
+      await answer(tester, search, found);
+      final before = footerStatusNode(tester).id;
+
+      // The last answer found nothing more, so the count reads as the one
+      // above the results did: only a new node is heard.
+      await answer(tester, search, found, done: true);
+
+      final after = footerCountNode(tester);
+      expect(after, isSemantics(label: '3 results', isLiveRegion: true));
+      expect(after.id, isNot(before));
+      handle.dispose();
+    });
+
+    testWidgets('the footer says the search goes on once, not once per '
+        'answer', (tester) async {
+      final handle = tester.ensureSemantics();
+      final search = await startSearch(tester);
+      await answer(tester, search, local);
+      final first = footerStatusNode(tester).id;
+
+      // Rows arrive and a note too in one answer, then more rows. It keeps
+      // its node and its words, so nothing is heard again.
+      await answer(
+        tester,
+        search,
+        found.copyWith(unavailableDataGateways: const {'dg_down'}),
+      );
+      await answer(
+        tester,
+        search,
+        more.copyWith(unavailableDataGateways: const {'dg_down'}),
+      );
+
+      // Below the fold, over the footer.
+      expect(
+        find.byKey(GameSearchScreen.missingSourcesKey, skipOffstage: false),
+        findsOneWidget,
+      );
+      final node = footerStatusNode(tester);
+      expect(node, isSemantics(label: stillSearching, isLiveRegion: true));
+      expect(node.id, first);
+      handle.dispose();
+    });
+
+    testWidgets('a cut-short search shows its note', (tester) async {
+      final handle = tester.ensureSemantics();
+      final search = await startSearch(tester);
+      await answer(tester, search, found);
+      expect(find.byKey(GameSearchScreen.cutShortKey), findsNothing);
+
+      // The connection dropped with a data source still to answer, after
+      // another had failed.
+      await answer(
+        tester,
+        search,
+        found.copyWith(unavailableDataGateways: const {'dg_down'}),
+        done: true,
+        cutShort: true,
+      );
+
+      final note = find.byKey(GameSearchScreen.cutShortKey);
+      expect(note, findsOneWidget);
+      expect(find.text(cutShortNote), findsOneWidget);
+      // Beside the note on the sources that didn't answer.
+      expect(
+        tester.getTopLeft(note).dy,
+        greaterThan(
+          tester.getTopLeft(find.byKey(GameSearchScreen.missingSourcesKey)).dy,
+        ),
+      );
+      // Quiet: the footer's final count is what is heard as the search
+      // ends.
+      expect(
+        tester.getSemantics(note),
+        isSemantics(label: cutShortNote, isLiveRegion: false),
+      );
+      expect(
+        footerCountNode(tester),
+        isSemantics(label: '3 results', isLiveRegion: true),
+      );
+      // What was found stands.
+      expect(
+        find.byKey(GameSearchScreen.sourceRowKey('dg_igdb', 'c-1')),
+        findsOneWidget,
+      );
+      handle.dispose();
+    });
+
+    testWidgets('a search cut short before its end says so only once it '
+        'ends', (tester) async {
+      final search = await startSearch(tester);
+
+      // The server's search of the data sources failed as a whole: the
+      // answer is cut short, and the search's end follows it.
+      await answer(tester, search, found, cutShort: true);
+
+      expect(find.byKey(GameSearchScreen.stillSearchingKey), findsOneWidget);
+      expect(
+        find.byKey(GameSearchScreen.footerStillSearchingKey),
+        findsOneWidget,
+      );
+      expect(find.byKey(GameSearchScreen.cutShortKey), findsNothing);
+
+      await answer(tester, search, found, done: true, cutShort: true);
+
+      expect(find.byKey(GameSearchScreen.cutShortKey), findsOneWidget);
+      expect(find.byKey(GameSearchScreen.stillSearchingKey), findsNothing);
+      expect(
+        find.byKey(GameSearchScreen.footerStillSearchingKey),
+        findsNothing,
+      );
+    });
+
+    testWidgets('a row keeps its key as rows arrive above it', (tester) async {
+      final search = await startSearch(tester, onOpen: (_, _) {});
+      await answer(tester, search, found);
+      final row = find.byKey(GameSearchScreen.sourceRowKey('dg_igdb', 'c-1'));
+      FocusNode focusOf() => Focus.of(
+        tester.element(
+          find.descendant(of: row, matching: find.text('Catan Online')),
+        ),
+      );
+      final focus = focusOf()..requestFocus();
+      await tester.pump();
+      expect(focus.hasPrimaryFocus, isTrue);
+      final top = tester.getTopLeft(row).dy;
+
+      // A second row from the first data source lands above this one.
+      await answer(tester, search, more);
+
+      expect(tester.getTopLeft(row).dy, greaterThan(top));
+      // The list's wrapper holds the key, and the row doesn't too (#549).
+      expect(row, findsOneWidget);
+      expect(focusOf(), same(focus));
+      expect(focus.hasPrimaryFocus, isTrue);
+    });
+
+    testWidgets('semanticChildCount follows the rows held now', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      int? semanticChildCount() => tester
+          .widget<CustomScrollView>(find.byType(CustomScrollView))
+          .semanticChildCount;
+      // A row's place in that count: "result 4 of 4".
+      int? indexOf(Finder row) {
+        SemanticsNode? node = tester.getSemantics(row);
+        while (node != null && node.indexInParent == null) {
+          node = node.parent;
+        }
+        return node?.indexInParent;
+      }
+
+      final search = await startSearch(tester);
+
+      await answer(tester, search, local);
+      expect(semanticChildCount(), 1);
+
+      await answer(tester, search, found);
+      expect(semanticChildCount(), 3);
+
+      await answer(tester, search, more, done: true);
+      expect(semanticChildCount(), 4);
+      expect(indexOf(find.byKey(GameSearchScreen.serverRowKey('g_catan'))), 0);
+      expect(
+        indexOf(find.byKey(GameSearchScreen.sourceRowKey('dg_igdb', 'c-1'))),
+        3,
+      );
+      handle.dispose();
+    });
+
+    testWidgets('a stream source is opened per screen and closed when the '
+        'screen goes', (tester) async {
+      final source = _StreamSource();
+      await show(tester, streamSource: source);
+      expect(source.opened, hasLength(1));
+      final opened = source.opened.single;
+
+      await tester.enterText(find.byKey(GameSearchScreen.fieldKey), 'catan');
+      await tester.pump(GameSearchBloc.defaultDebounce);
+      expect(opened.calls, ['search(catan)']);
+      expect(remote.calls, isEmpty);
+
+      // Built again, it is the same screen, with the same channel.
+      await show(tester, streamSource: source);
+      expect(source.opened, hasLength(1));
+
+      // Gone mid-search: the search is cancelled on the server, then the
+      // channel is closed. The bloc's close waits on the cancel, which
+      // completes in real time, not on the test's clock.
+      await tester.pumpWidget(const SizedBox());
+      await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+      await tester.pump();
+      expect(opened.calls, ['search(catan)', 'cancel(catan)']);
+      expect(opened.closes, 1);
+
+      // The next screen opens one of its own.
+      await show(tester, streamSource: source);
+      expect(source.opened, hasLength(2));
+    });
+
+    testWidgets('a stream source whose session has closed searches over '
+        'REST', (tester) async {
+      // A route built just before sign-out: the session's connection has
+      // closed under it.
+      remote.onSearch = (_, _, _) async => results;
+
+      await show(tester, streamSource: _StreamSource(closed: true));
+      await search(tester, 'catan');
+
+      expect(tester.takeException(), isNull);
+      expect(remote.calls, ['search(catan)']);
+      expect(find.text('3 results'), findsOneWidget);
+    });
+
+    testWidgets('a search refused the data sources shows no still-searching '
+        'row', (tester) async {
+      // This server's half lands before the search ends. The data sources
+      // weren't asked, so nothing is still being searched there.
+      final search = await startSearch(
+        tester,
+        reach: DataGatewaySearchReach.signedOut(),
+      );
+      await answer(tester, search, local);
+
+      expect(channel.calls, ['search(catan -external)']);
+      expect(find.text('From data sources'), findsOneWidget);
+      expect(
+        find.byKey(GameSearchScreen.dataGatewaysRefusedKey),
+        findsOneWidget,
+      );
+      expect(find.byKey(GameSearchScreen.stillSearchingKey), findsNothing);
+      // Nor does the footer say so: it says why, instead (#795).
+      expect(
+        find.byKey(GameSearchScreen.footerStillSearchingKey),
+        findsNothing,
+      );
+      expect(
+        find.byKey(GameSearchScreen.footerDataGatewaysRefusedKey),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets("a stream that fails after answers gives way to the device's "
+        'answer, said above the results', (tester) async {
+      final handle = tester.ensureSemantics();
+      await show(
+        tester,
+        streamSource: _StreamSource(channel: channel),
+        cache: FakeGamesCache([game('g_catan', title: 'Catan')]),
+      );
+      await tester.enterText(find.byKey(GameSearchScreen.fieldKey), 'catan');
+      await tester.pump(GameSearchBloc.defaultDebounce);
+      final search = channel.searches.single;
+      await answer(tester, search, local);
+      expect(footerStatusNode(tester), isSemantics(isLiveRegion: true));
+
+      search.fail(unreachable());
+      await tester.pump();
+      await tester.pump();
+
+      // Not streamed, the device's answer comes whole, and is said as one
+      // over REST is: by the count above the results. The footer has
+      // nothing more to say.
+      expect(find.byKey(GameSearchScreen.fromCacheBannerKey), findsOneWidget);
+      expect(
+        countNode(tester),
+        isSemantics(label: '1 result', isLiveRegion: true),
+      );
+      expect(
+        find.byKey(GameSearchScreen.footerStillSearchingKey),
+        findsNothing,
+      );
+      expect(find.byKey(GameSearchScreen.footerCountKey), findsNothing);
+      handle.dispose();
+    });
+
+    testWidgets('nothing found yet is not no results: that waits for the '
+        'end', (tester) async {
+      final search = await startSearch(tester, text: 'zzz');
+
+      // This server found nothing, and the data sources are still searching.
+      await answer(tester, search, const GameSearchResults());
+
+      expect(find.byKey(GameSearchScreen.noResultsKey), findsNothing);
+      expect(find.byKey(GameSearchScreen.stillSearchingKey), findsOneWidget);
+
+      await answer(tester, search, const GameSearchResults(), done: true);
+
+      expect(find.byKey(GameSearchScreen.noResultsKey), findsOneWidget);
+      expect(find.byKey(GameSearchScreen.stillSearchingKey), findsNothing);
+    });
+
+    testWidgets('while nothing has been found yet, the count waits and the '
+        'row says only that the search goes on', (tester) async {
+      final handle = tester.ensureSemantics();
+      final search = await startSearch(tester, text: 'zzz');
+
+      // This server found nothing, and the data sources are still searching:
+      // "No results" would say the opposite of what is happening.
+      await answer(tester, search, const GameSearchResults());
+
+      const noneYet = 'Still searching data sources…';
+      final tail = find.byKey(GameSearchScreen.stillSearchingKey);
+      expect(find.byKey(GameSearchScreen.countKey), findsNothing);
+      expect(
+        find.descendant(of: tail, matching: find.text(noneYet)),
+        findsOneWidget,
+      );
+      // The footer says the same, quietly: the search was heard as it began.
+      // The row in the list is drawn, and not in the semantics tree.
+      expect(
+        footerStatusNode(tester),
+        isSemantics(label: noneYet, isLiveRegion: false),
+      );
+      expect(saying(noneYet), [footerStatusNode(tester).id]);
+
+      // The first row brings the count back, and the words for the first
+      // results, which the footer says.
+      await answer(
+        tester,
+        search,
+        GameSearchResults(
+          byDataGateway: {
+            'dg_bgg': [hit('926', title: 'Catan: Seafarers')],
+          },
+        ),
+      );
+
+      expect(
+        countNode(tester),
+        isSemantics(label: '1 result', isLiveRegion: false),
+      );
+      expect(
+        find.descendant(of: tail, matching: find.text(stillSearching)),
+        findsOneWidget,
+      );
+      expect(
+        footerStatusNode(tester),
+        isSemantics(label: stillSearching, isLiveRegion: true),
+      );
+      expect(saying(stillSearching), [footerStatusNode(tester).id]);
+      handle.dispose();
+    });
+
+    testWidgets('a source that sends a result twice still shows every row '
+        'as rows arrive above it', (tester) async {
+      final search = await startSearch(tester);
+      final repeating = local.copyWith(
+        byDataGateway: {
+          'dg_bgg': [hit('926', title: 'Catan: Seafarers')],
+          // The second data source sends one of its results twice.
+          'dg_igdb': [
+            hit('c-1', title: 'Catan Online'),
+            hit('c-1', title: 'Catan Online'),
+            hit('c-2', title: 'Catan Duel'),
+          ],
+        },
+      );
+      await answer(tester, search, repeating);
+
+      // A row from the first data source lands above the repeat.
+      await answer(
+        tester,
+        search,
+        repeating.copyWith(
+          byDataGateway: {
+            'dg_bgg': [
+              hit('926', title: 'Catan: Seafarers'),
+              hit('927', title: 'Catan: Cities & Knights'),
+            ],
+            'dg_igdb': repeating.byDataGateway['dg_igdb']!,
+          },
+        ),
+      );
+
+      for (final title in [
+        'Catan',
+        'Catan: Seafarers',
+        'Catan: Cities & Knights',
+        'Catan Online',
+        'Catan Duel',
+      ]) {
+        expect(find.text(title), findsOneWidget, reason: title);
+      }
+      expect(find.text('5 results'), findsOneWidget);
+    });
+
+    // Each expectation lists what is heard at each step: the search
+    // starting, then each answer.
+    group('what a screen reader hears', () {
+      const searching =
+          'Searching… Data sources can take up to 15 seconds to answer.';
+      const refused =
+          'Searching beyond this server is not available to you. You can '
+          'still search the games this server knows about.';
+
+      late _Heard heard;
+
+      setUp(() => heard = _Heard());
+
+      /// Makes [change], and returns what was heard over the two frames that
+      /// show it: one for it to reach the screen, and one to draw it.
+      Future<List<String>> after(
+        WidgetTester tester,
+        void Function() change,
+      ) async {
+        change();
+        await tester.pump();
+        final first = heard.listen();
+        await tester.pump();
+        return [...first, ...heard.listen()];
+      }
+
+      /// Answers [search] as [answer] does, and returns what was heard.
+      Future<List<String>> hear(
+        WidgetTester tester,
+        FakeChannelSearch search,
+        GameSearchResults results, {
+        bool done = false,
+      }) => after(
+        tester,
+        () => search.answer(results, localDone: true, done: done),
+      );
+
+      testWidgets('the first rows, then the end', (tester) async {
+        final handle = tester.ensureSemantics();
+        final search = await startSearch(tester);
+
+        expect(
+          [
+            heard.listen(),
+            await hear(tester, search, local),
+            await hear(tester, search, found),
+            await hear(tester, search, more, done: true),
+          ],
+          [
+            [searching],
+            [stillSearching],
+            <String>[],
+            ['4 results'],
+          ],
+        );
+        handle.dispose();
+      });
+
+      testWidgets('nothing found yet, then the first rows, then the end', (
+        tester,
+      ) async {
+        final handle = tester.ensureSemantics();
+        final search = await startSearch(tester);
+        final first = GameSearchResults(
+          byDataGateway: {
+            'dg_bgg': [hit('926', title: 'Catan: Seafarers')],
+          },
+        );
+        final second = first.copyWith(
+          byDataGateway: {
+            'dg_bgg': [
+              hit('926', title: 'Catan: Seafarers'),
+              hit('927', title: 'Catan: Cities & Knights'),
+            ],
+          },
+        );
+
+        expect(
+          [
+            heard.listen(),
+            // This server found nothing. The row saying the search goes on
+            // comes quietly: the search was said to be running as it began.
+            await hear(tester, search, const GameSearchResults()),
+            await hear(tester, search, first),
+            await hear(tester, search, second),
+            await hear(tester, search, second, done: true),
+          ],
+          [
+            [searching],
+            <String>[],
+            [stillSearching],
+            <String>[],
+            ['2 results'],
+          ],
+        );
+        handle.dispose();
+      });
+
+      testWidgets('the first results again, when the rows found are taken '
+          'down and others arrive', (tester) async {
+        final handle = tester.ensureSemantics();
+        final gone = StreamController<String>.broadcast();
+        addTearDown(gone.close);
+        final search = await startSearch(tester, gone: gone.stream);
+        final first = GameSearchResults(
+          byDataGateway: {
+            'dg_bgg': [
+              hit('926', gameId: 'g_seafarers', title: 'Catan: Seafarers'),
+            ],
+          },
+        );
+        final second = first.copyWith(
+          byDataGateway: {
+            'dg_bgg': [
+              ...first.byDataGateway['dg_bgg']!,
+              hit('927', title: 'Catan: Cities & Knights'),
+            ],
+          },
+        );
+
+        expect(
+          [
+            heard.listen(),
+            await hear(tester, search, first),
+            // The one game found is found gone: nothing found, again.
+            await after(tester, () => gone.add('g_seafarers')),
+            await hear(tester, search, second),
+            await hear(tester, search, second, done: true),
+          ],
+          [
+            [searching],
+            [stillSearching],
+            <String>[],
+            [stillSearching],
+            ['1 result'],
+          ],
+        );
+        handle.dispose();
+      });
+
+      testWidgets('a refusal once, though the search ends with nothing '
+          'found', (tester) async {
+        final handle = tester.ensureSemantics();
+        final search = await startSearch(
+          tester,
+          text: 'zzz',
+          reach: DataGatewaySearchReach.signedOut(),
+        );
+
+        final heardAtStart = heard.listen();
+        final heardHalf = await hear(tester, search, const GameSearchResults());
+        final note = footerNoteNode(tester).id;
+        final heardAtEnd = await hear(
+          tester,
+          search,
+          const GameSearchResults(),
+          done: true,
+        );
+
+        expect(
+          [heardAtStart, heardHalf, heardAtEnd],
+          [
+            [searching],
+            // From the footer.
+            [refused],
+            // The empty state among the results, then the footer's count.
+            ['No games match “zzz”.', 'No results'],
+          ],
+        );
+        // The footer's note kept its node as the count arrived.
+        expect(footerNoteNode(tester).id, note);
+        handle.dispose();
+      });
+
+      testWidgets("a refused stream: the note once, as this server's half "
+          'lands, then the count once, above it, as the search ends', (
+        tester,
+      ) async {
+        final handle = tester.ensureSemantics();
+        final search = await startSearch(
+          tester,
+          reach: DataGatewaySearchReach.signedOut(),
+        );
+
+        final heardAtStart = heard.listen();
+        final heardHalf = await hear(tester, search, local);
+        final note = footerNoteNode(tester);
+        final heardAtEnd = await hear(tester, search, local, done: true);
+
+        expect(
+          [heardAtStart, heardHalf, heardAtEnd],
+          [
+            [searching],
+            [refused],
+            ['1 result'],
+          ],
+        );
+        // The note kept its node, and the count is a node of its own, above
+        // it, where a long note can't push it out of the footer's view.
+        expect(footerNoteNode(tester).id, note.id);
+        final count = footerCountNode(tester);
+        expect(count, isSemantics(label: '1 result', isLiveRegion: true));
+        expect(count.id, isNot(note.id));
+        expect(
+          tester.getBottomLeft(find.byKey(GameSearchScreen.footerCountKey)).dy,
+          lessThanOrEqualTo(
+            tester
+                .getTopLeft(
+                  find.byKey(GameSearchScreen.footerDataGatewaysRefusedKey),
+                )
+                .dy,
+          ),
+        );
+        // In the list, the note is read where it stands, and not heard.
+        expect(
+          tester.getSemantics(
+            find.byKey(GameSearchScreen.dataGatewaysRefusedKey),
+          ),
+          isSemantics(label: refused, isLiveRegion: false),
+        );
+        handle.dispose();
+      });
+
+      // Measured on review: with the announcements among the results, a
+      // page of this server's games put them out of the tree, or hidden, at
+      // phone sizes, and a user scrolled down missed the end.
+      group("at phone sizes, under a page of this server's games", () {
+        final page = GameSearchResults(
+          local: [
+            for (var n = 0; n < GamesRemoteDataSource.searchPageSize; n++)
+              hit('g_$n', gameId: 'g_$n', title: 'Server game $n'),
+          ],
+        );
+        const total = '${GamesRemoteDataSource.searchPageSize} results';
+
+        /// The live region in the tree that says [label]. Fails unless there
+        /// is exactly one.
+        SemanticsData liveRegion(String label) => find.semantics
+            .byPredicate((node) {
+              final data = node.getSemanticsData();
+              return data.flagsCollection.isLiveRegion && data.label == label;
+            })
+            .evaluate()
+            .single
+            .getSemanticsData();
+
+        /// The page's own scroll position, not the footer's.
+        ScrollPosition pagePosition(WidgetTester tester) => tester
+            .state<ScrollableState>(
+              find
+                  .descendant(
+                    of: find.byType(CustomScrollView),
+                    matching: find.byType(Scrollable),
+                  )
+                  .first,
+            )
+            .position;
+
+        for (final (name, size, textScale) in const [
+          ('390dp', Size(390, 844), 1.0),
+          ('390dp with the keyboard up', Size(390, 520), 1.0),
+          ('320dp at twice the text size', Size(320, 800), 2.0),
+        ]) {
+          testWidgets('$name: the first results, and the end with the page '
+              'scrolled down', (tester) async {
+            useViewSize(tester, size);
+            tester.platformDispatcher.textScaleFactorTestValue = textScale;
+            addTearDown(
+              tester.platformDispatcher.clearTextScaleFactorTestValue,
+            );
+            final handle = tester.ensureSemantics();
+            final search = await startSearch(tester);
+
+            final heardAtStart = heard.listen();
+            final heardFirst = await hear(tester, search, page);
+            // In the tree, and not hidden, as the first results land.
+            expect(
+              liveRegion(stillSearching).flagsCollection.isHidden,
+              isFalse,
+            );
+
+            // The user reads on, to the end of the page.
+            final position = pagePosition(tester);
+            final heardScrolling = await after(
+              tester,
+              () => position.jumpTo(position.maxScrollExtent),
+            );
+            expect(position.pixels, greaterThan(0));
+
+            final heardAtEnd = await hear(tester, search, page, done: true);
+            expect(liveRegion(total).flagsCollection.isHidden, isFalse);
+
+            expect(
+              [heardAtStart, heardFirst, heardScrolling, heardAtEnd],
+              [
+                [searching],
+                [stillSearching],
+                <String>[],
+                [total],
+              ],
+            );
+            handle.dispose();
+          });
+
+          testWidgets('$name: a refused stream, its note and then its end '
+              'with the page scrolled down (#795)', (tester) async {
+            useViewSize(tester, size);
+            tester.platformDispatcher.textScaleFactorTestValue = textScale;
+            addTearDown(
+              tester.platformDispatcher.clearTextScaleFactorTestValue,
+            );
+            final handle = tester.ensureSemantics();
+            final search = await startSearch(
+              tester,
+              reach: DataGatewaySearchReach.signedOut(),
+            );
+
+            final heardAtStart = heard.listen();
+            final heardHalf = await hear(tester, search, page);
+            // In the tree, and not hidden, as this server's half lands.
+            expect(liveRegion(refused).flagsCollection.isHidden, isFalse);
+
+            final position = pagePosition(tester);
+            final heardScrolling = await after(
+              tester,
+              () => position.jumpTo(position.maxScrollExtent),
+            );
+            expect(position.pixels, greaterThan(0));
+
+            final heardAtEnd = await hear(tester, search, page, done: true);
+            expect(liveRegion(refused).flagsCollection.isHidden, isFalse);
+            expect(liveRegion(total).flagsCollection.isHidden, isFalse);
+
+            expect(
+              [heardAtStart, heardHalf, heardScrolling, heardAtEnd],
+              [
+                [searching],
+                [refused],
+                <String>[],
+                [total],
+              ],
+            );
+            handle.dispose();
+          });
+        }
+      });
+    });
+  });
+
   group('accessibility audit', () {
     // `show` pumps the screen and wants the tester, so each call pumps it
     // with `pump`, and its arrange searches.
@@ -1630,11 +2585,13 @@ void main() {
       FakeGamesCache? cache,
       ValueListenable<bool>? offline,
       Future<Map<String, String>> Function()? sourceNames,
+      GameSearchStreamSource? streamSource,
     }) => show(
       tester,
       cache: cache,
       offline: offline,
       sourceNames: sourceNames,
+      streamSource: streamSource,
       onOpen: (_, _) {},
       onImport: (_, _, _) {},
       theme: theme,
@@ -1693,6 +2650,36 @@ void main() {
         await search(tester, 'game');
         expect(find.byKey(GameSearchScreen.countKey), findsOneWidget);
       },
+    );
+
+    // Answers still arriving over the socket (#473): the still-searching
+    // row's spinner never settles. At 320dp and twice the text size the row
+    // is below the fold, so it is brought into view, to be audited too.
+    late FakeGameSearchChannel streaming;
+    auditScreen(
+      'still searching',
+      pump: (tester, theme) async {
+        streaming = FakeGameSearchChannel();
+        await showAudited(
+          tester,
+          theme,
+          sourceNames: () async => names,
+          streamSource: _StreamSource(channel: streaming),
+        );
+      },
+      arrange: (tester) async {
+        await tester.enterText(find.byKey(GameSearchScreen.fieldKey), 'catan');
+        await tester.pump(GameSearchBloc.defaultDebounce);
+        streaming.searches.single.answer(results, localDone: true);
+        await tester.pump();
+        await tester.pump();
+        await tester.ensureVisible(
+          find.byKey(GameSearchScreen.stillSearchingKey, skipOffstage: false),
+        );
+        await tester.pump();
+        expect(find.byKey(GameSearchScreen.stillSearchingKey), findsOneWidget);
+      },
+      settle: false,
     );
 
     auditScreen(
@@ -1904,7 +2891,7 @@ void main() {
 }
 
 /// What a screen reader hears from the live regions in the semantics tree
-/// (#795), by the rule of each platform:
+/// (#795, #473), by the rule of each platform:
 ///
 /// - **iOS** says a live region's words when it appears or becomes one, and
 ///   again when they change while it is one, hidden or not.
@@ -1953,5 +2940,28 @@ class _Heard {
     return listEquals(ios, android) && listEquals(ios, web)
         ? ios
         : ['Android: $android', 'iOS: $ios', 'web: $web'];
+  }
+}
+
+/// A [GameSearchStreamSource] that records each channel it opens (#473).
+///
+/// Each [open] hands out [channel], or a new [FakeGameSearchChannel] where
+/// there is none. A source whose session's connection has [closed] throws
+/// [StateError] instead, as the real one does.
+class _StreamSource implements GameSearchStreamSource {
+  _StreamSource({this.channel, this.closed = false});
+
+  final FakeGameSearchChannel? channel;
+  final bool closed;
+
+  /// Every channel opened, in order.
+  final List<FakeGameSearchChannel> opened = [];
+
+  @override
+  GameSearchChannel open() {
+    if (closed) throw StateError("The session's connection has closed.");
+    final opening = channel ?? FakeGameSearchChannel();
+    opened.add(opening);
+    return opening;
   }
 }

@@ -29,14 +29,17 @@ import 'package:observability/observability.dart';
 /// search that stops short of hearing from every source keeps what it found,
 /// marked [GameSearchReady.cutShort]: the connection dropped, nothing came
 /// for too long, or the server's search of the DataGateways failed as a
-/// whole. The bloc owns the channel, and closes it with itself.
+/// whole. Every answer that came over the socket is
+/// [GameSearchReady.streamed], its last included, so the screen can tell it
+/// from one that came whole. The bloc owns the channel, and closes it with
+/// itself.
 ///
 /// Without a channel, or when the socket can't serve a search before this
 /// server's half has answered, the search goes over REST, as one finished
-/// answer. Nothing of it is on screen by then, as a DataGateway's answer
-/// waits for that half. The server waits for every DataGateway, for up to 15
-/// seconds, before it answers, so [GameSearchLoading] can last that long
-/// there.
+/// answer, not streamed. Nothing of it is on screen by then, as a
+/// DataGateway's answer waits for that half. The server waits for every
+/// DataGateway, for up to 15 seconds, before it answers, so
+/// [GameSearchLoading] can last that long there.
 ///
 /// ## Two sections
 ///
@@ -47,6 +50,11 @@ import 'package:observability/observability.dart';
 /// Each DataGateway's results stay together, in the order
 /// [GameSearchResults.byDataGateway] holds them, so one that arrives later
 /// joins the end of its own DataGateway's run (#473).
+///
+/// Each section lists a result once. A result its source sends again, by
+/// the same `externalId`, is dropped where it repeats, and the first copy
+/// stands for both. The screen keys its rows by those ids, and a keyed list
+/// needs each key once, but nothing below the bloc drops a repeat (#473).
 ///
 /// A DataGateway is named only where `sourceNames` can name it. The shell
 /// passes one only when the user may read DataGateways, which ordinary users
@@ -342,6 +350,7 @@ class GameSearchBloc extends Bloc<GameSearchEvent, GameSearchState> {
         _ready(
           shown,
           fromCache: current.fromCache,
+          streamed: current.streamed,
           searching: current.searching,
           cutShort: current.cutShort,
         ),
@@ -469,6 +478,7 @@ class GameSearchBloc extends Bloc<GameSearchEvent, GameSearchState> {
     _show(
       emit,
       GameSearchProgress(results: results, localDone: true, done: true),
+      streamed: false,
     );
   }
 
@@ -494,7 +504,7 @@ class GameSearchBloc extends Bloc<GameSearchEvent, GameSearchState> {
         shown = true;
         onAnswered?.call();
       }
-      if (search == _sequence) _show(emit, progress);
+      if (search == _sequence) _show(emit, progress, streamed: true);
     });
     try {
       await running.ended;
@@ -509,18 +519,29 @@ class GameSearchBloc extends Bloc<GameSearchEvent, GameSearchState> {
 
   /// Shows [progress], the latest search's answer so far, from the first
   /// answer in which this server's own half has finished, or the search has:
-  /// [GameSearchLoading] stays until then.
+  /// [GameSearchLoading] stays until then. [streamed] says it came over the
+  /// socket rather than whole, over REST.
   ///
   /// So the DataGateways' rows wait for that half (#473). A DataGateway can
   /// report a game the server holds before the server's half lists it
   /// (backend#662): shown then, its row would go again once [_ready] took it
   /// out.
-  void _show(_Show emit, GameSearchProgress progress) {
+  void _show(
+    _Show emit,
+    GameSearchProgress progress, {
+    required bool streamed,
+  }) {
     if (!_shows(progress)) return;
     final GameSearchProgress(:results, :done, :cutShort) = progress;
     _shown = results;
     emit(
-      _ready(results, fromCache: false, searching: !done, cutShort: cutShort),
+      _ready(
+        results,
+        fromCache: false,
+        streamed: streamed,
+        searching: !done,
+        cutShort: cutShort,
+      ),
     );
   }
 
@@ -628,9 +649,25 @@ class GameSearchBloc extends Bloc<GameSearchEvent, GameSearchState> {
   GameSearchSource _source(String id) =>
       GameSearchSource(id: id, name: _names[id]);
 
+  /// One source's [hits] with each `externalId` once, at its first copy's
+  /// place, in their order.
+  ///
+  /// The screen keys a source's rows by `externalId`, and a keyed list needs
+  /// each key once, but no layer below de-duplicates a source's hits (#473).
+  /// A repeat is the same result, so the first copy stands for it, and the
+  /// filters after this one read that copy.
+  static List<GameSearchHit> _onceEach(List<GameSearchHit> hits) {
+    final seen = <String>{};
+    return [
+      for (final hit in hits)
+        if (seen.add(hit.externalId)) hit,
+    ];
+  }
+
   GameSearchReady _ready(
     GameSearchResults results, {
     required bool fromCache,
+    bool streamed = false,
     bool searching = false,
     bool cutShort = false,
   }) {
@@ -647,16 +684,17 @@ class GameSearchBloc extends Bloc<GameSearchEvent, GameSearchState> {
       // report: it stands for the server being out of reach (#795).
       dataGatewaysRefused: !fromCache && !_reach.mayAsk,
       refusalMessage: fromCache ? null : _reach.serverMessage,
+      streamed: streamed,
       searching: searching,
       cutShort: cutShort,
       onServer: [
-        for (final hit in results.local)
+        for (final hit in _onceEach(results.local))
           if (!_gone.contains(hit.gameId)) hit,
       ],
       fromSources: [
         for (final MapEntry(key: sourceId, value: hits)
             in results.byDataGateway.entries)
-          for (final hit in hits)
+          for (final hit in _onceEach(hits))
             if (!onServerIds.contains(hit.gameId) &&
                 !_gone.contains(hit.gameId))
               GameSearchSourceHit(source: _source(sourceId), hit: hit),

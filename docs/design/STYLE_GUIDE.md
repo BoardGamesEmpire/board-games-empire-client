@@ -477,8 +477,9 @@ The pages that pin, and this list is where a new one is added:
   of offers is offering and how the Games tab's last writes went, to the
   pool and to the nominations, on either tab, and the Games tab's stale-data
   banners for the pool and the nominations (#516, #517, #851);
-- the game search screen, whose footer holds the note saying why a search
-  shows only this server's games (#795).
+- the game search screen, whose footer says why a search shows only this
+  server's games, how a streamed search is going and how it ended (#795,
+  #473).
 
 The reasoning, and the measurements behind it, are on `BgePage.footer`:
 
