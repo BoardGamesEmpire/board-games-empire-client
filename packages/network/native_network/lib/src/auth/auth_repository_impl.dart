@@ -86,7 +86,7 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
   /// silently disables offline restore on skewed devices.
   final DateTime Function() _deviceNowUtc;
 
-  /// The JSON decode behind [_decodeBody]. Always `decodeJsonBody` in
+  /// The JSON decode behind [decodeAuthBody]. Always `decodeJsonBody` in
   /// production; injectable because its second failure mode — an offload
   /// isolate that would not spawn — is the one no response body can produce,
   /// so without a seam the more expensive branch of the split is the untested
@@ -155,18 +155,18 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
     // must not sign another account in over this one (#583).
     _retireProviderAttempt();
 
-    final strategy = _requireEmailPasswordStrategy();
+    final strategy = requireEmailPasswordStrategy(
+      _identity,
+      log: _log,
+      baseUrl: _dio.options.baseUrl,
+    );
 
-    late final Response<String> response;
-    try {
-      response = await _dio.post<String>(
-        strategy.signInEndpoint,
-        data: {'email': email, 'password': password},
-        options: _plainBody,
-      );
-    } on DioException catch (e) {
-      throw _mapDioException(e, credentialGrant: true);
-    }
+    final response = await postSignIn(
+      _dio,
+      strategy,
+      email: email,
+      password: password,
+    );
 
     final body = await _requireGrantBody(response, context: 'sign-in');
 
@@ -187,34 +187,21 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
     // As in [signIn]: the new account wins over a provider tab still open.
     _retireProviderAttempt();
 
-    final strategy = _requireEmailPasswordStrategy();
+    final strategy = requireEmailPasswordStrategy(
+      _identity,
+      log: _log,
+      baseUrl: _dio.options.baseUrl,
+    );
 
-    if (strategy.signUpDisabled || strategy.signUpEndpoint == null) {
-      throw const AuthRegistrationDisabledException();
-    }
-
-    late final Response<String> response;
-    try {
-      response = await _dio.post<String>(
-        strategy.signUpEndpoint!,
-        data: {
-          'email': email,
-          'password': password,
-          // BetterAuth's email-register validator requires `name`. The
-          // server maps name → username at the model layer, but that
-          // mapping does not rewrite the inbound validator, so the wire
-          // key must be `name`. This is purely the HTTP boundary — the
-          // field is "username" everywhere user-facing (UI label, form,
-          // AuthRegisterRequested.username).
-          'name': username,
-          'firstName': ?firstName,
-          'lastName': ?lastName,
-        },
-        options: _plainBody,
-      );
-    } on DioException catch (e) {
-      throw _mapDioException(e, credentialGrant: true);
-    }
+    final response = await postSignUp(
+      _dio,
+      strategy,
+      email: email,
+      password: password,
+      username: username,
+      firstName: firstName,
+      lastName: lastName,
+    );
 
     final body = await _requireGrantBody(response, context: 'sign-up');
 
@@ -441,7 +428,7 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
       // This comment used to say reaching here MEANS a transport-level
       // failure. That was false twice over, and #352 is the second half.
       // A Dio whose validateStatus is not this factory's throws
-      // `badResponse` with the response attached, which `_mapDioException`
+      // `badResponse` with the response attached, which `mapAuthDioException`
       // now classifies by status rather than as transport (#283). And before
       // this request asked for `Response<String>` and pinned `responseType`
       // (see `_plainBody`, #360), Dio owned the body: a cast or a
@@ -476,7 +463,7 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
         return _settleNoSession(status: status, uri: e.requestOptions.uri);
       }
 
-      throw _mapDioException(e, credentialGrant: false);
+      throw mapAuthDioException(e, credentialGrant: false);
     }
 
     // The user signed out while this request was in flight. Their intent is
@@ -515,8 +502,9 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
         break;
     }
 
-    final decoded = await _decodeBody(
+    final decoded = await decodeAuthBody(
       response.data,
+      decode: _decodeJson,
       context: 'the session check',
       status: status,
     );
@@ -1024,7 +1012,7 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
       // A thrown rejection (an injected Dio that throws on a non-2xx) is
       // worded the same as a resolved one.
       throw _tokenRouteRefusal(e.response?.statusCode, e.response?.data) ??
-          _mapDioException(e, credentialGrant: true);
+          mapAuthDioException(e, credentialGrant: true);
     }
 
     // The answer may land after the attempt was replaced or its server scope
@@ -1072,7 +1060,7 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
       return null;
     }
 
-    final code = _rejectionCode(body);
+    final code = authRejectionCode(body);
     if (code == null) return null;
 
     _log.warn(
@@ -1136,31 +1124,6 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
     }
   }
 
-  EmailAndPasswordStrategy _requireEmailPasswordStrategy() {
-    final strategy = _identity.emailAndPasswordStrategy;
-    if (strategy == null) {
-      // A cached ServerIdentity lacking an email/password strategy is a
-      // server-side contract problem (its well-known advertised no such
-      // strategy), surfaced BEFORE any HTTP call — so neither the network
-      // interceptor nor the bloc has the context to log it. Log here.
-      _log.error(
-        'Email/password strategy missing on cached identity',
-        context: {
-          // Redacted (userInfo/query/fragment stripped) — the auth
-          // diagnostics never log raw URLs (PR #103 review).
-          'base_url': redactUri(Uri.tryParse(_dio.options.baseUrl) ?? Uri()),
-          'has_strategies': _identity.strategies.isNotEmpty,
-          'strategy_count': _identity.strategies.length,
-        },
-      );
-      throw const AuthServerException(
-        message: 'This server does not support email/password authentication.',
-      );
-    }
-
-    return strategy;
-  }
-
   /// Clears the stored material and settles on unauthenticated, for a session
   /// the **server** has definitively disowned.
   Future<AuthResponse?> _settleNoSession({
@@ -1221,68 +1184,6 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
     }
   }
 
-  /// Decodes a body the transport was told not to touch, **deferring** the
-  /// failure so the status can speak first.
-  ///
-  /// Every request here asks Dio for `Response<String>` **and pins
-  /// `responseType` per request** — together, not either alone.
-  /// `DioMixin.fetch` forces `responseType` from `T`, so `String` gives
-  /// `plain` and anything else gives `json`
-  /// (`dio-5.11.0/lib/src/dio_mixin.dart:419-427`) — but it skips that forcing
-  /// entirely for an instance already set to `bytes` or `stream` (`:419-421`),
-  /// and this class takes an arbitrary `Dio` by constructor. The pin is what
-  /// makes the rule true here rather than only for the Dio the factories build
-  /// (see `_plainBody`). Either half of Dio's own handling — the cast, or a
-  /// `jsonDecode` driven by a content type that merely *claims* JSON —
-  /// throws from inside the call as
-  /// `DioException(type: unknown)` with **no response attached**. The status
-  /// was gone before anything could classify it, so every such answer became
-  /// `AuthNetworkException`: the INDETERMINATE bucket, which keeps a dead
-  /// session on the retry-forever view with no way out (#352).
-  ///
-  /// The failure is **returned, not thrown**, because the two callers disagree
-  /// about what it means. A rejected response whose body will not parse is
-  /// still a rejection and its status is the honest answer — the
-  /// duplicate-email probe simply finds no envelope there. Only a 2xx has to
-  /// answer for an unreadable body.
-  ///
-  /// Which failure it was decides the bucket, and that distinction matters
-  /// more here than anywhere else in the client. A body that is not JSON is a
-  /// statement *about the response* and is definitive. A failure to **perform**
-  /// the decode — an isolate that would not spawn — is local and momentary and
-  /// must stay retryable: filing it as definitive would clear the user's
-  /// credentials over a fault the server had no part in.
-  Future<({Object? value, AuthException? failure})> _decodeBody(
-    String? raw, {
-    required String context,
-    required int? status,
-  }) async {
-    if (raw == null || raw.isEmpty) return (value: null, failure: null);
-
-    try {
-      return (value: await _decodeJson(raw), failure: null);
-    } on FormatException catch (error) {
-      return (
-        value: null,
-        failure: AuthServerException(
-          message:
-              'The server returned a body that is not JSON during '
-              '$context.',
-          statusCode: status,
-          cause: error,
-        ),
-      );
-    } on Object catch (error) {
-      return (
-        value: null,
-        failure: AuthLocalDecodeException(
-          message: 'This device could not decode the response during $context.',
-          cause: error,
-        ),
-      );
-    }
-  }
-
   /// Status-first validation of a credential grant, returning its decoded
   /// body.
   Future<Map<String, dynamic>> _requireGrantBody(
@@ -1294,18 +1195,18 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
     // A REJECTION is settled from the status plus a bounded read of the raw
     // body, and never a full decode. The only thing wanted from a rejected
     // body is its envelope's code (a duplicate email, or why a 403 refused),
-    // which [_rejectionCode] reads through [probeJsonBody] when handed a
+    // which [authRejectionCode] reads through [probeJsonBody] when handed a
     // `String`. Decoding first would pay an isolate spawn and a full parse on
     // a 2 MB proxy error page about to be thrown away on its status — and
-    // would answer the code question differently from `_mapDioException`,
+    // would answer the code question differently from `mapAuthDioException`,
     // which has always been bounded. Two paths, one question, one bound.
     //
-    // `_assertSuccess` never returns for a non-2xx, so this settles every
+    // `assertAuthSuccess` never returns for a non-2xx, so this settles every
     // rejection before anything expensive happens.
     if (status == null ||
         status < HttpStatusCode.ok ||
         status >= HttpStatusCode.multipleChoices) {
-      _assertSuccess(
+      assertAuthSuccess(
         status,
         response.data,
         headers: response.headers,
@@ -1314,8 +1215,9 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
     }
 
     // A 2xx: the body IS the payload, so it earns a real decode.
-    final decoded = await _decodeBody(
+    final decoded = await decodeAuthBody(
       response.data,
+      decode: _decodeJson,
       context: context,
       status: status,
     );
@@ -1323,7 +1225,7 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
     // Re-run on the decoded body. The duplicate-email envelope is not
     // status-gated, so a 2xx can carry it too — and here the decode has
     // already happened, so the check is free.
-    _assertSuccess(
+    assertAuthSuccess(
       status,
       decoded.value,
       headers: response.headers,
@@ -1378,41 +1280,6 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
     }
   }
 
-  void _assertSuccess(
-    int? status,
-    Object? body, {
-    required Headers? headers,
-    required String context,
-  }) {
-    if (status == HttpStatusCode.unauthorized) {
-      throw const AuthInvalidCredentialsException();
-    }
-
-    if (status == HttpStatusCode.forbidden) throw _forbidden(body);
-
-    // A 429 is a rate limit whatever its body says (#559): classified on the
-    // status alone, with the wait read from `X-Retry-After` when it is there.
-    // It sits before the duplicate-email check, which reads a body code at any
-    // status, and before the generic non-2xx throw, which would file it as a
-    // server fault with nothing to act on.
-    if (status == HttpStatusCode.tooManyRequests) {
-      throw rateLimitedFrom(headers);
-    }
-
-    if (_isEmailAlreadyExists(status, body)) {
-      throw const AuthEmailAlreadyExistsException();
-    }
-
-    if (status == null ||
-        status < HttpStatusCode.ok ||
-        status >= HttpStatusCode.multipleChoices) {
-      throw AuthServerException(
-        message: 'Unexpected $status during $context.',
-        statusCode: status,
-      );
-    }
-  }
-
   /// Pins `responseType` so an **injected** Dio cannot put a non-`String` in
   /// the body.
   ///
@@ -1426,150 +1293,10 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
   /// alone is not enough (#360).
   ///
   /// A fresh instance per call: `Options` is mutable, and one shared across
-  /// four call sites is a shared mutable default waiting to be edited.
+  /// its call sites is a shared mutable default waiting to be edited. The
+  /// email/password requests this class sends through `dio_network`'s
+  /// `postSignIn` and `postSignUp` (#877) pin their own `_plainBody` there.
   static Options get _plainBody => Options(responseType: ResponseType.plain);
-
-  /// Whether a rejected auth response means "this email is already
-  /// registered".
-  ///
-  /// BetterAuth signals a duplicate sign-up as **422 Unprocessable Entity**
-  /// with a `USER_ALREADY_EXISTS*` body code — it never uses 409. The exact
-  /// code varies by version (`USER_ALREADY_EXISTS` per the docs;
-  /// `USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL` observed live on the BGE dev
-  /// server), so match the stable prefix rather than one literal. The 409
-  /// Conflict mapping is kept for BGE's own route conventions. Deliberately
-  /// NOT a bare status-422 match: other validation failures could share the
-  /// status, and showing "account already exists" for those would be worse
-  /// than the generic server-error copy.
-  bool _isEmailAlreadyExists(int? status, Object? body) {
-    if (status == HttpStatusCode.conflict) return true;
-    final code = _rejectionCode(body);
-    return code != null && code.startsWith('USER_ALREADY_EXISTS');
-  }
-
-  /// What a 403 on a credential grant means, read by its body code (#394).
-  ///
-  /// BetterAuth answers two refusals with a 403 that are not a wrong
-  /// password: `EMAIL_NOT_VERIFIED` on sign-in, after the password check has
-  /// passed, and `REGISTRATION_DISABLED` from the `/sign-up/email` route gate
-  /// once the server has closed registration (#443). Each code comes from one
-  /// route only, so the code decides, not which grant made the request.
-  ///
-  /// The code is read under the same bound as the duplicate-email envelope.
-  /// The status still decides first: only a 403 gets here, and the body only
-  /// refines it. A 403 without a readable envelope (a proxy's HTML page, an
-  /// envelope past `probeJsonMaxChars`, no body at all) stays the invalid
-  /// credentials it always was.
-  AuthException _forbidden(Object? body) => switch (_rejectionCode(body)) {
-    'EMAIL_NOT_VERIFIED' => const AuthEmailNotVerifiedException(),
-    'REGISTRATION_DISABLED' => const AuthRegistrationDisabledException(),
-    _ => const AuthInvalidCredentialsException(),
-  };
-
-  /// The `code` of a rejection envelope, or null when [body] is not one.
-  ///
-  /// [body] is the raw text, or a body [_requireGrantBody] has already
-  /// decoded; both go through [probeJsonBody]. [_mapDioException] reads the
-  /// raw text off a **thrown** `DioException` too: without the probe, a
-  /// duplicate sign-up rejected by a `Dio` whose `validateStatus` is not
-  /// `DefaultDioFactory`'s would report "unexpected 422" instead of "that
-  /// account already exists".
-  ///
-  /// It probes rather than decodes because a rejection envelope is small, and
-  /// `decodeJsonBody`'s isolate hop would make this async for nothing.
-  String? _rejectionCode(Object? body) {
-    final decoded = probeJsonBody(body);
-    final code = decoded is Map ? decoded['code'] : null;
-    return code is String ? code : null;
-  }
-
-  /// [credentialGrant] gates the body probes, the duplicate-email one and a
-  /// 403's code, which are meaningful only where an account is being created
-  /// or a credential presented.
-  ///
-  /// `_isEmailAlreadyExists` treats **any** 409 as a duplicate, so without
-  /// this a 409 from the session endpoint — a route that cannot mean
-  /// "that email is taken" — reached the caller as
-  /// `AuthEmailAlreadyExistsException` instead of the server fault it is.
-  /// The response path never had the bug: it classifies a 409 by status
-  /// before any envelope is consulted. Only the thrown path, reachable with
-  /// an injected `Dio` whose `validateStatus` is not this factory's, routed
-  /// a session 409 through the grant vocabulary.
-  AuthException _mapDioException(
-    DioException e, {
-    required bool credentialGrant,
-  }) {
-    // The wire-level failure itself is logged by NetworkLogInterceptor
-    // (redacted URI + dio_error_type + status); here we only map it to the
-    // domain exception the bloc will categorise (#100 layering).
-    final status = e.response?.statusCode;
-    if (status == HttpStatusCode.unauthorized) {
-      return const AuthInvalidCredentialsException();
-    }
-
-    // `getSession` settles a session 403 before it gets here, whatever its
-    // body says, so only a grant's body is read.
-    if (status == HttpStatusCode.forbidden) {
-      return credentialGrant
-          ? _forbidden(e.response?.data)
-          : const AuthInvalidCredentialsException();
-    }
-
-    // Only a credential grant's 429 is a rate-limited grant (#559); a session
-    // read that is throttled stays what it was. Ahead of the duplicate-email
-    // check, as in [_assertSuccess].
-    if (credentialGrant && status == HttpStatusCode.tooManyRequests) {
-      return rateLimitedFrom(e.response?.headers);
-    }
-
-    if (credentialGrant && _isEmailAlreadyExists(status, e.response?.data)) {
-      return const AuthEmailAlreadyExistsException();
-    }
-
-    if (status != null && status >= HttpStatusCode.internalServerError) {
-      return AuthServerException(
-        message: 'Server error $status.',
-        statusCode: status,
-        cause: e,
-      );
-    }
-
-    // Genuine transport: the request was never answered, so there is no
-    // status to classify by and INDETERMINATE is the honest bucket.
-    // `sendTimeout` joins the list it was missing from — it fell to the
-    // catch-all below, which used to reach the same answer by accident and
-    // no longer does.
-    if (e.type == DioExceptionType.connectionTimeout ||
-        e.type == DioExceptionType.sendTimeout ||
-        e.type == DioExceptionType.receiveTimeout ||
-        e.type == DioExceptionType.connectionError) {
-      return AuthNetworkException(
-        message: 'Connection failed. Check your network.',
-        cause: e,
-      );
-    }
-
-    // The server answered, with something the branches above did not claim —
-    // a 404 from a misrouted path, a 400 or 422 it rejected. That is a server
-    // fault, and calling it a network one told the user to check the one part
-    // of the system demonstrably working (#283). Reachable when the injected
-    // `Dio`'s `validateStatus` is not this factory's permissive default, which
-    // this class accepts by design.
-    if (status != null) {
-      return AuthServerException(
-        message: 'Unexpected $status from the server.',
-        statusCode: status,
-        cause: e,
-      );
-    }
-
-    // No status and no transport type: a cancellation, a bad certificate, or
-    // a fault Dio could not attribute. Nothing answered, so INDETERMINATE.
-    return AuthNetworkException(
-      message: e.message ?? 'Network error.',
-      cause: e,
-    );
-  }
 
   /// Tears down auth-state streaming and drops any provider sign-in still in
   /// flight. Does not close the injected [Dio] — that is a shared per-server

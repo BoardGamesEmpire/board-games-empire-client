@@ -1,3 +1,5 @@
+export 'src/auth/auth_wire_errors.dart';
+export 'src/auth/credential_grant_requests.dart';
 export 'src/auth/rate_limited.dart';
 export 'src/auth/session_read_status.dart';
 

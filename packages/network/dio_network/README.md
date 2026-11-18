@@ -11,6 +11,11 @@ live in `native_network`.
 
 ## Contents
 
+- **`auth/`** — the auth code both repositories share: the wire-error mapping
+  (`mapAuthDioException`), the success and body checks, the email/password
+  sign-in and sign-up requests, and the rate-limit and session-read rules.
+  The native and web auth repositories each keep only their own grant
+  handling.
 - **`network/`** — `DioFactory` and the interceptors (redaction-safe request
   logging, clock-skew sampling), plus `redactUri`.
 - **`feedback/`** — `FeedbackDioTransport`, the authenticated feedback sender.

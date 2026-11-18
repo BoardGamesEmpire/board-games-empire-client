@@ -5,6 +5,11 @@
   `registerServerNetwork` and `NetworkScopeInstaller` are no longer exported
   from here, and `flutter_secure_storage` and `crypto` are no longer
   dependencies. `redactUri` is now exported.
+* Export the auth wire-error and request helpers both auth repositories
+  share (#877): `mapAuthDioException`, `assertAuthSuccess`, `decodeAuthBody`,
+  `isAuthSuccessStatus`, `isEmailAlreadyExists`, `forbiddenRefusal`,
+  `authRejectionCode`, `requireEmailPasswordStrategy`, `postSignIn` and
+  `postSignUp`.
 
 ## 0.0.1
 
