@@ -219,7 +219,10 @@ class _CollectionEntryScreenState extends State<CollectionEntryScreen> {
         // the entry either way.
         CollectionSync.synced || null => l10n.collectionEntrySaved,
       },
-      CollectionEntryAction.saveFailed => l10n.editCollectionFailedTitle,
+      // Said only when the sheet that would show the copies error is gone.
+      CollectionEntryAction.saveFailed ||
+      CollectionEntryAction.saveQuantityTooMany =>
+        l10n.editCollectionFailedTitle,
       CollectionEntryAction.removed => switch (state.sync) {
         CollectionSync.queued => l10n.collectionEntryRemovedQueued(title()),
         CollectionSync.refused => l10n.collectionEntryRefused,
@@ -272,7 +275,7 @@ class _CollectionEntryScreenState extends State<CollectionEntryScreen> {
           CollectionEntryAction.saving ||
           CollectionEntryAction.removing:
         return;
-      case CollectionEntryAction.saveFailed when _sheetOpen:
+      case _ when state.action.isSaveFailure && _sheetOpen:
         // The open sheet shows it, and clears it when it next opens.
         return;
       case CollectionEntryAction.removed:
@@ -289,6 +292,7 @@ class _CollectionEntryScreenState extends State<CollectionEntryScreen> {
         _bloc.add(const CollectionEntryActionCleared());
       case CollectionEntryAction.saved ||
           CollectionEntryAction.saveFailed ||
+          CollectionEntryAction.saveQuantityTooMany ||
           CollectionEntryAction.removeFailed:
         _messenger.say(_outcomeOf(state));
         // Each outcome is said once. Cleared, the next one is a change the

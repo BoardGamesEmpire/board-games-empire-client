@@ -14,6 +14,11 @@ enum AddToCollectionStatus {
   /// The add failed and nothing was saved. The form keeps what was typed.
   failed,
 
+  /// The add would take the entry past the most copies it can hold, and
+  /// nothing was saved. The form keeps what was typed and shows the copies
+  /// field's own error instead of a failure (#676).
+  quantityTooMany,
+
   /// The game is in the collection: see [AddToCollectionState.sync] for
   /// whether the server has it.
   added,

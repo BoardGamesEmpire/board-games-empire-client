@@ -238,6 +238,61 @@ void main() {
     );
   });
 
+  test('A → B → A: the first A lookup finishing last is dropped', () async {
+    // Completers are made here, not in setUp: fake async.
+    final a1 = Completer<GameCollection?>();
+    final b = Completer<GameCollection?>();
+    final a2 = Completer<GameCollection?>();
+    final physicalLookups = [a1, a2];
+    answerLookup(GameMedium.physical, () => physicalLookups.removeAt(0).future);
+    answerLookup(GameMedium.digital, () => b.future);
+
+    final bloc = build();
+    addTearDown(bloc.close);
+    final states = <AddToCollectionState>[];
+    final sub = bloc.stream.listen(states.add);
+    addTearDown(sub.cancel);
+
+    bloc
+      ..add(choice(GameMedium.physical))
+      ..add(choice(GameMedium.digital))
+      ..add(choice(GameMedium.physical));
+    await pumpEventQueue();
+
+    a2.complete(entry());
+    await pumpEventQueue();
+    b.complete(null);
+    await pumpEventQueue();
+    a1.complete(entry(quantity: 1));
+    await pumpEventQueue();
+
+    expect(bloc.state.existing?.quantity, 2);
+    final afterA2 = states.indexWhere((s) => s.existing?.quantity == 2);
+    expect(afterA2, isNonNegative);
+    expect(
+      states.skip(afterA2).map((s) => s.existing?.quantity),
+      everyElement(2),
+    );
+  });
+
+  test('a choice with no medium retires the lookup before it', () async {
+    final first = Completer<GameCollection?>();
+    answerLookup(GameMedium.physical, () => first.future);
+
+    final bloc = build();
+    addTearDown(bloc.close);
+
+    bloc.add(choice(GameMedium.physical));
+    await pumpEventQueue();
+    bloc.add(choice(null));
+    await pumpEventQueue();
+    first.complete(entry());
+    await pumpEventQueue();
+
+    expect(bloc.state.medium, isNull);
+    expect(bloc.state.existing, isNull);
+  });
+
   blocTest<AddToCollectionBloc, AddToCollectionState>(
     'a choice with no medium clears the existing entry',
     setUp: () => answerLookup(GameMedium.physical, () async => entry()),
@@ -494,6 +549,144 @@ void main() {
     ],
     errors: () => isEmpty,
     verify: (_) => verifyNever(() => sender.deliver(any(), any())),
+  );
+
+  blocTest<AddToCollectionBloc, AddToCollectionState>(
+    'an add refused at the limit ends quantityTooMany',
+    setUp: () => answerAdd(
+      () async => throw const CollectionQuantityLimitExceeded(
+        quantity: 2,
+        held: GameCollectionRepository.maxQuantity - 1,
+      ),
+    ),
+    build: build,
+    act: (bloc) => bloc.add(
+      const AddToCollectionSubmitted(
+        platformGameId: 'pg_1',
+        medium: GameMedium.physical,
+        quantity: 2,
+      ),
+    ),
+    expect: () => [
+      const AddToCollectionState(status: AddToCollectionStatus.submitting),
+      const AddToCollectionState(status: AddToCollectionStatus.quantityTooMany),
+    ],
+    errors: () => isEmpty,
+    verify: (_) => verifyNever(() => sender.deliver(any(), any())),
+  );
+
+  blocTest<AddToCollectionBloc, AddToCollectionState>(
+    'an add refused at the limit looks the entry up again',
+    setUp: () {
+      var lookups = 0;
+      // The first lookup is older than the entry the refusal counts.
+      answerLookup(
+        GameMedium.physical,
+        () async => entry(
+          quantity: ++lookups == 1 ? 5 : GameCollectionRepository.maxQuantity,
+        ),
+      );
+      answerAdd(
+        () async => throw const CollectionQuantityLimitExceeded(
+          quantity: 2,
+          held: GameCollectionRepository.maxQuantity,
+        ),
+      );
+    },
+    build: build,
+    act: (bloc) async {
+      bloc.add(choice(GameMedium.physical));
+      await pumpEventQueue();
+      bloc.add(
+        const AddToCollectionSubmitted(
+          platformGameId: 'pg_1',
+          medium: GameMedium.physical,
+          quantity: 2,
+        ),
+      );
+    },
+    skip: 3,
+    expect: () => [
+      AddToCollectionState(
+        platformGameId: 'pg_1',
+        medium: GameMedium.physical,
+        existing: entry(quantity: 5),
+        status: AddToCollectionStatus.quantityTooMany,
+      ),
+      AddToCollectionState(
+        platformGameId: 'pg_1',
+        medium: GameMedium.physical,
+        existing: entry(quantity: GameCollectionRepository.maxQuantity),
+        status: AddToCollectionStatus.quantityTooMany,
+      ),
+    ],
+    errors: () => isEmpty,
+  );
+
+  blocTest<AddToCollectionBloc, AddToCollectionState>(
+    'an entry gone by the refusal lookup clears the entry shown',
+    setUp: () {
+      var lookups = 0;
+      // Removed between the refusal and its lookup, say by a sync.
+      answerLookup(
+        GameMedium.physical,
+        () async => ++lookups == 1 ? entry(quantity: 5) : null,
+      );
+      answerAdd(
+        () async => throw const CollectionQuantityLimitExceeded(
+          quantity: 2,
+          held: GameCollectionRepository.maxQuantity,
+        ),
+      );
+    },
+    build: build,
+    act: (bloc) async {
+      bloc.add(choice(GameMedium.physical));
+      await pumpEventQueue();
+      bloc.add(
+        const AddToCollectionSubmitted(
+          platformGameId: 'pg_1',
+          medium: GameMedium.physical,
+          quantity: 2,
+        ),
+      );
+    },
+    skip: 3,
+    expect: () => [
+      AddToCollectionState(
+        platformGameId: 'pg_1',
+        medium: GameMedium.physical,
+        existing: entry(quantity: 5),
+        status: AddToCollectionStatus.quantityTooMany,
+      ),
+      const AddToCollectionState(
+        platformGameId: 'pg_1',
+        medium: GameMedium.physical,
+        status: AddToCollectionStatus.quantityTooMany,
+      ),
+    ],
+    errors: () => isEmpty,
+  );
+
+  blocTest<AddToCollectionBloc, AddToCollectionState>(
+    'a form change clears quantityTooMany',
+    setUp: () => answerAdd(
+      () async => throw const CollectionQuantityLimitExceeded(quantity: 2),
+    ),
+    build: build,
+    act: (bloc) async {
+      bloc.add(
+        const AddToCollectionSubmitted(
+          platformGameId: 'pg_1',
+          medium: GameMedium.physical,
+          quantity: 2,
+        ),
+      );
+      await pumpEventQueue();
+      bloc.add(const AddToCollectionFailureCleared());
+    },
+    skip: 2,
+    expect: () => [const AddToCollectionState()],
   );
 
   blocTest<AddToCollectionBloc, AddToCollectionState>(

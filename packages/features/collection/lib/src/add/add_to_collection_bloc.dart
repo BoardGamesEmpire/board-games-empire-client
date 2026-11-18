@@ -26,10 +26,10 @@ import 'package:observability/observability.dart';
 /// overwrites the old quantity. A choice with no medium has nothing to look
 /// up, and clears the entry shown.
 ///
-/// A lookup answering after the platform or the medium changed again is
-/// dropped, so the entry shown is always the one for the choice on screen. A
-/// failed lookup is logged and shows no entry: the add itself still works,
-/// or fails on its own.
+/// A lookup answering after any later choice is dropped (#773), so the entry
+/// shown is always the one for the choice on screen. A failed lookup is
+/// logged and shows no entry: the add itself still works, or fails on its
+/// own.
 ///
 /// ## The add
 ///
@@ -49,8 +49,11 @@ import 'package:observability/observability.dart';
 /// platform game and a medium, a quantity of 1 or more that the stored total
 /// can hold, a rating from 1 to 10 or none, and a comment that is not blank
 /// or none. The form's total counts the lookup's entry, which may not have
-/// answered yet, so the repository checks the total again and throws: a
-/// failed add.
+/// answered yet, or may be older than the entry stored, so the repository
+/// checks the total again. An add it refuses at the limit ends
+/// [AddToCollectionStatus.quantityTooMany], not a failure, and the entry is
+/// looked up again, so the copies the form counts are the ones the refusal
+/// counted (#676).
 class AddToCollectionBloc
     extends Bloc<AddToCollectionEvent, AddToCollectionState> {
   AddToCollectionBloc({
@@ -68,10 +71,16 @@ class AddToCollectionBloc
   final SyncOperationSender _sender;
   final BgeLogger _logger;
 
+  /// The latest choice's number; a lookup answers only while it is still the
+  /// latest (#773).
+  int _lookup = 0;
+
   Future<void> _onChoiceChanged(
     AddToCollectionChoiceChanged event,
     Emitter<AddToCollectionState> emit,
   ) async {
+    // Taken before the early return, so a cleared medium retires older lookups.
+    final lookup = ++_lookup;
     final platformGameId = event.platformGameId;
     final medium = event.medium;
     emit(
@@ -82,7 +91,17 @@ class AddToCollectionBloc
       ),
     );
     if (medium == null) return;
+    await _lookUp(lookup, platformGameId, medium, emit);
+  }
 
+  /// Shows the live entry for [platformGameId] on [medium], unless a later
+  /// choice took a number past [lookup] meanwhile.
+  Future<void> _lookUp(
+    int lookup,
+    String platformGameId,
+    GameMedium medium,
+    Emitter<AddToCollectionState> emit,
+  ) async {
     final GameCollection? existing;
     try {
       existing = await _repository.getCollectionEntry(
@@ -97,12 +116,13 @@ class AddToCollectionBloc
       );
     }
 
-    // A later choice's lookup owns the note now.
-    if (existing == null ||
-        state.platformGameId != platformGameId ||
-        state.medium != medium) {
-      return;
-    }
+    // Any later choice owns the note now, even one back to this same pair:
+    // comparing the pair would let this older answer overwrite its newer one
+    // (#773).
+    if (lookup != _lookup) return;
+    // A choice already shows no entry, but the lookup after a refusal may
+    // find the one shown removed since, and must clear it (#676).
+    if (existing == null && state.existing == null) return;
     emit(
       AddToCollectionState(
         platformGameId: platformGameId,
@@ -135,6 +155,18 @@ class AddToCollectionBloc
         rating: event.rating,
         comment: event.comment,
       );
+    } on CollectionQuantityLimitExceeded catch (error) {
+      // Not a failure: the copies field says so, and the add can be sent
+      // again once they are changed (#676).
+      _logger.info(
+        'The add passes the most copies an entry holds',
+        error: error,
+      );
+      emit(state.withStatus(AddToCollectionStatus.quantityTooMany));
+      // The entry the form counted hadn't answered, or is older than the one
+      // the refusal counted. Read again, the copies' bound and the note count
+      // what is stored, so a second submit isn't refused the same way.
+      return _lookUp(++_lookup, event.platformGameId, event.medium, emit);
     } on Object catch (error, stackTrace) {
       _logger.warn(
         'Adding to the collection failed',
@@ -167,7 +199,8 @@ class AddToCollectionBloc
     AddToCollectionFailureCleared event,
     Emitter<AddToCollectionState> emit,
   ) {
-    if (state.status == AddToCollectionStatus.failed) {
+    if (state.status == AddToCollectionStatus.failed ||
+        state.status == AddToCollectionStatus.quantityTooMany) {
       emit(state.withStatus(AddToCollectionStatus.editing));
     }
   }

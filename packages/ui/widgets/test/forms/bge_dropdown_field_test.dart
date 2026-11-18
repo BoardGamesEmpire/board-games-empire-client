@@ -33,6 +33,7 @@ Widget _host<T>(
   double scale = 1,
   bool atBottom = false,
   bool intrinsic = false,
+  ValueChanged<T>? onPicked,
 }) {
   final field = BgeDropdownField<T>(
     formControlName: 'fruit',
@@ -40,6 +41,7 @@ Widget _host<T>(
     items: items,
     hint: hint,
     readOnly: readOnly,
+    onPicked: onPicked,
     validationMessages: validationMessages,
   );
 
@@ -207,6 +209,40 @@ void main() {
       expect(control.value, 'c');
       expect(control.touched, isTrue);
       expect(_closedText('Cherry'), findsOneWidget);
+    });
+
+    testWidgets('onPicked reports a pick', (tester) async {
+      final picked = <String>[];
+      await tester.pumpWidget(
+        _host(
+          _form(FormControl<String>(value: 'b')),
+          _fruit,
+          onPicked: picked.add,
+        ),
+      );
+
+      await _pick(tester, 'Cherry');
+
+      expect(picked, ['c']);
+    });
+
+    testWidgets('onPicked reports a re-pick of the value held', (
+      tester,
+    ) async {
+      final picked = <String>[];
+      final control = FormControl<String>(value: 'c');
+      await tester.pumpWidget(
+        _host(_form(control), _fruit, onPicked: picked.add),
+      );
+      var changes = 0;
+      final sub = control.valueChanges.listen((_) => changes++);
+      addTearDown(sub.cancel);
+
+      await _pick(tester, 'Cherry');
+
+      expect(picked, ['c']);
+      // reactive_forms drops an equal value, which is why onPicked exists.
+      expect(changes, 0);
     });
 
     testWidgets('shows a value set on the untouched control', (tester) async {
@@ -812,5 +848,222 @@ void main() {
 
       expect(_fieldFocus(tester).hasFocus, isTrue);
     }, variant: _platforms);
+  });
+
+  group('BgeDropdownField touched', () {
+    const message = 'Pick a fruit';
+
+    FormControl<String> required() =>
+        FormControl<String>(validators: [Validators.required]);
+
+    Widget host(FormControl<String> control) => _host(
+      _form(control),
+      _fruit,
+      validationMessages: {'required': (_) => message},
+    );
+
+    testWidgets('opening an empty required field shows no error', (
+      tester,
+    ) async {
+      final control = required();
+      await tester.pumpWidget(host(control));
+
+      await _open(tester);
+
+      expect(_items, findsWidgets);
+      expect(find.text(message), findsNothing);
+      expect(control.touched, isFalse);
+    });
+
+    testWidgets('Escape with nothing chosen shows the error', (tester) async {
+      final control = required();
+      await tester.pumpWidget(host(control));
+
+      await _open(tester);
+      await _key(tester, LogicalKeyboardKey.escape);
+
+      expect(find.text(message), findsOneWidget);
+      expect(control.touched, isTrue);
+    });
+
+    testWidgets('a tap outside with nothing chosen shows the error', (
+      tester,
+    ) async {
+      final control = required();
+      await tester.pumpWidget(host(control));
+
+      await _open(tester);
+      await tester.tapAt(Offset.zero);
+      await tester.pumpAndSettle();
+
+      expect(find.text(message), findsOneWidget);
+      expect(control.touched, isTrue);
+    });
+
+    testWidgets('a pick on an empty required field never draws the error', (
+      tester,
+    ) async {
+      final control = required();
+      await tester.pumpWidget(host(control));
+
+      await _open(tester);
+      await tester.tap(find.text('Cherry').last);
+      // The frame the menu closes in, built before the pick lands.
+      await tester.pump();
+      expect(find.text(message), findsNothing);
+      expect(
+        find.bySemanticsLabel(message),
+        findsNothing,
+        reason: 'nor announced',
+      );
+
+      await tester.pumpAndSettle();
+      expect(find.text(message), findsNothing);
+      expect(control.value, 'c');
+      expect(control.touched, isTrue);
+    });
+
+    testWidgets('a pick that lands once the field is gone changes nothing', (
+      tester,
+    ) async {
+      final control = required();
+      final picked = <String>[];
+      await tester.pumpWidget(
+        _host(_form(control), _fruit, onPicked: picked.add),
+      );
+
+      await _open(tester);
+      await tester.tap(find.text('Cherry').last);
+      // The field goes in the frame before the pick lands.
+      await tester.pumpWidget(const MaterialApp(home: SizedBox()));
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(control.value, isNull);
+      expect(picked, isEmpty);
+    });
+
+    testWidgets('a pick that lands once the field is read-only changes '
+        'nothing', (tester) async {
+      final control = FormControl<String>(value: 'b');
+      final form = _form(control);
+      final picked = <String>[];
+      await tester.pumpWidget(_host(form, _fruit, onPicked: picked.add));
+
+      await _open(tester);
+      await tester.tap(find.text('Cherry').last);
+      // A submit starts in the frame before the pick lands.
+      await tester.pumpWidget(
+        _host(form, _fruit, readOnly: true, onPicked: picked.add),
+      );
+      await tester.pumpAndSettle();
+
+      expect(control.value, 'b');
+      expect(picked, isEmpty);
+    });
+
+    testWidgets('a pick that lands once the control is disabled changes '
+        'nothing', (tester) async {
+      final control = FormControl<String>(value: 'b');
+      final picked = <String>[];
+      await tester.pumpWidget(
+        _host(_form(control), _fruit, onPicked: picked.add),
+      );
+
+      await _open(tester);
+      await tester.tap(find.text('Cherry').last);
+      control.markAsDisabled();
+      await tester.pumpAndSettle();
+
+      expect(control.value, 'b');
+      expect(picked, isEmpty);
+    });
+
+    testWidgets('a touched field keeps its error while the menu is open', (
+      tester,
+    ) async {
+      final control = required();
+      await tester.pumpWidget(host(control));
+
+      control.markAsTouched();
+      await tester.pump();
+      await _open(tester);
+
+      expect(_items, findsWidgets);
+      expect(find.text(message), findsOneWidget);
+    });
+
+    testWidgets('Tab stays inside the open menu, which leaves the field '
+        'untouched until it closes', (tester) async {
+      final control = required();
+      await tester.pumpWidget(host(control));
+
+      // The menu traps Tab: focus cycles through its items and never leaves
+      // it, so there is no Tab route out that could skip the touch.
+      await _open(tester);
+      for (var i = 0; i < _fruit.length + 1; i++) {
+        await _key(tester, LogicalKeyboardKey.tab);
+        expect(_items, findsWidgets, reason: 'Tab $i');
+        expect(_focusedItem(tester), isNotNull, reason: 'Tab $i');
+      }
+      expect(control.touched, isFalse);
+
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+      for (var i = 0; i < _fruit.length + 1; i++) {
+        await _key(tester, LogicalKeyboardKey.tab);
+        expect(_items, findsWidgets, reason: 'Shift+Tab $i');
+        expect(_focusedItem(tester), isNotNull, reason: 'Shift+Tab $i');
+      }
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+      expect(control.touched, isFalse);
+
+      await _key(tester, LogicalKeyboardKey.escape);
+      expect(control.touched, isTrue);
+    });
+
+    testWidgets('a swapped control still shows no error as the menu opens', (
+      tester,
+    ) async {
+      final first = required();
+      await tester.pumpWidget(host(first));
+      final second = required();
+      await tester.pumpWidget(host(second));
+
+      await _open(tester);
+
+      expect(_items, findsWidgets);
+      expect(find.text(message), findsNothing);
+      expect(second.touched, isFalse);
+    });
+
+    testWidgets('a swapped FormGroup still shows no error as the menu opens', (
+      tester,
+    ) async {
+      await tester.pumpWidget(host(required()));
+      final second = required();
+      await tester.pumpWidget(host(second));
+
+      await _open(tester);
+      expect(find.text(message), findsNothing);
+
+      await _key(tester, LogicalKeyboardKey.escape);
+      expect(find.text(message), findsOneWidget);
+    });
+
+    testWidgets('rejectSubmit still shows the error and focuses the field', (
+      tester,
+    ) async {
+      final control = required();
+      final form = _form(control);
+      await tester.pumpWidget(
+        _host(form, _fruit, validationMessages: {'required': (_) => message}),
+      );
+
+      form.rejectSubmit();
+      await tester.pumpAndSettle();
+
+      expect(find.text(message), findsOneWidget);
+      expect(_fieldFocus(tester).hasFocus, isTrue);
+    });
   });
 }

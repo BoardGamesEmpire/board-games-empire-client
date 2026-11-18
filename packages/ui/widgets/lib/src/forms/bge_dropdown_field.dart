@@ -61,15 +61,31 @@ class BgeDropdownItem<T> {
 /// ## Why read-only doesn't open, and isn't disabled
 ///
 /// [readOnly] is the in-flight state: the value was captured at submit, and a
-/// pick would be dropped, so the menu doesn't open. The field is otherwise
-/// left alone, drawn enabled and in the focus order, as a read-only
-/// `BgeTextField` is, and read as read-only. A disabled field leaves the
-/// focus order, so a keyboard or screen-reader user would have it vanish
-/// mid-form, and the in-flight signal is the submit button's, not a
-/// greyed-out form (STYLE_GUIDE, "In-flight forms"). `ReactiveDropdownField`
-/// drew it disabled. Only a disabled control is drawn disabled and takes no
-/// focus. A menu open when the field becomes either is closed, and takes no
-/// pick meanwhile.
+/// pick would be dropped, so the menu doesn't open. It is also the state of a
+/// field with nothing to choose, one item or none, where a menu would only
+/// repeat what the field shows. The field is otherwise left alone, drawn
+/// enabled and in the focus order, as a read-only `BgeTextField` is, and read
+/// as read-only. A disabled field leaves the focus order, so a keyboard or
+/// screen-reader user would have it vanish mid-form, and the in-flight signal
+/// is the submit button's, not a greyed-out form (STYLE_GUIDE, "In-flight
+/// forms"). `ReactiveDropdownField` drew it disabled. Only a disabled control
+/// is drawn disabled and takes no focus. A menu open when the field becomes
+/// either is closed, and takes no pick meanwhile.
+///
+/// ## Why opening the menu doesn't touch the field
+///
+/// reactive_forms marks a control touched whenever its focus node loses focus,
+/// and opening the menu moves focus to the landing item, so an empty required
+/// field showed its error the moment its menu opened (#775). A control that
+/// wasn't touched when the menu opened has that touch undone. The menu closing
+/// touches it, so Escape or a tap outside with nothing chosen shows the error,
+/// as does a pick. The touch waits for the frame after the close: a pick lands
+/// after that frame (`MenuItemButton` defers it), and touched before it, an
+/// empty required field would draw and announce its error for one frame
+/// before the value arrived. Tab and Shift+Tab stay inside the open menu, so
+/// focus has no other way out of it. The field's own focus node stays
+/// reactive_forms', so `control.focus()` still reaches it (#230), and the
+/// landing item keeps its autofocus.
 class BgeDropdownField<T> extends StatefulWidget {
   /// Creates a field bound to [formControlName] in the enclosing
   /// `ReactiveForm`, or to [formControl].
@@ -78,6 +94,7 @@ class BgeDropdownField<T> extends StatefulWidget {
     required this.items,
     this.hint,
     this.readOnly = false,
+    this.onPicked,
     this.validationMessages = const {},
     this.formControlName,
     this.formControl,
@@ -93,9 +110,17 @@ class BgeDropdownField<T> extends StatefulWidget {
   /// Shown in the closed field while the control's value matches no item.
   final String? hint;
 
-  /// Whether the field takes no pick: the menu doesn't open. It stays focusable
-  /// and isn't drawn disabled; see the class doc.
+  /// Whether the field takes no pick: the menu doesn't open. Set it while a
+  /// submit is in flight, or when there is nothing to choose between. It stays
+  /// focusable and isn't drawn disabled; see the class doc.
   final bool readOnly;
+
+  /// Called with the item's value on every pick from the menu, including a
+  /// value equal to the one the control holds. reactive_forms drops an equal
+  /// value, so the control's `valueChanges` can't report a re-pick (#776).
+  /// Called after the control is set and touched, and not at all for a pick
+  /// that lands once the field is gone.
+  final ValueChanged<T>? onPicked;
 
   /// The error text for each validation error key.
   final Map<String, String Function(Object)> validationMessages;
@@ -181,6 +206,10 @@ class _BgeDropdownBindingState<T>
     extends ReactiveFocusableFormFieldState<T, T> {
   final _menu = MenuController();
 
+  /// Whether the control was untouched when the menu opened, so a touch made
+  /// by focus moving into the menu is the menu's, not the user's (#775).
+  bool _untouchedAtOpen = false;
+
   /// The menu's width: the field's, measured as the menu opens.
   double? _menuWidth;
 
@@ -193,6 +222,34 @@ class _BgeDropdownBindingState<T>
     ),
   };
 
+  /// The node [_undoMenuTouch] is attached to. The base class builds a new
+  /// focus controller and node, and disposes the old ones, each time it
+  /// subscribes to a control, which it does in `initState` and again when the
+  /// control it resolves changes. The widget's own `focusNode`, which it also
+  /// swaps in `build`, is never passed here.
+  FocusNode? _listenedNode;
+
+  @override
+  void subscribeControl() {
+    super.subscribeControl();
+    // Added after the focus controller's own listener, which marks the control
+    // touched on this same notification, so this undoes it before a frame.
+    _listenedNode = focusNode..addListener(_undoMenuTouch);
+  }
+
+  @override
+  void unsubscribeControl() {
+    _listenedNode?.removeListener(_undoMenuTouch);
+    _listenedNode = null;
+    super.unsubscribeControl();
+  }
+
+  void _undoMenuTouch() {
+    if (!focusNode.hasFocus && _menu.isOpen && _untouchedAtOpen) {
+      control.markAsUntouched();
+    }
+  }
+
   BgeDropdownField<T> get _field => (widget as _BgeDropdownBinding<T>).field;
 
   void _toggle() => _menu.isOpen ? _menu.close() : _open();
@@ -204,6 +261,7 @@ class _BgeDropdownBindingState<T>
     // size (`RawMenuAnchor`), which is when the field's width would.
     final box = context.findRenderObject() as RenderBox?;
     setState(() => _menuWidth = box?.size.width);
+    _untouchedAtOpen = !control.touched;
     _menu.open();
   }
 
@@ -250,6 +308,16 @@ class _BgeDropdownBindingState<T>
       children: [
         MenuAnchor(
           controller: _menu,
+          // Closed by any route with nothing chosen leaves the field touched,
+          // so a required one shows its error (#775). After the next frame,
+          // by which time a pick has set its value: the pick runs after it.
+          onClose: () {
+            if (!mounted) return;
+            _untouchedAtOpen = false;
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) control.markAsTouched();
+            }, debugLabel: 'BgeDropdownField.touchOnClose');
+          },
           // Opening the menu focuses the field first (`RawMenuAnchor.open`),
           // so however it was opened, the page's focus scope has the field
           // to give focus back to after Escape, a pick or a tap outside.
@@ -285,8 +353,15 @@ class _BgeDropdownBindingState<T>
                 onPressed: inert
                     ? null
                     : () {
+                        // `MenuItemButton` calls this after a frame, by which
+                        // time the field may be gone, its control with it,
+                        // or inert: a closed menu's item keeps the callback
+                        // it was built with.
+                        if (!mounted) return;
+                        if (_field.readOnly || control.disabled) return;
                         didChange(item.value);
                         control.markAsTouched();
+                        field.onPicked?.call(item.value);
                       },
                 // The check is only drawn, so the label says it is chosen.
                 // Inside the item, where it merges into the item's own

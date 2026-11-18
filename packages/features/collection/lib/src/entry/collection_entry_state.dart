@@ -34,6 +34,10 @@ enum CollectionEntryAction {
   /// The edit wasn't written.
   saveFailed,
 
+  /// The edit would take the entry past the most copies it can hold, and
+  /// wasn't written. The sheet shows the copies field's own error (#676).
+  saveQuantityTooMany,
+
   /// The removal is being written and sent.
   removing,
 
@@ -42,6 +46,14 @@ enum CollectionEntryAction {
 
   /// The removal wasn't written.
   removeFailed,
+  ;
+
+  /// Whether this is an edit that wasn't written, whether it failed or was
+  /// refused for too many copies. A `switch` over the actions still names
+  /// both, to stay exhaustive.
+  bool get isSaveFailure =>
+      this == CollectionEntryAction.saveFailed ||
+      this == CollectionEntryAction.saveQuantityTooMany;
 }
 
 /// What the collection entry screen is showing (#46).

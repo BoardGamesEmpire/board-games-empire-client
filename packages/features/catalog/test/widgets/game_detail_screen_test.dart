@@ -1163,6 +1163,59 @@ void main() {
       ]);
     });
 
+    // A Tabletop platform offers Physical only (#797), so the page needs the
+    // type the server sends; the shared fixture has none.
+    final boardOnly = PlatformGame(
+      id: 'pg_1',
+      gameId: 'g_catan',
+      platformId: 'plat_tabletop',
+      platformName: 'Tabletop',
+      platformType: PlatformType.tabletop,
+      createdAt: DateTime.utc(2026),
+      updatedAt: DateTime.utc(2026),
+    );
+
+    testWidgets('Tabletop owned as Physical is owned with nothing left to '
+        'add', (tester) async {
+      await showOwning(
+        tester,
+        [entry('pg_1', GameMedium.physical)],
+        platforms: [boardOnly],
+      );
+
+      expect(checkOn('pg_1'), findsOneWidget);
+      expect(addButton, findsNothing);
+    });
+
+    testWidgets('Tabletop owned only as Digital still shows owned, opens the '
+        'copy, and the Add button offers Physical', (tester) async {
+      await showOwning(
+        tester,
+        [entry('pg_1', GameMedium.digital)],
+        platforms: [boardOnly],
+      );
+
+      expect(checkOn('pg_1'), findsOneWidget);
+      expect(find.bySemanticsLabel(ownedSpoken), findsOneWidget);
+      await tapChip(tester, 'pg_1');
+      expect(
+        openedOwned.single.single.entry,
+        entry('pg_1', GameMedium.digital),
+      );
+      expect(adds, isEmpty);
+
+      await tester.ensureVisible(addButton);
+      await tester.pumpAndSettle();
+      await tester.tap(addButton);
+      await tester.pump();
+      expect(adds.single.options, [
+        CollectionAddOption(
+          platformGame: boardOnly,
+          freeMediums: {GameMedium.physical},
+        ),
+      ]);
+    });
+
     testWidgets('the watch follows the platforms, not each rebuild', (
       tester,
     ) async {

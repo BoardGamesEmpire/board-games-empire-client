@@ -75,8 +75,8 @@ Future<void> openCollectionEntries(
 /// with its medium where another of [all] is on the same platform, so the
 /// two can be told apart (#709).
 ///
-/// "Tabletop · Physical" beside "Tabletop · Digital", and "Steam" alone. The
-/// spoken form, "Tabletop Physical", drops the dot, which a screen reader
+/// "Steam · Physical" beside "Steam · Digital", and "Tabletop" alone. The
+/// spoken form, "Steam Physical", drops the dot, which a screen reader
 /// would read out, and puts no comma in its place: a stack's name lists these
 /// with commas between them, and a comma inside each would make two copies
 /// sound like four.

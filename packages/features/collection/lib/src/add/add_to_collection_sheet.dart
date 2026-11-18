@@ -158,7 +158,10 @@ Future<CollectionSync?> showAddToCollectionSheet(
 /// and the copies added together can't pass 2147483647, and plus stops there.
 /// The form counts the copies from the medium's lookup, which a quick submit
 /// can beat; the repository checks the total against the entry as stored,
-/// and an add past it fails as any failed add does.
+/// and an add past it shows the copies field's error, as the form's own check
+/// does, with focus on the field and what was typed kept (#676). The entry is
+/// then looked up again, so the copies, the plus button's limit and the note
+/// count the entry the refusal counted.
 ///
 /// A button at its limit stays enabled and does nothing, so one pressed down
 /// to its limit keeps the focus. Its semantics say it is disabled. After a
@@ -183,6 +186,7 @@ abstract final class AddToCollectionSheet {
   );
   static const Key ratingKey = Key('collection_add.rating');
   static const Key commentKey = Key('collection_add.comment');
+  static const Key mediumSetKey = Key('collection_add.medium_set');
   static const Key existingKey = Key('collection_add.existing');
   static const Key submitKey = Key('collection_add.submit');
 }
@@ -227,10 +231,19 @@ class _AddToCollectionSheetState extends State<_AddToCollectionSheet> {
 
   /// Whether the medium in the form is one the user picked, which a new
   /// platform keeps if it has it free. The sheet sets the medium itself
-  /// without an event, so every change the medium control reports is a pick:
-  /// a flag set around the sheet's own change would be cleared before its
-  /// event arrived, since the control reports changes asynchronously.
+  /// without an event, so a pick is whatever the Medium field reports through
+  /// `onPicked`, which also reports a re-pick of the value held, as the
+  /// control's own changes don't (#776). A flag set around the sheet's own
+  /// change would be cleared before the control's event arrived, since it
+  /// reports changes asynchronously.
   bool _userPickedMedium = false;
+
+  /// The platform whose pick last made the sheet choose a medium, or null when
+  /// the medium is the user's or none was chosen. It is what the live region
+  /// under the Medium field says, so a medium the sheet changed is heard
+  /// (#776). The medium the sheet opens on was never changed, so it has no
+  /// note: the field says what it holds.
+  String? _setMediumFor;
 
   late final FormGroup _form;
 
@@ -309,10 +322,17 @@ class _AddToCollectionSheetState extends State<_AddToCollectionSheet> {
   GameMedium? _startFor(CollectionAddOption option) =>
       startingMedium(option.platformGame.platformType, option.freeMediums);
 
+  /// Drops a limit error the repository put on the copies (#676): it was
+  /// about the entry before this choice, and the validators decide afresh.
+  /// The field's touched state is left as it is, so an untouched field shows
+  /// nothing.
+  void _revalidateCopies() => _form.control(_quantity).updateValueAndValidity();
+
   /// Starts the medium for the platform picked, unless the user picked the
   /// medium and the new platform has it free.
   void _onPlatformPicked(String? platformGameId) {
     if (!mounted || platformGameId == null) return;
+    _revalidateCopies();
     final option = _optionFor(platformGameId);
     if (option == null) return;
 
@@ -326,7 +346,14 @@ class _AddToCollectionSheetState extends State<_AddToCollectionSheet> {
     _userPickedMedium = keep;
     // No event: only the user's picks are reported, see [_userPickedMedium].
     _mediumControl.updateValue(medium, emitEvent: false);
-    setState(() => _option = option);
+    setState(() {
+      _option = option;
+      // Named even when the value is the one the last platform got, so the
+      // note names this platform and its text changes for a screen reader.
+      _setMediumFor = !keep && medium != null
+          ? option.platformGame.platformName
+          : null;
+    });
     _bloc.add(
       AddToCollectionChoiceChanged(
         platformGameId: platformGameId,
@@ -335,9 +362,12 @@ class _AddToCollectionSheetState extends State<_AddToCollectionSheet> {
     );
   }
 
+  /// Reports the user's pick to the bloc. That it is the user's is noted by
+  /// the field's `onPicked`, which a re-pick of the value held reaches too
+  /// (#776).
   void _onMediumPicked(GameMedium? medium) {
     if (!mounted || medium == null) return;
-    _userPickedMedium = true;
+    _revalidateCopies();
     final option = _option;
     if (option == null) return;
     _bloc.add(
@@ -390,7 +420,21 @@ class _AddToCollectionSheetState extends State<_AddToCollectionSheet> {
               previous.existing != current.existing,
           listener: (context, state) {
             _existing = state.existing?.quantity ?? 0;
-            _form.control(_quantity).updateValueAndValidity();
+            _revalidateCopies();
+          },
+        ),
+        // The repository refused the copies. `setErrors` leaves the error to
+        // the field, and `rejectSubmit` doesn't run the validators again, so
+        // it survives until the copies are edited, or the entry looked up
+        // again after the refusal is counted, when the form's own check takes
+        // it over.
+        BlocListener<AddToCollectionBloc, AddToCollectionState>(
+          listenWhen: (previous, current) =>
+              previous.status != current.status &&
+              current.status == AddToCollectionStatus.quantityTooMany,
+          listener: (context, _) {
+            _form.control(_quantity).setErrors({_quantityTooMany: true});
+            _form.rejectSubmit();
           },
         ),
         // [showAddToCollectionSheet] says what became of the add.
@@ -482,8 +526,10 @@ class _AddToCollectionSheetState extends State<_AddToCollectionSheet> {
               formControlName: _medium,
               label: l10n.addToCollectionMediumLabel,
               hint: l10n.addToCollectionMediumHint,
-              // Nothing to offer until a platform is chosen.
-              readOnly: busy || option == null,
+              // Nothing to offer until a platform is chosen, and nothing to
+              // choose between when it has one medium free (#797).
+              readOnly:
+                  busy || option == null || option.freeMediums.length == 1,
               items: [
                 // In the order the enum gives, whatever the set's.
                 for (final medium in GameMedium.values)
@@ -493,12 +539,31 @@ class _AddToCollectionSheetState extends State<_AddToCollectionSheet> {
                       label: mediumLabel(l10n, medium),
                     ),
               ],
+              onPicked: (_) => setState(() {
+                _userPickedMedium = true;
+                _setMediumFor = null;
+              }),
               validationMessages: {
                 ValidationMessage.required: (_) =>
                     l10n.addToCollectionMediumRequired,
               },
             ),
           ),
+          // Outside the keyed subtree, so a new platform doesn't remount it
+          // and its live region says the change.
+          if (_setMediumFor != null)
+            BgeFieldNote<GameMedium>(
+              formControlName: _medium,
+              textKey: AddToCollectionSheet.mediumSetKey,
+              noteFor: (medium) {
+                final platform = _setMediumFor;
+                if (medium == null || platform == null) return null;
+                return l10n.addToCollectionMediumSet(
+                  mediumLabel(l10n, medium),
+                  platform,
+                );
+              },
+            ),
           if (existing != null) ...[
             const BgeGap.sm(),
             _ExistingNote(existing: existing),

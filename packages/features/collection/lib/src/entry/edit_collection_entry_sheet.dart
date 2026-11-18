@@ -81,11 +81,11 @@ Future<void> showEditCollectionEntrySheet(
 ///
 /// ## A leftover outcome
 ///
-/// On opening, a `saved` or `saveFailed` the bloc still holds (an outcome
-/// nobody cleared) is cleared once. Otherwise a no-change save, which emits
-/// `saved` with no `saving` before it, would equal the leftover state and
-/// never reach the sheet's listener. The sheet adds no other clear: the screen
-/// clears the outcome it reports.
+/// On opening, a `saved`, `saveFailed` or `saveQuantityTooMany` the bloc
+/// still holds (an outcome nobody cleared) is cleared once. Otherwise a
+/// no-change save, which emits `saved` with no `saving` before it, would equal
+/// the leftover state and never reach the sheet's listener. The sheet adds no
+/// other clear: the screen clears the outcome it reports.
 ///
 /// ## The keyboard
 ///
@@ -171,8 +171,7 @@ class _EditCollectionEntrySheetState extends State<_EditCollectionEntrySheet> {
   void initState() {
     super.initState();
     final action = _bloc.state.action;
-    if (action == CollectionEntryAction.saved ||
-        action == CollectionEntryAction.saveFailed) {
+    if (action == CollectionEntryAction.saved || action.isSaveFailure) {
       _bloc.add(const CollectionEntryActionCleared());
     }
     _subscription = _form.valueChanges.listen((_) {
@@ -235,15 +234,30 @@ class _EditCollectionEntrySheetState extends State<_EditCollectionEntrySheet> {
     // A sheet dismissed during the save stays mounted through its exit, and
     // pop takes whichever route is on top, so a sheet that is no longer
     // current would pop the screen beneath it.
-    return BlocListener<CollectionEntryBloc, CollectionEntryState>(
-      listenWhen: (previous, current) =>
-          previous.action != current.action &&
-          current.action == CollectionEntryAction.saved,
-      listener: (context, _) {
-        if (ModalRoute.isCurrentOf(context) ?? true) {
-          Navigator.of(context).pop();
-        }
-      },
+    return MultiBlocListener(
+      listeners: [
+        BlocListener<CollectionEntryBloc, CollectionEntryState>(
+          listenWhen: (previous, current) =>
+              previous.action != current.action &&
+              current.action == CollectionEntryAction.saved,
+          listener: (context, _) {
+            if (ModalRoute.isCurrentOf(context) ?? true) {
+              Navigator.of(context).pop();
+            }
+          },
+        ),
+        // The repository refused the copies (#676): the field says so, with
+        // focus on it, and the sheet stays editable.
+        BlocListener<CollectionEntryBloc, CollectionEntryState>(
+          listenWhen: (previous, current) =>
+              previous.action != current.action &&
+              current.action == CollectionEntryAction.saveQuantityTooMany,
+          listener: (context, _) {
+            _form.control(_quantity).setErrors({_quantityTooMany: true});
+            _form.rejectSubmit();
+          },
+        ),
+      ],
       child: Padding(
         padding: EdgeInsets.only(
           bottom: MediaQuery.viewInsetsOf(context).bottom,

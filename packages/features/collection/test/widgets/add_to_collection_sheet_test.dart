@@ -72,11 +72,21 @@ void main() {
     PlatformType.tabletop,
   );
   final onSteam = platformGame('pg_steam', 'Steam', PlatformType.pc);
+  final onOther = platformGame('pg_other', 'Other', null);
 
+  /// An option for [platformGame], offering what the catalog would: a Tabletop
+  /// platform Physical only (#797), any other both unless [free] says less.
   CollectionAddOption option(
     PlatformGame platformGame, [
-    Set<GameMedium> free = _both,
-  ]) => CollectionAddOption(platformGame: platformGame, freeMediums: free);
+    Set<GameMedium>? free,
+  ]) => CollectionAddOption(
+    platformGame: platformGame,
+    freeMediums:
+        free ??
+        (platformGame.platformType == PlatformType.tabletop
+            ? {GameMedium.physical}
+            : _both),
+  );
 
   GameCollection entry({
     String platformGameId = 'pg_1',
@@ -388,6 +398,38 @@ void main() {
     semantics.dispose();
   });
 
+  // A field with nothing to choose is read-only, not disabled (STYLE_GUIDE
+  // §4), whatever the platform (#797).
+  for (final (name, platform, free, shown) in [
+    ('Tabletop', onTabletop, {GameMedium.physical}, 'Physical'),
+    ('Steam', onSteam, {GameMedium.digital}, 'Digital'),
+  ]) {
+    testWidgets('a platform with one free medium shows it read-only '
+        '($name)', (tester) async {
+      final semantics = tester.ensureSemantics();
+      await open(tester, options: [option(platform, free)]);
+
+      final field = find.byKey(AddToCollectionSheet.mediumKey);
+      expect(shows(AddToCollectionSheet.mediumKey, shown), findsOneWidget);
+      expect(
+        find.semantics.byLabel(RegExp('^Medium')).evaluate().single,
+        isSemantics(isReadOnly: true, isFocusable: true, isButton: true),
+      );
+
+      await tester.ensureVisible(field);
+      await tester.pumpAndSettle();
+      await tester.tap(field, warnIfMissed: false);
+      await tester.pumpAndSettle();
+
+      final menu = tester.widget<MenuAnchor>(
+        find.descendant(of: field, matching: find.byType(MenuAnchor)),
+      );
+      expect(menu.controller!.isOpen, isFalse);
+      expect(offered(shown), findsNothing);
+      semantics.dispose();
+    });
+  }
+
   testWidgets('a preselected platform from a chip is chosen', (tester) async {
     await open(
       tester,
@@ -401,19 +443,14 @@ void main() {
     verifyAdded('pg_steam', GameMedium.digital);
   });
 
-  testWidgets('the medium field lists only the free mediums', (tester) async {
-    await open(
-      tester,
-      options: [
-        option(onTabletop, {GameMedium.digital}),
-      ],
-    );
+  testWidgets('the medium field lists the free mediums when there is more '
+      'than one', (tester) async {
+    await open(tester, options: [option(onSteam)]);
 
-    // Tabletop would start on Physical, which is owned already.
     expect(shows(AddToCollectionSheet.mediumKey, 'Digital'), findsOneWidget);
     await tapInView(tester, find.byKey(AddToCollectionSheet.mediumKey));
     expect(offered('Digital'), findsOneWidget);
-    expect(offered('Physical'), findsNothing);
+    expect(offered('Physical'), findsOneWidget);
   });
 
   testWidgets('Tabletop starts on Physical, Steam on Digital, an untyped '
@@ -454,15 +491,15 @@ void main() {
   });
 
   testWidgets('the user can change the starting medium', (tester) async {
-    await open(tester, options: [option(onTabletop)]);
-    expect(shows(AddToCollectionSheet.mediumKey, 'Physical'), findsOneWidget);
-
-    // A board game bought as an app.
-    await pick(tester, AddToCollectionSheet.mediumKey, 'Digital');
-
+    await open(tester, options: [option(onSteam)]);
     expect(shows(AddToCollectionSheet.mediumKey, 'Digital'), findsOneWidget);
+
+    // A Steam game bought on a disc.
+    await pick(tester, AddToCollectionSheet.mediumKey, 'Physical');
+
+    expect(shows(AddToCollectionSheet.mediumKey, 'Physical'), findsOneWidget);
     await submit(tester);
-    verifyAdded('pg_tabletop', GameMedium.digital);
+    verifyAdded('pg_steam', GameMedium.physical);
   });
 
   testWidgets('platform change re-applies the start unless the user picked a '
@@ -495,22 +532,21 @@ void main() {
     await open(
       tester,
       options: [
-        option(onTabletop),
-        option(onSteam, {GameMedium.digital}),
+        option(onSteam),
+        option(onSwitch, {GameMedium.digital}),
       ],
-      platformGameId: 'pg_tabletop',
+      platformGameId: 'pg_steam',
     );
     // Picked by the user, not left at the start.
-    await pick(tester, AddToCollectionSheet.mediumKey, 'Digital');
     await pick(tester, AddToCollectionSheet.mediumKey, 'Physical');
 
-    await pick(tester, AddToCollectionSheet.platformKey, 'Steam');
+    await pick(tester, AddToCollectionSheet.platformKey, 'Switch');
 
     expect(shows(AddToCollectionSheet.mediumKey, 'Digital'), findsOneWidget);
     expect(shows(AddToCollectionSheet.mediumKey, 'Choose one'), findsNothing);
     // What the field shows is what is sent.
     await submit(tester);
-    verifyAdded('pg_steam', GameMedium.digital);
+    verifyAdded('pg_1', GameMedium.digital);
   });
 
   testWidgets('a medium the sheet had to change is no longer kept as the '
@@ -518,20 +554,114 @@ void main() {
     await open(
       tester,
       options: [
-        option(onTabletop),
-        option(onSteam, {GameMedium.digital}),
+        option(onSteam),
+        option(onSwitch, {GameMedium.digital}),
+        option(onOther),
       ],
-      platformGameId: 'pg_tabletop',
+      platformGameId: 'pg_steam',
     );
-    await pick(tester, AddToCollectionSheet.mediumKey, 'Digital');
     await pick(tester, AddToCollectionSheet.mediumKey, 'Physical');
-    await pick(tester, AddToCollectionSheet.platformKey, 'Steam');
+    await pick(tester, AddToCollectionSheet.platformKey, 'Switch');
 
-    // Digital was Steam's only room, not the user's choice, so Tabletop
-    // starts again.
-    await pick(tester, AddToCollectionSheet.platformKey, 'Tabletop');
+    // Digital was Switch's only room, not the user's choice, so a platform
+    // with no start starts on nothing.
+    await pick(tester, AddToCollectionSheet.platformKey, 'Other');
 
-    expect(shows(AddToCollectionSheet.mediumKey, 'Physical'), findsOneWidget);
+    expect(shows(AddToCollectionSheet.mediumKey, 'Choose one'), findsOneWidget);
+  });
+
+  group('a medium the sheet sets is announced (#776)', () {
+    final onConsole = platformGame(
+      'pg_console',
+      'Switch',
+      PlatformType.console,
+    );
+    final noteFinder = find.byKey(AddToCollectionSheet.mediumSetKey);
+
+    testWidgets('picking a platform that sets the medium says so', (
+      tester,
+    ) async {
+      final semantics = tester.ensureSemantics();
+      await open(tester, options: [option(onSteam), option(onConsole)]);
+
+      await pick(tester, AddToCollectionSheet.platformKey, 'Steam');
+
+      const said = 'Medium set to Digital for Steam.';
+      expect(find.text(said), findsOneWidget);
+      expect(noteFinder, findsOneWidget);
+      expect(
+        find.semantics.byLabel(said).evaluate().single,
+        isSemantics(isLiveRegion: true),
+      );
+      semantics.dispose();
+    });
+
+    testWidgets('the note names the newest platform', (tester) async {
+      await open(tester, options: [option(onSteam), option(onConsole)]);
+
+      await pick(tester, AddToCollectionSheet.platformKey, 'Steam');
+      // Switch starts on Digital too, so the value doesn't change.
+      await pick(tester, AddToCollectionSheet.platformKey, 'Switch');
+
+      expect(find.text('Medium set to Digital for Switch.'), findsOneWidget);
+      expect(find.text('Medium set to Digital for Steam.'), findsNothing);
+    });
+
+    testWidgets('a read-only medium the sheet set is said too', (
+      tester,
+    ) async {
+      await open(tester, options: [option(onTabletop), option(onSteam)]);
+
+      await pick(tester, AddToCollectionSheet.platformKey, 'Tabletop');
+
+      expect(find.text('Medium set to Physical for Tabletop.'), findsOneWidget);
+    });
+
+    testWidgets("the user's own medium pick clears the note", (tester) async {
+      await open(tester, options: [option(onSteam), option(onConsole)]);
+      await pick(tester, AddToCollectionSheet.platformKey, 'Steam');
+      expect(noteFinder, findsOneWidget);
+
+      await pick(tester, AddToCollectionSheet.mediumKey, 'Physical');
+
+      expect(noteFinder, findsNothing);
+    });
+
+    testWidgets("re-picking the starting medium counts as the user's", (
+      tester,
+    ) async {
+      await open(tester, options: [option(onSteam), option(onConsole)]);
+      await pick(tester, AddToCollectionSheet.platformKey, 'Steam');
+
+      // The value is already Digital: reactive_forms reports nothing.
+      await pick(tester, AddToCollectionSheet.mediumKey, 'Digital');
+      expect(noteFinder, findsNothing);
+      await pick(tester, AddToCollectionSheet.platformKey, 'Switch');
+
+      expect(shows(AddToCollectionSheet.mediumKey, 'Digital'), findsOneWidget);
+      expect(noteFinder, findsNothing);
+    });
+
+    testWidgets('a platform that starts on nothing leaves no note', (
+      tester,
+    ) async {
+      await open(tester, options: [option(onSteam), option(onOther)]);
+      await pick(tester, AddToCollectionSheet.platformKey, 'Steam');
+
+      await pick(tester, AddToCollectionSheet.platformKey, 'Other');
+
+      expect(noteFinder, findsNothing);
+    });
+
+    testWidgets('no note on opening', (tester) async {
+      await open(
+        tester,
+        options: [option(onSteam), option(onConsole)],
+        platformGameId: 'pg_steam',
+      );
+
+      expect(noteFinder, findsNothing);
+    });
   });
 
   testWidgets('a medium owned after opening shows the existing note', (
@@ -1155,6 +1285,147 @@ void main() {
     // Editing retires the failure: it was about what was there before.
     await type(tester, AddToCollectionSheet.commentKey, 'Great game');
     expect(find.text(_failedTitle), findsNothing);
+  });
+
+  group('an add refused at the limit (#676)', () {
+    /// The repository refusing the first add, and taking any after it.
+    void refuseFirstAdd() {
+      var refused = false;
+      when(
+        () => repository.addToCollection(
+          platformGameId: any(named: 'platformGameId'),
+          medium: any(named: 'medium'),
+          quantity: any(named: 'quantity'),
+          rating: any(named: 'rating'),
+          comment: any(named: 'comment'),
+        ),
+      ).thenAnswer((invocation) async {
+        if (!refused) {
+          refused = true;
+          throw const CollectionQuantityLimitExceeded(
+            quantity: 10,
+            held: _storedMax - 7,
+          );
+        }
+        return (entry: entry(), syncQueueId: 'sq_1', operation: _queuedOp);
+      });
+    }
+
+    bool copiesFocused(WidgetTester tester) => tester
+        .widget<EditableText>(
+          find.descendant(
+            of: find.byKey(AddToCollectionSheet.quantityKey),
+            matching: find.byType(EditableText),
+          ),
+        )
+        .focusNode
+        .hasFocus;
+
+    testWidgets('a submit that beats the lookup and passes the limit shows '
+        'the copies error', (tester) async {
+      refuseFirstAdd();
+      // The lookup never answers, so the form has no entry to check against.
+      final lookup = Completer<GameCollection?>();
+      when(
+        () => repository.getCollectionEntry(
+          platformGameId: any(named: 'platformGameId'),
+          medium: any(named: 'medium'),
+        ),
+      ).thenAnswer((_) => lookup.future);
+      await open(tester);
+      await pick(tester, AddToCollectionSheet.mediumKey, 'Physical');
+      await type(tester, AddToCollectionSheet.quantityKey, '10');
+
+      await submit(tester);
+
+      expect(find.text(_quantityTooMany), findsOneWidget);
+      expect(find.text(_failedTitle), findsNothing);
+      expect(find.byKey(AddToCollectionSheet.sheetKey), findsOneWidget);
+      expect(copiesText(tester), '10');
+      expect(copiesFocused(tester), isTrue);
+      expect(resolved, isFalse);
+      lookup.complete(null);
+    });
+
+    testWidgets('picking another medium after a refusal drops the error and '
+        'the next submit is sent', (tester) async {
+      refuseFirstAdd();
+      await open(tester);
+      await pick(tester, AddToCollectionSheet.mediumKey, 'Physical');
+      await type(tester, AddToCollectionSheet.quantityKey, '10');
+      await submit(tester);
+      expect(find.text(_quantityTooMany), findsOneWidget);
+
+      await pick(tester, AddToCollectionSheet.mediumKey, 'Digital');
+      expect(find.text(_quantityTooMany), findsNothing);
+
+      await submit(tester);
+
+      verify(
+        () => repository.addToCollection(
+          platformGameId: 'pg_1',
+          medium: GameMedium.digital,
+          quantity: 10,
+        ),
+      ).called(1);
+    });
+
+    testWidgets('after a refusal the copies count the entry it counted', (
+      tester,
+    ) async {
+      refuseFirstAdd();
+      owning(GameMedium.physical, 5);
+      await open(tester);
+      await pick(tester, AddToCollectionSheet.mediumKey, 'Physical');
+      await type(tester, AddToCollectionSheet.quantityKey, '10');
+      // Stored since the lookup: the refusal counts these.
+      owning(GameMedium.physical, _storedMax - 7);
+
+      await submit(tester);
+      expect(find.text(_quantityTooMany), findsOneWidget);
+
+      // Past what the stored entry leaves room for, the form's own check
+      // keeps the error rather than sending what will be refused again.
+      await type(tester, AddToCollectionSheet.quantityKey, '8');
+      expect(find.text(_quantityTooMany), findsOneWidget);
+      await submit(tester);
+      verify(
+        () => repository.addToCollection(
+          platformGameId: any(named: 'platformGameId'),
+          medium: any(named: 'medium'),
+          quantity: any(named: 'quantity'),
+          rating: any(named: 'rating'),
+          comment: any(named: 'comment'),
+        ),
+      ).called(1);
+
+      await type(tester, AddToCollectionSheet.quantityKey, '7');
+      expect(find.text(_quantityTooMany), findsNothing);
+    });
+
+    testWidgets('editing the copies clears the error and the next submit is '
+        'sent', (tester) async {
+      refuseFirstAdd();
+      await open(tester);
+      await pick(tester, AddToCollectionSheet.mediumKey, 'Physical');
+      await type(tester, AddToCollectionSheet.quantityKey, '10');
+      await submit(tester);
+      expect(find.text(_quantityTooMany), findsOneWidget);
+
+      await type(tester, AddToCollectionSheet.quantityKey, '3');
+      expect(find.text(_quantityTooMany), findsNothing);
+
+      await submit(tester);
+
+      verify(
+        () => repository.addToCollection(
+          platformGameId: 'pg_1',
+          medium: GameMedium.physical,
+          quantity: 3,
+        ),
+      ).called(1);
+      expect(resolved, isTrue);
+    });
   });
 
   testWidgets('the comment field ends above the keyboard', (tester) async {

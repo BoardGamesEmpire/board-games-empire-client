@@ -727,6 +727,28 @@ void main() {
       expect(snackBarText(_removedCopy), findsOneWidget);
     });
 
+    testWidgets('a Tabletop · Digital entry can be removed (#797)', (
+      tester,
+    ) async {
+      await showPushed(
+        tester,
+        item: listItem(
+          'gc_1',
+          gameId: 'g-wingspan',
+          title: 'Wingspan',
+          platformName: 'Tabletop',
+          platformType: PlatformType.tabletop,
+          medium: GameMedium.digital,
+        ),
+      );
+
+      await confirmRemove(tester);
+
+      verify(() => repository.removeFromCollection('gc_1')).called(1);
+      expect(find.byType(CollectionEntryScreen), findsNothing);
+      expect(snackBarText(_removedCopy), findsOneWidget);
+    });
+
     testWidgets('while it is under way, Edit and Remove are held, Remove says '
         "it is removing, and the removal's own vanishing row isn't shown as "
         'gone', (tester) async {

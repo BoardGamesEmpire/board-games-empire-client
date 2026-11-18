@@ -27,13 +27,13 @@ GameCollectionListItem _entry(
   medium: medium,
 );
 
-final GameCollectionListItem _tabletopPhysical = _entry(
+final GameCollectionListItem _switchPhysical = _entry(
   'e-1',
-  platformName: 'Tabletop',
+  platformName: 'Switch',
 );
-final GameCollectionListItem _tabletopDigital = _entry(
+final GameCollectionListItem _switchDigital = _entry(
   'e-2',
-  platformName: 'Tabletop',
+  platformName: 'Switch',
   medium: GameMedium.digital,
 );
 final GameCollectionListItem _steam = _entry('e-3', platformName: 'Steam');
@@ -129,7 +129,7 @@ void main() {
 
   testWidgets('one tile per entry, two across', (tester) async {
     final host = _Host();
-    final items = [_tabletopPhysical, _tabletopDigital, _steam, _longPlatform];
+    final items = [_switchPhysical, _switchDigital, _steam, _longPlatform];
     await host.pump(tester, items);
     await host.open(tester);
 
@@ -150,20 +150,20 @@ void main() {
 
   testWidgets('a platform with two entries names the medium', (tester) async {
     final host = _Host();
-    final items = [_tabletopPhysical, _tabletopDigital, _steam];
+    final items = [_switchPhysical, _switchDigital, _steam];
     await host.pump(tester, items);
     await host.open(tester);
 
     final l10n = await GameCollectionLocalizations.delegate.load(
       const Locale('en'),
     );
-    expect(collectionEntryLabel(l10n, _tabletopPhysical, items), (
-      shown: 'Tabletop · Physical',
-      spoken: 'Tabletop Physical',
+    expect(collectionEntryLabel(l10n, _switchPhysical, items), (
+      shown: 'Switch · Physical',
+      spoken: 'Switch Physical',
     ));
-    expect(collectionEntryLabel(l10n, _tabletopDigital, items), (
-      shown: 'Tabletop · Digital',
-      spoken: 'Tabletop Digital',
+    expect(collectionEntryLabel(l10n, _switchDigital, items), (
+      shown: 'Switch · Digital',
+      spoken: 'Switch Digital',
     ));
     expect(collectionEntryLabel(l10n, _steam, items), (
       shown: 'Steam',
@@ -172,8 +172,8 @@ void main() {
 
     // Each label is drawn under its own tile.
     for (final (id, shown) in [
-      ('e-1', 'Tabletop · Physical'),
-      ('e-2', 'Tabletop · Digital'),
+      ('e-1', 'Switch · Physical'),
+      ('e-2', 'Switch · Digital'),
       ('e-3', 'Steam'),
     ]) {
       expect(
@@ -186,7 +186,7 @@ void main() {
 
   testWidgets('tapping a tile opens that entry', (tester) async {
     final host = _Host();
-    await host.pump(tester, [_tabletopPhysical, _tabletopDigital, _steam]);
+    await host.pump(tester, [_switchPhysical, _switchDigital, _steam]);
     await host.open(tester);
 
     await tester.tap(_tile('e-2'));
@@ -205,12 +205,12 @@ void main() {
     final handle = tester.ensureSemantics();
     try {
       final host = _Host();
-      await host.pump(tester, [_tabletopPhysical, _tabletopDigital, _steam]);
+      await host.pump(tester, [_switchPhysical, _switchDigital, _steam]);
       await host.open(tester);
 
       for (final (id, spoken) in [
-        ('e-1', 'Tabletop Physical'),
-        ('e-2', 'Tabletop Digital'),
+        ('e-1', 'Switch Physical'),
+        ('e-2', 'Switch Digital'),
         ('e-3', 'Steam'),
       ]) {
         final tile = tester.getSemantics(_tile(id));
@@ -228,7 +228,7 @@ void main() {
         expect(tile.childrenCount, 0, reason: id);
       }
       // The drawn label isn't read a second time.
-      expect(find.bySemanticsLabel('Tabletop · Physical'), findsNothing);
+      expect(find.bySemanticsLabel('Switch · Physical'), findsNothing);
     } finally {
       handle.dispose();
     }
@@ -236,7 +236,7 @@ void main() {
 
   testWidgets('focus returns to the opener on close', (tester) async {
     final host = _Host();
-    await host.pump(tester, [_tabletopPhysical, _steam]);
+    await host.pump(tester, [_switchPhysical, _steam]);
     host.opener.requestFocus();
     await tester.pump();
 
@@ -266,7 +266,7 @@ void main() {
     testWidgets('in a $form, Tab reaches the first tile, ringed, Enter '
         'opens its entry, and the next Tab is the next tile', (tester) async {
       final host = _Host();
-      await host.pump(tester, [_tabletopPhysical, _steam], size: size);
+      await host.pump(tester, [_switchPhysical, _steam], size: size);
       host.opener.requestFocus();
       await tester.pump();
       await tester.sendKeyEvent(LogicalKeyboardKey.enter);
@@ -310,7 +310,7 @@ void main() {
   testWidgets('a dialog is as wide as its tiles, and four entries fit an '
       '800 by 600 window', (tester) async {
     final host = _Host();
-    final items = [_tabletopPhysical, _tabletopDigital, _steam, _longPlatform];
+    final items = [_switchPhysical, _switchDigital, _steam, _longPlatform];
     await host.pump(tester, items, size: const Size(800, 600));
     await host.open(tester);
 
@@ -335,7 +335,7 @@ void main() {
     tester,
   ) async {
     final host = _Host();
-    await host.pump(tester, [_tabletopPhysical, _steam]);
+    await host.pump(tester, [_switchPhysical, _steam]);
     await host.open(tester);
 
     final sheet = tester.getRect(
@@ -357,7 +357,7 @@ void main() {
     final host = _Host();
     await host.pump(
       tester,
-      [_longPlatform, _tabletopPhysical, _tabletopDigital],
+      [_longPlatform, _switchPhysical, _switchDigital],
       size: const Size(320, 640),
       textScale: 2,
     );
@@ -437,7 +437,7 @@ void main() {
     testWidgets('several entries open the picker, and open nothing yet', (
       tester,
     ) async {
-      final opened = await pumpOpener(tester, [_tabletopPhysical, _steam]);
+      final opened = await pumpOpener(tester, [_switchPhysical, _steam]);
 
       expect(_tile('e-1'), findsOneWidget);
       expect(_tile('e-3'), findsOneWidget);

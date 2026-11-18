@@ -76,9 +76,9 @@ import 'package:models/domain.dart';
 ///
 /// `addToCollection.quantity` must be `> 0`. `updateCollectionEntry.quantity`
 /// must be `> 0` and no more than `GameCollectionRepository.maxQuantity`
-/// when provided (`null` means "leave unchanged"). Both
-/// methods throw [ArgumentError] **before** opening the transaction,
-/// so the local cache and sync queue stay untouched on invalid input.
+/// when provided (`null` means "leave unchanged"). Both methods throw
+/// [ArgumentError] for zero or less **before** opening the transaction, so the
+/// local cache and sync queue stay untouched on invalid input.
 /// `updateCollectionEntry` with every field `null` throws the same way:
 /// it has nothing to send. Removing an entry uses [removeFromCollection], not
 /// `addToCollection(quantity: 0)` or `updateCollectionEntry(quantity: 0)`.
@@ -86,8 +86,9 @@ import 'package:models/domain.dart';
 /// An add can't take the entry past `GameCollectionRepository.maxQuantity`.
 /// A quantity past it throws before the transaction like the checks above,
 /// for an update as well as an add.
-/// A live row whose copies and the quantity together pass it throws
-/// [ArgumentError] inside the transaction, before anything is written: only
+/// The limit throws [CollectionQuantityLimitExceeded], not [ArgumentError].
+/// A live row whose copies and the quantity together pass it throws it
+/// inside the transaction, before anything is written: only
 /// there is the row read as it is.
 ///
 /// ## Tombstones
@@ -350,11 +351,7 @@ class GameCollectionRepositoryImpl
       );
     }
     if (quantity > GameCollectionRepository.maxQuantity) {
-      throw ArgumentError.value(
-        quantity,
-        'quantity',
-        'must not exceed ${GameCollectionRepository.maxQuantity}',
-      );
+      throw CollectionQuantityLimitExceeded(quantity: quantity);
     }
 
     return _db.transaction(() async {
@@ -457,11 +454,9 @@ class GameCollectionRepositoryImpl
         // the caller's own check may have used an earlier read, or none.
         if (existing.quantity >
             GameCollectionRepository.maxQuantity - quantity) {
-          throw ArgumentError.value(
-            quantity,
-            'quantity',
-            'with the ${existing.quantity} already held, must not exceed '
-                '${GameCollectionRepository.maxQuantity}',
+          throw CollectionQuantityLimitExceeded(
+            quantity: quantity,
+            held: existing.quantity,
           );
         }
         entryId = existing.id;
@@ -546,11 +541,7 @@ class GameCollectionRepositoryImpl
       );
     }
     if (quantity != null && quantity > GameCollectionRepository.maxQuantity) {
-      throw ArgumentError.value(
-        quantity,
-        'quantity',
-        'must not exceed ${GameCollectionRepository.maxQuantity}',
-      );
+      throw CollectionQuantityLimitExceeded(quantity: quantity);
     }
 
     return _db.transaction(() async {
