@@ -34,3 +34,5 @@ Interceptor order (see `register_server_network.dart` for the reasoning):
   `TokenInterceptor` (token attachment).
 - **`auth/`** — `AuthRepositoryImpl` (BetterAuth over the per-server Dio) and
   `TokenStorageService` (keyed by the stable `bgeServerId`).
+- **`auth/provider_sign_in/`** — `ProviderSignInFlow`, the native provider
+  sign-in collaborator that owns the pending attempt (#879).

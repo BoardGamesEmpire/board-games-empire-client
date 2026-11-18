@@ -10,3 +10,6 @@
   the email/password sign-in and sign-up requests through the helpers it
   shares with the web repository in `dio_network` (#877). Its grant handling
   stays its own. No behaviour change.
+* Provider sign-in moved out of `AuthRepositoryImpl` into `ProviderSignInFlow`
+  (`auth/provider_sign_in/`), which owns the pending attempt (#879). The
+  repository's grant-body check now uses the shared `isAuthSuccessStatus`.

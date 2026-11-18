@@ -14,12 +14,12 @@ import 'package:interfaces/repositories.dart';
 
 /// Whether [status] is a 2xx.
 ///
-/// Used by [assertAuthSuccess] and by the web repository's sign-out, grant
-/// and provider-start checks. Those had the range test written out
+/// Used by [assertAuthSuccess], by the web repository's sign-out, grant
+/// and provider-start checks, and by the native repository's grant-body
+/// check. Those had the range test written out
 /// separately, so a change to what counts as success — treating 3xx as its
 /// own case, say — could have landed on one and missed the other, leaving
-/// sign-out logging "not accepted" for a status sign-in treats as fine. The
-/// native repository's own grant checks still write the range out.
+/// sign-out logging "not accepted" for a status sign-in treats as fine.
 ///
 /// A null status means Dio resolved a response without one, which is not a
 /// success an auth repository will act on.
