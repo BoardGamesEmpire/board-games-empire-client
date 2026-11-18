@@ -135,6 +135,21 @@ typedef BgeUnfoldingTileBuilder<T> = Widget Function(
   required bool unfolded,
 });
 
+/// [BgeUnfoldingCovers.stripPlace]'s place: a type of its own, so that no
+/// place a screen names can equal it.
+@immutable
+final class _StripPlace {
+  const _StripPlace(this.id);
+
+  final Object id;
+
+  @override
+  bool operator ==(Object other) => other is _StripPlace && other.id == id;
+
+  @override
+  int get hashCode => Object.hash(_StripPlace, id);
+}
+
 /// A [BgeUnfoldingCoverGrid] that holds which item is unfolded (#711).
 ///
 /// One item is unfolded at a time, and unfolding another folds the first.
@@ -193,6 +208,36 @@ class BgeUnfoldingCovers<T> extends StatefulWidget {
 
   /// As for [BgeUnfoldingCoverGrid.semanticIndexOffset].
   final int semanticIndexOffset;
+
+  /// The place a cover in the strip of the item whose [idOf] is [id] names
+  /// in its `BgeFocusHandoff`, as the item's own tile names it in
+  /// `BgeFocusHandoff.foldedPlace`. A top-level cover names none.
+  ///
+  /// Equal for equal ids, and never equal to a place a screen names itself.
+  static Object stripPlace(Object id) => _StripPlace(id);
+
+  /// A `BgeFocusHandoffScope.isShown` for covers laid out by a
+  /// [BgeUnfoldingCovers] of [items] (#819): each item's cover at top level,
+  /// under no place, and each of [stripIdsOf]'s covers in its strip, at
+  /// [stripPlace].
+  ///
+  /// Every strip counts, folded or open, as the screen can't tell which is
+  /// open: `BgeFocusHandoffScope.isShown` says why that is safe. The set is
+  /// built at the first question, as the scope asks only once a focused
+  /// item has left.
+  static bool Function(Object identity, Object? place) isShownIn<T>(
+    List<T> items, {
+    required Object Function(T item) idOf,
+    required Iterable<Object> Function(T item) stripIdsOf,
+  }) {
+    Set<(Object, Object?)>? shown;
+    return (identity, place) => (shown ??= {
+      for (final item in items) ...[
+        (idOf(item), null),
+        for (final id in stripIdsOf(item)) (id, stripPlace(idOf(item))),
+      ],
+    }).contains((identity, place));
+  }
 
   @override
   State<BgeUnfoldingCovers<T>> createState() => _BgeUnfoldingCoversState<T>();

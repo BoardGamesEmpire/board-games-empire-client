@@ -47,11 +47,31 @@ import 'package:ui/src/focus/pointer_focus_flag.dart';
 ///
 /// A game nested under two base games has an item under each. The
 /// replacement in the same place, under the same base game, takes the focus.
-/// If there is none, the game's item that was built first takes it.
+/// If there is none, and the game has left that place, as when its base game
+/// goes, the game's item that was built first takes it.
 ///
-/// A focused item scrolled out of a lazy list's cache counts as leaving too.
-/// Focus goes to a copy of the same game that is still built, if there is
-/// one, and is left to the framework if not.
+/// ## A scroll-out
+///
+/// A focused item scrolled out of a lazy list's cache leaves as a replaced
+/// one does, and the two can't be told apart as it goes. They can once the
+/// frame has built: a replacement in the item's place is built by then, and
+/// an item that scrolled out isn't, though the list still shows its game in
+/// that place. The scope asks [BgeFocusHandoffScope.isShown] which (#819).
+///
+/// A game still shown in its place gets no hand-off, and focus goes where
+/// the framework puts it: on the control the page focused most recently
+/// that is still built, even off screen, else on the page itself. The scope
+/// scrolls nothing.
+///
+/// A sync can move a game past a lazy list's cache, in its place or to
+/// another. Either way its item isn't built for focus to go to, and the
+/// scope doesn't scroll the list to build it: focus is left to the
+/// framework, both at once and after a pop (#813). Only a game that has
+/// left its place, with a copy built elsewhere, hands focus to that copy.
+///
+/// Without [BgeFocusHandoffScope.isShown], the scope can't tell a scroll-out
+/// from a replacement: a focused item scrolled out hands focus to a copy of
+/// the same game built elsewhere, if there is one.
 ///
 /// ## Focus a click gave stays undrawn
 ///
@@ -72,10 +92,36 @@ import 'package:ui/src/focus/pointer_focus_flag.dart';
 /// slivers as well as boxes.
 class BgeFocusHandoffScope extends StatefulWidget {
   /// Creates the scope for the [BgeFocusHandoff]s in [child].
-  const BgeFocusHandoffScope({required this.child, super.key});
+  const BgeFocusHandoffScope({required this.child, this.isShown, super.key});
 
   /// The list or grid, a box or a sliver.
   final Widget child;
+
+  /// Whether the list still shows a game at a place, its item built or not:
+  /// whether the screen placed it there. It is given the `identity` and the
+  /// `place` that the game's [BgeFocusHandoff] named.
+  ///
+  /// Asked once a game's item has left and the game has no item built in
+  /// that place: in the frame after a focused item leaves, and as a pop's
+  /// restore lands. True means the item scrolled out of a lazy list's cache,
+  /// or was moved past it, and the framework places the focus. False means
+  /// the game has left that place, and its item built elsewhere, if any,
+  /// takes the focus. The scope's doc, "A scroll-out", says why.
+  ///
+  /// A place inside another item, such as a base game's strip of expansion
+  /// covers, can be open or folded, and the screen may not know which: the
+  /// grid that unfolds a strip holds that. Such a screen counts the place's
+  /// games as shown either way. The two answers differ only when the place
+  /// folds while one of its items holds focus. A tap can't do that, as it
+  /// focuses the control it folds from first, but a screen reader's custom
+  /// action on another control can, such as a cover's "Hide expansions".
+  /// Focus is then left to the framework, which puts it on the control the
+  /// page focused most recently that is still built (#819).
+  ///
+  /// Without it, the scope behaves as it did before #819, as if every answer
+  /// were false: a focused item scrolled out hands focus to a copy of the
+  /// game built elsewhere.
+  final bool Function(Object identity, Object? place)? isShown;
 
   @override
   State<BgeFocusHandoffScope> createState() => _BgeFocusHandoffScopeState();
@@ -164,6 +210,8 @@ class _BgeFocusHandoffScopeState extends State<BgeFocusHandoffScope> {
     final node = item._node;
     final pointerFocus = item._pointerFocus.value;
     if (node.hasFocus) {
+      // Whether the item scrolled out or was replaced shows only once the
+      // frame has built, so the lookup decides (_itemOf).
       _handOffAfterFrame(
         identity,
         place,
@@ -294,11 +342,24 @@ class _BgeFocusHandoffScopeState extends State<BgeFocusHandoffScope> {
       ..ensureVisualUpdate();
   }
 
-  /// The game's item in [place], else the first of its items built.
+  /// The item of the game [identity] that takes the focus of its item in
+  /// [place], once that item has left, or null for none. In turn:
+  ///
+  /// 1. The game's item in [place], if one is built: a replacement.
+  /// 2. None, if the list still shows the game in [place]
+  ///    ([BgeFocusHandoffScope.isShown]): its item there scrolled out of a
+  ///    lazy list's cache, or was moved past it, and the framework places
+  ///    focus.
+  /// 3. Else the first of the game's items built elsewhere, as the game has
+  ///    left [place] (#711).
   _BgeFocusHandoffState? _itemOf(Object identity, Object? place) {
     final items = _items.where((item) => item.widget.identity == identity);
-    return items.where((item) => item.widget.place == place).firstOrNull ??
-        items.firstOrNull;
+    final replacement = items
+        .where((item) => item.widget.place == place)
+        .firstOrNull;
+    if (replacement != null) return replacement;
+    if (widget.isShown?.call(identity, place) ?? false) return null;
+    return items.firstOrNull;
   }
 
   @override

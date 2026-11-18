@@ -353,6 +353,46 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
+    testWidgets("a focused nested row scrolled out of the list doesn't move "
+        "focus to its game's other copy (#819)", (tester) async {
+      // B at the top and C at the end, with E under each: more than a
+      // screen and the list's cache apart.
+      remote.onFetchPage = (_, _) async => pageOf([
+        base,
+        for (var i = 0; i < 30; i++) game('F$i'),
+        game('C'),
+        expansion('E', [under('B'), under('C')]),
+      ]);
+      await show(tester, onOpen: (_, _) {});
+      final near = find.byKey(
+        GameBrowseScreen.nestedRowKey('B', 'E'),
+        skipOffstage: false,
+      );
+      final far = find.byKey(
+        GameBrowseScreen.nestedRowKey('C', 'E'),
+        skipOffstage: false,
+      );
+      expect(far, findsNothing);
+      // The row's ink's own node.
+      Focus.of(
+        tester.element(
+          find
+              .descendant(
+                of: find.descendant(of: near, matching: find.byType(InkWell)),
+                matching: find.byType(MouseRegion),
+              )
+              .first,
+        ),
+      ).requestFocus();
+      await tester.pump();
+      expect(_focusIsWithin(tester, near), isTrue);
+
+      await scrollListToEnd(tester, far);
+
+      expect(near, findsNothing);
+      expect(_focusIsWithin(tester, far), isFalse);
+    });
+
     testWidgets('a standalone expansion also has its own row', (tester) async {
       remote.onFetchPage = (_, _) async => pageOf([
         base,
@@ -1241,22 +1281,11 @@ void main() {
         game('F'),
       ]);
       await showThumbnails(tester);
-      bool focusWithin(Finder finder) {
-        final focused = FocusManager.instance.primaryFocus?.context;
-        if (focused == null) return false;
-        final target = tester.element(finder);
-        var within = identical(focused, target);
-        focused.visitAncestorElements((ancestor) {
-          within = within || identical(ancestor, target);
-          return !within;
-        });
-        return within;
-      }
 
       for (final step in ['opened', 'closed', 'opened again']) {
         await tester.tap(badgeOf('B'));
         await tester.pumpAndSettle();
-        expect(focusWithin(badgeOf('B')), isTrue, reason: step);
+        expect(_focusIsWithin(tester, badgeOf('B')), isTrue, reason: step);
       }
 
       // At two columns D is in the row after B's strip, and moves to the
@@ -1265,7 +1294,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(stripTile('D', 'E2'), findsOneWidget);
-      expect(focusWithin(badgeOf('D')), isTrue);
+      expect(_focusIsWithin(tester, badgeOf('D')), isTrue);
     });
 
     testWidgets('a strip cover opens the quick look', (tester) async {
@@ -1840,6 +1869,19 @@ void main() {
       },
     );
   });
+}
+
+/// Whether the primary focus is on the widget [finder] finds, or inside it.
+bool _focusIsWithin(WidgetTester tester, Finder finder) {
+  final context = FocusManager.instance.primaryFocus?.context;
+  if (context == null) return false;
+  final target = tester.element(finder);
+  var within = identical(context, target);
+  context.visitAncestorElements((ancestor) {
+    within = within || identical(ancestor, target);
+    return !within;
+  });
+  return within;
 }
 
 /// A layout store that answers with [stored], or after [hold].

@@ -338,17 +338,19 @@ class _GameBrowsePage extends StatelessWidget {
                   else ...[
                     // One scope for the list and the grid, so a game's focus
                     // follows its item between top level and under its base
-                    // game (#769, #711).
+                    // game (#769, #711). It asks what was placed whether a
+                    // game is still in its place: a focused item that left
+                    // with no item built in its place, its game still there,
+                    // scrolled out of the lazy list, and hands its focus to
+                    // no other copy (#819).
                     BgeFocusHandoffScope(
-                      child: SliverMainAxisGroup(
-                        slivers: [
-                          if (thumbnails)
-                            _BrowseCovers(
-                              placed: placed!,
+                      isShown: _isShownIn(placed!, rows: rows),
+                      child: thumbnails
+                          ? _BrowseCovers(
+                              placed: placed,
                               onQuickLook: onQuickLook,
                             )
-                          else
-                            BgeKeyedSliverList<_BrowseItem>(
+                          : BgeKeyedSliverList<_BrowseItem>(
                               items: rows!,
                               keyOf: (item) => item.parent == null
                                   ? GameBrowseScreen.rowKey(item.game.id)
@@ -362,8 +364,6 @@ class _GameBrowsePage extends StatelessWidget {
                                 child: _BrowseRow(item: item, onOpen: onOpen),
                               ),
                             ),
-                        ],
-                      ),
                     ),
                     SliverToBoxAdapter(child: _MoreFooter(state: state)),
                   ],
@@ -460,6 +460,33 @@ List<_BrowseItem> _browseRows(List<PlacedGame<Game>> placed) => [
       _BrowseItem(expansion, parent: top.item),
   ],
 ];
+
+/// The hand-off scope's lookup (#819): whether the screen shows a game at a
+/// place, its item built or not, by the place the game's `BgeFocusHandoff`
+/// names.
+///
+/// In the list, [rows]: each game under its base game, or at top level. In
+/// thumbnails, with [rows] null, [placed]: each top-level cover, and the
+/// covers in each base game's strip. The scope asks only once a focused item
+/// has left, so the list's lookup builds its set then, as the grid's does.
+bool Function(Object identity, Object? place) _isShownIn(
+  List<PlacedGame<Game>> placed, {
+  List<_BrowseItem>? rows,
+}) {
+  if (rows == null) {
+    return BgeUnfoldingCovers.isShownIn(
+      placed,
+      idOf: (top) => top.item.id,
+      stripIdsOf: (top) => [
+        for (final expansion in top.expansions) expansion.id,
+      ],
+    );
+  }
+  Set<(Object, Object?)>? shown;
+  return (identity, place) => (shown ??= {
+    for (final row in rows) (row.game.id, row.parent?.id),
+  }).contains((identity, place));
+}
 
 /// Which order to list the games in.
 ///
@@ -608,7 +635,7 @@ class _BrowseStrip extends StatelessWidget {
           BgeFocusHandoff(
             key: GameBrowseScreen.nestedTileKey(parent.id, game.id),
             identity: game.id,
-            place: 'strip:${parent.id}',
+            place: BgeUnfoldingCovers.stripPlace(parent.id),
             child: _BrowseTile(
               game: game,
               parent: parent,

@@ -140,12 +140,20 @@ void main() {
 
   /// A page with a button above the list, so that the page's focus history
   /// holds something besides the game's item, as a real page's does.
-  Future<void> show(WidgetTester tester, List<_Item> initial) async {
+  ///
+  /// [isShown] is the scope's, and [controller] the page's scroll.
+  Future<void> show(
+    WidgetTester tester,
+    List<_Item> initial, {
+    bool Function(Object identity, Object? place)? isShown,
+    ScrollController? controller,
+  }) async {
     items.value = initial;
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
           body: CustomScrollView(
+            controller: controller,
             slivers: [
               SliverToBoxAdapter(
                 child: Row(
@@ -164,6 +172,7 @@ void main() {
                 ),
               ),
               BgeFocusHandoffScope(
+                isShown: isShown,
                 child: SliverMainAxisGroup(
                   slivers: [
                     ValueListenableBuilder<List<_Item>>(
@@ -551,6 +560,226 @@ void main() {
         expect(other.hasPrimaryFocus, isTrue);
         expect(control(tester, 'Wingspan copies').hasFocus, isFalse);
       });
+    }
+  });
+
+  group('a scroll-out (#819)', () {
+    late ScrollController controller;
+
+    setUp(() => controller = ScrollController());
+    tearDown(() => controller.dispose());
+
+    /// Whether the list has the game [identity] at [place], built or not, as
+    /// a screen's lookup over what it placed says.
+    bool shown(Object identity, Object? place) =>
+        items.value.any((item) => item.game == identity && item.place == place);
+
+    /// Wingspan under the base game a, at the top, and under b, at the end:
+    /// more than a screen and the list's cache apart.
+    List<_Item> twoPlaces() => [
+      _line('a'),
+      _row('row-g-a', 'Wingspan under a', place: 'a'),
+      for (var i = 0; i < 40; i++) _line('line $i'),
+      _line('b'),
+      _row('row-g-b', 'Wingspan under b', place: 'b'),
+    ];
+
+    /// Jumps the page to its end, where Wingspan under b is built and
+    /// Wingspan under a is out of the list's cache.
+    Future<void> scrollOut(WidgetTester tester) async {
+      expect(find.text('Wingspan under b', skipOffstage: false), findsNothing);
+      controller.jumpTo(controller.position.maxScrollExtent);
+      await tester.pumpAndSettle();
+      expect(find.text('Wingspan under a', skipOffstage: false), findsNothing);
+      expect(find.text('Wingspan under b'), findsOneWidget);
+    }
+
+    testWidgets('a focused item scrolled out of the cache while its game is '
+        'still shown hands nothing on', (tester) async {
+      await show(tester, twoPlaces(), isShown: shown, controller: controller);
+      await focus(tester, 'Wingspan under a');
+
+      await scrollOut(tester);
+
+      expect(control(tester, 'Wingspan under b').hasFocus, isFalse);
+    });
+
+    testWidgets('without isShown, a scroll-out still hands focus to the other '
+        'copy', (tester) async {
+      await show(tester, twoPlaces(), controller: controller);
+      await focus(tester, 'Wingspan under a');
+
+      await scrollOut(tester);
+
+      expect(control(tester, 'Wingspan under b').hasPrimaryFocus, isTrue);
+    });
+
+    // Measured, for the scope's doc: the framework's choice.
+    group('where focus goes on a scroll-out', () {
+      testWidgets('to the control the page focused most recently that is '
+          'still built, even off screen', (tester) async {
+        await show(tester, twoPlaces(), isShown: shown, controller: controller);
+        await focus(tester, 'Wingspan under a');
+
+        await scrollOut(tester);
+
+        // The button above the list, off screen at the page's top. A button
+        // doesn't scroll itself into view, and the scope scrolls nothing.
+        expect(FocusManager.instance.primaryFocus, other);
+        expect(controller.offset, controller.position.maxScrollExtent);
+      });
+
+      testWidgets('to the page, when it focused nothing else before', (
+        tester,
+      ) async {
+        await show(tester, twoPlaces(), isShown: shown, controller: controller);
+        final page = FocusScope.of(pageContext(tester));
+        control(tester, 'Wingspan under a').requestFocus();
+        await tester.pump();
+
+        await scrollOut(tester);
+
+        expect(FocusManager.instance.primaryFocus, page);
+      });
+    });
+
+    testWidgets('an item whose place has left the list hands focus to the '
+        'copy elsewhere', (tester) async {
+      await show(tester, [
+        _line('p2'),
+        _row('row-g-p2', 'Wingspan under p2', place: 'p2'),
+        _line('p1'),
+        _row('row-g-p1', 'Wingspan under p1', place: 'p1'),
+      ], isShown: shown);
+      await focus(tester, 'Wingspan under p1');
+
+      // The base game p1 has gone, and the copy under it with it.
+      items.value = [
+        _line('p2'),
+        _row('row-g-p2', 'Wingspan under p2', place: 'p2'),
+      ];
+      await tester.pump();
+
+      expect(control(tester, 'Wingspan under p2').hasPrimaryFocus, isTrue);
+    });
+
+    // A replacement in the game's place, where the game is still shown, and
+    // a scroll-out look the same as the item leaves. Only the replacement is
+    // built by the frame's end. A game that leaves its place for another
+    // hands focus on as before.
+    group('the replacement still takes focus', () {
+      final cases = <(String, List<_Item>, String, List<_Item>, String)>[
+        (
+          'in its place at top level',
+          [_line('a'), _row('row-g', 'Wingspan')],
+          'Wingspan',
+          [_line('a'), _stack('stack-g', 'Wingspan copies')],
+          'Wingspan copies',
+        ),
+        (
+          'in its place under its base game',
+          [_line('p'), _row('row-g-p', 'Wingspan', place: 'p')],
+          'Wingspan',
+          [_line('p'), _stack('stack-g-p', 'Wingspan copies', place: 'p')],
+          'Wingspan copies',
+        ),
+        (
+          'in its place, with a copy in another place built first',
+          [
+            _line('p2'),
+            _row('row-g-p2', 'Wingspan under p2', place: 'p2'),
+            _line('p1'),
+            _row('row-g-p1', 'Wingspan under p1', place: 'p1'),
+          ],
+          'Wingspan under p1',
+          [
+            _line('p2'),
+            _stack('stack-g-p2', 'Wingspan copies under p2', place: 'p2'),
+            _line('p1'),
+            _stack('stack-g-p1', 'Wingspan copies under p1', place: 'p1'),
+          ],
+          'Wingspan copies under p1',
+        ),
+        (
+          'moving from top level to under its base game',
+          [_line('a'), _line('b'), _row('row-g', 'Wingspan')],
+          'Wingspan',
+          [
+            _line('a'),
+            _row('nested-g', 'Wingspan nested', place: 'a'),
+            _line('b'),
+          ],
+          'Wingspan nested',
+        ),
+      ];
+      for (final (name, before, focused, after, replacement) in cases) {
+        testWidgets(name, (tester) async {
+          await show(tester, before, isShown: shown);
+          await focus(tester, focused);
+
+          items.value = after;
+          await tester.pump();
+
+          expect(control(tester, replacement).hasPrimaryFocus, isTrue);
+          await tester.pumpAndSettle();
+          expect(control(tester, replacement).hasPrimaryFocus, isTrue);
+        });
+      }
+    });
+
+    for (final lookup in [true, false]) {
+      testWidgets(
+        lookup
+            ? 'a game moved past the cache under a pop-up is left to the '
+                  'framework by the pop'
+            : 'without isShown, a game moved past the cache under a pop-up '
+                  'gives the pop to the other copy',
+        (tester) async {
+          await show(tester, [
+            _line('b'),
+            _row('row-g-b', 'Wingspan under b', place: 'b'),
+            _line('a'),
+            _row('row-g-a', 'Wingspan under a', place: 'a'),
+          ], isShown: lookup ? shown : null);
+          await focus(tester, 'Wingspan under a');
+          late BuildContext dialog;
+          unawaited(
+            showDialog<void>(
+              context: pageContext(tester),
+              builder: (context) {
+                dialog = context;
+                return const AlertDialog(content: Text('picker'));
+              },
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          // A sync puts games above the copy under a, which moves past the
+          // list's cache, still in its place.
+          items.value = [
+            _line('b'),
+            _row('row-g-b', 'Wingspan under b', place: 'b'),
+            for (var i = 0; i < 40; i++) _line('line $i'),
+            _line('a'),
+            _row('row-g-a', 'Wingspan under a', place: 'a'),
+          ];
+          await tester.pump();
+          expect(
+            find.text('Wingspan under a', skipOffstage: false),
+            findsNothing,
+          );
+
+          Navigator.of(dialog).pop();
+          await tester.pumpAndSettle();
+
+          expect(find.text('picker'), findsNothing);
+          expect(
+            control(tester, 'Wingspan under b').hasPrimaryFocus,
+            !lookup,
+          );
+          if (lookup) expect(FocusManager.instance.primaryFocus, other);
+        },
+      );
     }
   });
 

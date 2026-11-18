@@ -67,6 +67,40 @@ final Finder _grids = find.byWidgetPredicate(
 void main() {
   const six = ['a', 'b', 'c', 'd', 'e', 'f'];
 
+  group("the hand-off scope's lookup over the covers (#819)", () {
+    // Two base games: b with the expansions x and y in its strip, c with
+    // none.
+    final isShown = BgeUnfoldingCovers.isShownIn(
+      const [
+        ('b', ['x', 'y']),
+        ('c', <String>[]),
+      ],
+      idOf: (item) => item.$1,
+      stripIdsOf: (item) => item.$2,
+    );
+
+    test('shows each cover at top level, under no place', () {
+      expect(isShown('b', null), isTrue);
+      expect(isShown('c', null), isTrue);
+      expect(isShown('x', null), isFalse);
+    });
+
+    test("shows each strip's covers in its strip, folded or open", () {
+      expect(isShown('x', BgeUnfoldingCovers.stripPlace('b')), isTrue);
+      expect(isShown('y', BgeUnfoldingCovers.stripPlace('b')), isTrue);
+      expect(isShown('x', BgeUnfoldingCovers.stripPlace('c')), isFalse);
+    });
+
+    test("a strip's place is no place a screen names itself", () {
+      expect(
+        BgeUnfoldingCovers.stripPlace('b'),
+        BgeUnfoldingCovers.stripPlace('b'),
+      );
+      expect(BgeUnfoldingCovers.stripPlace('b'), isNot('b'));
+      expect(isShown('x', 'b'), isFalse);
+    });
+  });
+
   testWidgets('folded, it is one grid', (tester) async {
     await tester.pumpWidget(hostAtSize(tester, _grid(six), size: _window));
 

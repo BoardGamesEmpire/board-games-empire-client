@@ -3285,8 +3285,9 @@ void main() {
       WidgetTester tester,
       List<GameCollectionListItem> rows, {
       void Function(BuildContext context, String entryId)? onOpen,
+      Size size = const Size(400, 1600),
     }) async {
-      useViewSize(tester, const Size(400, 1600));
+      useViewSize(tester, size);
       await show(
         tester,
         rows,
@@ -3590,6 +3591,60 @@ void main() {
       });
     }
 
+    testWidgets("a focused cover scrolled out of the grid doesn't move focus "
+        "to its game's copy in an open strip (#819)", (tester) async {
+      // A standalone expansion has a cover of its own and one in its base
+      // game's strip: Animals' own cover at the top, Wingspan and its open
+      // strip at the end, more than a screen and the grid's cache apart.
+      final own = find.byKey(
+        GameCollectionListScreen.tileKey('animals-1'),
+        skipOffstage: false,
+      );
+      final inStrip = find.byKey(
+        GameCollectionListScreen.nestedTileKey('g-wingspan', 'animals-1'),
+        skipOffstage: false,
+      );
+      await showThumbnails(tester, size: const Size(400, 800), [
+        listItem(
+          'animals-1',
+          gameId: 'g-animals',
+          title: 'Animals',
+          contentType: ContentType.standaloneExpansion,
+          baseGames: const [
+            ExpansionLink(gameId: 'g-wingspan', isStandalone: true),
+          ],
+        ),
+        for (var i = 0; i < 20; i++)
+          listItem('f-$i', gameId: 'g-f$i', title: 'Filler $i'),
+        listItem('wingspan-1', gameId: 'g-wingspan', title: 'Wingspan'),
+      ]);
+      await scrollListToEnd(tester, tile('wingspan-1'));
+      await tester.tap(badgeOf(tile('wingspan-1')));
+      await tester.pumpAndSettle();
+      // A strip isn't built lazily, so its covers stay built at the top.
+      await scrollPageToTop(tester);
+      expect(own, findsOneWidget);
+      expect(inStrip, findsOneWidget);
+      Focus.of(
+        tester.element(
+          find
+              .descendant(
+                of: find.descendant(of: own, matching: find.byType(InkWell)),
+                matching: find.byType(MouseRegion),
+              )
+              .first,
+        ),
+      ).requestFocus();
+      await tester.pump();
+      expect(_focusIsWithin(tester, own), isTrue);
+
+      await scrollListToEnd(tester, tile('wingspan-1'));
+
+      expect(own, findsNothing);
+      expect(inStrip, findsOneWidget);
+      expect(_focusIsWithin(tester, inStrip), isFalse);
+    });
+
     testWidgets('the strip folds when its game goes', (tester) async {
       await showThumbnails(tester, [base, expansion, other]);
       await tester.tap(badgeOf(tile('base-1')));
@@ -3781,6 +3836,44 @@ void main() {
         expect(_focusIsWithin(tester, entry), isTrue);
       });
     }
+
+    testWidgets("a focused nested row scrolled out of the list doesn't move "
+        "focus to its game's other copy (#819)", (tester) async {
+      const bothBases = [
+        ExpansionLink(gameId: 'g-wingspan', isStandalone: false),
+        ExpansionLink(gameId: 'g-azul', isStandalone: false),
+      ];
+      // Wingspan at the top and Azul at the end, with the expansion under
+      // each: more than a screen and the list's cache apart.
+      await show(tester, [
+        catan,
+        wingspan('e-1', 'Tabletop'),
+        for (var i = 0; i < 30; i++) listItem('f-$i', title: 'Filler $i'),
+        listItem('azul-1', gameId: 'g-azul', title: 'Azul'),
+        listItem(
+          'x-1',
+          gameId: 'g-exp',
+          title: 'European Expansion',
+          contentType: ContentType.expansion,
+          baseGames: bothBases,
+        ),
+      ], onOpen: (_, _) {});
+      final near = find.byKey(
+        GameCollectionListScreen.nestedRowKey('g-wingspan', 'x-1'),
+        skipOffstage: false,
+      );
+      final far = find.byKey(
+        GameCollectionListScreen.nestedRowKey('g-azul', 'x-1'),
+        skipOffstage: false,
+      );
+      expect(far, findsNothing);
+      await focus(tester, near);
+
+      await scrollListToEnd(tester, far);
+
+      expect(near, findsNothing);
+      expect(_focusIsWithin(tester, far), isFalse);
+    });
 
     testWidgets('a mouse-clicked stack reduced to one entry leaves the tile '
         'focused without a ring or a tint', (tester) async {
