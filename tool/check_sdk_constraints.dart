@@ -84,9 +84,12 @@
 // takes the web ones (web_platform, web_storage, web_network), and
 // every other app (apps/mobile, apps/desktop) the native ones, all behind
 // shared interfaces. A native app that reaches a web package compiles its
-// `dart:js_interop` code into a binary that can never run it. This
-// walks each native app's dependencies and fails on any chain that ends
-// at a web package.
+// `dart:js_interop` code into a binary that can never run it. The reverse
+// holds too: the browser app reaching a native-only package (native_network,
+// native_platform, key_storage) compiles native code, and token custody,
+// into a bundle that has no use for it (#62). This walks each native app's
+// dependencies, and apps/browser's, and fails on any chain that ends at a
+// package of the other platform.
 //
 // It follows each dependency named for a workspace member, since that is
 // what pub resolves it to: a `path:` dependency must carry the name of the
@@ -487,14 +490,14 @@ void main(List<String> args) {
   }
 
   if (separationProblems.isNotEmpty) {
-    stderr.writeln('Native apps reach a web implementation:');
+    stderr.writeln("An app reaches the other platform's implementation:");
     for (final p in separationProblems) {
       stderr.writeln('  $p');
     }
     stderr.writeln(
-      '\nWeb implementations are compiled only into apps/browser. Depend on '
-      'the shared interface (storage_interface, network_interface) instead '
-      '— this check does not rewrite it for you.',
+      '\nWeb implementations are compiled only into apps/browser, and native '
+      'ones never are. Depend on the shared interface (storage_interface, '
+      'network_interface) instead — this check does not rewrite it for you.',
     );
   }
 
@@ -535,8 +538,8 @@ void main(List<String> args) {
       'the root (Flutter $pin, sdk $expectedSdk, publish_to none, the root '
       'analysis_options in every package, version '
       '$expectedVersion in ${apps.length} apps and $manifestCount native '
-      'manifests, the Flutter release digest, and no native app reaching a '
-      'web implementation).',
+      'manifests, the Flutter release digest, and no app reaching the other '
+      "platform's implementation).",
     );
     return;
   }
@@ -1316,13 +1319,18 @@ void _selfTest() {
   );
 
   // A workspace for the separation check: each member's directory and
-  // pubspec, the web packages under their real names.
+  // pubspec, the web and native-only packages under their real names.
   List<String> separation(
     Map<String, String> pubspecs,
   ) => _platformSeparationProblems({
     'packages/platform/web': loadYaml('name: web_platform\n') as YamlMap,
     'packages/storage/web_storage': loadYaml('name: web_storage\n') as YamlMap,
     'packages/network/web_network': loadYaml('name: web_network\n') as YamlMap,
+    'packages/network/native_network':
+        loadYaml('name: native_network\n') as YamlMap,
+    'packages/platform/native_platform':
+        loadYaml('name: native_platform\n') as YamlMap,
+    'packages/storage/key_storage': loadYaml('name: key_storage\n') as YamlMap,
     for (final MapEntry(:key, :value) in pubspecs.entries)
       key: loadYaml(value) as YamlMap,
   });
@@ -1441,6 +1449,86 @@ void _selfTest() {
       'apps/browser/plugin':
           'name: plugin\ndependencies:\n'
           '  web_platform:\n    path: ../../../packages/platform/web\n',
+    }),
+    <String>[],
+  );
+
+  expect(
+    'separation: the browser app reaching a native package directly',
+    separation({
+      'apps/browser':
+          'name: browser\ndependencies:\n'
+          '  native_network:\n    path: ../../packages/network/native_network\n',
+    }),
+    [
+      'apps/browser reaches packages/network/native_network through '
+          'packages/network/native_network',
+    ],
+  );
+
+  expect(
+    'separation: the browser app reaching a native package transitively',
+    separation({
+      'apps/browser':
+          'name: browser\ndependencies:\n  a:\n    path: ../../packages/a\n',
+      'packages/a':
+          'name: a\ndependencies:\n'
+          '  key_storage:\n    path: ../storage/key_storage\n',
+    }),
+    [
+      'apps/browser reaches packages/storage/key_storage through '
+          'packages/a -> packages/storage/key_storage',
+    ],
+  );
+
+  expect(
+    "separation: a bare dependency on a native member's name",
+    separation({
+      'apps/browser':
+          'name: browser\ndependencies:\n'
+          '  app_shell:\n    path: ../../packages/app_shell\n',
+      'packages/app_shell':
+          'name: app_shell\ndependencies:\n  native_platform: any\n',
+    }),
+    [
+      'apps/browser reaches packages/platform/native_platform through '
+          'packages/app_shell -> packages/platform/native_platform',
+    ],
+  );
+
+  expect(
+    'separation: the browser app reaching a native package by absolute path',
+    separation({
+      'apps/browser':
+          'name: browser\ndependencies:\n'
+          '  native_network:\n'
+          '    path: /work/client/packages/network/native_network\n',
+    }),
+    [
+      'apps/browser reaches packages/network/native_network through '
+          'packages/network/native_network',
+    ],
+  );
+
+  expect(
+    "separation: the browser app's dev_dependencies are ignored",
+    separation({
+      'apps/browser':
+          'name: browser\ndev_dependencies:\n'
+          '  native_network:\n    path: ../../packages/network/native_network\n',
+    }),
+    <String>[],
+  );
+
+  expect(
+    'separation: a native app may reach native packages',
+    separation({
+      'apps/mobile':
+          'name: mobile\ndependencies:\n'
+          '  native_platform:\n    path: ../../packages/platform/native_platform\n',
+      'packages/platform/native_platform':
+          'name: native_platform\ndependencies:\n'
+          '  key_storage:\n    path: ../../storage/key_storage\n',
     }),
     <String>[],
   );
@@ -1590,6 +1678,15 @@ const _webOnlyPackages = {
   'packages/network/web_network',
 };
 
+/// The native-only packages, which apps/browser may never reach (#62):
+/// token custody, native platform services and the keychain store. Their
+/// native code has no browser to run in.
+const _nativeOnlyPackages = {
+  'packages/network/native_network',
+  'packages/platform/native_platform',
+  'packages/storage/key_storage',
+};
+
 /// The one app that builds for the browser. Every other app builds for a
 /// native platform.
 const _webApp = 'apps/browser';
@@ -1600,8 +1697,9 @@ const _webApp = 'apps/browser';
 final _app = RegExp(r'^apps/[^/]+$');
 
 /// One problem per web implementation ([_webOnlyPackages]) a native app
-/// (any [_app] but [_webApp]) reaches through its
-/// `dependencies:`, each naming the chain that reaches it.
+/// (any [_app] but [_webApp]) reaches through its `dependencies:`, and per
+/// native-only package ([_nativeOnlyPackages]) [_webApp] reaches, each
+/// naming the chain that reaches it.
 ///
 /// [pubspecs] maps each member's directory, relative to the root, to its
 /// parsed pubspec. An edge is a dependency named for a member, which is
@@ -1610,7 +1708,7 @@ final _app = RegExp(r'^apps/[^/]+$');
 /// whatever it says. Any other dependency is a leaf: a hosted plugin's web
 /// half is registered, and so compiled, only for web.
 /// `dev_dependencies:` are not compiled into an app. A workspace with no
-/// native app is valid.
+/// native app, or no browser app, is valid.
 List<String> _platformSeparationProblems(Map<String, YamlMap> pubspecs) {
   final members = {
     for (final MapEntry(key: dir, value: pubspec) in pubspecs.entries)
@@ -1625,15 +1723,10 @@ List<String> _platformSeparationProblems(Map<String, YamlMap> pubspecs) {
     }
   }
 
-  final nativeApps = [
-    for (final dir in pubspecs.keys)
-      if (_app.hasMatch(dir) && dir != _webApp) dir,
-  ]..sort();
-
-  final problems = <String>[];
-  for (final app in nativeApps) {
-    // Breadth first, so each chain is a shortest one. Each package is
-    // visited once, which ends a cycle.
+  // Breadth first from [app], so each chain is a shortest one. Each package
+  // is visited once, which ends a cycle. One line per [forbidden] package
+  // reached, naming the chain.
+  List<String> reach(String app, Set<String> forbidden) {
     final cameFrom = <String, String?>{app: null};
     final order = [app];
     for (var i = 0; i < order.length; i++) {
@@ -1643,15 +1736,23 @@ List<String> _platformSeparationProblems(Map<String, YamlMap> pubspecs) {
         order.add(next);
       }
     }
-    for (final web in order.where(_webOnlyPackages.contains)) {
-      final chain = <String>[];
-      for (String? at = web; at != app; at = cameFrom[at]) {
-        chain.insert(0, at!);
-      }
-      problems.add('$app reaches $web through ${chain.join(' -> ')}');
-    }
+    return [
+      for (final hit in order.where(forbidden.contains))
+        '$app reaches $hit through ${[
+          for (String? at = hit; at != app; at = cameFrom[at]) at!,
+        ].reversed.join(' -> ')}',
+    ];
   }
-  return problems;
+
+  final nativeApps = [
+    for (final dir in pubspecs.keys)
+      if (_app.hasMatch(dir) && dir != _webApp) dir,
+  ]..sort();
+
+  return [
+    for (final app in nativeApps) ...reach(app, _webOnlyPackages),
+    if (pubspecs.containsKey(_webApp)) ...reach(_webApp, _nativeOnlyPackages),
+  ];
 }
 
 /// Whether any dependency is sourced from the Flutter SDK.
