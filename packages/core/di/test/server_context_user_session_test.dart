@@ -464,6 +464,29 @@ void main() {
       expect(context.container.get<UserProbe>().disposed, isFalse);
     });
 
+    test('background ends the user session, and activating again does not '
+        'bring it back', () async {
+      final installer = RecordingUserInstaller();
+      final context = ServerContextImpl(
+        config: _makeConfig(),
+        userInstallers: [installer],
+      );
+      addTearDown(context.dispose);
+      await context.activate();
+      await context.activateUserSession('user-a');
+
+      await context.background();
+      await context.activate();
+
+      // Active again on the server scope it kept, with no session: only an
+      // activateUserSession, which the shell makes on a sign-in, opens one.
+      expect(context.state, ServerContextState.active);
+      expect(context.activeUserId, isNull);
+      expect(context.container.get<UserSessionScope>().activeUserId, isNull);
+      expect(context.container.isRegistered<UserProbe>(), isFalse);
+      expect(installer.installs, hasLength(1));
+    });
+
     test('deactivateUserSession after background is a harmless no-op — '
         'the scope already died with the foreground', () async {
       final installer = RecordingUserInstaller();

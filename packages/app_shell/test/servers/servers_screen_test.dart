@@ -203,12 +203,21 @@ void main() {
       ),
       findsOneWidget,
     );
-    expect(
-      find.textContaining('up to 3 servers'),
-      findsNothing,
-    );
+    expect(find.textContaining('up to 3 servers'), findsNothing);
     expect(find.byType(ServersScreen), findsOneWidget);
     expect(find.text('Home route'), findsNothing);
+    // The server in use is still the one marked so, and the one picked is
+    // still not connected.
+    expect(
+      find.descendant(of: _row('alpha'), matching: find.byIcon(Icons.check)),
+      findsOneWidget,
+    );
+    expect(find.byIcon(Icons.check), findsOneWidget);
+    expect(tester.widget<ListTile>(_tileOf('alpha')).selected, isTrue);
+    expect(
+      find.descendant(of: _row('gamma'), matching: find.text('Not connected')),
+      findsOneWidget,
+    );
   });
 
   testWidgets('a pick that fails for another reason says the switch failed', (
@@ -345,7 +354,7 @@ void main() {
     semantics.dispose();
   });
 
-  group('a pick that ends after Back', () {
+  group('a pick that fails after Back', () {
     /// The manager pushed over home, with a pick of Gamma held mid-switch.
     Future<(_Harness, Completer<void>)> pickThenLeave(
       WidgetTester tester,
@@ -362,7 +371,18 @@ void main() {
       return (harness, gate);
     }
 
-    testWidgets('while the screen is leaving says nothing', (tester) async {
+    /// The failure is said over the page the user went back to, which
+    /// stays where it is.
+    void expectReasonOverHome() {
+      expect(
+        find.widgetWithText(SnackBar, "Couldn't switch servers. Try again."),
+        findsOneWidget,
+      );
+      expect(find.byType(ServersScreen), findsNothing);
+      expect(find.text('Home route'), findsOneWidget);
+    }
+
+    testWidgets('while the screen is leaving still says why', (tester) async {
       final (_, gate) = await pickThenLeave(tester);
 
       // The pick fails while the popped route is still mounted.
@@ -371,11 +391,10 @@ void main() {
       expect(find.byType(ServersScreen), findsOneWidget);
       await tester.pumpAndSettle();
 
-      expect(find.byType(SnackBar), findsNothing);
-      expect(find.text('Home route'), findsOneWidget);
+      expectReasonOverHome();
     });
 
-    testWidgets('once the screen has gone says nothing', (tester) async {
+    testWidgets('still says why', (tester) async {
       final (harness, gate) = await pickThenLeave(tester);
       await tester.pumpAndSettle();
       expect(find.byType(ServersScreen), findsNothing);
@@ -384,8 +403,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(harness.orchestrator.calls, ['connect gamma']);
-      expect(find.byType(SnackBar), findsNothing);
-      expect(find.text('Home route'), findsOneWidget);
+      expectReasonOverHome();
     });
   });
 

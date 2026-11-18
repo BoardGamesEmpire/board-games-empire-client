@@ -23,9 +23,10 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// signed out to its sign-in screen. A pick that fails says why in a
 /// SnackBar and stays; the row picked never left the focus order, so a
 /// keyboard or screen-reader user is still on it. A pick that ends after
-/// the screen has started to leave says nothing and goes nowhere. Back is
-/// the only way to leave while a pick runs: **Add server** is disabled
-/// until it ends.
+/// the screen has started to leave does the same from wherever the user
+/// went: one that lands goes home, and one that fails says why over the
+/// page showing. Back is the only way to leave while a pick runs: **Add
+/// server** is disabled until it ends.
 class ServersScreen extends StatelessWidget {
   const ServersScreen({required this.create, super.key});
 
@@ -53,16 +54,23 @@ class _ServersView extends StatelessWidget {
   const _ServersView();
 
   Future<void> _pick(BuildContext context, String serverId) async {
+    // Read before the await: Back mid-switch, or a redirect, can take the
+    // screen away while the pick runs, and its outcome still has to reach
+    // the user wherever they are. The messenger is the app's, above every
+    // page, so a failure is said over whatever page is showing.
+    final router = GoRouter.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final l10n = ShellLocalizations.of(context);
     final outcome = await context.read<ServerListCubit>().pick(serverId);
-    // Back mid-switch, or a redirect, takes the screen away while the pick
-    // runs. Leaving, it is still mounted for its exit, so ask the route.
-    if (!context.mounted || ModalRoute.isActiveOf(context) == false) return;
     switch (outcome) {
       case ServerPickDone():
-        context.go(AppRoutes.home);
+        // Whatever page the screen left was built for the server the switch
+        // just left, whose session it ended (#134). Home is built for the
+        // server now active, or the router takes a signed-out one to its
+        // sign-in screen.
+        router.go(AppRoutes.home);
       case ServerPickFailed(:final error):
-        final l10n = ShellLocalizations.of(context);
-        ScaffoldMessenger.of(context).replaceSnackBar(
+        messenger.replaceSnackBar(
           serverActivationFailureText(
             l10n,
             error,

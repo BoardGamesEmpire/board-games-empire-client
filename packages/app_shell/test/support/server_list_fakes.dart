@@ -67,7 +67,8 @@ class _FakeServerContext extends Fake implements ServerContext {}
 
 /// An orchestrator that keeps the connected servers and the active one, and
 /// switches or connects the way the real one does once [onActivate] lets it,
-/// and adds once [onAdd] does.
+/// and adds once [onAdd] does. A switch away from a server runs
+/// [onBackground] for it, where a test ends what the real one ends.
 class FakeServerOrchestrator extends Fake implements ServerOrchestrator {
   final Map<String, ServerContext> _connected = {};
   final _contexts = StreamController<Map<String, ServerContext>>.broadcast();
@@ -83,6 +84,13 @@ class FakeServerOrchestrator extends Fake implements ServerOrchestrator {
   /// Runs before a switch or a connect takes effect. A pending future holds
   /// it; a throw fails it.
   Future<void> Function(String serverId)? onActivate;
+
+  /// Runs for the server a switch, a connect or an add leaves, once the
+  /// target is ready and before it becomes active, as the real orchestrator
+  /// backgrounds the server it leaves. The real context's `background()`
+  /// ends that server's user session (#135), which nothing in this fake
+  /// does unless a test does it here.
+  Future<void> Function(String serverId)? onBackground;
 
   /// Connects [serverId] without making it active, and says so.
   void connect(String serverId) {
@@ -112,7 +120,18 @@ class FakeServerOrchestrator extends Fake implements ServerOrchestrator {
   Future<void> switchActiveServer(String targetServerId) async {
     calls.add('switch $targetServerId');
     await onActivate?.call(targetServerId);
+    final leaving = _leave(targetServerId);
+    if (leaving != null) await leaving;
     activate(targetServerId);
+  }
+
+  /// Backgrounds the active server, if [targetServerId] replaces it. Null
+  /// when there is nothing to run, so a test with no [onBackground] sees the
+  /// same turns it always did.
+  Future<void>? _leave(String targetServerId) {
+    final leaving = activeServerId;
+    if (leaving == null || leaving == targetServerId) return null;
+    return onBackground?.call(leaving);
   }
 
   /// Runs as a server is added, with its id and display name, before it
@@ -131,6 +150,8 @@ class FakeServerOrchestrator extends Fake implements ServerOrchestrator {
     final serverId = 'local-$bgeServerId';
     calls.add('add $serverId');
     await onAdd?.call(serverId, displayName);
+    final leaving = _leave(serverId);
+    if (leaving != null) await leaving;
     activate(serverId);
     return serverId;
   }
@@ -140,6 +161,8 @@ class FakeServerOrchestrator extends Fake implements ServerOrchestrator {
     calls.add('connect $serverId');
     await onActivate?.call(serverId);
     if (makeActive) {
+      final leaving = _leave(serverId);
+      if (leaving != null) await leaving;
       activate(serverId);
     } else {
       connect(serverId);

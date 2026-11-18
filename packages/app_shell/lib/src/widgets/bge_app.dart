@@ -808,15 +808,23 @@ class _BgeAppState extends State<BgeApp> {
   /// Rebuilt whenever the session's user changes (#432), so a user switched
   /// in place gets a home built from their own services, and the splash
   /// until then. See [_homeSession].
+  ///
+  /// The active server is read in that rebuild, not when the route was
+  /// built: a server picked while home is already showing goes to the same
+  /// location, which builds no new page, and its session going live is
+  /// what has to bring that server's home (#134).
   Widget? _buildHomeRoute(BuildContext context) {
-    final active = widget.bootstrapCubit.activeServerScope?.active;
-    if (active == null) return null;
+    final built = widget.bootstrapCubit.activeServerScope?.active;
+    if (built == null) return null;
 
     return ValueListenableBuilder<_HomeSession>(
       valueListenable: _homeSession,
-      builder: (context, session, _) => session.switching
-          ? const SplashScreen()
-          : _buildHome(context, active),
+      builder: (context, session, _) {
+        if (session.switching) return const SplashScreen();
+        // With no server active at all, home stays the one it was.
+        final active = widget.bootstrapCubit.activeServerScope?.active ?? built;
+        return _buildHome(context, active);
+      },
     );
   }
 
