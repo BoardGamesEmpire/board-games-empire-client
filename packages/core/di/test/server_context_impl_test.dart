@@ -327,6 +327,20 @@ void main() {
       expect(scoped.container.get<Probe>().disposed, isFalse);
     });
 
+    // #583: a provider sign-in left open on a server switched away from
+    // resolves that server's services when its callback arrives.
+    test("background keeps the server scope's registrations alive, so a "
+        'sign-in still open finishes on its own server', () async {
+      await scoped.activate();
+      final probe = scoped.container.get<Probe>();
+
+      await scoped.background();
+
+      expect(scoped.container.isRegistered<Probe>(), isTrue);
+      expect(scoped.container.get<Probe>(), same(probe));
+      expect(probe.disposed, isFalse);
+    });
+
     test(
       'suspend disposes the scope (registration dispose callbacks run)',
       () async {

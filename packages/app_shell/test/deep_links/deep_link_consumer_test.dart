@@ -75,6 +75,7 @@ void main() {
 
   DeepLinkConsumer buildConsumer({
     void Function(DeepLinkFailure failure)? onFailure,
+    bool Function(String localId)? isSignedInOn,
   }) {
     final consumer = DeepLinkConsumer(
       holder: holder,
@@ -83,6 +84,7 @@ void main() {
       orchestrator: () => boundOrchestrator,
       go: gone.add,
       onFailure: onFailure,
+      isSignedInOn: isSignedInOn,
     );
     addTearDown(consumer.dispose);
     return consumer;
@@ -417,6 +419,86 @@ void main() {
 
         verify(() => orchestrator.switchActiveServer('local-1')).called(1);
         expect(holder.peek, link);
+      },
+    );
+
+    // #985: a server switched back to before the auth scope rebuilt keeps
+    // its signed-in bloc, so no sign-in outcome will come to drain.
+    test(
+      'after a switch to a server already signed in, the link lands at once',
+      () async {
+        connectedInactiveServerSwitchCommits();
+        buildConsumer(isSignedInOn: (localId) => localId == 'local-1').start();
+        await pumpEventQueue();
+
+        holder.set(link);
+        await pumpEventQueue();
+
+        verify(() => orchestrator.switchActiveServer('local-1')).called(1);
+        expect(gone, [link.location]);
+        expect(holder.peek, isNull);
+      },
+    );
+
+    test(
+      'after a switch to a server not signed in, it waits as before',
+      () async {
+        connectedInactiveServerSwitchCommits();
+        // Signed in on the server being left, not the target.
+        final consumer = buildConsumer(
+          isSignedInOn: (localId) => localId == 'local-0',
+        )..start();
+        await pumpEventQueue();
+
+        holder.set(link);
+        await pumpEventQueue();
+
+        verify(() => orchestrator.switchActiveServer('local-1')).called(1);
+        expect(gone, isEmpty);
+        expect(holder.peek, link);
+
+        await consumer.drain();
+
+        expect(gone, [link.location]);
+        expect(holder.peek, isNull);
+      },
+    );
+
+    test(
+      'a newer link arriving during a switch back to a signed-in server '
+      'still lands',
+      () async {
+        const newer = NormalizedDeepLink(
+          serverId: 'bge-1',
+          location: '/server/bge-1/event/e2',
+        );
+        connectedInactiveServer();
+        var active = 'local-0';
+        when(() => orchestrator.activeServerId).thenAnswer((_) => active);
+        final switching = Completer<void>();
+        when(() => orchestrator.switchActiveServer(any())).thenAnswer((
+          invocation,
+        ) async {
+          active = invocation.positionalArguments.single as String;
+          await switching.future;
+        });
+        buildConsumer(isSignedInOn: (localId) => localId == 'local-1').start();
+        await pumpEventQueue();
+
+        holder.set(link);
+        await pumpEventQueue();
+        verify(() => orchestrator.switchActiveServer('local-1')).called(1);
+
+        holder.set(newer);
+        await pumpEventQueue();
+        switching.complete();
+        await pumpEventQueue();
+
+        // The older link's pass finds itself replaced, and the newer link's
+        // pass finds its server active: no wait is left behind for it.
+        expect(gone, [newer.location]);
+        expect(holder.peek, isNull);
+        verifyNever(() => orchestrator.switchActiveServer(any()));
       },
     );
 

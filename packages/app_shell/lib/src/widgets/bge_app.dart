@@ -430,6 +430,14 @@ class _BgeAppState extends State<BgeApp> {
   /// Null when there is no holder.
   DeepLinkConsumer? _deepLinkConsumer;
 
+  /// The server [_AuthScope]'s mounted bloc is signed in on, or null (#985).
+  /// [_deepLinkConsumer] reads it after a server switch.
+  ///
+  /// A plain field: nothing rebuilds on it, and it must not, because the
+  /// scope clears it from the bloc provider's `create`, which runs during
+  /// build.
+  String? _signedInServerId;
+
   @override
   void initState() {
     super.initState();
@@ -504,6 +512,7 @@ class _BgeAppState extends State<BgeApp> {
         orchestrator: () => widget.bootstrapCubit.orchestrator,
         go: _landDeepLink,
         onFailure: _onDeepLinkFailure,
+        isSignedInOn: (localId) => localId == _signedInServerId,
       )..start();
     }
     // #76/#105: keep the review slot honest whenever the crash draft
@@ -674,6 +683,7 @@ class _BgeAppState extends State<BgeApp> {
     scope: widget.bootstrapCubit.activeServerScope,
     onAuthenticated: _onAuthenticated,
     onSignedOut: widget.bootstrapCubit.onSignedOut,
+    onSignedInServer: (serverId) => _signedInServerId = serverId,
     connectivity: _rootConnectivity(),
     unsentChanges: _unsentChanges,
     homeSession: _homeSession,
@@ -3498,6 +3508,7 @@ class _AuthScope extends StatefulWidget {
     required this.scope,
     required this.onAuthenticated,
     required this.onSignedOut,
+    required this.onSignedInServer,
     required this.unsentChanges,
     required this.homeSession,
     required this.child,
@@ -3507,6 +3518,12 @@ class _AuthScope extends StatefulWidget {
   final ActiveServerScope? scope;
   final VoidCallback onAuthenticated;
   final VoidCallback onSignedOut;
+
+  /// Told the server the mounted bloc is signed in on, just before
+  /// [onAuthenticated], and null when that bloc is replaced, signs out, or
+  /// goes with no server left active (#985). Called during build, so the
+  /// receiver must not rebuild on it.
+  final ValueChanged<String?> onSignedInServer;
 
   /// Device-global connectivity from the root container (#98); null on
   /// compositions without it. Handed to the [AuthBloc], which owns every
@@ -3584,7 +3601,12 @@ class _AuthScopeState extends State<_AuthScope> {
       initialData: scope.active,
       builder: (context, snapshot) {
         final active = snapshot.data;
-        if (active == null) return widget.child;
+        if (active == null) {
+          // The last active server went and none replaced it: no bloc is
+          // mounted to be signed in, and the one that was is gone (#985).
+          widget.onSignedInServer(null);
+          return widget.child;
+        }
 
         return BlocProvider<AuthBloc>(
           // Keyed on serverId: a switch unmounts the old bloc (closing it
@@ -3596,17 +3618,27 @@ class _AuthScopeState extends State<_AuthScope> {
           // session check is dispatched on creation so every freshly-keyed
           // bloc restores its own server's session.
           key: ValueKey('auth_bloc_${active.serverId}'),
-          create: (_) => AuthBloc(
-            // Required, so unguarded: every active server has one, and both
-            // compositions register it unconditionally (native through its
-            // network scope installer, web in registerServerNetworkWeb), as
-            // network_scope_installer_test and
-            // bootstrap_web_server_scope_test pin.
-            // A throw here is the first visible symptom of #174's race, and
-            // degrading it to a placeholder would hide that (#219).
-            authRepository: active.container.get<AuthRepository>(),
-            connectivity: widget.connectivity,
-          )..add(const AuthSessionCheckRequested()),
+          create: (_) {
+            // A fresh bloc has signed in nowhere yet (#985). The listener
+            // below reads the bloc in this same build, so this runs on
+            // every key change, during build.
+            widget.onSignedInServer(null);
+            return AuthBloc(
+              // Required, so unguarded: every active server has one, and
+              // both compositions register it unconditionally (native
+              // through its network scope installer, web in
+              // registerServerNetworkWeb), as network_scope_installer_test
+              // and bootstrap_web_server_scope_test pin.
+              // A throw here means the active server's network scope is
+              // gone: a composition that never installed it, or a context
+              // torn down while still active. The orchestrator's command
+              // queue keeps a backgrounding timer's suspend off an active
+              // server (#174), so either is a bug, and degrading it to a
+              // placeholder would hide it (#219).
+              authRepository: active.container.get<AuthRepository>(),
+              connectivity: widget.connectivity,
+            )..add(const AuthSessionCheckRequested());
+          },
           child: BlocListener<AuthBloc, AuthBlocState>(
             // Entry/exit transitions only. `current is AuthAuthenticated`
             // alone was sufficient while equal Authenticated states never
@@ -3707,6 +3739,8 @@ class _AuthScopeState extends State<_AuthScope> {
                 );
               } else if (state is AuthUnauthenticated) {
                 _openSession = null;
+                // So it never names a server that is signed out (#985).
+                widget.onSignedInServer(null);
                 widget.unsentChanges.sessionEnded(
                   active,
                   deliberately: state.cause == SignOutCause.user,
@@ -3898,6 +3932,13 @@ class _AuthScopeState extends State<_AuthScope> {
     // gone, and the notifier with it, while a route builds home afresh
     // anyway.
     if (mounted) widget.homeSession.value = (userId: userId, switching: false);
+    // After the checks above, so this publishes only while the server is
+    // still active, its bloc still signed in as this user and that user's
+    // scope live, and only while this scope is mounted. The epoch isn't
+    // checked: a handler a same-user sign-in superseded publishes the same
+    // server, which is still true. Ahead of the gate callback, whose drain
+    // may read it (#985).
+    if (mounted) widget.onSignedInServer(active.serverId);
     try {
       widget.onAuthenticated();
     } on Object catch (error, stackTrace) {
