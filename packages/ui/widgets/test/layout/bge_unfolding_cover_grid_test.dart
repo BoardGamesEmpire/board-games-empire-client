@@ -1,5 +1,7 @@
 import 'package:bge_test_support/widgets.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
@@ -63,6 +65,19 @@ Finder _tile(String name) => find.byKey(ValueKey(name));
 final Finder _grids = find.byWidgetPredicate(
   (widget) => widget is BgeKeyedSliverGrid,
 );
+
+/// Whether the expansions badge [badge] finds draws its focus ring.
+bool _ringShown(WidgetTester tester, Finder badge) {
+  final ring = tester.widget<DecoratedBox>(
+    find
+        .descendant(
+          of: find.descendant(of: badge, matching: find.byType(BgeFocusRing)),
+          matching: find.byType(DecoratedBox),
+        )
+        .first,
+  );
+  return (ring.decoration as BoxDecoration).border != null;
+}
 
 void main() {
   const six = ['a', 'b', 'c', 'd', 'e', 'f'];
@@ -352,5 +367,431 @@ void main() {
         expect(find.text('b'), findsOneWidget);
       });
     }
+  });
+
+  group('an opened strip is scrolled into view (#818)', () {
+    const names = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
+
+    /// Two columns of 196dp covers 8dp apart, so the rows start at 0, 204,
+    /// 408 and 612 in a 500dp view: c's row is the last one wholly in view,
+    /// and a strip under it starts at 408, crossing the fold.
+    const window = Size(400, 500);
+    const stripHeight = 120.0;
+
+    late ScrollController controller;
+
+    setUp(() => controller = ScrollController());
+    tearDown(() => controller.dispose());
+
+    /// Covers that open their strips from their badges, as Games and
+    /// Collection draw them. A strip is [stripHeight] tall, or as
+    /// [stripHeights] says for its item.
+    Widget covers({
+      List<String> items = names,
+      double stripHeight = stripHeight,
+      Map<String, double> stripHeights = const {},
+    }) => Scaffold(
+      body: CustomScrollView(
+        controller: controller,
+        slivers: [
+          BgeUnfoldingCovers<String>(
+            items: items,
+            keyOf: ValueKey.new,
+            idOf: (name) => name,
+            hasStrip: (_) => true,
+            itemBuilder: (context, name, toggle, {required unfolded}) =>
+                BgeCoverTile(
+                  label: name,
+                  extent: null,
+                  onTap: () {},
+                  expansions: BgeCoverExpansions(
+                    count: 1,
+                    expanded: unfolded,
+                    onToggle: toggle,
+                    label: '$name expansions, 1',
+                    showLabel: 'Show expansions',
+                    hideLabel: 'Hide expansions',
+                  ),
+                ),
+            stripBuilder: (context, name) => SizedBox(
+              key: _stripKey,
+              height: stripHeights[name] ?? stripHeight,
+              child: Text('strip of $name'),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    /// Hosts [child] in [window], with the OS asking for reduced motion
+    /// when [reduceMotion].
+    Widget host(
+      WidgetTester tester,
+      Widget child, {
+      bool reduceMotion = false,
+    }) => hostAtSize(
+      tester,
+      child,
+      size: window,
+      builder: reduceMotion
+          ? (context, child) => MediaQuery(
+              data: MediaQuery.of(
+                context,
+              ).copyWith(disableAnimations: true),
+              child: child!,
+            )
+          : null,
+    );
+
+    Finder badge(String name) => find.descendant(
+      of: _tile(name),
+      matching: find.byKey(BgeCoverTile.expansionsBadgeKey),
+    );
+    Rect viewport(WidgetTester tester) =>
+        tester.getRect(find.byType(CustomScrollView));
+    Rect strip(WidgetTester tester) => tester.getRect(find.byKey(_stripKey));
+
+    testWidgets('opening a strip on the last visible row scrolls it into '
+        'view', (tester) async {
+      await tester.pumpWidget(host(tester, covers()));
+
+      await tester.tap(badge('c'));
+      await tester.pump();
+      expect(
+        controller.position.isScrollingNotifier.value,
+        isTrue,
+        reason: 'it animates',
+      );
+      await tester.pumpAndSettle();
+
+      // The shortest distance: the strip's bottom at the view's.
+      expect(strip(tester).bottom, moreOrLessEquals(viewport(tester).bottom));
+      expect(
+        tester.getRect(_tile('c')).top,
+        greaterThanOrEqualTo(viewport(tester).top),
+      );
+    });
+
+    testWidgets('an open while another strip is open is revealed too', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        host(tester, covers(stripHeights: {'a': 40, 'c': 200})),
+      );
+      // a's strip, in view, pushes c's row down to 252..448, the last row
+      // wholly in view. c's tile moves into the first grid as its own strip
+      // opens, and is built again there.
+      await tester.tap(badge('a'));
+      await tester.pumpAndSettle();
+      expect(controller.position.pixels, 0);
+
+      await tester.tap(badge('c'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('strip of c'), findsOneWidget);
+      expect(strip(tester).bottom, moreOrLessEquals(viewport(tester).bottom));
+      expect(
+        tester.getRect(_tile('c')).top,
+        greaterThanOrEqualTo(viewport(tester).top),
+      );
+    });
+
+    testWidgets('an open that a strip above it, closing, moves above the '
+        "view scrolls back to the tapped row's top", (tester) async {
+      // Rows enough under e's that the page can't clamp as a's strip goes.
+      await tester.pumpWidget(
+        host(
+          tester,
+          covers(
+            items: [...names, 'i', 'j', 'k', 'l', 'm', 'n'],
+            stripHeights: {'a': 300},
+          ),
+        ),
+      );
+      await tester.tap(badge('a'));
+      await tester.pumpAndSettle();
+      // e's row, a row under c's and not built yet, about 50dp under the
+      // view's top, its badge in view, and a's strip above it. c's row is
+      // built, under the view's bottom.
+      controller.jumpTo(
+        controller.offset +
+            tester
+                .getRect(find.byKey(const ValueKey('c'), skipOffstage: false))
+                .top +
+            204 -
+            viewport(tester).top -
+            50,
+      );
+      await tester.pump();
+      expect(
+        tester.getRect(_tile('e')).top,
+        inInclusiveRange(viewport(tester).top, viewport(tester).top + 100),
+      );
+
+      // a's strip folds as e's opens, and e's row moves up by its height,
+      // out of the view, with the top of e's strip.
+      await tester.tap(badge('e'));
+      await tester.pump();
+      expect(strip(tester).top, lessThan(viewport(tester).top));
+      await tester.pumpAndSettle();
+
+      expect(find.text('strip of a'), findsNothing);
+      expect(find.text('strip of e'), findsOneWidget);
+      expect(
+        tester.getRect(_tile('e')).top,
+        moreOrLessEquals(viewport(tester).top),
+      );
+      expect(strip(tester).bottom, lessThanOrEqualTo(viewport(tester).bottom));
+    });
+
+    testWidgets('with reduced motion the reveal jumps', (tester) async {
+      await tester.pumpWidget(host(tester, covers(), reduceMotion: true));
+
+      await tester.tap(badge('c'));
+      await tester.pump();
+
+      final position = controller.position;
+      expect(position.isScrollingNotifier.value, isFalse);
+      final jumped = position.pixels;
+      expect(jumped, greaterThan(0));
+
+      await tester.pumpAndSettle();
+      expect(position.pixels, jumped, reason: 'nothing moves after the jump');
+      expect(strip(tester).bottom, moreOrLessEquals(viewport(tester).bottom));
+    });
+
+    testWidgets("the reveal moves over the motion tokens' medium duration", (
+      tester,
+    ) async {
+      await tester.pumpWidget(host(tester, covers()));
+      final medium = BgeTokens.of(
+        tester.element(find.byType(CustomScrollView)),
+      ).motionMedium;
+      // Well inside the gap to the short and long durations either side.
+      const margin = Duration(milliseconds: 20);
+
+      await tester.tap(badge('c'));
+      // The frame that lays the strip out, which starts the reveal after
+      // it, and the reveal's first tick, which starts its clock.
+      await tester.pump();
+      final position = controller.position;
+      expect(position.isScrollingNotifier.value, isTrue);
+      await tester.pump();
+
+      await tester.pump(medium - margin);
+      expect(
+        position.isScrollingNotifier.value,
+        isTrue,
+        reason: 'still on its way',
+      );
+      final onItsWay = position.pixels;
+
+      await tester.pump(margin * 2);
+      expect(position.isScrollingNotifier.value, isFalse, reason: 'arrived');
+      final arrived = position.pixels;
+      expect(arrived, greaterThan(onItsWay));
+      await tester.pumpAndSettle();
+      expect(position.pixels, arrived, reason: 'nothing moves after it');
+      expect(strip(tester).bottom, moreOrLessEquals(viewport(tester).bottom));
+    });
+
+    // At 100, c's row is at 104..300 and its strip ends at 428, in view.
+    // Revealing its end would take the page back to 28.
+    for (final (offset, name) in [(0.0, 'a'), (100.0, 'c')]) {
+      testWidgets("opening a strip already in view doesn't scroll, at "
+          '$offset', (tester) async {
+        await tester.pumpWidget(host(tester, covers()));
+        controller.jumpTo(offset);
+        await tester.pump();
+
+        await tester.tap(badge(name));
+        await tester.pumpAndSettle();
+
+        expect(find.text('strip of $name'), findsOneWidget);
+        expect(controller.position.pixels, offset);
+      });
+    }
+
+    for (final (why, close) in <(String, Future<void> Function(WidgetTester))>[
+      ('its badge closes it', (tester) => tester.tap(badge('c'))),
+      (
+        'its item goes',
+        (tester) async => tester.pumpWidget(
+          host(tester, covers(items: [...names]..remove('c'))),
+        ),
+      ),
+    ]) {
+      testWidgets("a strip doesn't scroll as it closes: $why", (tester) async {
+        await tester.pumpWidget(host(tester, covers()));
+        await tester.tap(badge('c'));
+        await tester.pumpAndSettle();
+        // Back to the top, where revealing c's row or its strip would move
+        // the page again.
+        controller.jumpTo(0);
+        await tester.pump();
+
+        await close(tester);
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(_stripKey), findsNothing);
+        expect(controller.position.pixels, 0);
+      });
+    }
+
+    testWidgets("a strip taller than the viewport keeps the tapped row's top "
+        'in view', (tester) async {
+      await tester.pumpWidget(host(tester, covers(stripHeight: 600)));
+
+      await tester.tap(badge('c'));
+      await tester.pumpAndSettle();
+
+      // As far as it may go: c's row at the top, and the strip's top under
+      // it.
+      expect(
+        tester.getRect(_tile('c')).top,
+        moreOrLessEquals(viewport(tester).top),
+      );
+      expect(strip(tester).top, lessThan(viewport(tester).bottom));
+    });
+
+    /// Whether keyboard focus is on the badge of [name].
+    bool badgeFocused(WidgetTester tester, String name) {
+      final focused = FocusManager.instance.primaryFocus?.context;
+      if (focused == null) return false;
+      final target = tester.element(badge(name));
+      var within = false;
+      focused.visitAncestorElements((ancestor) {
+        within = identical(ancestor, target);
+        return !within;
+      });
+      return within;
+    }
+
+    /// Focuses the badge of [name] and opens its strip with Enter, as a
+    /// keyboard user does.
+    Future<void> pressBadge(WidgetTester tester, String name) async {
+      tester
+          .widget<Focus>(
+            find
+                .descendant(
+                  of: badge(name),
+                  matching: find.byWidgetPredicate(
+                    (widget) => widget is Focus && widget.focusNode != null,
+                  ),
+                )
+                .first,
+          )
+          .focusNode!
+          .requestFocus();
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    }
+
+    for (final (how, ringed) in [
+      ('from the keyboard', true),
+      ('from a tap', false),
+    ]) {
+      testWidgets('focus stays on the badge, opened $how', (tester) async {
+        FocusManager.instance.highlightStrategy =
+            FocusHighlightStrategy.automatic;
+        await tester.pumpWidget(host(tester, covers()));
+
+        if (ringed) {
+          await pressBadge(tester, 'c');
+        } else {
+          await tester.tap(badge('c'));
+        }
+        await tester.pump();
+        expect(find.text('strip of c'), findsOneWidget);
+        expect(badgeFocused(tester, 'c'), isTrue);
+        expect(_ringShown(tester, badge('c')), ringed);
+
+        await tester.pumpAndSettle();
+
+        expect(controller.position.pixels, greaterThan(0));
+        expect(badgeFocused(tester, 'c'), isTrue);
+        expect(_ringShown(tester, badge('c')), ringed);
+      }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
+    }
+
+    for (final (why, close) in <(String, Future<void> Function(WidgetTester))>[
+      (
+        'Enter closes it',
+        (tester) => tester.sendKeyEvent(LogicalKeyboardKey.enter),
+      ),
+      (
+        'its item goes',
+        (tester) => tester.pumpWidget(
+          host(tester, covers(items: [...names]..remove('c'))),
+        ),
+      ),
+      (
+        'the covers go, as a switch to the list does',
+        (tester) => tester.pumpWidget(
+          host(
+            tester,
+            Scaffold(
+              body: CustomScrollView(
+                controller: controller,
+                slivers: const [
+                  SliverToBoxAdapter(child: SizedBox(height: 2000)),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    ]) {
+      testWidgets('a reveal stops where it is as its strip goes: $why', (
+        tester,
+      ) async {
+        await tester.pumpWidget(host(tester, covers()));
+        await pressBadge(tester, 'c');
+        // The strip's frame, then the animation's first, from which its
+        // time counts, then 40ms of it.
+        await tester.pump();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 40));
+        final position = controller.position;
+        expect(position.isScrollingNotifier.value, isTrue);
+        final stopped = position.pixels;
+        expect(stopped, inExclusiveRange(0, 28), reason: 'on its way to 28');
+
+        await close(tester);
+        await tester.pump();
+        expect(find.byKey(_stripKey), findsNothing);
+        await tester.pumpAndSettle();
+
+        expect(position.pixels, stopped);
+      });
+    }
+
+    testWidgets("Show expansions from the cover's custom action reveals the "
+        'strip too', (tester) async {
+      final handle = tester.ensureSemantics();
+      try {
+        await tester.pumpWidget(host(tester, covers()));
+        final cover = tester.getSemantics(
+          find.descendant(of: _tile('c'), matching: find.byType(BgeThumbnail)),
+        );
+
+        cover.owner!.performAction(
+          cover.id,
+          SemanticsAction.customAction,
+          CustomSemanticsAction.getIdentifier(
+            const CustomSemanticsAction(label: 'Show expansions'),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('strip of c'), findsOneWidget);
+        expect(
+          strip(tester).bottom,
+          moreOrLessEquals(viewport(tester).bottom),
+        );
+      } finally {
+        handle.dispose();
+      }
+    });
   });
 }

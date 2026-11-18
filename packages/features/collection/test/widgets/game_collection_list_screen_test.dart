@@ -3279,8 +3279,8 @@ void main() {
           ),
         );
 
-    /// Shows [rows] in thumbnails, two columns wide and tall enough for
-    /// every cover and the strip.
+    /// Shows [rows] in thumbnails, two columns wide and, unless [size] says
+    /// otherwise, tall enough for every cover and the strip.
     Future<void> showThumbnails(
       WidgetTester tester,
       List<GameCollectionListItem> rows, {
@@ -3787,6 +3787,53 @@ void main() {
       expect(strip, findsNothing);
       expect(grids, findsOneWidget);
     });
+
+    // The page's app bar is the Scaffold's, above the scroll view and not
+    // over it, so a reveal measured in the scroll view's own space leaves
+    // both the strip's bottom and the tapped row's top clear of it (#818).
+    for (final (why, height, before, fits) in [
+      ('the strip fits under its row', 700.0, 2, true),
+      ("the row and its strip don't fit", 400.0, 0, false),
+    ]) {
+      testWidgets('opening a strip on the last row scrolls it into view below '
+          'the app bar: $why', (tester) async {
+        await showThumbnails(tester, size: Size(400, height), [
+          for (var i = 0; i < before; i++)
+            listItem('a$i', gameId: 'g-a$i', title: 'Before $i'),
+          base,
+          expansion,
+          for (var i = 0; i < 6; i++)
+            listItem('z$i', gameId: 'g-z$i', title: 'After $i'),
+        ]);
+        final appBar = tester.getRect(find.byType(AppBar));
+        final page = find.byWidgetPredicate(
+          (widget) =>
+              widget is Scrollable &&
+              widget.axisDirection == AxisDirection.down,
+        );
+        final view = tester.getRect(page);
+        expect(view.top, appBar.bottom);
+        // The base game's row is the last one wholly in view.
+        final below = tester.getRect(tile('base-1')).bottom - view.bottom;
+        if (below > 0) {
+          final position = tester.state<ScrollableState>(page).position;
+          position.jumpTo(position.pixels + below);
+          await tester.pump();
+        }
+
+        await tester.tap(badgeOf(tile('base-1')));
+        await tester.pumpAndSettle();
+
+        final row = tester.getRect(tile('base-1'));
+        if (fits) {
+          expect(tester.getRect(strip).bottom, moreOrLessEquals(view.bottom));
+          expect(row.top, greaterThan(appBar.bottom));
+        } else {
+          expect(row.top, moreOrLessEquals(appBar.bottom));
+          expect(tester.getRect(strip).top, lessThan(view.bottom));
+        }
+      });
+    }
   });
 
   group('focus across forms (#769)', () {

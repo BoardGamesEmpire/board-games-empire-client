@@ -1,5 +1,9 @@
+import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart'
+    show clampDouble, precisionErrorTolerance;
+import 'package:flutter/rendering.dart' show RenderAbstractViewport;
 import 'package:flutter/widgets.dart';
 import 'package:ui/src/layout/bge_keyed_sliver_grid.dart';
 import 'package:ui_tokens/ui_tokens.dart';
@@ -27,6 +31,10 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// halves, as wide as the grid, padded by [BgeTokens.spaceSm] above and below
 /// as the rows are spaced. A base game's expansions open under its cover this
 /// way, in the grid's own scroll view.
+///
+/// The grid doesn't scroll to a strip. [stripBoxKey] lets a caller find the
+/// strip's box once it is laid out, as [BgeUnfoldingCovers] does to bring a
+/// strip it opens into view.
 ///
 /// ## Focus
 ///
@@ -56,6 +64,7 @@ class BgeUnfoldingCoverGrid<T> extends StatelessWidget {
     required this.stripBuilder,
     this.semanticIndexOffset = 0,
     this.stripKeyOf,
+    this.stripBoxKey,
     super.key,
   });
 
@@ -83,6 +92,15 @@ class BgeUnfoldingCoverGrid<T> extends StatelessWidget {
   /// a new strip. Give one that stays the same while the item's tile changes
   /// form, so the open strip keeps its scroll and focus.
   final Key Function(T item)? stripKeyOf;
+
+  /// A key put on the strip's own box, inside its padding, so that a caller
+  /// can find the strip once it is laid out. [BgeUnfoldingCovers] gives a new
+  /// one with each open, to scroll the strip that open laid out into view
+  /// (#818).
+  ///
+  /// The strip is built again when the key changes, so keep it while the
+  /// same strip stays open.
+  final Key? stripBoxKey;
 
   @override
   Widget build(BuildContext context) {
@@ -117,7 +135,10 @@ class BgeUnfoldingCoverGrid<T> extends StatelessWidget {
           key: ValueKey<Key>((stripKeyOf ?? keyOf)(item)),
           child: Padding(
             padding: EdgeInsets.symmetric(vertical: spacing),
-            child: stripBuilder(context, item),
+            child: KeyedSubtree(
+              key: stripBoxKey,
+              child: stripBuilder(context, item),
+            ),
           ),
         ),
         grid(items.sublist(rowEnd), semanticIndexOffset + rowEnd),
@@ -172,6 +193,37 @@ final class _StripPlace {
 ///   stripBuilder: (context, game) => ExpansionsShelf(game),
 /// )
 /// ```
+///
+/// ## Scrolling
+///
+/// An open brings its strip into view (#818). After the frame that lays the
+/// strip out, the scroll view moves the shortest distance that shows the
+/// whole strip, so a strip opened under the last row in view ends at the
+/// view's bottom. It never moves so far that the top of the tapped tile's
+/// row leaves the view's top, so a strip taller than the room under its row
+/// is shown from its top. A strip already in view doesn't move the page.
+/// A strip whose top is above the view's, as when the open folds a strip
+/// above it and its row moves up with everything under that strip, moves
+/// the page back until the tapped tile's row is at the view's top, which
+/// shows the strip from its top, and the control that opened it.
+///
+/// Only an open scrolls. A close doesn't, nor a strip that folds as another
+/// opens, nor one that goes with its item or with the covers, and each of
+/// them stops a reveal still on its way where it is. Under reduced motion
+/// the page jumps; otherwise it moves over [BgeTokens.motionMedium]. Focus
+/// isn't moved: it stays on the control that called `toggle`, such as the
+/// cover's badge. A cover's "Show expansions" custom action calls the same
+/// `toggle`, and scrolls the same way.
+///
+/// It isn't `Scrollable.ensureVisible`, which lines the strip up with an
+/// edge of the view: its `keepVisibleAtEnd` policy would scroll a tall
+/// strip's top, and the badge's row, off screen. The offset is worked out
+/// from the strip's box and the tile's instead, as `BgeInlineBanner` works
+/// out its own reveal.
+///
+/// The tile is found after the frame, where it was last built. A tile after
+/// an open strip is built again as its own strip opens, as it moves into
+/// the first grid, and its strip is brought into view all the same.
 class BgeUnfoldingCovers<T> extends StatefulWidget {
   /// Creates a cover grid of [items] that opens one item's strip at a time.
   const BgeUnfoldingCovers({
@@ -247,10 +299,41 @@ class _BgeUnfoldingCoversState<T> extends State<BgeUnfoldingCovers<T>> {
   /// The [BgeUnfoldingCovers.idOf] of the unfolded item, or null.
   Object? _unfolded;
 
+  /// The key on the open strip's box, a new one with each open, so that a
+  /// reveal finds the strip its own open laid out, and another item's strip
+  /// never takes over the box of the one before it.
+  GlobalKey? _stripBoxKey;
+
+  /// The context each item's tile was last built in, by the item's
+  /// [BgeUnfoldingCovers.idOf], for a reveal to find the opened item's tile.
+  ///
+  /// The last, not the one tapped: a tile that moves between the grid's
+  /// slivers as its strip opens, as one after an open strip does, is built
+  /// again in that frame, and the one tapped has gone.
+  final _tiles = <Object, BuildContext>{};
+
+  /// The reveal whose animation runs, until it ends.
+  _Reveal? _revealing;
+
   @override
   void didUpdateWidget(BgeUnfoldingCovers<T> oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (_unfoldedIndex == null) _unfolded = null;
+    if (_unfolded != null && _unfoldedIndex == null) {
+      _unfolded = null;
+      // A strip that goes with its item doesn't scroll the page: a reveal
+      // still on its way stops.
+      _stopRevealingAfterFrame();
+    }
+    final ids = {for (final item in widget.items) widget.idOf(item)};
+    _tiles.removeWhere((id, tile) => !ids.contains(id) || !tile.mounted);
+  }
+
+  @override
+  void dispose() {
+    // The covers can go while their scroll view stays, as on a switch to the
+    // list, which the reveal mustn't go on scrolling.
+    _stopRevealingAfterFrame();
+    super.dispose();
   }
 
   /// Where the unfolded item is among the items, or null when none is, or it
@@ -264,8 +347,115 @@ class _BgeUnfoldingCoversState<T> extends State<BgeUnfoldingCovers<T>> {
     return index < 0 ? null : index;
   }
 
-  void _toggle(Object id) =>
-      setState(() => _unfolded = _unfolded == id ? null : id);
+  /// Opens the strip of the item [id], or closes it. Only an open scrolls,
+  /// once its strip is laid out.
+  void _toggle(Object id) {
+    // Either way, a reveal on its way stops where it is: a close doesn't
+    // scroll, and an open reveals its own strip.
+    _stopRevealing();
+    if (_unfolded == id) {
+      setState(() => _unfolded = null);
+      return;
+    }
+    final strip = GlobalKey(debugLabel: 'BgeUnfoldingCovers.strip');
+    setState(() {
+      _unfolded = id;
+      _stripBoxKey = strip;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) => _reveal(strip, id));
+  }
+
+  /// Scrolls the shortest distance that shows the whole of the strip on
+  /// [strip], but never so far that the top of [id]'s tile leaves the
+  /// view's, and not at all when the strip is already in view (#818). A
+  /// strip whose top is above the view's scrolls back to the top of [id]'s
+  /// tile instead.
+  void _reveal(GlobalKey strip, Object id) {
+    // Nothing for an open that a later toggle closed or replaced before its
+    // frame.
+    if (!mounted || strip != _stripBoxKey) return;
+    final stripContext = strip.currentContext;
+    final tile = _tiles[id];
+    if (stripContext == null || tile == null || !tile.mounted) return;
+    final stripBox = stripContext.findRenderObject();
+    final tileBox = tile.findRenderObject();
+    if (stripBox is! RenderBox ||
+        !stripBox.attached ||
+        !stripBox.hasSize ||
+        tileBox is! RenderBox ||
+        !tileBox.attached ||
+        !tileBox.hasSize) {
+      return;
+    }
+    final viewport = RenderAbstractViewport.maybeOf(stripBox);
+    final position = Scrollable.maybeOf(stripContext)?.position;
+    // The offsets below are worked out for a page that scrolls down, as
+    // every page with covers does.
+    if (viewport == null ||
+        position == null ||
+        position.axisDirection != AxisDirection.down) {
+      return;
+    }
+
+    // Measured in the scroll view's own space, with no room left for an app
+    // bar. A page's app bar is the Scaffold's, above the scroll view and not
+    // over it, and neither Games nor Collection pins a sliver: measured under
+    // `BgePage.slivers` on both, the view starts at the app bar's bottom, and
+    // a revealed row's top and strip's bottom are clear of it.
+    final stripTop = viewport.getOffsetToReveal(stripBox, 0).offset;
+    final stripEnd = viewport.getOffsetToReveal(stripBox, 1).offset;
+    final tileTop = viewport.getOffsetToReveal(tileBox, 0).offset;
+    // A strip whose top is above the view's, as when the open folded a
+    // strip above it and its row moved up, is revealed backwards: to the
+    // tapped row's top, which shows the strip from its top and the badge
+    // with it.
+    final above = position.pixels - stripTop > precisionErrorTolerance;
+    final target = clampDouble(
+      above ? tileTop : math.min(stripEnd, tileTop),
+      position.minScrollExtent,
+      position.maxScrollExtent,
+    );
+    if (!above && target <= position.pixels) return;
+
+    // A jump under reduced motion, as `animateTo` takes a frame to arrive
+    // whatever its duration. Not retried when the user's own scroll cuts the
+    // animation short: where they scroll to is their choice.
+    final duration = BgeMotion.durationOf(
+      context,
+      BgeTokens.of(context).motionMedium,
+    );
+    if (duration == Duration.zero) {
+      position.jumpTo(target);
+      return;
+    }
+    final reveal = _revealing = _Reveal(position);
+    unawaited(
+      position
+          .animateTo(target, duration: duration, curve: BgeMotion.standard)
+          .whenComplete(() {
+            if (identical(_revealing, reveal)) _revealing = null;
+          }),
+    );
+  }
+
+  /// Stops the reveal on its way, if any, where it is.
+  void _stopRevealing() {
+    final reveal = _revealing;
+    _revealing = null;
+    reveal?.stop();
+  }
+
+  /// [_stopRevealing] once the frame is done, for a strip found gone while
+  /// the tree is built: stopping a scroll sends its notifications, which
+  /// mustn't run then.
+  void _stopRevealingAfterFrame() {
+    final reveal = _revealing;
+    if (reveal == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Not when the reveal has ended since, or another has started.
+      if (identical(_revealing, reveal)) _stopRevealing();
+    });
+  }
 
   @override
   Widget build(BuildContext context) => BgeUnfoldingCoverGrid<T>(
@@ -274,15 +464,46 @@ class _BgeUnfoldingCoversState<T> extends State<BgeUnfoldingCovers<T>> {
     unfolded: _unfoldedIndex,
     semanticIndexOffset: widget.semanticIndexOffset,
     stripKeyOf: (item) => ValueKey<Object>(widget.idOf(item)),
+    stripBoxKey: _stripBoxKey,
     itemBuilder: (context, item) {
       final id = widget.idOf(item);
-      return widget.itemBuilder(
-        context,
-        item,
-        () => _toggle(id),
-        unfolded: _unfolded == id,
+      final unfolded = _unfolded == id;
+      // A context of the tile's own, kept each time the tile is built for a
+      // reveal to find it by: the grid builds its tiles with its sliver's.
+      return Builder(
+        builder: (context) {
+          _tiles[id] = context;
+          return widget.itemBuilder(
+            context,
+            item,
+            () => _toggle(id),
+            unfolded: unfolded,
+          );
+        },
       );
     },
     stripBuilder: widget.stripBuilder,
   );
+}
+
+/// A reveal's scroll, while its animation runs (#818).
+final class _Reveal {
+  _Reveal(this.position);
+
+  /// The position the reveal animates.
+  final ScrollPosition position;
+
+  /// Stops the animation where it is. A jump to where the page stands ends
+  /// it without moving the page.
+  ///
+  /// Nothing once the scroll view has gone, and the position with it, or
+  /// once nothing scrolls the page, as when a press has stopped the
+  /// animation and holds the page itself.
+  void stop() {
+    if (position.context.notificationContext == null ||
+        !position.isScrollingNotifier.value) {
+      return;
+    }
+    position.jumpTo(position.pixels);
+  }
 }

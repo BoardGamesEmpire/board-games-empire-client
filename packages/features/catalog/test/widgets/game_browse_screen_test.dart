@@ -1354,6 +1354,52 @@ void main() {
       handle.dispose();
     });
 
+    // The page's app bar is the Scaffold's, above the scroll view and not
+    // over it, so a reveal measured in the scroll view's own space leaves
+    // both the strip's bottom and the tapped row's top clear of it (#818).
+    for (final (why, height, before, fits) in [
+      ('the strip fits under its row', 700.0, 4, true),
+      ("the row and its strip don't fit", 400.0, 0, false),
+    ]) {
+      testWidgets('opening a strip on the last row scrolls it into view below '
+          'the app bar: $why', (tester) async {
+        remote.onFetchPage = (_, _) async => pageOf([
+          for (var i = 0; i < before; i++) game('A$i'),
+          game('X'),
+          expansion('E', [under('X')]),
+          for (var i = 0; i < 6; i++) game('Z$i'),
+        ]);
+        await showThumbnails(tester, size: Size(400, height));
+        final appBar = tester.getRect(find.byType(AppBar));
+        final view = tester.getRect(
+          find.byWidgetPredicate(
+            (widget) =>
+                widget is Scrollable &&
+                widget.axisDirection == AxisDirection.down,
+          ),
+        );
+        expect(view.top, appBar.bottom);
+        // X's row is the last one wholly in view.
+        expect(
+          tester.getRect(tile('X')).bottom,
+          lessThanOrEqualTo(view.bottom),
+        );
+
+        await tester.tap(badgeOf('X'));
+        await tester.pumpAndSettle();
+
+        final row = tester.getRect(tile('X'));
+        final strip = tester.getRect(find.byType(BgeShelf));
+        if (fits) {
+          expect(strip.bottom, moreOrLessEquals(view.bottom));
+          expect(row.top, greaterThan(appBar.bottom));
+        } else {
+          expect(row.top, moreOrLessEquals(appBar.bottom));
+          expect(strip.top, lessThan(view.bottom));
+        }
+      });
+    }
+
     testWidgets("a marked cover's label says the base game isn't on this "
         'server', (tester) async {
       remote.onFetchPage = (_, _) async => pageOf([
