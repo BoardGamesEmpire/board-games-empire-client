@@ -86,6 +86,11 @@ abstract class ServerOrchestrator {
   /// Throws [ServerCapacityExceededException] if at capacity.
   /// Throws `ServerNotFoundException` if [serverId] is not in the repository.
   /// Throws [StateError] if server is already connected.
+  ///
+  /// A call made while another lifecycle command runs waits for it, then
+  /// runs against the state that command left. Throws [StateError] when
+  /// made from inside a running lifecycle command (from a context's
+  /// `activate`, say), which would otherwise wait on itself forever.
   Future<void> connectServer(String serverId, {bool makeActive = false});
 
   /// Disposes the context for a connected server and marks it disconnected.
@@ -101,6 +106,11 @@ abstract class ServerOrchestrator {
   ///
   /// Throws `ServerNotFoundException` if [serverId] is not in the repository.
   /// Throws [StateError] if server is already disconnected.
+  ///
+  /// A call made while another lifecycle command runs waits for it, then
+  /// runs against the state that command left. Throws [StateError] when
+  /// made from inside a running lifecycle command (from a context's
+  /// `activate`, say), which would otherwise wait on itself forever.
   Future<void> disconnectServer(String serverId);
 
   /// Backgrounds the current active server and activates [targetServerId].
@@ -122,6 +132,11 @@ abstract class ServerOrchestrator {
   /// repository, so the target may well be registered there — what it is
   /// not is connected, and switching is only meaningful between connected
   /// servers.
+  ///
+  /// A call made while another lifecycle command runs waits for it, then
+  /// runs against the state that command left. Throws [StateError] when
+  /// made from inside a running lifecycle command (from a context's
+  /// `activate`, say), which would otherwise wait on itself forever.
   Future<void> switchActiveServer(String targetServerId);
 
   /// Returns the context for [serverId], or null if disconnected.
@@ -139,5 +154,9 @@ abstract class ServerOrchestrator {
   Stream<Map<String, ServerContext>> watchContexts();
 
   /// Disposes all contexts and resets orchestrator state.
+  ///
+  /// Waits for every lifecycle command queued before it. Throws
+  /// [StateError] when made from inside a running lifecycle command, which
+  /// would otherwise wait on itself forever.
   Future<void> dispose();
 }
