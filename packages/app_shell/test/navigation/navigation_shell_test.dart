@@ -184,7 +184,9 @@ Page<void> _material(GoRouterState state) => MaterialPage<void>(
 /// shell and the page transitions read it. [browserOwnsBack] is the
 /// shell's, as the web sets it (#611).
 /// [inOuterShell] puts the shell's route inside another `ShellRoute`, as
-/// the app's auth shell holds it.
+/// the app's auth shell holds it. [serversLocation] is the shell's, and
+/// `/servers` is a route beside the shell, as the app's server manager is
+/// (#134).
 Future<_Harness> _pump(
   WidgetTester tester, {
   Size size = const Size(400, 800),
@@ -200,6 +202,7 @@ Future<_Harness> _pump(
   GlobalKey? boundary,
   bool inOuterShell = false,
   DrawerStatusBuilder? drawerStatus,
+  String? serversLocation,
 }) async {
   final theme =
       themeData ?? (underRegion ? pointerPlatformTheme() : BgeTheme.light());
@@ -215,6 +218,7 @@ Future<_Harness> _pump(
       deferBack: deferBack,
       browserOwnsBack: browserOwnsBack,
       drawerStatus: drawerStatus,
+      serversLocation: serversLocation,
       child: child,
     ),
     routes: [
@@ -254,6 +258,7 @@ Future<_Harness> _pump(
         ShellRoute(builder: (_, _, child) => child, routes: [shell])
       else
         shell,
+      GoRoute(path: '/servers', pageBuilder: (_, state) => _material(state)),
     ],
   );
   addTearDown(router.dispose);
@@ -712,6 +717,45 @@ void main() {
       }
 
       expect(shell.runs, ['households', 'sign_out', 'households']);
+    });
+  });
+
+  // #134: the server manager is a route beside the shell, pushed over the
+  // page the menu was opened on.
+  group('the server manager (#134)', () {
+    testWidgets('with onServers the header is a button that opens the '
+        'manager after the drawer closes', (tester) async {
+      final shell = await _pump(
+        tester,
+        at: '/collection',
+        serversLocation: '/servers',
+      );
+      await shell.push('/collection/1');
+      await shell.openMenu();
+
+      await tester.tap(find.text('Test server'));
+      expect(shell.scaffold.isDrawerOpen, isFalse);
+      // Mid-close: the drawer is still on screen, sliding out, and nothing
+      // has been pushed yet.
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(find.byKey(MenuDrawer.drawerKey), findsOneWidget);
+      expect(shell.location, '/collection/1');
+
+      await tester.pumpAndSettle();
+      expect(find.byKey(MenuDrawer.drawerKey), findsNothing);
+      expect(shell.location, '/servers');
+      expect(find.text('The body of /servers'), findsOneWidget);
+      // Over the shell, not in it: no bar beside the manager.
+      expect(_bar, findsNothing);
+
+      // Back returns to the page beneath, with the drawer closed.
+      expect(await shell.back(), isTrue);
+      expect(shell.location, '/collection/1');
+      expect(find.text('The body of /collection/1'), findsOneWidget);
+      expect(_bar, findsOneWidget);
+      expect(shell.scaffold.isDrawerOpen, isFalse);
+      expect(find.byKey(MenuDrawer.drawerKey), findsNothing);
     });
   });
 

@@ -24,6 +24,9 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// [status], where given, sits under the header, before the destinations:
 /// the session's sync status (#47).
 ///
+/// With [onServers], the header is a button that reports a pick of the
+/// server manager (#134), which the shell runs as it runs an entry's.
+///
 /// Accessibility: the drawer is keyboard-traversable and each control has its
 /// label as its name. The no-active-server case is handled defensively by
 /// omitting the header.
@@ -36,6 +39,7 @@ class MenuDrawer extends StatefulWidget {
     required this.onDestination,
     required this.onEntry,
     this.status,
+    this.onServers,
     super.key,
   });
 
@@ -64,6 +68,11 @@ class MenuDrawer extends StatefulWidget {
   /// null for none, which leaves no gap. It is not a destination or an
   /// entry, so the drawer neither selects it nor reports a pick of it.
   final Widget? status;
+
+  /// Called when the header, which names the active server, is tapped, to
+  /// open the server manager (#134). Null where there is none, as on the
+  /// web: the header is then plain text.
+  final VoidCallback? onServers;
 
   /// Key on the [NavigationDrawer], for tests.
   static const Key drawerKey = Key('home_navigation_drawer');
@@ -218,6 +227,7 @@ class _MenuDrawerState extends State<MenuDrawer> {
           _DrawerHeader(
             activeServerName: widget.activeServerName,
             serverLabel: l10n.homeActiveServerLabel,
+            onServers: widget.onServers,
           ),
           _DrawerStatus(status: widget.status),
           for (final destination in destinations)
@@ -266,14 +276,18 @@ class _MenuDrawerState extends State<MenuDrawer> {
 
 /// Drawer header showing the active server name, or nothing when none is
 /// active (keeps the destination indices stable either way).
+///
+/// With [onServers] it is a button that opens the server manager (#134).
 class _DrawerHeader extends StatelessWidget {
   const _DrawerHeader({
     required this.activeServerName,
     required this.serverLabel,
+    required this.onServers,
   });
 
   final String? activeServerName;
   final String serverLabel;
+  final VoidCallback? onServers;
 
   @override
   Widget build(BuildContext context) {
@@ -281,6 +295,10 @@ class _DrawerHeader extends StatelessWidget {
     if (name == null) return const SizedBox.shrink();
 
     final theme = Theme.of(context);
+    final onServers = this.onServers;
+    if (onServers != null) {
+      return _serversButton(context, theme, name, onServers);
+    }
     return Padding(
       // Start inset is spaceLg (24) to match the drawer's content inset —
       // `tilePadding` (spaceSm) plus the 16 gutter inside each destination.
@@ -302,6 +320,71 @@ class _DrawerHeader extends StatelessWidget {
             child: Text(name, style: theme.textTheme.titleMedium),
           ),
         ],
+      ),
+    );
+  }
+
+  /// The header as a button. Its ink is inset as an entry's is, and its
+  /// content by the rest of the plain header's insets, so the name keeps
+  /// its place and lines up with the destinations.
+  ///
+  /// A screen reader hears one button, named for the server and for what it
+  /// opens: the drawn caption and name are left out, so the name isn't read
+  /// a second time, and nothing reads as a header.
+  Widget _serversButton(
+    BuildContext context,
+    ThemeData theme,
+    String name,
+    VoidCallback onServers,
+  ) {
+    final tokens = BgeTokens.of(context);
+    return Padding(
+      padding: EdgeInsetsDirectional.fromSTEB(
+        tokens.spaceSm,
+        tokens.spaceSm,
+        tokens.spaceSm,
+        0,
+      ),
+      child: MergeSemantics(
+        child: Semantics(
+          button: true,
+          label: ShellLocalizations.of(context).shellServersOpenLabel(name),
+          child: InkWell(
+            onTap: onServers,
+            child: ExcludeSemantics(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minHeight: tokens.minTapTarget),
+                child: Padding(
+                  padding: EdgeInsetsDirectional.fromSTEB(
+                    tokens.spaceMd,
+                    tokens.spaceSm,
+                    tokens.spaceSm,
+                    tokens.spaceSm,
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              serverLabel,
+                              style: theme.textTheme.labelSmall,
+                            ),
+                            const BgeGap.xs(),
+                            Text(name, style: theme.textTheme.titleMedium),
+                          ],
+                        ),
+                      ),
+                      const BgeGap.sm(axis: Axis.horizontal),
+                      const Icon(Icons.unfold_more),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }

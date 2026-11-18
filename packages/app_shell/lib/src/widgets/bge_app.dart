@@ -22,6 +22,8 @@ import 'package:app_shell/src/screens/home_screen.dart';
 import 'package:app_shell/src/screens/settings_screen.dart';
 import 'package:app_shell/src/screens/splash_screen.dart';
 import 'package:app_shell/src/servers/server_activation.dart';
+import 'package:app_shell/src/servers/server_list_cubit.dart';
+import 'package:app_shell/src/servers/servers_screen.dart';
 import 'package:app_shell/src/settings/entries/data_export_settings_entry.dart';
 import 'package:app_shell/src/settings/locale_cubit.dart';
 import 'package:app_shell/src/settings/settings_sections_builder.dart';
@@ -462,6 +464,7 @@ class _BgeAppState extends State<BgeApp> {
       // container; a platform with no orchestrator), the builders fall
       // back to the placeholders, matching the pre-#37 behavior.
       serverAddBuilder: _buildServerAddRoute,
+      serversBuilder: _buildServersRoute,
       authBuilder: _buildAuthRoute,
       homeBuilder: _buildHomeRoute,
       authScopeBuilder: _buildAuthScope,
@@ -939,6 +942,10 @@ class _BgeAppState extends State<BgeApp> {
             deferBack: _backHeldAbove,
             browserOwnsBack: widget.browserOwnsBack,
             drawerStatus: drawerStatus,
+            // #134: web has no orchestrator, and so no server manager.
+            serversLocation: widget.bootstrapCubit.orchestrator == null
+                ? null
+                : AppRoutes.servers,
             child: pages,
           );
         },
@@ -2893,6 +2900,25 @@ class _BgeAppState extends State<BgeApp> {
         listenWhen: (_, current) => current is ServerOnboardingSucceeded,
         listener: (_, _) => widget.bootstrapCubit.onServerRegistered(),
         child: const ServerAddScreen(),
+      ),
+    );
+  }
+
+  /// Builds the server manager (#134) for [AppRoutes.servers], or null (→
+  /// the router's not-found page) without an orchestrator or a registry of
+  /// the device's servers: on the web, and before bootstrap has succeeded.
+  ///
+  /// Both are read here, at navigation time, as [_buildServerAddRoute] reads
+  /// its own: the router is built before bootstrap publishes them. The
+  /// screen makes its list's cubit and closes it.
+  Widget? _buildServersRoute(BuildContext context) {
+    final orchestrator = widget.bootstrapCubit.orchestrator;
+    final registered = widget.bootstrapCubit.registeredServers;
+    if (orchestrator == null || registered == null) return null;
+    return ServersScreen(
+      create: () => ServerListCubit(
+        registered: registered,
+        orchestrator: orchestrator,
       ),
     );
   }

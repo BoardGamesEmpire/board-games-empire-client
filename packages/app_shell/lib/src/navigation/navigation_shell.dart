@@ -67,6 +67,7 @@ class NavigationShell extends StatefulWidget {
     this.deferBack,
     this.browserOwnsBack = false,
     this.drawerStatus,
+    this.serversLocation,
     super.key,
   });
 
@@ -116,6 +117,14 @@ class NavigationShell extends StatefulWidget {
   /// full, Back while the drawer closes drops it, and it pushes nothing
   /// where its screen is already the page on top.
   final DrawerStatusBuilder? drawerStatus;
+
+  /// The location of the server manager (#134), which the drawer's header
+  /// opens, or null for none, as on the web, where the header stays text.
+  ///
+  /// The header's tap is a pick like an entry's: it closes the drawer, then
+  /// pushes the manager. The manager's route sits beside the shell, so it
+  /// goes over the whole of it, and Back returns to the page beneath.
+  final String? serversLocation;
 
   /// Key on the [NavigationBar], for tests.
   static const Key barKey = Key('nav_bar');
@@ -464,6 +473,7 @@ class _NavigationShellState extends State<NavigationShell> {
   @override
   Widget build(BuildContext context) {
     final destinations = widget.destinations;
+    final serversLocation = widget.serversLocation;
     final current = destinations.indexWhere(
       (d) => d.contains(_path),
     );
@@ -506,6 +516,9 @@ class _NavigationShellState extends State<NavigationShell> {
               status: widget.drawerStatus?.call(
                 (location) => _pick(() => _open(location)),
               ),
+              onServers: serversLocation == null
+                  ? null
+                  : () => _pick(() => _open(serversLocation)),
             ),
           ),
         ),

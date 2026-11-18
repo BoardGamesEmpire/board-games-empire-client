@@ -4,6 +4,7 @@ import 'package:app_shell/app_shell.dart';
 import 'package:bge_test_support/widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// Test entries mirroring the production menu shape. Labels are literal (not
@@ -64,6 +65,7 @@ Widget _app({
   ValueChanged<NavDestination>? onDestination,
   ThemeData? theme,
   Widget? status,
+  VoidCallback? onServers,
   TextDirection textDirection = TextDirection.ltr,
 }) => MaterialApp(
   theme: theme,
@@ -81,6 +83,7 @@ Widget _app({
       onDestination: onDestination ?? (_) {},
       onEntry: onEntry ?? (_) {},
       status: status,
+      onServers: onServers,
     ),
     body: const SizedBox.shrink(),
   ),
@@ -95,6 +98,7 @@ Future<void> _pump(
   ValueChanged<HomeMenuEntry>? onEntry,
   ValueChanged<NavDestination>? onDestination,
   Widget? status,
+  VoidCallback? onServers,
   TextDirection textDirection = TextDirection.ltr,
 }) => tester.pumpWidget(
   _app(
@@ -105,6 +109,7 @@ Future<void> _pump(
     onEntry: onEntry,
     onDestination: onDestination,
     status: status,
+    onServers: onServers,
     textDirection: textDirection,
   ),
 );
@@ -230,6 +235,95 @@ void main() {
     await _openDrawer(tester);
 
     expect(find.text('My Server'), findsNothing);
+  });
+
+  // #134: on native the header opens the server manager. On the web it
+  // stays what it was.
+  group('the header and the server manager (#134)', () {
+    /// The one semantics node that mentions the server's name.
+    SemanticsData nameNode() => find.semantics
+        .byLabel(RegExp('My Server'))
+        .evaluate()
+        .single
+        .getSemanticsData();
+
+    testWidgets('without onServers the header is plain text with header '
+        'semantics', (tester) async {
+      final handle = tester.ensureSemantics();
+      await _pump(tester, entries: _entries(), activeServerName: 'My Server');
+      await _openDrawer(tester);
+
+      final data = nameNode();
+      expect(data.flagsCollection.isHeader, isTrue);
+      expect(data.flagsCollection.isButton, isFalse);
+      expect(data.hasAction(SemanticsAction.tap), isFalse);
+      expect(find.byIcon(Icons.unfold_more), findsNothing);
+      expect(
+        find.ancestor(
+          of: find.text('My Server'),
+          matching: find.byType(InkWell),
+        ),
+        findsNothing,
+      );
+
+      handle.dispose();
+    });
+
+    testWidgets('with onServers the header is one button, named for the '
+        'server and the manager, that reports a tap', (tester) async {
+      final handle = tester.ensureSemantics();
+      var opened = 0;
+      await _pump(
+        tester,
+        entries: _entries(),
+        destinations: _destinations,
+        selectedId: 'home',
+        activeServerName: 'My Server',
+        onServers: () => opened++,
+      );
+      await _openDrawer(tester);
+
+      // Heard once, as a button, and not as a header beside it.
+      final data = nameNode();
+      expect(data.label, 'Server: My Server. Manage servers');
+      expect(data.flagsCollection.isButton, isTrue);
+      expect(data.flagsCollection.isHeader, isFalse);
+      expect(data.hasAction(SemanticsAction.tap), isTrue);
+      expect(data.hasAction(SemanticsAction.focus), isTrue);
+      expect(find.semantics.byLabel(RegExp(r'^Server$')), findsNothing);
+      expect(find.byIcon(Icons.unfold_more), findsOneWidget);
+
+      // The name keeps the drawer's start inset.
+      expect(
+        tester.getTopLeft(find.text('My Server')).dx,
+        moreOrLessEquals(
+          tester
+              .getTopLeft(
+                find.descendant(
+                  of: find.byKey(MenuDrawer.entryKey('collection')),
+                  matching: find.byIcon(Icons.casino_outlined),
+                ),
+              )
+              .dx,
+          epsilon: 0.5,
+        ),
+      );
+
+      // The drawer only reports the tap: the shell closes it.
+      await tester.tap(find.text('My Server'));
+      await tester.pumpAndSettle();
+      expect(opened, 1);
+      expect(find.byKey(MenuDrawer.drawerKey), findsOneWidget);
+
+      // And from the keyboard.
+      Focus.of(tester.element(find.text('My Server'))).requestFocus();
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(opened, 2);
+
+      handle.dispose();
+    });
   });
 
   testWidgets('destination labels reach the semantics tree', (tester) async {
@@ -725,5 +819,19 @@ void main() {
     );
 
     auditScreen('drawer open', build: build, arrange: _openDrawer);
+
+    // #134: a 40-character name beside the trailing icon, at 320dp × 2.0.
+    auditScreen(
+      'drawer open with the server manager button',
+      build: (theme) => _app(
+        entries: _entries(),
+        destinations: _destinations,
+        selectedId: 'home',
+        activeServerName: 'Riverside Library Tuesday Boardgame Club',
+        onServers: () {},
+        theme: theme,
+      ),
+      arrange: _openDrawer,
+    );
   });
 }
