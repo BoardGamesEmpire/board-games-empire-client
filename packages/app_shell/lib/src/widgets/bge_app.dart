@@ -2053,7 +2053,7 @@ class _BgeAppState extends State<BgeApp> {
   /// The search reads the session's [DataGatewaySearchReach] (#795), so a
   /// refusal is remembered for the session, not the screen. Where none is
   /// registered, as with no signed-in user, the search never asks the
-  /// DataGateways: an anonymous user never holds the grant to.
+  /// DataGateways: an anonymous user never holds the grant to search them.
   Widget? _buildGameSearchRoute(BuildContext context) {
     final container = _catalogContainer();
     if (container == null) return null;
