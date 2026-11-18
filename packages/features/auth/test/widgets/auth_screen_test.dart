@@ -12,6 +12,7 @@ import 'package:bge_test_support/domain.dart';
 import 'package:bge_test_support/widgets.dart';
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/repositories.dart';
@@ -322,6 +323,147 @@ void main() {
         await tester.pumpWidget(_wrap(_screen(testServerIdentity()), mockBloc));
 
         expect(find.textContaining('Test BGE Server'), findsOneWidget);
+      });
+    });
+
+    group('Manage servers (#134)', () {
+      final manageServers = find.widgetWithText(TextButton, 'Manage servers');
+
+      Widget screenWith(
+        ServerIdentity identity, {
+        VoidCallback? onManageServers,
+      }) => _wrap(
+        AuthScreen(
+          identity: identity,
+          serverDisplayName: 'Test BGE Server',
+          onManageServers: onManageServers,
+        ),
+        mockBloc,
+      );
+
+      testWidgets('Manage servers shows only when given a callback', (
+        tester,
+      ) async {
+        await tester.pumpWidget(screenWith(testIdentityWithOidc()));
+        expect(find.text('Manage servers'), findsNothing);
+
+        await tester.pumpWidget(
+          screenWith(testIdentityWithOidc(), onManageServers: () {}),
+        );
+        expect(manageServers, findsOneWidget);
+        // Below the forms: after the last way in the server offers.
+        expect(
+          tester.getTopLeft(manageServers).dy,
+          greaterThan(tester.getBottomLeft(find.byType(OidcStrategyButton)).dy),
+        );
+
+        // A server that offers no way in is where someone is most stuck.
+        await tester.pumpWidget(
+          screenWith(
+            testServerIdentity().copyWith(strategies: const []),
+            onManageServers: () {},
+          ),
+        );
+        expect(manageServers, findsOneWidget);
+      });
+
+      testWidgets('tapping it calls back', (tester) async {
+        var calls = 0;
+        await tester.pumpWidget(
+          screenWith(testServerIdentity(), onManageServers: () => calls++),
+        );
+
+        await tester.ensureVisible(manageServers);
+        await tester.pumpAndSettle();
+        await tester.tap(manageServers);
+        await tester.pump();
+
+        expect(calls, 1);
+      });
+
+      testWidgets('it stays available while a sign-in runs or has failed', (
+        tester,
+      ) async {
+        for (final state in [
+          const AuthLoading(),
+          AuthLoading(providerId: kOidcStrategy.providerId),
+          const AuthFailureInvalidCredentials(),
+          const AuthFailureProviderSignIn(ProviderSignInFailureReason.generic),
+        ]) {
+          whenListen(
+            mockBloc,
+            const Stream<AuthBlocState>.empty(),
+            initialState: state,
+          );
+          var calls = 0;
+          await tester.pumpWidget(
+            screenWith(testIdentityWithOidc(), onManageServers: () => calls++),
+          );
+          await tester.pump();
+
+          await tester.ensureVisible(manageServers);
+          await tester.pump();
+          await tester.tap(manageServers);
+          await tester.pump();
+
+          expect(calls, 1, reason: '$state');
+          // Unmounted between states, so each starts as it would on arrival.
+          await tester.pumpWidget(const SizedBox.shrink());
+        }
+      });
+
+      testWidgets('it can be reached at 320dp and 2.0 with the keyboard up', (
+        tester,
+      ) async {
+        useViewSize(tester, const Size(320, 800));
+        tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+        addTearDown(tester.view.resetViewInsets);
+        tester.platformDispatcher.textScaleFactorTestValue = 2;
+        addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+        var calls = 0;
+        await tester.pumpWidget(
+          screenWith(testIdentityWithOidc(), onManageServers: () => calls++),
+        );
+        await tester.showKeyboard(find.byType(TextField).first);
+        await tester.pumpAndSettle();
+
+        await tester.ensureVisible(manageServers);
+        await tester.pumpAndSettle();
+        expect(
+          tester.getRect(manageServers).bottom,
+          lessThanOrEqualTo(800 - 300),
+        );
+        await tester.tap(manageServers);
+        await tester.pump();
+
+        expect(tester.takeException(), isNull);
+        expect(calls, 1);
+      });
+
+      testWidgets('it comes after the provider buttons in the focus order', (
+        tester,
+      ) async {
+        await tester.pumpWidget(
+          screenWith(testIdentityWithOidc(), onManageServers: () {}),
+        );
+        await tester.pumpAndSettle();
+
+        Focus.of(
+          tester.element(
+            find.descendant(
+              of: find.byType(OidcStrategyButton),
+              matching: find.byType(Text),
+            ),
+          ),
+        ).requestFocus();
+        await tester.pump();
+        await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+        await tester.pump();
+
+        expect(
+          Focus.of(tester.element(find.text('Manage servers'))).hasPrimaryFocus,
+          isTrue,
+        );
       });
     });
 
@@ -1072,6 +1214,7 @@ void main() {
         AuthBlocState state, {
         ServerIdentity? identity,
         Future<int> Function()? unsentChangesCount,
+        VoidCallback? onManageServers,
       }) => (theme) {
         whenListen(
           mockBloc,
@@ -1083,6 +1226,7 @@ void main() {
             identity: identity ?? both,
             serverDisplayName: 'Test BGE Server',
             unsentChangesCount: unsentChangesCount,
+            onManageServers: onManageServers,
           ),
           mockBloc,
           theme: theme,
@@ -1255,6 +1399,29 @@ void main() {
       final noStrategies = screenIn(
         const AuthInitial(),
         identity: testServerIdentity().copyWith(strategies: const []),
+      );
+
+      // #134: last on the page, so the end is where it shows.
+      final withManageServers = screenIn(
+        const AuthInitial(),
+        onManageServers: () {},
+      );
+
+      auditScreen('sign-in, with Manage servers', build: withManageServers);
+
+      auditScreen(
+        'sign-in, with Manage servers, scrolled to the end',
+        build: withManageServers,
+        arrange: settleThenScrollToEnd,
+      );
+
+      auditScreen(
+        'sign-in failure, with Manage servers, scrolled to the end',
+        build: screenIn(
+          const AuthFailureInvalidCredentials(),
+          onManageServers: () {},
+        ),
+        arrange: settleThenScrollToEnd,
       );
 
       auditScreen('no strategies', build: noStrategies);

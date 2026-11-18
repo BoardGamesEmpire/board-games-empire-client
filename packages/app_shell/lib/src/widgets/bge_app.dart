@@ -28,6 +28,7 @@ import 'package:app_shell/src/settings/entries/data_export_settings_entry.dart';
 import 'package:app_shell/src/settings/locale_cubit.dart';
 import 'package:app_shell/src/settings/settings_sections_builder.dart';
 import 'package:app_shell/src/settings/theme_mode_cubit.dart';
+import 'package:app_shell/src/widgets/auth_route_host.dart';
 import 'package:app_shell/src/widgets/crash_report_prompt.dart';
 import 'package:app_shell/src/widgets/database_recovery_notice.dart';
 import 'package:app_shell/src/widgets/detached_rehydrate.dart';
@@ -766,7 +767,8 @@ class _BgeAppState extends State<BgeApp> {
   ConnectivityService? _rootConnectivity() =>
       _rootService<ConnectivityService>();
 
-  /// Renders the auth route at navigation time. Falls back to the router's
+  /// Renders the auth route at navigation time, for whichever server is
+  /// active from then on ([AuthRouteHost], #134). Falls back to the router's
   /// placeholder when no active server is resolvable: bootstrap published
   /// no scope, or the scope has no active server.
   ///
@@ -786,11 +788,14 @@ class _BgeAppState extends State<BgeApp> {
       _logAuthUnavailable('noActiveServer');
       return null;
     }
-    return AuthGate(
-      identity: active.identity,
-      serverDisplayName: active.displayName,
+    return AuthRouteHost(
+      scope: scope,
       splash: const SplashScreen(),
-      unsentChangesCount: _unsentChanges.countOf(active),
+      unsentChangesCountOf: _unsentChanges.countOf,
+      // #134: web has no orchestrator, and so no server manager.
+      onManageServers: widget.bootstrapCubit.orchestrator == null
+          ? null
+          : () => unawaited(GoRouter.of(context).push<void>(AppRoutes.servers)),
     );
   }
 
