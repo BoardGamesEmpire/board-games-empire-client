@@ -1120,15 +1120,16 @@ void main() {
       (widget) => widget is BgeKeyedSliverGrid,
     );
 
-    /// Shows the page in thumbnails, two columns wide and tall enough for
-    /// every cover and the strip.
+    /// Shows the page in thumbnails, two columns wide and, unless [size]
+    /// says otherwise, tall enough for every cover and the strip.
     Future<void> showThumbnails(
       WidgetTester tester, {
       void Function(BuildContext context, GameQuickLookSeed seed)? onQuickLook,
       Stream<String>? gone,
       FakeGamesCache? cache,
+      Size size = const Size(400, 1600),
     }) async {
-      useViewSize(tester, const Size(400, 1600));
+      useViewSize(tester, size);
       await show(
         tester,
         gone: gone,
@@ -1423,6 +1424,85 @@ void main() {
             .semanticChildCount,
         2,
       );
+    });
+
+    testWidgets('a focused marked expansion whose base game a retry brings '
+        "hands focus to the base game's badge (#813)", (tester) async {
+      // The server fails, and the saved games hold the expansion but never
+      // its base game, so the expansion is at top level, marked. Covers
+      // after the first row, so the page scrolls, and it is scrolled a
+      // little, with the expansion's row still built.
+      final after = [for (var i = 0; i < 8; i++) game('Z$i')];
+      remote.onFetchPage = (_, _) async => throw unreachable();
+      await showThumbnails(
+        tester,
+        size: const Size(400, 700),
+        cache: FakeGamesCache([
+          expansion('E', [under('B')]),
+          game('C'),
+          ...after,
+        ]),
+      );
+      final page =
+          tester
+              .state<ScrollableState>(
+                find.byWidgetPredicate(
+                  (widget) =>
+                      widget is Scrollable &&
+                      widget.axisDirection == AxisDirection.down,
+                ),
+              )
+              .position
+            ..jumpTo(120);
+      await tester.pump();
+      expect(
+        tester
+            .widget<BgeCoverTile>(
+              find.descendant(
+                of: tile('E'),
+                matching: find.byType(BgeCoverTile),
+              ),
+            )
+            .marked,
+        isTrue,
+      );
+      // C's cover, then the expansion's: each ink's own node.
+      for (final id in ['C', 'E']) {
+        Focus.of(
+          tester.element(
+            find
+                .descendant(
+                  of: find.descendant(
+                    of: tile(id),
+                    matching: find.byType(InkWell),
+                  ),
+                  matching: find.byType(MouseRegion),
+                )
+                .first,
+          ),
+        ).requestFocus();
+        await tester.pump();
+      }
+      expect(_focusIsWithin(tester, tile('E')), isTrue);
+
+      // A tap on the retry leaves focus where it is. The server's page has
+      // the base game, and the expansion moves into its strip, which stays
+      // folded.
+      remote.onFetchPage = (_, _) async => pageOf([
+        game('B'),
+        expansion('E', [under('B')]),
+        game('C'),
+        ...after,
+      ]);
+      await tester.tap(find.text('Try again'));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(GameBrowseScreen.fromCacheBannerKey), findsNothing);
+      expect(tile('E'), findsNothing);
+      expect(find.byType(BgeShelf), findsNothing);
+      expect(_focusIsWithin(tester, badgeOf('B')), isTrue);
+      // The page doesn't move.
+      expect(page.pixels, 120);
     });
 
     testWidgets('the strip folds when its game is found gone', (tester) async {

@@ -852,6 +852,15 @@ class _CollectionCovers extends StatelessWidget {
               );
         return BgeFocusHandoff(
           identity: gameId,
+          // A folded strip's games are under the badge, so a focused game
+          // that moves in there, or whose open strip folds, is handed to it
+          // (#813).
+          folded: {
+            if (!unfolded)
+              for (final expansion in placed.expansions) expansion.first.gameId,
+          },
+          foldedPlace: BgeUnfoldingCovers.stripPlace(gameId),
+          foldedControl: BgeCoverTile.expansionsControl,
           child: switch (group) {
             [final item] => _CollectionTile(
               item: item,

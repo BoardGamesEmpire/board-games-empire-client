@@ -3591,6 +3591,100 @@ void main() {
       });
     }
 
+    testWidgets('a focused marked expansion whose base game syncs in hands '
+        "focus to the base game's badge (#813)", (tester) async {
+      // Covers after the first row, so the page scrolls, and it is scrolled
+      // a little, with the expansion's row still built.
+      final after = [
+        for (var i = 0; i < 8; i++)
+          listItem('zoo-$i', gameId: 'g-zoo$i', title: 'Zoo $i'),
+      ];
+      await showThumbnails(tester, size: const Size(400, 700), [
+        expansion,
+        other,
+        ...after,
+      ]);
+      final page =
+          tester
+              .state<ScrollableState>(
+                find.byWidgetPredicate(
+                  (widget) =>
+                      widget is Scrollable &&
+                      widget.axisDirection == AxisDirection.down,
+                ),
+              )
+              .position
+            ..jumpTo(120);
+      await tester.pump();
+      expect(coverOf(tester, tile('exp-1')).marked, isTrue);
+      // Azul's cover, then the expansion's: each ink's own node.
+      for (final id in ['azul-1', 'exp-1']) {
+        Focus.of(
+          tester.element(
+            find
+                .descendant(
+                  of: find.descendant(
+                    of: tile(id),
+                    matching: find.byType(InkWell),
+                  ),
+                  matching: find.byType(MouseRegion),
+                )
+                .first,
+          ),
+        ).requestFocus();
+        await tester.pump();
+      }
+      expect(_focusIsWithin(tester, tile('exp-1')), isTrue);
+
+      // A sync brings its base game, and the expansion moves into the base
+      // game's strip, which stays folded.
+      items.add([base, expansion, other, ...after]);
+      await tester.pumpAndSettle();
+
+      expect(tile('exp-1'), findsNothing);
+      expect(strip, findsNothing);
+      expect(_focusIsWithin(tester, badgeOf(tile('base-1'))), isTrue);
+      // The page doesn't move.
+      expect(page.pixels, 120);
+    });
+
+    testWidgets('a focused strip cover whose strip a screen reader folds hands '
+        "focus to the base game's badge (#813)", (tester) async {
+      final handle = tester.ensureSemantics();
+      await showThumbnails(tester, [base, expansion, other]);
+      // A screen reader opens the strip from the cover, which moves no
+      // focus, and the user goes on from Azul's cover into the strip.
+      performCustomAction(coverNode(tester, tile('base-1')), 'Show expansions');
+      await tester.pumpAndSettle();
+      final nested = find.byKey(
+        GameCollectionListScreen.nestedTileKey('g-base', 'exp-1'),
+      );
+      for (final cover in [tile('azul-1'), nested]) {
+        Focus.of(
+          tester.element(
+            find
+                .descendant(
+                  of: find.descendant(
+                    of: cover,
+                    matching: find.byType(InkWell),
+                  ),
+                  matching: find.byType(MouseRegion),
+                )
+                .first,
+          ),
+        ).requestFocus();
+        await tester.pump();
+      }
+      expect(_focusIsWithin(tester, nested), isTrue);
+
+      performCustomAction(coverNode(tester, tile('base-1')), 'Hide expansions');
+      await tester.pumpAndSettle();
+
+      expect(strip, findsNothing);
+      expect(_focusIsWithin(tester, badgeOf(tile('base-1'))), isTrue);
+      handle.dispose();
+    });
+
     testWidgets("a focused cover scrolled out of the grid doesn't move focus "
         "to its game's copy in an open strip (#819)", (tester) async {
       // A standalone expansion has a cover of its own and one in its base

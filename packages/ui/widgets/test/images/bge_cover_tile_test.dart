@@ -89,6 +89,14 @@ Color pixel((int, ByteData) image, double x, double y) {
 }
 
 void main() {
+  /// The primary focus, if it is inside [finder].
+  Finder focusedIn(Finder finder) => find.descendant(
+    of: finder,
+    matching: find.byElementPredicate(
+      (e) => identical(e, FocusManager.instance.primaryFocus?.context),
+    ),
+  );
+
   testWidgets('one node, labelled by the label, with a tap action', (
     tester,
   ) async {
@@ -608,14 +616,6 @@ void main() {
         return tester.getRect(find.byType(BgeCoverTile));
       }
 
-      /// The primary focus, if it is inside [finder].
-      Finder focusedIn(Finder finder) => find.descendant(
-        of: finder,
-        matching: find.byElementPredicate(
-          (e) => identical(e, FocusManager.instance.primaryFocus?.context),
-        ),
-      );
-
       testWidgets('the cover takes it, ringed after the keyboard', (
         tester,
       ) async {
@@ -674,6 +674,125 @@ void main() {
 
         expect(pixel(await paint(tester), onTheRing.dx, onTheRing.dy), primary);
       }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
+    });
+  });
+
+  group('when the badge goes while a route covers the page (#813)', () {
+    late ValueNotifier<BgeCoverExpansions?> expansions;
+
+    setUp(() => expansions = ValueNotifier(_expansions()));
+    tearDown(() => expansions.dispose());
+
+    /// The tile as a game's item in a hand-off scope, or with [inHandoff]
+    /// false bare, as on a shelf, after two buttons. Before, then the badge,
+    /// is focused, so that the page's focus history holds Before under the
+    /// badge. A page then covers it, under which the badge goes, as when a
+    /// sync takes the game's last expansion away.
+    ///
+    /// Returns a context inside the page above, to pop it from.
+    Future<BuildContext> loseTheBadge(
+      WidgetTester tester, {
+      bool inHandoff = true,
+    }) async {
+      final tile = ValueListenableBuilder(
+        valueListenable: expansions,
+        builder: (_, expansions, _) =>
+            BgeCoverTile(label: 'Azul', onTap: () {}, expansions: expansions),
+      );
+      final column = Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          TextButton(onPressed: () {}, child: const Text('Before')),
+          TextButton(onPressed: () {}, child: const Text('Between')),
+          if (inHandoff)
+            BgeFocusHandoff(identity: 'azul', child: tile)
+          else
+            tile,
+        ],
+      );
+      await tester.pumpWidget(
+        _host(
+          tester,
+          inHandoff ? BgeFocusHandoffScope(child: column) : column,
+        ),
+      );
+      await tester.pumpAndSettle();
+      Focus.of(tester.element(find.text('Before'))).requestFocus();
+      await tester.pump();
+      Focus.of(
+        tester.element(
+          find.descendant(of: _badge, matching: find.byType(Icon)),
+        ),
+      ).requestFocus();
+      await tester.pump();
+      expect(focusedIn(_badge), findsOneWidget);
+
+      late BuildContext above;
+      Navigator.of(tester.element(find.text('Before'))).push(
+        MaterialPageRoute<void>(
+          builder: (context) {
+            above = context;
+            return const Text('above');
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expansions.value = null;
+      await tester.pump();
+      expect(_badge, findsNothing);
+      return above;
+    }
+
+    testWidgets('a badge that goes under a covering route gives the pop to '
+        'its cover', (tester) async {
+      final above = await loseTheBadge(tester);
+
+      Navigator.of(above).pop();
+      await tester.pumpAndSettle();
+
+      expect(find.text('above'), findsNothing);
+      expect(focusedIn(find.byType(BgeCoverTile)), findsOneWidget);
+    });
+
+    testWidgets("outside a game's hand-off, as on a shelf, the pop gives "
+        'focus to the control before the badge', (tester) async {
+      final above = await loseTheBadge(tester, inHandoff: false);
+
+      Navigator.of(above).pop();
+      await tester.pumpAndSettle();
+
+      expect(find.text('above'), findsNothing);
+      expect(
+        focusedIn(find.widgetWithText(TextButton, 'Before')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('focus the user moves during the exit stays where it is', (
+      tester,
+    ) async {
+      final above = await loseTheBadge(tester);
+
+      Navigator.of(above).pop();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+      // The pop has put focus on Before, and the user tabs on while the
+      // page above is still leaving.
+      expect(find.text('above'), findsOneWidget);
+      expect(
+        focusedIn(find.widgetWithText(TextButton, 'Before')),
+        findsOneWidget,
+      );
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pumpAndSettle();
+
+      expect(find.text('above'), findsNothing);
+      expect(
+        focusedIn(find.widgetWithText(TextButton, 'Between')),
+        findsOneWidget,
+      );
     });
   });
 

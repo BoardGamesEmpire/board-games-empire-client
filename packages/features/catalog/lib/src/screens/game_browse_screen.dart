@@ -588,6 +588,15 @@ class _BrowseCovers extends StatelessWidget {
         final game = placed.item;
         return BgeFocusHandoff(
           identity: game.id,
+          // A folded strip's games are under the badge, so a focused game
+          // that moves in there, or whose open strip folds, is handed to it
+          // (#813).
+          folded: {
+            if (!unfolded)
+              for (final expansion in placed.expansions) expansion.id,
+          },
+          foldedPlace: BgeUnfoldingCovers.stripPlace(game.id),
+          foldedControl: BgeCoverTile.expansionsControl,
           child: _BrowseTile(
             game: game,
             onQuickLook: onQuickLook,

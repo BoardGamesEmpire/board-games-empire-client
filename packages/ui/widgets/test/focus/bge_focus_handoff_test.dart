@@ -8,7 +8,10 @@ import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
 /// One item in the list: a game's, when `game` is set, drawn as a [_Row] or,
-/// with `stack`, as a [_Stack]; else a plain line that holds no focus.
+/// with `stack`, as a [_Stack]; else a plain line that holds no focus, or,
+/// with `button`, a button that isn't a game's, as a refresh banner's retry
+/// is. A game's item folds away the games in `folded`, which take
+/// `foldedPlace` when it unfolds them.
 typedef _Item = ({
   String key,
   String label,
@@ -16,6 +19,9 @@ typedef _Item = ({
   String? place,
   bool stack,
   bool laidOut,
+  Set<String> folded,
+  String? foldedPlace,
+  bool button,
 });
 
 _Item _line(String key) => (
@@ -25,6 +31,9 @@ _Item _line(String key) => (
   place: null,
   stack: false,
   laidOut: false,
+  folded: const {},
+  foldedPlace: null,
+  button: false,
 );
 
 _Item _row(String key, String label, {String game = 'g', String? place}) => (
@@ -34,6 +43,9 @@ _Item _row(String key, String label, {String game = 'g', String? place}) => (
   place: place,
   stack: false,
   laidOut: false,
+  folded: const {},
+  foldedPlace: null,
+  button: false,
 );
 
 _Item _stack(String key, String label, {String game = 'g', String? place}) => (
@@ -43,15 +55,39 @@ _Item _stack(String key, String label, {String game = 'g', String? place}) => (
   place: place,
   stack: true,
   laidOut: false,
+  folded: const {},
+  foldedPlace: null,
+  button: false,
 );
 
-_Item _laidOut(String key, String label, {String game = 'g'}) => (
+_Item _laidOut(
+  String key,
+  String label, {
+  String game = 'g',
+  Set<String> folded = const {},
+  String? foldedPlace,
+}) => (
   key: key,
   label: label,
   game: game,
   place: null,
   stack: false,
   laidOut: true,
+  folded: folded,
+  foldedPlace: foldedPlace,
+  button: false,
+);
+
+_Item _button(String key) => (
+  key: key,
+  label: key,
+  game: null,
+  place: null,
+  stack: false,
+  laidOut: false,
+  folded: const {},
+  foldedPlace: null,
+  button: true,
 );
 
 /// One form of a game's item, as an entry's row is.
@@ -181,10 +217,19 @@ void main() {
                         items: items,
                         keyOf: (item) => ValueKey(item.key),
                         itemBuilder: (_, item) => switch (item.game) {
+                          null when item.button => TextButton(
+                            onPressed: () {},
+                            child: Text(item.label),
+                          ),
                           null => SizedBox(height: 48, child: Text(item.label)),
                           final game => BgeFocusHandoff(
                             identity: game,
                             place: item.place,
+                            folded: item.folded,
+                            foldedPlace: item.foldedPlace,
+                            // A laid-out item's second control, as a cover's
+                            // expansions badge is.
+                            foldedControl: 1,
                             child: item.laidOut
                                 ? _LaidOut(item.label)
                                 : item.stack
@@ -218,6 +263,11 @@ void main() {
 
   BuildContext pageContext(WidgetTester tester) =>
       tester.element(find.text('other'));
+
+  /// Whether the list has the game [identity] at [place], built or not, as
+  /// a screen's lookup over what it placed says.
+  bool shown(Object identity, Object? place) =>
+      items.value.any((item) => item.game == identity && item.place == place);
 
   group(
     'hands focus to the replacement when the focused item changes form',
@@ -569,11 +619,6 @@ void main() {
     setUp(() => controller = ScrollController());
     tearDown(() => controller.dispose());
 
-    /// Whether the list has the game [identity] at [place], built or not, as
-    /// a screen's lookup over what it placed says.
-    bool shown(Object identity, Object? place) =>
-        items.value.any((item) => item.game == identity && item.place == place);
-
     /// Wingspan under the base game a, at the top, and under b, at the end:
     /// more than a screen and the list's cache apart.
     List<_Item> twoPlaces() => [
@@ -781,6 +826,367 @@ void main() {
         },
       );
     }
+  });
+
+  group('a sync while away (#813)', () {
+    /// Covers the page with a page route, or a pop-up, and returns a context
+    /// inside it to pop it from.
+    Future<BuildContext> cover(
+      WidgetTester tester, {
+      bool popUp = false,
+    }) async {
+      late BuildContext above;
+      Widget build(BuildContext context) {
+        above = context;
+        return const Text('above');
+      }
+
+      unawaited(
+        popUp
+            ? showDialog<void>(context: pageContext(tester), builder: build)
+            : Navigator.of(
+                pageContext(tester),
+              ).push(MaterialPageRoute<void>(builder: build)),
+      );
+      await tester.pumpAndSettle();
+      return above;
+    }
+
+    /// Wingspan, focused after other and then a retry, changes form under a
+    /// covering route, so that the pop would put focus on the retry. Then
+    /// the retry goes too, as a refresh banner's does once a sync succeeds,
+    /// and the pop would put focus on other.
+    Future<BuildContext> loseTheFallback(
+      WidgetTester tester, {
+      bool popUp = false,
+    }) async {
+      await show(tester, [_button('retry'), _row('row-g', 'Wingspan')]);
+      // The page's history: other, then the retry, then Wingspan.
+      other.requestFocus();
+      await tester.pump();
+      control(tester, 'retry').requestFocus();
+      await tester.pump();
+      control(tester, 'Wingspan').requestFocus();
+      await tester.pump();
+      final above = await cover(tester, popUp: popUp);
+
+      items.value = [_button('retry'), _stack('stack-g', 'Wingspan copies')];
+      await tester.pump();
+      items.value = [_stack('stack-g', 'Wingspan copies')];
+      await tester.pump();
+      return above;
+    }
+
+    group('a noted fallback that leaves under the route still lets the '
+        'replacement take the pop', () {
+      for (final popUp in [false, true]) {
+        testWidgets(popUp ? 'under a pop-up' : 'under a page', (tester) async {
+          final above = await loseTheFallback(tester, popUp: popUp);
+
+          Navigator.of(above).pop();
+          await tester.pumpAndSettle();
+
+          expect(find.text('above'), findsNothing);
+          expect(control(tester, 'Wingspan copies').hasPrimaryFocus, isTrue);
+        });
+      }
+    });
+
+    group("focus the route's caller moves as the route closes stays where "
+        'it is', () {
+      for (final popUp in [false, true]) {
+        testWidgets(popUp ? 'under a pop-up' : 'under a page', (tester) async {
+          await show(tester, [_line('a'), _row('row-g', 'Wingspan')]);
+          await focus(tester, 'Wingspan');
+
+          late BuildContext above;
+          Widget build(BuildContext context) {
+            above = context;
+            return const Text('above');
+          }
+
+          // The caller hands focus on once the route has closed, as a
+          // filter pop-up's caller gives it to its Filters button.
+          unawaited(
+            (popUp
+                    ? showDialog<void>(
+                        context: pageContext(tester),
+                        builder: build,
+                      )
+                    : Navigator.of(
+                        pageContext(tester),
+                      ).push(MaterialPageRoute<void>(builder: build)))
+                .then((_) => elsewhere.requestFocus()),
+          );
+          await tester.pumpAndSettle();
+          // The pop would put focus on other now.
+          items.value = [_line('a'), _stack('stack-g', 'Wingspan copies')];
+          await tester.pump();
+
+          Navigator.of(above).pop();
+          await tester.pumpAndSettle();
+
+          expect(find.text('above'), findsNothing);
+          expect(elsewhere.hasPrimaryFocus, isTrue);
+          expect(control(tester, 'Wingspan copies').hasFocus, isFalse);
+        });
+      }
+    });
+
+    testWidgets('focus the user moves during the exit stays where it is', (
+      tester,
+    ) async {
+      final above = await loseTheFallback(tester);
+
+      Navigator.of(above).pop();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+      // The pop has put focus on other, and the user tabs on while the page
+      // above is still leaving.
+      expect(find.text('above'), findsOneWidget);
+      expect(other.hasPrimaryFocus, isTrue);
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pumpAndSettle();
+
+      expect(find.text('above'), findsNothing);
+      expect(elsewhere.hasPrimaryFocus, isTrue);
+      expect(control(tester, 'Wingspan copies').hasFocus, isFalse);
+    });
+
+    /// Wingspan, focused after other and then a retry, changes form under a
+    /// covering page, and the pop begins, putting focus on the retry. The
+    /// page above is still leaving.
+    Future<void> popOntoTheFallback(WidgetTester tester) async {
+      await show(tester, [_button('retry'), _row('row-g', 'Wingspan')]);
+      other.requestFocus();
+      await tester.pump();
+      control(tester, 'retry').requestFocus();
+      await tester.pump();
+      control(tester, 'Wingspan').requestFocus();
+      await tester.pump();
+      final above = await cover(tester);
+      items.value = [_button('retry'), _stack('stack-g', 'Wingspan copies')];
+      await tester.pump();
+
+      Navigator.of(above).pop();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(find.text('above'), findsOneWidget);
+      expect(control(tester, 'retry').hasPrimaryFocus, isTrue);
+    }
+
+    testWidgets('a noted fallback that leaves during the exit still lets the '
+        'replacement take the pop', (tester) async {
+      await popOntoTheFallback(tester);
+
+      // The retry goes while the page above leaves, and the framework puts
+      // its focus on other.
+      items.value = [_stack('stack-g', 'Wingspan copies')];
+      await tester.pump();
+      expect(other.hasPrimaryFocus, isTrue);
+      await tester.pumpAndSettle();
+
+      expect(find.text('above'), findsNothing);
+      expect(control(tester, 'Wingspan copies').hasPrimaryFocus, isTrue);
+    });
+
+    testWidgets('focus the user moves during the exit stays where it is when '
+        'the noted fallback leaves after', (tester) async {
+      await popOntoTheFallback(tester);
+
+      // The user tabs on from the retry, which then goes.
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pump();
+      final moved = FocusManager.instance.primaryFocus;
+      expect(moved, isNot(control(tester, 'retry')));
+      items.value = [_stack('stack-g', 'Wingspan copies')];
+      await tester.pumpAndSettle();
+
+      expect(find.text('above'), findsNothing);
+      expect(FocusManager.instance.primaryFocus, moved);
+    });
+
+    group('a focused game that folds into another item gives focus to that '
+        "item's folded control", () {
+      // Wingspan's base game arrives, an item of two controls that folds
+      // Wingspan away, as a base game's cover does with its strip folded.
+      final before = [_line('a'), _row('row-g', 'Wingspan')];
+      final after = [
+        _line('a'),
+        _laidOut('laid-b', 'Base', game: 'b', folded: {'g'}),
+      ];
+
+      testWidgets('at once', (tester) async {
+        await show(tester, before, isShown: shown);
+        await focus(tester, 'Wingspan');
+
+        items.value = after;
+        await tester.pumpAndSettle();
+
+        expect(find.text('Wingspan'), findsNothing);
+        expect(control(tester, 'Base badge').hasPrimaryFocus, isTrue);
+      });
+
+      testWidgets('after a pop, when it folds away under a covering route', (
+        tester,
+      ) async {
+        await show(tester, before, isShown: shown);
+        await focus(tester, 'Wingspan');
+        final above = await cover(tester);
+
+        items.value = after;
+        await tester.pump();
+        Navigator.of(above).pop();
+        await tester.pumpAndSettle();
+
+        expect(find.text('above'), findsNothing);
+        expect(control(tester, 'Base badge').hasPrimaryFocus, isTrue);
+      });
+    });
+
+    testWidgets('a game still shown in its place gets nothing from an item '
+        'that folds it', (tester) async {
+      // A standalone expansion's own cover at top level, and its base
+      // game's cover, which folds it away in its strip too: the cover
+      // scrolls out of the cache, its game still in its place.
+      final controller = ScrollController();
+      addTearDown(controller.dispose);
+      await show(
+        tester,
+        [
+          _row('row-g', 'Wingspan'),
+          for (var i = 0; i < 40; i++) _line('line $i'),
+          _laidOut('laid-b', 'Base', game: 'b', folded: {'g'}),
+        ],
+        isShown: shown,
+        controller: controller,
+      );
+      await focus(tester, 'Wingspan');
+
+      controller.jumpTo(controller.position.maxScrollExtent);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Wingspan', skipOffstage: false), findsNothing);
+      expect(find.text('Base badge'), findsOneWidget);
+      expect(control(tester, 'Base badge').hasFocus, isFalse);
+      expect(FocusManager.instance.primaryFocus, other);
+    });
+
+    testWidgets('focus the user moves during the exit stays where it is, '
+        'when the game has folded away under the route', (tester) async {
+      await show(tester, [
+        _line('a'),
+        _row('row-g', 'Wingspan'),
+      ], isShown: shown);
+      await focus(tester, 'Wingspan');
+      final above = await cover(tester);
+      items.value = [
+        _line('a'),
+        _laidOut('laid-b', 'Base', game: 'b', folded: {'g'}),
+      ];
+      await tester.pump();
+
+      Navigator.of(above).pop();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+      // The pop has put focus on other, and the user tabs on while the page
+      // above is still leaving.
+      expect(find.text('above'), findsOneWidget);
+      expect(other.hasPrimaryFocus, isTrue);
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pumpAndSettle();
+
+      expect(find.text('above'), findsNothing);
+      expect(elsewhere.hasPrimaryFocus, isTrue);
+      expect(control(tester, 'Base badge').hasFocus, isFalse);
+    });
+
+    group('a focused game whose place folds away gives focus to the item '
+        'that folds it', () {
+      // Wingspan in b's strip, which b's cover unfolds, as a screen reader's
+      // Hide expansions on b's cover folds it while Wingspan's cover holds
+      // focus.
+      final open = [
+        _laidOut('laid-b', 'Base', game: 'b', foldedPlace: 'strip:b'),
+        _row('row-g', 'Wingspan', place: 'strip:b'),
+        _line('c'),
+      ];
+      final folded = [
+        _laidOut(
+          'laid-b',
+          'Base',
+          game: 'b',
+          folded: {'g'},
+          foldedPlace: 'strip:b',
+        ),
+        _line('c'),
+      ];
+
+      /// The screen's lookup, which counts a strip's games whether it is
+      /// open or folded, as it can't see which: Wingspan is shown in b's
+      /// strip while b is.
+      bool everyStrip(Object identity, Object? place) =>
+          shown(identity, place) ||
+          (identity == 'g' &&
+              place == 'strip:b' &&
+              items.value.any((item) => item.game == 'b'));
+
+      testWidgets('at once', (tester) async {
+        await show(tester, open, isShown: everyStrip);
+        await focus(tester, 'Wingspan');
+
+        items.value = folded;
+        await tester.pump();
+        expect(find.text('Wingspan'), findsNothing);
+        expect(everyStrip('g', 'strip:b'), isTrue);
+        await tester.pumpAndSettle();
+
+        expect(control(tester, 'Base badge').hasPrimaryFocus, isTrue);
+      });
+
+      testWidgets('after a pop, when it folds under a covering route', (
+        tester,
+      ) async {
+        await show(tester, open, isShown: everyStrip);
+        await focus(tester, 'Wingspan');
+        final above = await cover(tester);
+
+        items.value = folded;
+        await tester.pump();
+        Navigator.of(above).pop();
+        await tester.pumpAndSettle();
+
+        expect(find.text('above'), findsNothing);
+        expect(control(tester, 'Base badge').hasPrimaryFocus, isTrue);
+      });
+    });
+
+    testWidgets('a focused item scrolled out of an open place hands nothing '
+        'on to the item that unfolds it', (tester) async {
+      // b's cover unfolds Wingspan's place, so it folds nothing, and
+      // Wingspan's item scrolls out of the cache, still in its place.
+      final controller = ScrollController();
+      addTearDown(controller.dispose);
+      await show(
+        tester,
+        [
+          _row('row-g', 'Wingspan', place: 'strip:b'),
+          for (var i = 0; i < 40; i++) _line('line $i'),
+          _laidOut('laid-b', 'Base', game: 'b', foldedPlace: 'strip:b'),
+        ],
+        isShown: shown,
+        controller: controller,
+      );
+      await focus(tester, 'Wingspan');
+
+      controller.jumpTo(controller.position.maxScrollExtent);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Wingspan', skipOffstage: false), findsNothing);
+      expect(find.text('Base badge'), findsOneWidget);
+      expect(control(tester, 'Base badge').hasFocus, isFalse);
+      expect(FocusManager.instance.primaryFocus, other);
+    });
   });
 
   group('carries focus a mouse gave, hidden until a key press', () {
