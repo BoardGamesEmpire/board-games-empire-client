@@ -438,5 +438,23 @@
         "example": "alex"
       }
     }
+  },
+  "shellServerCapacityReached": "This device connects up to {max} servers at once.",
+  "@shellServerCapacityReached": {
+    "description": "Shown when making a server active fails because this device already connects the most servers it can at once (#134). States the limit so the person knows to disconnect one first. Must not read as an error on their part.",
+    "placeholders": {
+      "max": {
+        "type": "int",
+        "description": "The most servers this device connects at once"
+      }
+    }
+  },
+  "shellServerSwitchFailed": "Couldn't switch servers. Try again.",
+  "@shellServerSwitchFailed": {
+    "description": "Shown when making a server active fails for a reason other than the device being at its server limit (#134). Says to try again; the cause isn't something the person can act on."
+  },
+  "shellDeepLinkOpenFailed": "Couldn't open that link.",
+  "@shellDeepLinkOpenFailed": {
+    "description": "Shown when a link to a server on this device can't be opened because making that server active failed (#82). The link is dropped, so this doesn't suggest trying it again."
   }
 }

@@ -4,6 +4,7 @@ import 'package:app_shell/src/deep_links/deep_link_normalizer.dart';
 import 'package:app_shell/src/deep_links/known_server_lookup.dart';
 import 'package:app_shell/src/deep_links/pending_deep_link_holder.dart';
 import 'package:app_shell/src/router/app_router.dart';
+import 'package:app_shell/src/servers/server_activation.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:observability/observability.dart';
 
@@ -195,11 +196,7 @@ class DeepLinkConsumer {
 
     _switchRequestedFor = link;
     try {
-      if (orchestrator.getContext(localId) != null) {
-        await orchestrator.switchActiveServer(localId);
-      } else {
-        await orchestrator.connectServer(localId, makeActive: true);
-      }
+      await activateServer(orchestrator, localId);
     } on Object catch (error, stackTrace) {
       _drop(link, 'making its server active', error, stackTrace);
       return;
