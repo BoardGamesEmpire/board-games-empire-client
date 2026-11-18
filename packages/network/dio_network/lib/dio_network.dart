@@ -11,6 +11,7 @@ export 'src/feedback/feedback_dio_transport.dart';
 
 export 'src/game_collection/game_collection_remote_data_source_impl.dart';
 
+export 'src/games/game_search_channel_impl.dart';
 export 'src/games/games_remote_data_source_impl.dart';
 
 export 'src/household/admin_household_remote_data_source_impl.dart';

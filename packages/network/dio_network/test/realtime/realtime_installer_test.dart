@@ -1,4 +1,5 @@
 import 'package:di/di.dart';
+import 'package:dio_network/src/games/game_search_channel_impl.dart';
 import 'package:dio_network/src/realtime/realtime_connection_impl.dart';
 import 'package:dio_network/src/realtime/realtime_endpoint.dart';
 import 'package:dio_network/src/realtime/realtime_installer.dart';
@@ -55,6 +56,34 @@ void main() {
     expect(factory.managers.single.endpoint, same(endpoint));
   });
 
+  test('registers a games search source beside the connection', () async {
+    serverScope.registerSingleton<RealtimeEndpoint>(
+      RealtimeEndpoint(server: Uri.parse('https://h.test')),
+    );
+
+    await signIn();
+
+    final source = session.maybeGet<GameSearchStreamSource>();
+    expect(source, isA<GameSearchStreamSourceImpl>());
+    expect(
+      serverScope.isRegistered<GameSearchStreamSource>(),
+      isFalse,
+      reason: "the session's, as its connection is",
+    );
+    expect(factory.managers, isEmpty, reason: 'opening a channel connects');
+
+    final channel = source!.open();
+    // A lease on the session's connection shares the channel's socket.
+    session.maybeGet<RealtimeConnection>()!.lease('games/search');
+
+    final socket = factory.managers.single.sockets.single;
+    expect(socket.namespace, '/games/search');
+
+    await channel.close();
+
+    expect(socket.disposed, isFalse, reason: 'the other lease still holds it');
+  });
+
   test('the session ending closes its connection', () async {
     serverScope.registerSingleton<RealtimeEndpoint>(
       RealtimeEndpoint(server: Uri.parse('https://h.test')),
@@ -73,6 +102,7 @@ void main() {
     await signIn();
 
     expect(session.scopeHasRegistration<RealtimeConnection>(), isFalse);
+    expect(session.scopeHasRegistration<GameSearchStreamSource>(), isFalse);
     expect(factory.managers, isEmpty);
   });
 }

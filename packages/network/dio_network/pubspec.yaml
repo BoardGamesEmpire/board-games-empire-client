@@ -32,6 +32,8 @@ dev_dependencies:
   # The realtime installer's test runs it through a real user scope (#473).
   di:
     path: ../../core/di
+  # Test-only: elapsing the game search channel's idle timeout (#473).
+  fake_async: ^1.3.3
   flutter_test:
     sdk: flutter
   logging: ^1.3.0
