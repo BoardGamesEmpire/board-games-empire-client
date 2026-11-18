@@ -27,7 +27,13 @@ it fails.
 `GameSearchBloc` reads one page of `GET /api/games/search`. The server waits
 for every DataGateway, for up to 15 seconds, so a search can take that long.
 There is no "load more": the search has no stable order and no has-more
-signal yet (backend#792). Streaming over the WebSocket is #473.
+signal yet (backend#792).
+
+Where the session has a `GameSearchStreamSource`, the screen opens one channel
+on the session's socket and the bloc follows it, so this server's results
+show as they arrive instead of waiting on the DataGateways (#473). A server
+with no socket, or a socket that can't serve the search, searches over REST
+as above.
 
 Results come in two sections: what this server holds, then what its
 DataGateways found that the first section does not already list. A

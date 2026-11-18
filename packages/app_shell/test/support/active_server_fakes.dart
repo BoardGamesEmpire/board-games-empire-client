@@ -191,6 +191,7 @@ ActiveServer buildActiveServer(
   GameRepository? gameRepository,
   ListLayoutRepository? listLayoutRepository,
   DataGatewaySearchReach? dataGatewaySearchReach,
+  GameSearchStreamSource? gameSearchStreamSource,
   String serverId = 'server-uuid-1',
 }) {
   final container = DependencyContainerImpl()
@@ -318,6 +319,9 @@ ActiveServer buildActiveServer(
     container.registerSingleton<DataGatewaySearchReach>(
       dataGatewaySearchReach,
     );
+  }
+  if (gameSearchStreamSource != null) {
+    container.registerSingleton<GameSearchStreamSource>(gameSearchStreamSource);
   }
   return ActiveServer(
     serverId: serverId,

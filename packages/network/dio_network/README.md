@@ -4,7 +4,9 @@ The shared Dio layer under the `network_interface` contracts: the
 `DioFactory` seam, the redaction-safe log and clock-skew interceptors, and the
 Dio-backed remote data sources and clients. Both the native stack
 (`native_network`) and the browser stack (`web_network`) build on it, so it
-carries no token custody and no `flutter_secure_storage`.
+carries no token custody and no `flutter_secure_storage`. Both platforms also
+run this package's `RealtimeInstaller` (#473), so the session's socket is the
+same on both.
 
 Bearer-token custody, `AuthRepositoryImpl` and the per-server composition root
 live in `native_network`.

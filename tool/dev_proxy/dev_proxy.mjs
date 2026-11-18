@@ -24,10 +24,11 @@ const WEB_PORT = Number(process.env.BGE_WEB_PORT ?? 5000); // flutter dev server
 const BACKEND_PORT = Number(process.env.BGE_BACKEND_PORT ?? 33_333); // bge backend default port
 
 // Path prefixes routed to the backend. Extend if the backend serves auth or
-// other API surface outside these (e.g. add '/socket.io' when the realtime
-// features land). A request matches a prefix when it equals it exactly or is a
+// other API surface outside these. '/socket.io' is the realtime socket the
+// search streams over (#473); its engine adds a trailing slash, so its URL is
+// '/socket.io/?EIO=4...', which the sub-path check below matches. A request matches a prefix when it equals it exactly or is a
 // sub-path of it, so '/apifoo' does NOT match '/api'.
-const BACKEND_PREFIXES = ['/api', '/.well-known'];
+const BACKEND_PREFIXES = ['/api', '/.well-known', '/socket.io'];
 
 // Callers normalize req.url once (see the handlers), so this takes a definite
 // string.

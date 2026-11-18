@@ -14,8 +14,9 @@ issues hold the detailed scopes, this doc holds the *order*, *dependencies*, and
 A short orientation for anyone (human or LLM) picking this up cold:
 
 - **Multi-server.** A user can connect to multiple BGE servers. Each `ServerContext`
-  has its own per-server Drift DB, dependency container (GetIt scoped), auth
-  repository, and (future) WebSocket connection. The orchestrator manages
+  has its own per-server Drift DB, dependency container (GetIt scoped) and auth
+  repository. The realtime socket is not the context's: its user-session scope
+  owns one connection per server and signed-in session (#473). The orchestrator manages
   active/backgrounded/monitoring/disposed lifecycle. **Alpha ships single-server
   UX, but the multi-server infrastructure stays in place** — it is hard to retrofit.
 - **Self-hosted philosophy.** No third-party data sharing by default. Bug
@@ -33,9 +34,12 @@ A short orientation for anyone (human or LLM) picking this up cold:
 - **Three platforms in parallel from day one.** Android (primary alpha target),
   macOS desktop, browser. Storage and network are platform-split (drift_storage
   vs web_storage, dio_network vs web_network). No divergence.
-- **REST for alpha; WebSocket later.** The backend exposes REST for everything in
-  alpha scope (search/import are explicitly documented as the REST fallback for a
-  future WS flow). `socket_io_client` and the WS layer are a post-alpha enhancement.
+- **REST for alpha; the socket where it earns its keep.** The backend exposes
+  REST for everything in alpha scope. The game search streams over a
+  `socket_io_client` connection that the user-session scope owns, one per
+  server and signed-in session, and falls back to REST where the server offers
+  no socket or refuses it (#473). Import and the rest of the WS layer remain
+  post-alpha.
 - **Server discovery via `.well-known/bge-identity`.** The user enters a URL; the
   client fetches the identity document and learns the server's auth strategy,
   capabilities, and (once backend #47 lands) version requirements + configured sinks.
@@ -159,10 +163,12 @@ Asking the server *again* is deliberately three answers, not one:
   vocabularies (platforms, categories, mechanics) and the review settings are
   #653, which waits on backend #1004, the routes that list those records.
 - #42 ~~Game browse + search UI (in-system + external gateway results)~~, with
-  #472's Markdown descriptions. Split out: streamed search over the WebSocket
-  (#473) and a platform-type filter on screen (#474). Left for later: a
-  catalog-wide 403 is not remembered, so a later failed read shows the cache
-  again (#557), and search rows show no summary yet (#558).
+  #472's Markdown descriptions. Split out and since shipped: a platform-type
+  filter on screen (#474), and a catalog-wide 403 that forgets the cache
+  (#557). Search now streams over the WebSocket, so this server's results
+  stop waiting on the DataGateways (#473), a DataGateway result's row shows
+  its summary (#558), and a user the server refuses the DataGateways gets this
+  server's games and the server's explanation (#795).
 - #43 Game import flow + completion handling (REST) — **depends on backend #115**
 
 Backend: `data-gateways` CRUD + connect/disconnect (renamed from
@@ -171,7 +177,8 @@ Backend: `data-gateways` CRUD + connect/disconnect (renamed from
 Three gaps #42 found: `GET /games/:id` sent no platform games, so a game already
 on the server could not be added to a collection, until backend #791 added them;
 search cannot be paged (backend #792), so the client reads one page; and search
-drops each DataGateway result's summary (backend #862, which blocks #558).
+dropped each DataGateway result's summary until backend #862, after which #558
+shows it on the row.
 
 ### P6 — Collection feature (#29) — critical-path long pole
 
@@ -220,8 +227,9 @@ tradeoff.
 In rough order:
 
 - **Offline-first UX** (the polished experience on top of the existing infra).
-- **WebSocket layer** (search/import live updates, then real-time chat) via
-  `socket_io_client`; REST paths remain the documented fallback.
+- **WebSocket layer.** The search stream is in (#473). Import live updates,
+  then real-time chat, come next on the same session connection; REST paths
+  remain the documented fallback.
 - **Household membership** (epic #495): the member cap (#481), bans (#485),
   and discoverable households and requests to join (#486). Membership changes
   go straight to the server, not through the sync queue (#122); invites (#455),

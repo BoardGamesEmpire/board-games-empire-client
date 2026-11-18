@@ -1,6 +1,7 @@
 import 'package:access/access.dart' show CallerAccessInstaller;
 import 'package:data_gateway/data_gateway.dart' show dataGatewayResourceTypes;
 import 'package:di/di.dart' show SessionRehydratorInstaller;
+import 'package:dio_network/dio_network.dart' show RealtimeInstaller;
 import 'package:drift_storage/drift_storage.dart'
     show UserSessionScopeInstaller;
 import 'package:events/events.dart' show EventHydrateInstaller;
@@ -37,6 +38,15 @@ import 'package:sync_queue/sync_queue.dart'
 /// resolves the `HouseholdRepository` it registers,
 /// [GameCollectionHydrateInstaller] the `GameCollectionRepository` (#259), and
 /// [EventHydrateInstaller] the `EventRepository` (#496).
+///
+/// [RealtimeInstaller] is shared with native (#473) and runs right after the
+/// rehydrator. It registers the session's socket connection and the games
+/// search stream source over it, only when the server scope has a
+/// `RealtimeEndpoint` (`registerServerNetworkWeb` registers one); otherwise
+/// search goes over REST. It never throws or waits, and connects nothing
+/// until a screen takes a lease. It needs only that endpoint, which the user
+/// scope falls through to, so it can sit this early, ahead of every
+/// installer that might one day lease the socket.
 ///
 /// The resources these installers need — the `ServerDatabase` (#288), the
 /// skew-corrected `ClockService` (#118) and the `AuthRepository` — live in
@@ -93,6 +103,7 @@ import 'package:sync_queue/sync_queue.dart'
 /// wasm executor — passes it to `bootstrapWebServerScope`.
 List<UserScopeInstaller> buildWebUserScopeInstallers() => const [
   SessionRehydratorInstaller(),
+  RealtimeInstaller(),
   UserSessionScopeInstaller(),
   HouseholdHydrateInstaller(),
   GameCollectionHydrateInstaller(),

@@ -4,6 +4,7 @@ import 'package:access/access.dart';
 import 'package:app_shell/app_shell.dart';
 import 'package:data_gateway/data_gateway.dart';
 import 'package:di/di.dart';
+import 'package:dio_network/dio_network.dart' show RealtimeInstaller;
 import 'package:drift/drift.dart';
 import 'package:drift_storage/drift_storage.dart';
 import 'package:drift_storage/drift_storage_native.dart';
@@ -95,6 +96,14 @@ List<ServerScopeInstaller> buildNativeServerScopeInstallers({
 /// themselves with, and an installer can only resolve what a predecessor
 /// registered.
 ///
+/// [RealtimeInstaller] runs right after it (#473). It registers the session's
+/// socket connection and the games search stream source over it, only when
+/// the server scope has a `RealtimeEndpoint`; otherwise search goes over
+/// REST. It never throws or waits, and connects nothing until a screen takes
+/// a lease. It needs only that endpoint, which the user scope falls through
+/// to, so it can sit this early, ahead of every installer that might one day
+/// lease the socket.
+///
 /// The hydrate installers run **after** it: [HouseholdHydrateInstaller]
 /// resolves the [HouseholdRepository] the storage installer registers and
 /// starts the #267 household hydrate, [GameCollectionHydrateInstaller]
@@ -129,6 +138,7 @@ List<ServerScopeInstaller> buildNativeServerScopeInstallers({
 /// says is safe.
 List<UserScopeInstaller> buildNativeUserScopeInstallers() => const [
   SessionRehydratorInstaller(),
+  RealtimeInstaller(),
   UserSessionScopeInstaller(),
   HouseholdHydrateInstaller(),
   GameCollectionHydrateInstaller(),

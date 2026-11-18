@@ -36,6 +36,42 @@ _MockSyncOperationSender _deliveringSender() {
   return sender;
 }
 
+/// A stream source whose channels answer every search with a finished,
+/// empty answer, and remember the queries they were asked.
+class _StreamSource implements GameSearchStreamSource {
+  final List<String> queries = [];
+
+  @override
+  GameSearchChannel open() => _Channel(queries);
+}
+
+class _Channel implements GameSearchChannel {
+  _Channel(this.queries);
+
+  final List<String> queries;
+
+  @override
+  Stream<GameSearchProgress> search(
+    String query, {
+    int limit = GamesRemoteDataSource.searchPageSize,
+    int offset = 0,
+    GameSearchFilter filter = const GameSearchFilter(),
+    bool includeExternal = true,
+  }) {
+    queries.add(query);
+    return Stream.value(
+      const GameSearchProgress(
+        results: GameSearchResults(),
+        localDone: true,
+        done: true,
+      ),
+    );
+  }
+
+  @override
+  Future<void> close() async {}
+}
+
 /// Remembers the layout in memory, as the user-session store does on disk.
 class _MemoryLayouts implements ListLayoutRepository {
   final stored = <ListLayoutScreen, ListLayout>{};
@@ -353,6 +389,7 @@ void main() {
     GameCollectionHydrationStatus? collectionHydration,
     SyncOperationSender? sender,
     bool withReach = true,
+    GameSearchStreamSource? streamSource,
   }) => FakeActiveServerScope(
     buildActiveServer(
       FakeAuthRepository(initialSession: testAuthResponse()),
@@ -365,6 +402,7 @@ void main() {
       syncOperationSender: sender,
       // A signed-in session registers its reach; a signed-out one has none.
       dataGatewaySearchReach: withReach ? DataGatewaySearchReach() : null,
+      gameSearchStreamSource: streamSource,
     ),
   );
 
@@ -376,6 +414,7 @@ void main() {
     GameCollectionHydrationStatus? collectionHydration,
     SyncOperationSender? sender,
     bool withReach = true,
+    GameSearchStreamSource? streamSource,
   }) async {
     when(() => cubit.activeServerScope).thenReturn(
       activeServer(
@@ -385,6 +424,7 @@ void main() {
         collectionHydration: collectionHydration,
         sender: sender,
         withReach: withReach,
+        streamSource: streamSource,
       ),
     );
     whenListen(
@@ -688,6 +728,27 @@ void main() {
       findsOneWidget,
     );
     expect(find.byKey(GameSearchScreen.dataGatewaysRefusedKey), findsNothing);
+  });
+
+  testWidgets("the search screen gets the session's stream source, and none "
+      'when signed out (#473)', (tester) async {
+    final source = _StreamSource();
+    await pumpHome(tester, streamSource: source);
+    await openGames(tester);
+    await searchFor(tester, 'catan');
+
+    // The session's source carried the search, not REST.
+    expect(source.queries, ['catan']);
+    expect(games.searches, isEmpty);
+  });
+
+  testWidgets('a signed-out search has no stream source, and goes over REST '
+      '(#473)', (tester) async {
+    await pumpHome(tester, withReach: false);
+    await openGames(tester);
+    await searchFor(tester, 'catan');
+
+    expect(games.searches, [false]);
   });
 
   testWidgets('a signed-out search never asks the DataGateways, and says '
