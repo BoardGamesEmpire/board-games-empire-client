@@ -48,6 +48,7 @@ final class GameCollectionListReady extends GameCollectionListState {
     this.sort = CollectionSort.title,
     this.refreshFailed = false,
     this.refreshing = false,
+    this.complete = true,
   });
 
   /// What is shown: [all], narrowed by [filter], in [sort]'s order.
@@ -61,6 +62,19 @@ final class GameCollectionListReady extends GameCollectionListState {
   final bool refreshFailed;
   final bool refreshing;
 
+  /// False while the session's first pass runs, before any pass has ended
+  /// in this session (#810). The pass writes the cache a page at a time, so
+  /// a base game may not have landed, and the screen holds an expansion
+  /// that is missing its base game rather than show it marked. A pass that
+  /// fails or ends makes it true, and a retry after a failed pass leaves it
+  /// true.
+  ///
+  /// It is the session's, not the device's: the hydrate's status is kept in
+  /// memory. So on a device that synced before, an expansion whose base
+  /// game isn't owned is held while that session's first pass runs, then
+  /// shown marked.
+  final bool complete;
+
   @override
   List<Object?> get props => [
     items,
@@ -69,6 +83,7 @@ final class GameCollectionListReady extends GameCollectionListState {
     sort,
     refreshFailed,
     refreshing,
+    complete,
   ];
 }
 

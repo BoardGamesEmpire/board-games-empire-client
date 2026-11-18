@@ -1936,6 +1936,171 @@ void main() {
     });
   });
 
+  group('during a first sync, an expansion before its base game (#810)', () {
+    final thumbs = _FakeLayouts()..stored = ListLayout.thumbnails;
+    const link = [ExpansionLink(gameId: 'g-base', isStandalone: false)];
+    final base = listItem('b-1', gameId: 'g-base', title: 'Wingspan');
+    final expansion = listItem(
+      'x-1',
+      gameId: 'g-exp',
+      title: 'European Expansion',
+      contentType: ContentType.expansion,
+      baseGames: link,
+    );
+    final other = listItem('o-1', gameId: 'g-other', title: 'Azul');
+    const marker = 'Base game not in your collection';
+
+    final views = <(String, Key Function(String), ListLayoutRepository?)>[
+      ('the list', GameCollectionListScreen.rowKey, null),
+      ('thumbnails', GameCollectionListScreen.tileKey, thumbs),
+    ];
+
+    for (final (view, topKey, layouts) in views) {
+      testWidgets('is held, then appears under its base game, in $view', (
+        tester,
+      ) async {
+        // Covers that open carry a badge; inert ones don't.
+        await tester.pumpWidget(harness(layouts: layouts, onOpen: (_, _) {}));
+        status.started();
+        items.add([expansion, other]);
+        await tester.pump();
+        await tester.pump();
+
+        expect(find.byKey(topKey('x-1')), findsNothing);
+        expect(find.byKey(topKey('o-1')), findsOneWidget);
+        expect(find.textContaining(marker), findsNothing);
+
+        // The base game's page lands.
+        items.add([expansion, other, base]);
+        await tester.pump();
+        expect(find.byKey(topKey('x-1')), findsNothing);
+        await tester.pump();
+        expect(find.byKey(topKey('x-1')), findsNothing);
+        expect(find.byKey(topKey('b-1')), findsOneWidget);
+        if (layouts == null) {
+          expect(
+            find.byKey(GameCollectionListScreen.nestedRowKey('g-base', 'x-1')),
+            findsOneWidget,
+          );
+        } else {
+          // Under its base game: the badge counts it, and its strip holds
+          // its cover.
+          final badge = find.descendant(
+            of: find.byKey(topKey('b-1')),
+            matching: find.byKey(BgeCoverTile.expansionsBadgeKey),
+          );
+          expect(
+            find.descendant(of: badge, matching: find.text('1')),
+            findsOneWidget,
+          );
+          await tester.tap(badge);
+          await tester.pumpAndSettle();
+          expect(
+            find.byKey(GameCollectionListScreen.nestedTileKey('g-base', 'x-1')),
+            findsOneWidget,
+          );
+        }
+
+        status.finished(CollectionHydrateOutcome.complete);
+        await tester.pumpAndSettle();
+        expect(find.byKey(topKey('x-1')), findsNothing);
+        expect(find.textContaining(marker), findsNothing);
+      });
+
+      testWidgets('is released, marked, by a first sync that fails, in '
+          '$view', (tester) async {
+        await tester.pumpWidget(harness(layouts: layouts));
+        status.started();
+        items.add([expansion, other]);
+        await tester.pump();
+        await tester.pump();
+        expect(find.byKey(topKey('x-1')), findsNothing);
+
+        status.finished(CollectionHydrateOutcome.failed);
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(topKey('x-1')), findsOneWidget);
+        if (layouts == null) {
+          expect(find.textContaining(marker), findsOneWidget);
+        } else {
+          // A cover says it in its label, not in text.
+          final handle = tester.ensureSemantics();
+          expect(
+            tester.getSemantics(find.byKey(topKey('x-1'))).label,
+            contains(marker),
+          );
+          handle.dispose();
+        }
+      });
+    }
+
+    for (final (view, topKey, layouts) in views) {
+      testWidgets('with every game held, the loading state stands in for '
+          'the list, in $view', (tester) async {
+        await tester.pumpWidget(harness(layouts: layouts));
+        status.started();
+        items.add([expansion]);
+        await tester.pump();
+        await tester.pump();
+
+        expect(
+          find.byKey(GameCollectionListScreen.loadingKey),
+          findsOneWidget,
+        );
+        expect(find.byKey(topKey('x-1')), findsNothing);
+        // No row is drawn, so the page counts none.
+        expect(
+          tester
+              .widget<CustomScrollView>(find.byType(CustomScrollView))
+              .semanticChildCount,
+          isNull,
+        );
+
+        status.finished(CollectionHydrateOutcome.failed);
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(GameCollectionListScreen.loadingKey), findsNothing);
+        expect(find.byKey(topKey('x-1')), findsOneWidget);
+      });
+    }
+
+    testWidgets("the page's semanticChildCount counts the rows drawn, in the "
+        'list', (tester) async {
+      await tester.pumpWidget(harness());
+      status.started();
+      items.add([expansion, other]);
+      await tester.pump();
+      await tester.pump();
+
+      int count() => tester
+          .widget<CustomScrollView>(find.byType(CustomScrollView))
+          .semanticChildCount!;
+      expect(count(), 1);
+
+      status.finished(CollectionHydrateOutcome.failed);
+      await tester.pumpAndSettle();
+      expect(count(), 2);
+    });
+
+    testWidgets("the page's semanticChildCount counts the covers drawn, in "
+        'thumbnails', (tester) async {
+      await tester.pumpWidget(harness(layouts: thumbs));
+      status.started();
+      items.add([expansion, other]);
+      await tester.pump();
+      await tester.pump();
+
+      int count() => tester
+          .widget<CustomScrollView>(find.byType(CustomScrollView))
+          .semanticChildCount!;
+      expect(count(), 1);
+
+      status.finished(CollectionHydrateOutcome.failed);
+      await tester.pumpAndSettle();
+      expect(count(), 2);
+    });
+  });
+
   group('a game owned more than once (#709)', () {
     final thumbs = _FakeLayouts()..stored = ListLayout.thumbnails;
 

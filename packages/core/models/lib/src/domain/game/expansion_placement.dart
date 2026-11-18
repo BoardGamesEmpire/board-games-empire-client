@@ -31,8 +31,10 @@ final class PlacedGame<T> extends Equatable {
 ///
 /// For each item, `links` are its [baseGamesOf] without a link to itself and
 /// de-duplicated by game id. `present` are the links whose base game is among
-/// [items]; the others are `absent`. The item is `standalone` when any link
-/// `isStandalone` or its content type is [ContentType.standaloneExpansion].
+/// [items]; the others are `absent`. A link is `pending` when its base game
+/// is neither among [items] nor owned (below): only that one may still
+/// arrive. The item is `standalone` when any link `isStandalone` or its
+/// content type is [ContentType.standaloneExpansion].
 ///
 /// Pass 1 finds the anchors, items that are top level whatever the others do:
 ///
@@ -45,38 +47,40 @@ final class PlacedGame<T> extends Equatable {
 ///
 /// [ownedGameIds] are the game ids of the whole list [items] was narrowed
 /// from, as a filter narrows a collection (#715); left out, they are
-/// [items]' own. They decide a mark and move no game: where an item goes
-/// follows what is shown, and an anchor of the third kind is marked only
-/// when none of its base games is owned either, so an expansion whose base
-/// game a filter hid is top level and unmarked. The mark is
-/// [lacksBaseGame]'s answer over them, the rule the collection's
-/// missing-base filter matches by.
+/// [items]' own. A base game in them is not coming later, whether or not
+/// [items] shows it, so an incomplete list never waits for it (#810). They
+/// decide a mark and move no game: where an item goes follows what is
+/// shown, and an anchor of the third kind is marked only when none of its
+/// base games is owned either, so an expansion whose base game a filter hid
+/// is top level and unmarked. The mark is [lacksBaseGame]'s answer over
+/// them, the rule the collection's missing-base filter matches by.
 ///
 /// Pass 2 places the other linked items. Each is nested when any of its
 /// `present` base games is top level, and is top level, unmarked, when all
 /// of them are nested: those base games are shown, only nested. While the
-/// list is not [complete], an item with an `absent` base game is never put
+/// list is not [complete], an item with a `pending` base game is never put
 /// at top level this way, as that base game may be on a later page and hold
-/// it. So nesting is one level deep, and a chain of expansions alternates:
-/// one nested under the base before it, the next top level, the one after
-/// nested under that. A cycle no anchor leads into is top level, unmarked,
-/// holding nothing, and so is an item that hangs from one: an expansion of a
-/// cycle's member, an expansion of that, and so on. Links that loop are bad
-/// data; this shows every game in them without picking a way to break the
-/// loop.
+/// it. An item whose only `absent` base games are owned is not held: they
+/// are not coming. So nesting is one level deep, and a chain of expansions
+/// alternates: one nested under the base before it, the next top level, the
+/// one after nested under that. A cycle no anchor leads into is top level,
+/// unmarked, holding nothing, and so is an item that hangs from one: an
+/// expansion of a cycle's member, an expansion of that, and so on. Links
+/// that loop are bad data; this shows every game in them without picking a
+/// way to break the loop.
 ///
 /// Every item not held, a standalone one too, goes once into the expansions
 /// of each of its `present` base games shown at top level, in input order.
 ///
 /// While the list is not [complete], an item pass 2 leaves unplaced is
-/// instead held, left out, when any of its base games is `absent`, or when
+/// instead held, left out, when any of its base games is `pending`, or when
 /// any of its `present` base games is held, and so on along a chain to a
-/// fixpoint. This holds every linked item with `present` empty. Holding it
-/// keeps rows from moving: a later page that brings the absent base game
-/// nests the item under it rather than taking it from the top level. A
-/// cycle with no held member stays top level. An item nested under a base
-/// game shown at top level, and a standalone item, is never held; nothing
-/// is held once the list is [complete].
+/// fixpoint. This holds every linked item with `present` empty and a
+/// `pending` base game. Holding it keeps rows from moving: a later page that
+/// brings the pending base game nests the item under it rather than taking
+/// it from the top level. A cycle with no held member stays top level. An
+/// item nested under a base game shown at top level, and a standalone item,
+/// is never held; nothing is held once the list is [complete].
 ///
 /// The result lists the top-level items in input order, each once.
 List<PlacedGame<T>> placeExpansions<T>(
@@ -107,7 +111,7 @@ List<PlacedGame<T>> placeExpansions<T>(
         item,
         linked: bases.isNotEmpty,
         present: present,
-        someAbsent: present.length < bases.length,
+        pending: bases.any((b) => !shown.contains(b) && !owned.contains(b)),
         standalone: standalone,
         lacksBase: lacksBaseGame(
           bases: bases,
@@ -145,7 +149,7 @@ List<PlacedGame<T>> placeExpansions<T>(
       final id = gameIdOf(entry.item);
       if (entry.present.any(top.contains)) {
         toNested.add(id);
-      } else if ((complete || !entry.someAbsent) &&
+      } else if ((complete || !entry.pending) &&
           entry.present.every(nested.contains)) {
         toTop.add(id);
       } else {
@@ -161,7 +165,7 @@ List<PlacedGame<T>> placeExpansions<T>(
   final held = <String>{};
   if (!complete) {
     for (final entry in undecided) {
-      if (entry.someAbsent) held.add(gameIdOf(entry.item));
+      if (entry.pending) held.add(gameIdOf(entry.item));
     }
     // Held-ness spreads along chains; the set only grows, so this ends.
     var grew = true;
@@ -265,7 +269,7 @@ class _ItemLinks<T> {
     this.item, {
     required this.linked,
     required this.present,
-    required this.someAbsent,
+    required this.pending,
     required this.standalone,
     required this.lacksBase,
   });
@@ -278,8 +282,9 @@ class _ItemLinks<T> {
   /// The ids of its base games that are among the items.
   final List<String> present;
 
-  /// Whether any of its base games is not among the items.
-  final bool someAbsent;
+  /// Whether any of its base games is neither among the items nor owned: it
+  /// may still arrive, and an incomplete list holds the item for it.
+  final bool pending;
 
   /// Whether it is shown at top level whatever its base games do.
   final bool standalone;

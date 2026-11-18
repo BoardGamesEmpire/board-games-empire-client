@@ -239,6 +239,38 @@ void main() {
       expect(all.reads, 2);
     });
   });
+
+  group('while the list is incomplete (#810)', () {
+    test("an expansion whose base game isn't owned is held", () {
+      expect(collectionRows([expansion], complete: false), isEmpty);
+      expect(placeCollection([expansion], complete: false), isEmpty);
+    });
+
+    test('the same lists placed again once complete release it, marked', () {
+      final items = [expansion];
+      final all = [expansion];
+
+      expect(placeCollection(items, all: all, complete: false), isEmpty);
+
+      final released = placeCollection(items, all: all);
+      expect(released, hasLength(1));
+      expect(released.single.missingBase, isTrue);
+      expect(placeCollection(items, all: all), same(released));
+    });
+
+    test('under a filter, an expansion whose owned base game the filter hides '
+        'is top level and unmarked', () {
+      final rows = collectionRows(
+        [expansion],
+        all: [expansion, base],
+        complete: false,
+      );
+
+      expect(rows, hasLength(1));
+      expect(rows.single.parentGameId, isNull);
+      expect(rows.single.missingBase, isFalse);
+    });
+  });
 }
 
 /// A list that counts how often it is iterated, to tell how often it was

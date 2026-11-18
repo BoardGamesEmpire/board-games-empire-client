@@ -358,6 +358,94 @@ void main() {
     });
   });
 
+  group('whether the list is complete (#810)', () {
+    GameCollectionListReady ready(GameCollectionListBloc bloc) =>
+        bloc.state as GameCollectionListReady;
+
+    test('a ready state during a first sync is incomplete', () async {
+      final bloc = build();
+      addTearDown(bloc.close);
+
+      status.started();
+      items.add([listItem('e-1')]);
+      await settle();
+
+      expect(ready(bloc).complete, isFalse);
+    });
+
+    test('the first pass completing makes the same list complete', () async {
+      final bloc = build();
+      addTearDown(bloc.close);
+
+      status.started();
+      items.add([listItem('e-1')]);
+      await settle();
+      final before = ready(bloc);
+
+      status.finished(CollectionHydrateOutcome.complete);
+      await settle();
+      final after = ready(bloc);
+
+      expect(identical(after.items, before.items), isTrue);
+      expect(before.complete, isFalse);
+      expect(after.complete, isTrue);
+    });
+
+    test('a first pass that fails makes the list complete', () async {
+      final bloc = build();
+      addTearDown(bloc.close);
+
+      status.started();
+      items.add([listItem('e-1')]);
+      await settle();
+      status.finished(CollectionHydrateOutcome.failed);
+      await settle();
+
+      expect(ready(bloc).complete, isTrue);
+    });
+
+    test('a retry after a failed first pass stays complete', () async {
+      final bloc = build();
+      addTearDown(bloc.close);
+
+      status.started();
+      items.add([listItem('e-1')]);
+      await settle();
+      status.finished(CollectionHydrateOutcome.failed);
+      await settle();
+      // The marked rows the failure released stay while the retry runs.
+      status.started();
+      await settle();
+
+      expect(ready(bloc).complete, isTrue);
+    });
+
+    test('a pass over a cache an earlier pass completed is complete', () async {
+      status
+        ..started()
+        ..finished(CollectionHydrateOutcome.complete)
+        ..started();
+      final bloc = build();
+      addTearDown(bloc.close);
+
+      items.add([listItem('e-1')]);
+      await settle();
+
+      expect(ready(bloc).complete, isTrue);
+    });
+
+    test('with no pass running on a never-synced cache, the list is '
+        'complete', () async {
+      final bloc = build();
+      addTearDown(bloc.close);
+
+      items.add([listItem('e-1')]);
+      await settle();
+
+      expect(ready(bloc).complete, isTrue);
+    });
+  });
+
   group('a retry the user asked for', () {
     late Completer<void> pass;
     late int calls;

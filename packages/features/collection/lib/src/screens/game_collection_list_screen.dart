@@ -329,18 +329,21 @@ class _GameCollectionListPageState extends State<_GameCollectionListPage> {
     // more than once is one stack (#709). The list draws a row for each
     // nested expansion too (#711), so it counts the rows; the grid draws the
     // top-level covers, as a strip's are a row of their own, so it counts
-    // those. Under a filter, the rows it shows (#715).
+    // those. Under a filter, the rows it shows (#715). While the session's
+    // first pass runs, an expansion whose base game has not landed is held,
+    // and not counted (#810). With every game held, no row is drawn and the
+    // loading state stands in, as for an empty list.
     final list = thumbnails == false;
-    final rowCount = context.select<GameCollectionListBloc, int?>(
-      (bloc) => switch (bloc.state) {
-        GameCollectionListReady(:final items, :final all)
-            when items.isNotEmpty =>
+    final rowCount = context.select<GameCollectionListBloc, int?>((bloc) {
+      final count = switch (bloc.state) {
+        GameCollectionListReady(:final items, :final all, :final complete) =>
           list
-              ? collectionRows(items, all: all).length
-              : placeCollection(items, all: all).length,
-        _ => null,
-      },
-    );
+              ? collectionRows(items, all: all, complete: complete).length
+              : placeCollection(items, all: all, complete: complete).length,
+        _ => 0,
+      };
+      return count == 0 ? null : count;
+    });
 
     return BgePage.slivers(
       title: Text(l10n.collectionListTitle),
@@ -465,6 +468,15 @@ class GameCollectionListSliver extends StatelessWidget {
               _EmptySliver(onBrowse: onBrowse),
             GameCollectionListReady(:final items) when items.isEmpty =>
               _NoMatchesSliver(onCleared: onFiltersCleared),
+            // Every game that fits is an expansion held for its base game
+            // while the first sync runs (#810): the list is still filling.
+            GameCollectionListReady(:final items, :final all, complete: false)
+                when placeCollection(
+                  items,
+                  all: all,
+                  complete: false,
+                ).isEmpty =>
+              loading,
             _ when thumbnails == null => loading,
             // One scope for the list and the grid, so a game's focus follows
             // it as its item changes form: one entry or a stack, top level or
@@ -472,13 +484,21 @@ class GameCollectionListSliver extends StatelessWidget {
             // What the filter left, placed against the whole collection,
             // which decides which expansions are missing their base game
             // (#715).
-            GameCollectionListReady(:final items, :final all) =>
+            GameCollectionListReady(
+              :final items,
+              :final all,
+              :final complete,
+            ) =>
               BgeFocusHandoffScope(
                 child: SliverMainAxisGroup(
                   slivers: [
                     if (thumbnails)
                       _CollectionCovers(
-                        placed: placeCollection(items, all: all),
+                        placed: placeCollection(
+                          items,
+                          all: all,
+                          complete: complete,
+                        ),
                         onOpen: onOpen,
                       )
                     else
@@ -486,6 +506,7 @@ class GameCollectionListSliver extends StatelessWidget {
                         items: collectionRows(
                           items,
                           all: all,
+                          complete: complete,
                           titleOf: (item) => _title(l10n, item),
                         ),
                         keyOf: (row) => switch ((row.group, row.parentGameId)) {
