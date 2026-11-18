@@ -949,8 +949,89 @@ void main() {
         Offset(ink.center.dx, ink.top + 2),
       );
       expect(stackFill, scheme.secondary);
-      expect(badgeFill, scheme.tertiaryContainer);
+      expect(badgeFill, scheme.surfaceContainerHighest);
       expect(stackFill, isNot(badgeFill));
+    });
+
+    testWidgets('the badge holds contrast in all four themes', (tester) async {
+      final themes = [
+        (name: 'light', theme: BgeTheme.light()),
+        (name: 'dark', theme: BgeTheme.dark()),
+        (name: 'high-contrast light', theme: BgeTheme.highContrastLight()),
+        (name: 'high-contrast dark', theme: BgeTheme.highContrastDark()),
+      ];
+
+      for (final (:name, :theme) in themes) {
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pumpWidget(
+          _host(
+            tester,
+            Theme(
+              data: theme,
+              child: BgeCoverTile(
+                label: 'Azul',
+                onTap: () {},
+                expansions: _expansions(),
+              ),
+            ),
+          ),
+        );
+
+        // What the badge paints, read from the tree: the ink's fill, the
+        // border drawn over it, and the icon's and the count's colours.
+        final fill =
+            (tester
+                        .widget<Ink>(
+                          find.descendant(
+                            of: _badge,
+                            matching: find.byType(Ink),
+                          ),
+                        )
+                        .decoration!
+                    as BoxDecoration)
+                .color!;
+        final border = tester
+            .widgetList<DecoratedBox>(
+              find.descendant(of: _badge, matching: find.byType(DecoratedBox)),
+            )
+            .map((box) => box.decoration)
+            .whereType<BoxDecoration>()
+            .map((decoration) => decoration.border)
+            .whereType<Border>()
+            .single
+            .top;
+        final icon = tester
+            .widget<Icon>(
+              find.descendant(of: _badge, matching: find.byType(Icon)),
+            )
+            .color!;
+        final count = tester
+            .widget<Text>(find.descendant(of: _badge, matching: find.text('2')))
+            .style!
+            .color!;
+
+        expect(border.width, 1, reason: name);
+        expect(
+          Wcag.contrastRatio(count, fill),
+          greaterThanOrEqualTo(Wcag.aaNormalText),
+          reason: '$name count',
+        );
+        expect(
+          Wcag.contrastRatio(icon, fill),
+          greaterThanOrEqualTo(3),
+          reason: '$name icon',
+        );
+        expect(
+          Wcag.contrastRatio(border.color, fill),
+          greaterThanOrEqualTo(3),
+          reason: '$name border',
+        );
+        // The colours are the quiet roles, not ember.
+        expect(fill, theme.colorScheme.surfaceContainerHighest, reason: name);
+        expect(border.color, theme.colorScheme.outline, reason: name);
+        expect(count, theme.colorScheme.onSurface, reason: name);
+        expect(icon, theme.colorScheme.onSurface, reason: name);
+      }
     });
 
     testWidgets('a marked cover draws its outline and icon, and adds nothing '
