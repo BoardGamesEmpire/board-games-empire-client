@@ -73,13 +73,16 @@ void main() {
 
   tearDown(() => holder.dispose());
 
-  DeepLinkConsumer buildConsumer() {
+  DeepLinkConsumer buildConsumer({
+    void Function(DeepLinkFailure failure)? onFailure,
+  }) {
     final consumer = DeepLinkConsumer(
       holder: holder,
       isReady: () => ready,
       lookup: () => lookup,
       orchestrator: () => boundOrchestrator,
       go: gone.add,
+      onFailure: onFailure,
     );
     addTearDown(consumer.dispose);
     return consumer;
@@ -498,6 +501,84 @@ void main() {
       expect(warning.message, contains(deepLinkRedactionPlaceholder));
       expect(warning.message, isNot(contains(secretLink.location)));
       verifyNever(() => orchestrator.switchActiveServer(any()));
+    });
+
+    test('reports a failed lookup', () async {
+      lookup = _FakeLookup(
+        const {'bge-1': 'local-1'},
+        error: StateError('registry unreadable'),
+      );
+      final failures = <DeepLinkFailure>[];
+      final consumer = buildConsumer(onFailure: failures.add);
+      holder.set(link);
+
+      await consumer.drain();
+
+      expect(failures, [isA<DeepLinkLookupFailed>()]);
+      expect(holder.peek, isNull);
+    });
+
+    test('reports a failed switch with its error', () async {
+      connectedInactiveServer();
+      final thrown = StateError('local-1 is not connected');
+      when(
+        () => orchestrator.switchActiveServer(any()),
+      ).thenAnswer((_) async => throw thrown);
+      final failures = <DeepLinkFailure>[];
+      final consumer = buildConsumer(onFailure: failures.add);
+      holder.set(link);
+
+      await consumer.drain();
+
+      expect(failures, hasLength(1));
+      final failure = failures.single as DeepLinkActivationFailed;
+      expect(failure.error, same(thrown));
+    });
+
+    test('a failure report that throws does not stop the consumer', () async {
+      captureLogs();
+      lookup = _FakeLookup(
+        const {'bge-1': 'local-1'},
+        error: StateError('registry unreadable'),
+      );
+      final consumer = buildConsumer(
+        onFailure: (_) => throw StateError('no messenger'),
+      );
+      holder.set(link);
+
+      await consumer.drain();
+      expect(holder.peek, isNull);
+
+      lookup = _FakeLookup(const {'bge-1': 'local-1'});
+      holder.set(link);
+      await consumer.drain();
+
+      expect(gone, [link.location]);
+    });
+
+    test('a link dropped because its server is no longer active reports '
+        'nothing', () async {
+      connectedInactiveServer();
+      final failures = <DeepLinkFailure>[];
+      final consumer = buildConsumer(onFailure: failures.add);
+      holder.set(link);
+
+      await consumer.drain();
+      await consumer.drain();
+
+      expect(holder.peek, isNull);
+      expect(failures, isEmpty);
+    });
+
+    test('a link for an unknown server reports nothing', () async {
+      lookup = _FakeLookup(const {});
+      final failures = <DeepLinkFailure>[];
+      final consumer = buildConsumer(onFailure: failures.add);
+      holder.set(link);
+
+      await consumer.drain();
+
+      expect(failures, isEmpty);
     });
 
     group('a newer link set during a switch', () {

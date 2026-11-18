@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:app_shell/src/deep_links/deep_link_failure.dart';
 import 'package:app_shell/src/deep_links/deep_link_normalizer.dart';
 import 'package:app_shell/src/deep_links/known_server_lookup.dart';
 import 'package:app_shell/src/deep_links/pending_deep_link_holder.dart';
@@ -53,6 +54,7 @@ class DeepLinkConsumer {
     required this._lookup,
     required this._orchestrator,
     required this._go,
+    this._onFailure,
     BgeLogger? logger,
   }) : _logger = logger ?? BgeLogger('bge.shell.deep_links');
 
@@ -69,6 +71,11 @@ class DeepLinkConsumer {
   final ServerOrchestrator? Function() _orchestrator;
 
   final void Function(String location) _go;
+
+  /// Told when a link is given up on because its lookup or switch failed,
+  /// so the shell can say so (#984). Not called for the deliberate drop or
+  /// for a server not added here.
+  final void Function(DeepLinkFailure failure)? _onFailure;
   final BgeLogger _logger;
 
   bool _disposed = false;
@@ -159,7 +166,13 @@ class DeepLinkConsumer {
     try {
       localId = await lookup.localServerIdFor(link.serverId);
     } on Object catch (error, stackTrace) {
-      _drop(link, 'looking up its server', error, stackTrace);
+      _drop(
+        link,
+        'looking up its server',
+        const DeepLinkLookupFailed(),
+        error,
+        stackTrace,
+      );
       return;
     }
     if (!_stillCurrent(link)) return;
@@ -198,7 +211,13 @@ class DeepLinkConsumer {
     try {
       await activateServer(orchestrator, localId);
     } on Object catch (error, stackTrace) {
-      _drop(link, 'making its server active', error, stackTrace);
+      _drop(
+        link,
+        'making its server active',
+        DeepLinkActivationFailed(error),
+        error,
+        stackTrace,
+      );
       return;
     }
     // The app is still Ready from the old server, and the new server's
@@ -220,6 +239,7 @@ class DeepLinkConsumer {
   void _drop(
     NormalizedDeepLink link,
     String step,
+    DeepLinkFailure failure,
     Object error,
     StackTrace stackTrace,
   ) {
@@ -230,5 +250,16 @@ class DeepLinkConsumer {
       error: error,
       stackTrace: stackTrace,
     );
+    // Reporting is best effort: a report that can't be shown was logged
+    // above, and must not end the pass loop for the links behind this one.
+    try {
+      _onFailure?.call(failure);
+    } on Object catch (reportError, reportStackTrace) {
+      _logger.warn(
+        'Deep link failure could not be reported: $link',
+        error: reportError,
+        stackTrace: reportStackTrace,
+      );
+    }
   }
 }

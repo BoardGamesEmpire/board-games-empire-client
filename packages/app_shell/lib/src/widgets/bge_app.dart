@@ -6,6 +6,7 @@ import 'package:app_shell/src/bootstrap/app_bootstrap_cubit.dart';
 import 'package:app_shell/src/bootstrap/app_bootstrap_state.dart';
 import 'package:app_shell/src/data_export/export_label_resolvers.dart';
 import 'package:app_shell/src/deep_links/deep_link_consumer.dart';
+import 'package:app_shell/src/deep_links/deep_link_failure.dart';
 import 'package:app_shell/src/deep_links/deep_link_handler.dart';
 import 'package:app_shell/src/deep_links/pending_deep_link_holder.dart';
 import 'package:app_shell/src/i18n/active_locale.dart';
@@ -20,6 +21,7 @@ import 'package:app_shell/src/screens/home_menu_entry.dart';
 import 'package:app_shell/src/screens/home_screen.dart';
 import 'package:app_shell/src/screens/settings_screen.dart';
 import 'package:app_shell/src/screens/splash_screen.dart';
+import 'package:app_shell/src/servers/server_activation.dart';
 import 'package:app_shell/src/settings/entries/data_export_settings_entry.dart';
 import 'package:app_shell/src/settings/locale_cubit.dart';
 import 'package:app_shell/src/settings/settings_sections_builder.dart';
@@ -311,6 +313,11 @@ class _BgeAppState extends State<BgeApp> {
   late final BootstrapStreamListenable _refreshListenable;
   late final GoRouter _router;
 
+  /// The app-level messenger, so a message that belongs to no screen (a deep
+  /// link that couldn't be opened) has somewhere to show (#984).
+  final GlobalKey<ScaffoldMessengerState> _rootMessenger =
+      GlobalKey<ScaffoldMessengerState>();
+
   /// Diagnostics for route builders that degrade to a placeholder because
   /// the composition cannot back them (#189).
   static final BgeLogger _log = BgeLogger('bge.shell.router');
@@ -496,6 +503,7 @@ class _BgeAppState extends State<BgeApp> {
         lookup: () => widget.bootstrapCubit.knownServerLookup,
         orchestrator: () => widget.bootstrapCubit.orchestrator,
         go: _landDeepLink,
+        onFailure: _onDeepLinkFailure,
       )..start();
     }
     // #76/#105: keep the review slot honest whenever the crash draft
@@ -692,6 +700,28 @@ class _BgeAppState extends State<BgeApp> {
   /// landed screen must leave the app, not walk back through them.
   void _landDeepLink(String location) =>
       replacingHistoryEntry(_router, () => _router.go(location));
+
+  /// Says why a held link couldn't be opened (#984). The failure is already
+  /// logged, so with no messenger mounted there is nothing more to do.
+  ///
+  /// The navigation shell wraps its body in a messenger of its own (#414),
+  /// so this bar shows in the shell's outer Scaffold rather than a page's
+  /// own. Until that is resolved (#912) it can sit in a different place from
+  /// the bars screens show.
+  void _onDeepLinkFailure(DeepLinkFailure failure) {
+    final messenger = _rootMessenger.currentState;
+    final context = _rootMessenger.currentContext;
+    if (messenger == null || context == null) return;
+    final l10n = ShellLocalizations.of(context);
+    messenger.replaceSnackBar(switch (failure) {
+      DeepLinkLookupFailed() => l10n.shellDeepLinkOpenFailed,
+      DeepLinkActivationFailed(:final error) => serverActivationFailureText(
+        l10n,
+        error,
+        fallback: l10n.shellDeepLinkOpenFailed,
+      ),
+    });
+  }
 
   /// Resolves an **optional** device-global service from
   /// [BgeApp.rootContainer], or null when there is no container, [T] is not
@@ -3192,6 +3222,7 @@ class _BgeAppState extends State<BgeApp> {
       themeMode: themeMode,
       locale: locale,
       routerConfig: _router,
+      scaffoldMessengerKey: _rootMessenger,
       builder: (context, child) {
         // #49: the offline strip, and the connectivity scope every screen's
         // controls read. Above the Navigator, so both reach every route,

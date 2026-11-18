@@ -26,6 +26,7 @@ export 'src/bootstrap/run_bge_app.dart';
 export 'src/bootstrap/server_add_composition_error.dart';
 export 'src/data_export/export_label_resolvers.dart';
 export 'src/deep_links/deep_link_consumer.dart';
+export 'src/deep_links/deep_link_failure.dart';
 export 'src/deep_links/deep_link_handler.dart';
 export 'src/deep_links/deep_link_normalizer.dart';
 export 'src/deep_links/deep_link_redaction.dart';

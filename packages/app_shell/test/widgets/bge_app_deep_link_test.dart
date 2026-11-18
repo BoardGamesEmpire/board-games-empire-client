@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:models/domain.dart';
 
 import '../support/active_server_fakes.dart';
 import '../support/fake_platform_bootstrap.dart';
@@ -278,6 +279,43 @@ void main() {
         makeActive: any(named: 'makeActive'),
       ),
     );
+  });
+
+  testWidgets('a link whose switch fails at capacity shows the limit', (
+    tester,
+  ) async {
+    final holder = buildHolder();
+    final (:cubit, :orchestrator) = buildTwoServerCubit(
+      FakeAuthRepository(initialSession: testAuthResponse()),
+    );
+    when(
+      () => orchestrator.connectServer(
+        any(),
+        makeActive: any(named: 'makeActive'),
+      ),
+    ).thenAnswer(
+      (_) async => throw const ServerCapacityExceededException(
+        currentConnected: 3,
+        maxCapacity: 5,
+      ),
+    );
+    await pumpApp(tester, cubit, holder: holder);
+    final before = location(tester);
+
+    holder.set(secondServerLink);
+    await tester.pumpAndSettle();
+
+    // The count differs from the limit, so naming the count fails here.
+    expect(
+      find.text('This device connects up to 5 servers at once.'),
+      findsOneWidget,
+    );
+    expect(
+      find.text('This device connects up to 3 servers at once.'),
+      findsNothing,
+    );
+    expect(location(tester), before);
+    expect(holder.peek, isNull);
   });
 
   testWidgets('with no holder, nothing is wired', (tester) async {
