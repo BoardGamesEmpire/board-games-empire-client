@@ -596,10 +596,6 @@ class _CollectionRow extends StatelessWidget {
       child: _Nested(
         nested: expansionOf != null,
         child: _RingedListTile(
-          // Without an onTap the tile's InkWell has no handler, so it is
-          // disabled: no tap action, and not a focus stop under ordinary
-          // keyboard navigation. That is the inert row #44 wants.
-          focusOnTap: false,
           onTap: open == null ? null : () => open(context, entry.id),
           leading: BgeThumbnail(
             key: GameCollectionListScreen.thumbnailKey(entry.id),
@@ -1018,7 +1014,6 @@ class _StackRow extends StatelessWidget {
       child: _Nested(
         nested: expansionOf != null,
         child: _RingedListTile(
-          focusOnTap: true,
           onTap: open == null
               ? null
               : () => unawaited(
@@ -1081,12 +1076,13 @@ class _StackRow extends StatelessWidget {
 /// press shows it at once, without focus moving. The tint is hidden the same
 /// way and is no longer the only cue.
 ///
-/// With [focusOnTap] a tap gives the row focus before its [onTap] runs, so a
-/// picker or page it opens hands focus back to it when it closes, as it does
-/// after a keyboard activation. A list tile's ink takes no focus from a tap
-/// of its own, and focus would land back on the page instead. Inside a
-/// `BgeFocusHandoff` the pointer's focus goes with the game's item when it
-/// changes form (#769).
+/// A tap gives the row focus before its [onTap] runs, so a picker or page it
+/// opens hands focus back to it when it closes, as it does after a keyboard
+/// activation. A list tile's ink takes no focus from a tap of its own, and
+/// focus would land back on the page instead. Inside a `BgeFocusHandoff` the
+/// pointer's focus goes with the game's item when it changes form (#769). An
+/// entry's row and a stack's take it alike (#811). An inert row, with no
+/// [onTap], is no tap target and no focus stop (#44).
 class _RingedListTile extends StatefulWidget {
   const _RingedListTile({
     required this.leading,
@@ -1094,7 +1090,6 @@ class _RingedListTile extends StatefulWidget {
     required this.subtitle,
     required this.trailing,
     required this.onTap,
-    required this.focusOnTap,
   });
 
   final Widget leading;
@@ -1105,9 +1100,6 @@ class _RingedListTile extends StatefulWidget {
   /// What a tap does, or null for an inert row, which has no tap action and
   /// isn't a focus stop.
   final VoidCallback? onTap;
-
-  /// Whether a tap gives the row focus before [onTap] runs.
-  final bool focusOnTap;
 
   @override
   State<_RingedListTile> createState() => _RingedListTileState();
@@ -1146,7 +1138,7 @@ class _RingedListTileState extends State<_RingedListTile>
           onTap: onTap == null
               ? null
               : () {
-                  if (widget.focusOnTap) _focusNode.requestFocus();
+                  _focusNode.requestFocus();
                   onTap();
                 },
           leading: widget.leading,

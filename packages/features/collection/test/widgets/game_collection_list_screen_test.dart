@@ -3995,6 +3995,62 @@ void main() {
       }
     }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
 
+    void openPage(BuildContext context, String id) =>
+        Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => Scaffold(appBar: AppBar(), body: Text('entry $id')),
+          ),
+        );
+
+    testWidgets('a clicked entry row is focused when its page opens and '
+        'closes, with no ring', (tester) async {
+      await show(tester, once, onOpen: openPage);
+      final entry = find.byKey(GameCollectionListScreen.rowKey('e-1'));
+      final click = await mouseClicker(tester);
+
+      await click(tester.getCenter(entry));
+      expect(find.text('entry e-1'), findsOneWidget);
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+
+      expect(find.text('entry e-1'), findsNothing);
+      expect(_focusIsWithin(tester, entry), isTrue);
+      expect(ringShown(tester, entry), isFalse);
+    }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
+
+    for (final (view, entryKey, stackKey, layouts) in [
+      (
+        'the list',
+        GameCollectionListScreen.rowKey,
+        GameCollectionListScreen.stackKey,
+        null,
+      ),
+      (
+        'thumbnails',
+        GameCollectionListScreen.tileKey,
+        GameCollectionListScreen.stackTileKey,
+        _FakeLayouts()..stored = ListLayout.thumbnails,
+      ),
+    ]) {
+      testWidgets('a clicked entry that becomes a stack while its page is '
+          'open hands focus to the stack, in $view', (tester) async {
+        await show(tester, once, layouts: layouts, onOpen: openPage);
+        final click = await mouseClicker(tester);
+
+        await click(tester.getCenter(find.byKey(entryKey('e-1'))));
+        expect(find.text('entry e-1'), findsOneWidget);
+        items.add(twice);
+        await tester.pumpAndSettle();
+        await tester.pageBack();
+        await tester.pumpAndSettle();
+
+        final stack = find.byKey(stackKey('g-wingspan'));
+        expect(stack, findsOneWidget);
+        expect(_focusIsWithin(tester, stack), isTrue);
+        expect(ringShown(tester, stack), isFalse);
+      }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
+    }
+
     testWidgets('a mouse-clicked stack row reduced to one entry leaves the '
         'entry row focused without a ring', (tester) async {
       final boundary = GlobalKey();
