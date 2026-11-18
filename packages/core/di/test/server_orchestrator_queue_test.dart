@@ -101,6 +101,45 @@ void main() {
     });
   });
 
+  test('calls made while initialize runs wait for it', () {
+    fakeAsync((async) {
+      final (:repo, :prefsRepo, :orchestrator) = stubbedOrchestrator();
+      when(prefsRepo.get).thenAnswer((_) async => _kPrefs);
+      final release = Completer<void>();
+      when(repo.getConnectedServers).thenAnswer((_) async {
+        await release.future;
+        return [testServerConfig(id: 'A', state: ConnectionState.active)];
+      });
+      for (final id in ['A', 'B']) {
+        when(
+          () => repo.getServer(id),
+        ).thenAnswer((_) async => testServerConfig(id: id));
+      }
+
+      final init = _Outcome(orchestrator.initialize());
+      final connectB = _Outcome(orchestrator.connectServer('B'));
+      final toB = _Outcome(orchestrator.switchActiveServer('B'));
+      final disconnectA = _Outcome(orchestrator.disconnectServer('A'));
+      async.flushMicrotasks();
+      expect(
+        [init.isDone, connectB.isDone, toB.isDone, disconnectA.isDone],
+        everyElement(isFalse),
+      );
+
+      release.complete();
+      async.flushMicrotasks();
+
+      expect(
+        [init.error, connectB.error, toB.error, disconnectA.error],
+        everyElement(isNull),
+      );
+      expect(orchestrator.activeServerId, 'B');
+      expect(orchestrator.getContext('A'), isNull);
+
+      _settle(async, orchestrator.dispose());
+    });
+  });
+
   test('commands run in the order they were called', () {
     _run((async, repo, orchestrator) {
       _settle(async, orchestrator.connectServer('A'));

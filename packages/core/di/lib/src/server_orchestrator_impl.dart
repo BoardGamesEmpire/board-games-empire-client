@@ -258,6 +258,10 @@ class ServerOrchestratorImpl implements ServerOrchestrator {
     required String bgeServerId,
     required ServerIdentity identity,
   }) async {
+    // Checked at call time, unlike the commands: the row below is written
+    // before anything queues, and one written while initialize runs could
+    // be restored by it, leaving connectServer to fail and the rollback to
+    // delete a connected server's row.
     _assertReady();
 
     // Persist first. The repository's table constraints keep a server from
@@ -303,9 +307,10 @@ class ServerOrchestratorImpl implements ServerOrchestrator {
 
   @override
   Future<void> connectServer(String serverId, {bool makeActive = false}) async {
-    _assertReady();
+    _assertNotDisposed();
 
     await _command(() async {
+      _assertInitialized();
       final config = await _serverRepository.getServer(serverId);
       if (config == null) throw ServerNotFoundException(serverId);
       if (_contexts.containsKey(serverId)) {
@@ -396,9 +401,10 @@ class ServerOrchestratorImpl implements ServerOrchestrator {
 
   @override
   Future<void> disconnectServer(String serverId) async {
-    _assertReady();
+    _assertNotDisposed();
 
     await _command(() async {
+      _assertInitialized();
       final config = await _serverRepository.getServer(serverId);
       if (config == null) throw ServerNotFoundException(serverId);
 
@@ -460,9 +466,10 @@ class ServerOrchestratorImpl implements ServerOrchestrator {
 
   @override
   Future<void> switchActiveServer(String targetServerId) async {
-    _assertReady();
+    _assertNotDisposed();
 
     await _command(() async {
+      _assertInitialized();
       if (targetServerId == _activeServerId) return;
 
       final targetContext = _contexts[targetServerId];
@@ -898,6 +905,14 @@ class ServerOrchestratorImpl implements ServerOrchestrator {
 
   void _assertReady() {
     _assertNotDisposed();
+    _assertInitialized();
+  }
+
+  /// Called from inside a command by every lifecycle method but
+  /// [addAndActivateServer], so a call made while [initialize] runs waits for
+  /// it and sees its outcome. Disposal is still checked at call time: a
+  /// command queued before [dispose] runs before teardown.
+  void _assertInitialized() {
     if (!_isInitialized) {
       throw StateError(
         'ServerOrchestrator is not initialized. Call initialize() first.',
