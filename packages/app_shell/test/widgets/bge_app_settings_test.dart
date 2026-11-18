@@ -10,8 +10,10 @@ import 'package:hydrated_bloc/hydrated_bloc.dart';
 import 'package:mocktail/mocktail.dart';
 
 import '../support/active_server_fakes.dart';
+import '../support/no_later_recoveries.dart';
 
 class _MockAppBootstrapCubit extends MockCubit<AppBootstrapState>
+    with NoLaterRecoveries
     implements AppBootstrapCubit {}
 
 class _MockStorage extends Mock implements Storage {}

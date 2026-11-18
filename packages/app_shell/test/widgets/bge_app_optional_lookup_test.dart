@@ -9,6 +9,7 @@ import 'package:interfaces/services.dart';
 import 'package:mocktail/mocktail.dart';
 
 import '../support/active_server_fakes.dart';
+import '../support/no_later_recoveries.dart';
 
 /// An optional service whose factory throws reads as absent, so the shell
 /// takes its degraded path instead of building an `ErrorWidget` (#218).
@@ -17,6 +18,7 @@ import '../support/active_server_fakes.dart';
 /// root [ConnectivityService], and the route resolves the per-server
 /// [UnsentChangesNoticeRepository] for the sign-in screen's count.
 class _MockAppBootstrapCubit extends MockCubit<AppBootstrapState>
+    with NoLaterRecoveries
     implements AppBootstrapCubit {}
 
 void main() {

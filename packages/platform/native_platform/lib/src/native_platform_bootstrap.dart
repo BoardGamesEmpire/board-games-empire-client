@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:access/access.dart';
@@ -200,11 +201,11 @@ class NoServerRestoredError implements Exception {
 /// attempt that failed later is still reported. Nothing is persisted: the
 /// shell shows the notice in the first frames after boot.
 ///
-/// A rebuild after a boot succeeds is only logged. None can happen on
-/// native today: after boot only onboarding opens a server database, and a
-/// new server's database is a new file. Reactivating a known server after
-/// boot (#134) could rebuild one, and telling the user then needs its own
-/// route to the shell.
+/// A rebuild after a boot succeeds is logged, and reaches the shell on
+/// [BootstrapResult.laterRecoveries] (#134): reconnecting a known server
+/// after boot opens its existing database, which can need the rebuild. It
+/// is never returned by a later [initialize]. The stream is closed by
+/// [dispose].
 class NativePlatformBootstrap implements PlatformBootstrap {
   NativePlatformBootstrap({
     EncryptionKeyService? keyService,
@@ -262,10 +263,14 @@ class NativePlatformBootstrap implements PlatformBootstrap {
 
   MetaDatabase? _metaDatabase;
   ServerOrchestrator? _orchestrator;
+  ServerRepository? _serverRepository;
 
   /// `bgeServerId`s whose database was rebuilt during boot and not yet
   /// reported; see the class docs.
   final Set<String> _unreportedRecoveries = {};
+
+  /// Backs [BootstrapResult.laterRecoveries]; see the class docs.
+  final _laterRecoveries = StreamController<List<ServerConfig>>.broadcast();
 
   /// Set by the first [dispose] call and returned to every later one.
   Future<void>? _disposal;
@@ -409,6 +414,7 @@ class NativePlatformBootstrap implements PlatformBootstrap {
       // Commit state only on success (established orchestrator invariant).
       _metaDatabase = meta;
       _orchestrator = orchestrator;
+      _serverRepository = serverRepository;
       final recoveredServers = [
         for (final server in servers)
           if (_unreportedRecoveries.contains(server.bgeServerId)) server,
@@ -430,6 +436,7 @@ class NativePlatformBootstrap implements PlatformBootstrap {
           orchestrator: orchestrator,
         ),
         recoveredServers: recoveredServers,
+        laterRecoveries: _laterRecoveries.stream,
       );
     } on Object catch (_) {
       // Roll back without masking the original error: secondary disposal
@@ -475,8 +482,32 @@ class NativePlatformBootstrap implements PlatformBootstrap {
       },
     );
     // Only a successful boot sets _orchestrator: this rebuild came after it.
-    if (_orchestrator != null) return;
-    _unreportedRecoveries.add(event.bgeServerId);
+    if (_orchestrator == null) {
+      _unreportedRecoveries.add(event.bgeServerId);
+      return;
+    }
+    unawaited(_reportLaterRecovery(event.bgeServerId));
+  }
+
+  /// The lookup is asynchronous, so the bootstrap may have been disposed by
+  /// the time it answers; adding to the closed controller would throw.
+  Future<void> _reportLaterRecovery(String bgeServerId) async {
+    try {
+      final repository = _serverRepository;
+      final config = await repository?.getServerByBgeId(bgeServerId);
+      if (config == null || _laterRecoveries.isClosed) return;
+      _laterRecoveries.add([config]);
+    } on Object catch (error) {
+      _logger.warn(
+        'Could not look up a server whose database was rebuilt after boot; '
+        'the user is not told',
+        context: {
+          'bgeServerId': bgeServerId,
+          // The type only: a database error's message can carry a path.
+          'error': error.runtimeType.toString(),
+        },
+      );
+    }
   }
 
   /// A [dispose] that lands mid-reset waits for it to finish, so an exit
@@ -559,6 +590,7 @@ class NativePlatformBootstrap implements PlatformBootstrap {
     // means everything is closed. A reset in flight is waited for whole.
     await _operationEnded;
     await _release();
+    await _laterRecoveries.close();
   }
 
   /// Records [operation] as the one [dispose] waits for. Its error, if any,
@@ -576,6 +608,7 @@ class NativePlatformBootstrap implements PlatformBootstrap {
   Future<void> _release() async {
     final orchestrator = _orchestrator;
     _orchestrator = null;
+    _serverRepository = null;
     final meta = _metaDatabase;
     _metaDatabase = null;
     if (orchestrator != null) {

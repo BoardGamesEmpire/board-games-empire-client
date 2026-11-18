@@ -16,8 +16,10 @@ import 'package:network_interface/network_interface.dart';
 
 import '../support/active_server_fakes.dart';
 import '../support/fake_browser_history.dart';
+import '../support/no_later_recoveries.dart';
 
 class _MockAppBootstrapCubit extends MockCubit<AppBootstrapState>
+    with NoLaterRecoveries
     implements AppBootstrapCubit {}
 
 class _MockStorage extends Mock implements Storage {}

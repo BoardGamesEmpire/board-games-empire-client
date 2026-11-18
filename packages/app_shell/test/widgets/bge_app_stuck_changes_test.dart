@@ -13,8 +13,10 @@ import 'package:sync_queue/sync_queue.dart';
 
 import '../support/active_server_fakes.dart';
 import '../support/navigation.dart';
+import '../support/no_later_recoveries.dart';
 
 class _MockAppBootstrapCubit extends MockCubit<AppBootstrapState>
+    with NoLaterRecoveries
     implements AppBootstrapCubit {}
 
 class _MockStorage extends Mock implements Storage {}

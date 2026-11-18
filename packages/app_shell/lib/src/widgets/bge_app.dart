@@ -3456,9 +3456,10 @@ class _BgeAppState extends State<BgeApp> {
                   );
                 },
               );
-        // #428: the notice of a server database rebuilt during boot. Above
-        // the router, so the redirects of the first screens cannot remove
-        // it, and unconditional, so the tree shape never changes.
+        // #428: the notice of a server database rebuilt, during boot or
+        // when a known server is reconnected later (#134). Above the
+        // router, so a redirect cannot remove it, and unconditional, so the
+        // tree shape never changes.
         body = DatabaseRecoveryNotice(
           bootstrapCubit: widget.bootstrapCubit,
           backButtonDispatcher: _router.backButtonDispatcher,

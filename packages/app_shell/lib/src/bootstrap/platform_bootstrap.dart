@@ -22,6 +22,7 @@ class BootstrapResult {
     this.knownServerLookup,
     this.registeredServers,
     this.recoveredServers = const [],
+    this.laterRecoveries,
   });
 
   /// Whether at least one BGE server is known to this device.
@@ -69,6 +70,16 @@ class BootstrapResult {
   ///
   /// Always empty on web, which keeps no encrypted database.
   final List<ServerConfig> recoveredServers;
+
+  /// Servers whose local database was rebuilt after the platform had
+  /// started, as reconnecting a known server from the server manager can
+  /// do (#134, #428). Each event carries the servers rebuilt by one open.
+  /// The shell tells the user as it does for [recoveredServers].
+  ///
+  /// A broadcast stream, so an event with no listener is dropped; the
+  /// cubit listens from the moment it takes this result. `null` on web,
+  /// which keeps no encrypted database.
+  final Stream<List<ServerConfig>>? laterRecoveries;
 }
 
 /// Per-platform composition root consumed by the shared shell.

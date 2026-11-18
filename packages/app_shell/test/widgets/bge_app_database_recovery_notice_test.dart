@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:app_shell/app_shell.dart';
 import 'package:bge_test_support/domain.dart';
 import 'package:flutter/material.dart' hide ConnectionState;
@@ -55,6 +57,54 @@ void main() {
     );
 
     expect(find.textContaining('Game Night, Club'), findsOneWidget);
+  });
+
+  testWidgets('a rebuild after boot shows the notice while ready', (
+    tester,
+  ) async {
+    final later = StreamController<List<ServerConfig>>.broadcast();
+    addTearDown(later.close);
+    final cubit = AppBootstrapCubit(
+      platformBootstrap: FakePlatformBootstrap(
+        outcomes: [
+          BootstrapResult(hasServer: true, laterRecoveries: later.stream),
+        ],
+      ),
+      hydratedStorageInitializer: (_) async {},
+    );
+    addTearDown(cubit.close);
+    await tester.pumpWidget(BgeApp(bootstrapCubit: cubit));
+    await cubit.initialize();
+    cubit.onAuthenticated();
+    await tester.pumpAndSettle();
+    expect(find.byType(AlertDialog), findsNothing);
+
+    later.add([_server('Game Night')]);
+    await tester.pumpAndSettle();
+    expect(find.byType(AlertDialog), findsOneWidget);
+    expect(find.textContaining('Game Night'), findsOneWidget);
+
+    // Up already: a second server joins what it shows.
+    later.add([_server('Club')]);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Game Night, Club'), findsOneWidget);
+
+    // Rebuilt again while it is up, as a server reconnected twice can be:
+    // named once, among servers still counted as two.
+    later.add([_server('Club')]);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Game Night, Club'), findsOneWidget);
+    expect(find.textContaining('Club, Club'), findsNothing);
+    expect(find.textContaining('from those servers'), findsOneWidget);
+
+    // Acknowledged earlier: a later rebuild shows it again.
+    await tester.tap(find.byKey(DatabaseRecoveryNotice.acknowledgeButtonKey));
+    await tester.pumpAndSettle();
+    expect(find.byType(AlertDialog), findsNothing);
+    later.add([_server('Third')]);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Third'), findsOneWidget);
+    expect(find.textContaining('Game Night'), findsNothing);
   });
 
   testWidgets('shows nothing after a boot that rebuilt nothing', (

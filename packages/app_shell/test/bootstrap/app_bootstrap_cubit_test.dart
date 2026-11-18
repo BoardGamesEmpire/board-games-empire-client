@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:app_shell/app_shell.dart';
 import 'package:bge_test_support/domain.dart';
 import 'package:bloc_test/bloc_test.dart';
@@ -53,6 +55,16 @@ class _HydratedSpy {
       throw StateError('hydrated storage init failed');
     }
   }
+}
+
+/// A [FakePlatformBootstrap] whose [initialize] waits for the test.
+class _HeldBootstrap extends FakePlatformBootstrap {
+  _HeldBootstrap(this._landing);
+
+  final Completer<BootstrapResult> _landing;
+
+  @override
+  Future<BootstrapResult> initialize() => _landing.future;
 }
 
 class _Offline implements Exception {}
@@ -151,6 +163,60 @@ void main() {
           AppBootstrapNeedsAuth(recoveredServers: [_rebuiltServer]),
         ],
       );
+
+      test('closed while initialize is pending, records and forwards '
+          'nothing when it lands (#177)', () async {
+        final landing = Completer<BootstrapResult>();
+        final later = StreamController<List<ServerConfig>>.broadcast();
+        addTearDown(later.close);
+        final cubit = buildCubit(bootstrap: _HeldBootstrap(landing));
+        final states = <AppBootstrapState>[];
+        final subscription = cubit.stream.listen(states.add);
+        addTearDown(subscription.cancel);
+        final attempt = cubit.initialize();
+        await Future<void>.delayed(Duration.zero);
+
+        final closing = cubit.close();
+        landing.complete(
+          BootstrapResult(
+            hasServer: true,
+            orchestrator: _MockServerOrchestrator(),
+            activeServerScope: _MockActiveServerScope(),
+            laterRecoveries: later.stream,
+          ),
+        );
+        await attempt;
+        await closing;
+
+        expect(states, isEmpty);
+        expect(cubit.orchestrator, isNull);
+        expect(cubit.activeServerScope, isNull);
+        expect(later.hasListener, isFalse);
+      });
+
+      test('forwards later recoveries once ready', () async {
+        final later = StreamController<List<ServerConfig>>.broadcast();
+        addTearDown(later.close);
+        final cubit = buildCubit(
+          bootstrap: FakePlatformBootstrap(
+            outcomes: [
+              BootstrapResult(hasServer: true, laterRecoveries: later.stream),
+            ],
+          ),
+        );
+        addTearDown(cubit.close);
+        final received = <List<ServerConfig>>[];
+        final subscription = cubit.laterRecoveries.listen(received.add);
+        addTearDown(subscription.cancel);
+
+        await cubit.initialize();
+        later.add([_rebuiltServer]);
+        await Future<void>.delayed(Duration.zero);
+
+        expect(received, [
+          [_rebuiltServer],
+        ]);
+      });
 
       test(
         "exposes the bootstrap result's knownServerLookup once ready",

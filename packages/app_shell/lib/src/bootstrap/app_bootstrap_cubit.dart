@@ -8,6 +8,7 @@ import 'package:app_shell/src/deep_links/known_server_lookup.dart';
 import 'package:app_shell/src/servers/registered_servers.dart';
 import 'package:hydrated_bloc/hydrated_bloc.dart';
 import 'package:interfaces/orchestration.dart';
+import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
 
@@ -94,6 +95,16 @@ class AppBootstrapCubit extends Cubit<AppBootstrapState> {
   KnownServerLookup? _knownServerLookup;
   RegisteredServers? _registeredServers;
   ActiveServerScope? _activeServerScope;
+
+  final _laterRecoveries = StreamController<List<ServerConfig>>.broadcast();
+  StreamSubscription<List<ServerConfig>>? _laterRecoveriesSubscription;
+
+  /// The servers whose local database was rebuilt after bootstrap succeeded
+  /// (#134, #428), one event per rebuild. Never null: web, which has no
+  /// such rebuild, simply never emits. A broadcast stream, so a listener
+  /// has to be attached before the event; the shell's recovery notice is
+  /// built with the app.
+  Stream<List<ServerConfig>> get laterRecoveries => _laterRecoveries.stream;
 
   /// The platform's [ServerOrchestrator] once bootstrap has succeeded;
   /// `null` before that and always `null` on web (single-server by
@@ -321,6 +332,7 @@ class AppBootstrapCubit extends Cubit<AppBootstrapState> {
       _knownServerLookup = result.knownServerLookup;
       _registeredServers = result.registeredServers;
       _activeServerScope = result.activeServerScope;
+      _forwardLaterRecoveries(result.laterRecoveries);
       _consecutiveFailures = 0;
       _failuresTowardReset = 0;
       _logger.info(
@@ -350,6 +362,25 @@ class AppBootstrapCubit extends Cubit<AppBootstrapState> {
       );
       emit(_failedState(error));
     }
+  }
+
+  /// Replaces the forwarding of an earlier successful attempt, which the
+  /// same platform stream would otherwise deliver twice.
+  void _forwardLaterRecoveries(Stream<List<ServerConfig>>? source) {
+    unawaited(_laterRecoveriesSubscription?.cancel());
+    _laterRecoveriesSubscription = source?.listen(_laterRecoveries.add);
+  }
+
+  @override
+  Future<void> close() async {
+    // `super.close()` first: it is what makes [isClosed] true, and it does
+    // so synchronously. The awaits below take several microtasks, and an
+    // attempt landing in them would pass every guard of #177, publish what
+    // it opened and start a forwarding this method had already moved past.
+    final closing = super.close();
+    await _laterRecoveriesSubscription?.cancel();
+    await _laterRecoveries.close();
+    await closing;
   }
 
   /// Resolves [ServerOnboardingDeps] from [_rootContainer], throwing
