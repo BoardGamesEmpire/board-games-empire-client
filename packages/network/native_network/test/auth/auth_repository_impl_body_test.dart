@@ -232,10 +232,10 @@ void main() {
     test(
       'a genuine sendTimeout is still a network fault, not a server one',
       () async {
-        // Added to `_mapDioException`'s transport list by this PR. It used to
-        // fall to the catch-all, which reached the same answer by accident;
-        // now that the catch-all classifies an answered request as a server
-        // fault, the accident would be an inversion.
+        // In `mapAuthDioException`'s transport list since #352's fix. It used
+        // to fall to the catch-all, which reached the same answer by
+        // accident; now that the catch-all classifies an answered request as
+        // a server fault, the accident would be an inversion.
         final repo = repoWith(unreachableDio(DioExceptionType.sendTimeout));
 
         await expectLater(
@@ -393,7 +393,7 @@ void main() {
   group('the duplicate-email probe on the THROWN path (#352)', () {
     // A rejection that arrives thrown reaches the probe (`probeJsonBody`)
     // with the body still the raw `String` the request asked for, not the
-    // decoded map `_assertSuccess` gets. Without the probe this reports
+    // decoded map `assertAuthSuccess` gets. Without the probe this reports
     // "unexpected 422" instead of "that account already exists".
     test('a thrown 422 duplicate-email envelope still maps', () async {
       final repo = repoWith(
@@ -414,7 +414,7 @@ void main() {
     test('a thrown 409 on the SESSION endpoint is a server fault, not a '
         'duplicate email', () async {
       // `/get-session` cannot mean "that email is taken", but
-      // `_isEmailAlreadyExists` treats any 409 as a duplicate — so the grant
+      // `isEmailAlreadyExists` treats any 409 as a duplicate — so the grant
       // vocabulary used to leak onto this path. The response path never had
       // the bug; only the thrown one.
       final repo = repoWith(

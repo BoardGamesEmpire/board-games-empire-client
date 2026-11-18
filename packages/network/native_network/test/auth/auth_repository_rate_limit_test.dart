@@ -199,7 +199,7 @@ void main() {
       });
 
       test('with a duplicate-email body code is still a rate limit', () async {
-        // `_isEmailAlreadyExists` reads the code at any status, so the 429
+        // `isEmailAlreadyExists` reads the code at any status, so the 429
         // has to be classified first.
         final repo = repoWith(
           _dio(
