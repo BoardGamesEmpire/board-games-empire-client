@@ -27,6 +27,7 @@ final _pastExpiry = Duration(
 void main() {
   setUpAll(() {
     registerFallbackValue(ConnectionState.disconnected);
+    registerFallbackValue(testIdentityFor('new'));
   });
 
   test('a backgrounded server suspends when its timer expires', () {
@@ -170,6 +171,83 @@ void main() {
       expect(orchestrator.getContext('A'), isNull);
 
       _settle(async, orchestrator.dispose());
+    });
+  });
+
+  group('adding a server', () {
+    test('while initialize runs waits for it', () {
+      fakeAsync((async) {
+        final (:repo, :prefsRepo, :orchestrator) = stubbedOrchestrator();
+        when(prefsRepo.get).thenAnswer((_) async => _kPrefs);
+        _stubAdd(repo);
+        final release = Completer<void>();
+        when(repo.getConnectedServers).thenAnswer((_) async {
+          await release.future;
+          return [];
+        });
+
+        final init = _Outcome(orchestrator.initialize());
+        final add = _Outcome(_add(orchestrator));
+        async.flushMicrotasks();
+        expect(add.isDone, isFalse);
+        verifyNever(() => _addServer(repo));
+
+        release.complete();
+        async.flushMicrotasks();
+
+        expect([init.error, add.error], everyElement(isNull));
+        expect(orchestrator.activeServerId, 'new');
+
+        _settle(async, orchestrator.dispose());
+      });
+    });
+
+    test('runs in call order, the row write included', () {
+      _run((async, repo, orchestrator) {
+        _stubAdd(repo);
+        _settle(async, orchestrator.connectServer('A'));
+        _settle(async, orchestrator.connectServer('B'));
+        final release = Completer<void>();
+        gate(_context(orchestrator, 'B'), #activate, release);
+
+        final toB = _Outcome(orchestrator.switchActiveServer('B'));
+        final add = _Outcome(_add(orchestrator));
+        final toA = _Outcome(orchestrator.switchActiveServer('A'));
+        async.flushMicrotasks();
+        verifyNever(() => _addServer(repo));
+
+        release.complete();
+        async.flushMicrotasks();
+
+        expect([toB.error, add.error, toA.error], everyElement(isNull));
+        expect(orchestrator.getContext('new'), isNotNull);
+        expect(orchestrator.activeServerId, 'A');
+      });
+    });
+
+    test('from inside a running command fails fast and writes no row', () {
+      _run((async, repo, orchestrator) {
+        _stubAdd(repo);
+        _settle(async, orchestrator.connectServer('A'));
+        _settle(async, orchestrator.connectServer('B'));
+        final b = _context(orchestrator, 'B');
+        Object? reentryError;
+        when(b.activate).thenAnswer((_) async {
+          try {
+            await _add(orchestrator);
+          } on Object catch (e) {
+            reentryError = e;
+          }
+          when(() => b.state).thenReturn(ServerContextState.active);
+        });
+
+        _settle(async, orchestrator.switchActiveServer('B'));
+
+        expect(reentryError, isA<StateError>());
+        verifyNever(() => _addServer(repo));
+        verifyNever(() => repo.removeServer(any()));
+        expect(orchestrator.activeServerId, 'B');
+      });
     });
   });
 
@@ -519,6 +597,34 @@ void _run(
     _settle(async, orchestrator.dispose());
   });
 }
+
+/// Any call to [repo]'s `addServer`, for stubbing and verifying.
+Future<ServerConfig> _addServer(MockServerRepository repo) => repo.addServer(
+  displayName: any(named: 'displayName'),
+  serverUrl: any(named: 'serverUrl'),
+  bgeServerId: any(named: 'bgeServerId'),
+  identity: any(named: 'identity'),
+);
+
+/// Lets [repo] add server `new` (and roll it back), as an add-and-activate
+/// needs.
+void _stubAdd(MockServerRepository repo) {
+  when(
+    () => _addServer(repo),
+  ).thenAnswer((_) async => testServerConfig(id: 'new'));
+  when(() => repo.removeServer(any())).thenAnswer((_) async {});
+  when(
+    () => repo.getServer('new'),
+  ).thenAnswer((_) async => testServerConfig(id: 'new'));
+}
+
+Future<String> _add(ServerOrchestrator orchestrator) =>
+    orchestrator.addAndActivateServer(
+      displayName: 'Server new',
+      serverUrl: 'https://new.example.com',
+      bgeServerId: 'bge-new',
+      identity: testIdentityFor('new'),
+    );
 
 MockServerContext _context(ServerOrchestrator orchestrator, String id) =>
     orchestrator.getContext(id)! as MockServerContext;

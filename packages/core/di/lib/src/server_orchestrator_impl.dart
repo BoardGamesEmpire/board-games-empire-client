@@ -258,51 +258,48 @@ class ServerOrchestratorImpl implements ServerOrchestrator {
     required String bgeServerId,
     required ServerIdentity identity,
   }) async {
-    // Checked at call time, unlike the commands: the row below is written
-    // before anything queues, and one written while initialize runs could
-    // be restored by it, leaving connectServer to fail and the rollback to
-    // delete a connected server's row.
-    _assertReady();
+    _assertNotDisposed();
 
-    // Persist first. The repository's table constraints keep a server from
-    // being added twice, even by two adds at once, and the repository
-    // reports either case as DuplicateServerException (#184). Orchestrator
-    // state is untouched until connectServer below, which queues like any
-    // other command. connectServer cannot be called from inside a command
-    // (it would fail as re-entrant), so this composes the two steps
-    // instead — the window between them is harmless: the row exists in
-    // ConnectionState.disconnected, exactly like any other
-    // registered-but-unconnected server.
-    final config = await _serverRepository.addServer(
-      displayName: displayName,
-      serverUrl: serverUrl,
-      bgeServerId: bgeServerId,
-      identity: identity,
-    );
+    // One command from the row write to the rollback, so an add runs in
+    // call order with every other lifecycle call, and one made while
+    // initialize runs writes its row only after initialize has finished.
+    return _command(() async {
+      _assertInitialized();
 
-    // Connect through the standard path: capacity enforcement, demotion
-    // of any current active server, and the activate-before-commit
-    // discipline all apply unchanged. On any failure the just-persisted
-    // row is removed again so a failed onboarding never leaves a zombie
-    // config behind (#36).
-    try {
-      await connectServer(config.id, makeActive: true);
-    } on Object catch (_) {
+      // Persist first. The repository's table constraints keep a server
+      // from being added twice, even by two adds at once, and the
+      // repository reports either case as DuplicateServerException (#184).
+      final config = await _serverRepository.addServer(
+        displayName: displayName,
+        serverUrl: serverUrl,
+        bgeServerId: bgeServerId,
+        identity: identity,
+      );
+
+      // Connect through the standard path: capacity enforcement, demotion
+      // of any current active server, and the activate-before-commit
+      // discipline all apply unchanged. On any failure the just-persisted
+      // row is removed again so a failed onboarding never leaves a zombie
+      // config behind (#36).
       try {
-        await _serverRepository.removeServer(config.id);
-      } on Object catch (e, st) {
-        // Rollback is best-effort: the original failure is the one the
-        // caller needs to see.
-        _logError(
-          'rollback of ${config.id} after failed onboarding activation',
-          e,
-          st,
-        );
+        await _connect(config.id, makeActive: true);
+      } on Object catch (_) {
+        try {
+          await _serverRepository.removeServer(config.id);
+        } on Object catch (e, st) {
+          // Rollback is best-effort: the original failure is the one the
+          // caller needs to see.
+          _logError(
+            'rollback of ${config.id} after failed onboarding activation',
+            e,
+            st,
+          );
+        }
+        rethrow;
       }
-      rethrow;
-    }
 
-    return config.id;
+      return config.id;
+    });
   }
 
   @override
@@ -311,92 +308,98 @@ class ServerOrchestratorImpl implements ServerOrchestrator {
 
     await _command(() async {
       _assertInitialized();
-      final config = await _serverRepository.getServer(serverId);
-      if (config == null) throw ServerNotFoundException(serverId);
-      if (_contexts.containsKey(serverId)) {
-        throw StateError('Server $serverId is already connected.');
-      }
+      await _connect(serverId, makeActive: makeActive);
+    });
+  }
 
-      // Enforce capacity.
-      final prefs = await _preferencesRepository.get();
-      _cachedPreferences = prefs;
-      if (_contexts.length >= prefs.maxMonitoredServers) {
-        throw ServerCapacityExceededException(
-          currentConnected: _contexts.length,
-          maxCapacity: prefs.maxMonitoredServers,
-        );
-      }
+  /// [connectServer]'s work, run inside a command: by [connectServer]'s own,
+  /// or by [addAndActivateServer]'s after it writes the server's row.
+  Future<void> _connect(String serverId, {required bool makeActive}) async {
+    final config = await _serverRepository.getServer(serverId);
+    if (config == null) throw ServerNotFoundException(serverId);
+    if (_contexts.containsKey(serverId)) {
+      throw StateError('Server $serverId is already connected.');
+    }
 
-      final context = _contextFactory(config);
-      final shouldBeActive = makeActive || _activeServerId == null;
+    // Enforce capacity.
+    final prefs = await _preferencesRepository.get();
+    _cachedPreferences = prefs;
+    if (_contexts.length >= prefs.maxMonitoredServers) {
+      throw ServerCapacityExceededException(
+        currentConnected: _contexts.length,
+        maxCapacity: prefs.maxMonitoredServers,
+      );
+    }
 
-      // Bring the context to its target state BEFORE registering it — a
-      // failed activation must not leave an orphaned entry in [_contexts]
-      // that permanently blocks reconnection.
-      try {
-        if (shouldBeActive) {
-          await _ensureActive(context);
-        } else {
-          // Connect directly into monitoring (no backgrounding timer needed
-          // — it was never active in this session).
-          await context.activate(); // initializing → active
-          await context.background(); // active → backgrounding
-          await context.suspend(); // backgrounding → monitoring
-        }
-      } catch (_) {
-        await _disposeQuietly(context);
-        rethrow;
-      }
+    final context = _contextFactory(config);
+    final shouldBeActive = makeActive || _activeServerId == null;
 
-      _contexts[serverId] = context;
-      _configs[serverId] = config;
-
+    // Bring the context to its target state BEFORE registering it — a
+    // failed activation must not leave an orphaned entry in [_contexts]
+    // that permanently blocks reconnection.
+    try {
       if (shouldBeActive) {
-        // Demote the current active server (if a different one) before
-        // committing the newcomer, so the single-active invariant holds.
-        final previousId = _activeServerId;
-        if (previousId != null && previousId != serverId) {
-          final previous = _contexts[previousId];
-          if (previous != null && previous.state == ServerContextState.active) {
-            try {
-              await previous.background();
-              await _serverRepository.updateConnectionState(
-                serverId: previousId,
-                newState: ConnectionState.backgrounding,
-              );
-              _startBackgroundingTimer(previousId);
-            } on Object catch (e, st) {
-              // Undo the newcomer's activation and drop it — the switch
-              // half-failed and must not leave two active contexts.
-              _logError('demoting $previousId on connect failed', e, st);
-              // Restore `previous` to active if it was already backgrounded,
-              // so _activeServerId keeps pointing at a genuinely active
-              // context.
-              _cancelBackgroundingTimer(previousId);
-              if (previous.state == ServerContextState.backgrounding) {
-                try {
-                  await previous.activate();
-                } on Object catch (e2, st2) {
-                  _logError('restoring previous $previousId failed', e2, st2);
-                }
+        await _ensureActive(context);
+      } else {
+        // Connect directly into monitoring (no backgrounding timer needed
+        // — it was never active in this session).
+        await context.activate(); // initializing → active
+        await context.background(); // active → backgrounding
+        await context.suspend(); // backgrounding → monitoring
+      }
+    } catch (_) {
+      await _disposeQuietly(context);
+      rethrow;
+    }
+
+    _contexts[serverId] = context;
+    _configs[serverId] = config;
+
+    if (shouldBeActive) {
+      // Demote the current active server (if a different one) before
+      // committing the newcomer, so the single-active invariant holds.
+      final previousId = _activeServerId;
+      if (previousId != null && previousId != serverId) {
+        final previous = _contexts[previousId];
+        if (previous != null && previous.state == ServerContextState.active) {
+          try {
+            await previous.background();
+            await _serverRepository.updateConnectionState(
+              serverId: previousId,
+              newState: ConnectionState.backgrounding,
+            );
+            _startBackgroundingTimer(previousId);
+          } on Object catch (e, st) {
+            // Undo the newcomer's activation and drop it — the switch
+            // half-failed and must not leave two active contexts.
+            _logError('demoting $previousId on connect failed', e, st);
+            // Restore `previous` to active if it was already backgrounded,
+            // so _activeServerId keeps pointing at a genuinely active
+            // context.
+            _cancelBackgroundingTimer(previousId);
+            if (previous.state == ServerContextState.backgrounding) {
+              try {
+                await previous.activate();
+              } on Object catch (e2, st2) {
+                _logError('restoring previous $previousId failed', e2, st2);
               }
-              await _disposeQuietly(_contexts.remove(serverId)!);
-              _configs.remove(serverId);
-              _lastActiveTick.remove(serverId);
-              rethrow;
             }
+            await _disposeQuietly(_contexts.remove(serverId)!);
+            _configs.remove(serverId);
+            _lastActiveTick.remove(serverId);
+            rethrow;
           }
         }
-        await _commitActive(serverId);
-      } else {
-        await _serverRepository.updateConnectionState(
-          serverId: serverId,
-          newState: ConnectionState.monitoring,
-        );
       }
+      await _commitActive(serverId);
+    } else {
+      await _serverRepository.updateConnectionState(
+        serverId: serverId,
+        newState: ConnectionState.monitoring,
+      );
+    }
 
-      _emitContextsChange();
-    });
+    _emitContextsChange();
   }
 
   @override
@@ -903,15 +906,10 @@ class ServerOrchestratorImpl implements ServerOrchestrator {
     }
   }
 
-  void _assertReady() {
-    _assertNotDisposed();
-    _assertInitialized();
-  }
-
-  /// Called from inside a command by every lifecycle method but
-  /// [addAndActivateServer], so a call made while [initialize] runs waits for
-  /// it and sees its outcome. Disposal is still checked at call time: a
-  /// command queued before [dispose] runs before teardown.
+  /// Called from inside a command by every lifecycle method, so a call made
+  /// while [initialize] runs waits for it and sees its outcome. Disposal is
+  /// still checked at call time: a command queued before [dispose] runs
+  /// before teardown.
   void _assertInitialized() {
     if (!_isInitialized) {
       throw StateError(

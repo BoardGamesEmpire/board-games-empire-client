@@ -70,6 +70,12 @@ abstract class ServerOrchestrator {
   /// Throws `DuplicateServerException` if [serverUrl] or [bgeServerId]
   /// is already registered.
   /// Throws [ServerCapacityExceededException] if at capacity.
+  ///
+  /// A call made while another lifecycle command runs waits for it, then
+  /// runs against the state that command left; the server's row is written
+  /// only once it does. Throws [StateError] when made from inside a running
+  /// lifecycle command (from a context's `activate`, say), which would
+  /// otherwise wait on itself forever.
   Future<String> addAndActivateServer({
     required String displayName,
     required String serverUrl,
