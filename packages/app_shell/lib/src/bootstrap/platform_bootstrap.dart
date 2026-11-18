@@ -1,5 +1,6 @@
 import 'package:app_shell/src/deep_links/deep_link_source.dart';
 import 'package:app_shell/src/deep_links/known_server_lookup.dart';
+import 'package:app_shell/src/servers/registered_servers.dart';
 import 'package:hydrated_bloc/hydrated_bloc.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:models/domain.dart';
@@ -19,6 +20,7 @@ class BootstrapResult {
     this.orchestrator,
     this.activeServerScope,
     this.knownServerLookup,
+    this.registeredServers,
     this.recoveredServers = const [],
   });
 
@@ -43,6 +45,13 @@ class BootstrapResult {
   /// Web is single-origin and has no server registry, so it never builds
   /// one. Native supplies a lookup over the MetaDB server registry.
   final KnownServerLookup? knownServerLookup;
+
+  /// The servers this device has registered, for the server manager (#134),
+  /// or `null` on web.
+  ///
+  /// Web is single-origin and has no server registry, so it never builds
+  /// one. Native supplies a source over the MetaDB server registry.
+  final RegisteredServers? registeredServers;
 
   /// The platform-neutral "which server is active" seam (#37) the shell
   /// provisions the auth bloc (and later per-server services) from.

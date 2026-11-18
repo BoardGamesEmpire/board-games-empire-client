@@ -19,6 +19,11 @@ class _FakeKnownServerLookup implements KnownServerLookup {
   Future<String?> localServerIdFor(String bgeServerId) async => null;
 }
 
+class _FakeRegisteredServers implements RegisteredServers {
+  @override
+  Stream<List<ServerConfig>> watch() => const Stream.empty();
+}
+
 class _MockActiveServerScope extends Mock implements ActiveServerScope {}
 
 class _MockWellKnownClient extends Mock implements WellKnownClient {}
@@ -164,6 +169,26 @@ void main() {
           await cubit.initialize();
 
           expect(cubit.knownServerLookup, same(lookup));
+        },
+      );
+
+      test(
+        'the cubit exposes registeredServers once ready and null before',
+        () async {
+          final registered = _FakeRegisteredServers();
+          final cubit = buildCubit(
+            bootstrap: FakePlatformBootstrap(
+              outcomes: [
+                BootstrapResult(hasServer: true, registeredServers: registered),
+              ],
+            ),
+          );
+          addTearDown(cubit.close);
+
+          expect(cubit.registeredServers, isNull);
+          await cubit.initialize();
+
+          expect(cubit.registeredServers, same(registered));
         },
       );
 

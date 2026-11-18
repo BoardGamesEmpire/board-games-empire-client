@@ -241,6 +241,23 @@ void main() {
         },
       );
 
+      test(
+        'a successful initialize publishes ServerRepositoryRegisteredServers',
+        () async {
+          when(() => serverRepository.getAllServers())
+              .thenAnswer((_) async => const []);
+          final bootstrap = buildBootstrap();
+
+          final result = await bootstrap.initialize();
+
+          expect(
+            result.registeredServers,
+            isA<ServerRepositoryRegisteredServers>(),
+          );
+          await bootstrap.dispose();
+        },
+      );
+
       test('reports a server when the registry is non-empty', () async {
         when(() => serverRepository.getAllServers())
             .thenAnswer((_) async => [_serverConfig()]);

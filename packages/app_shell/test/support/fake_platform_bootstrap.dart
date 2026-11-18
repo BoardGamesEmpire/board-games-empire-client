@@ -45,6 +45,7 @@ class FakePlatformBootstrap implements PlatformBootstrap {
     this._orchestrator,
     this._activeServerScope,
     this._knownServerLookup,
+    this._registeredServers,
     this.rootContainerOutcome,
     this.onCreateRootContainer,
     this.deepLinkSource,
@@ -54,6 +55,7 @@ class FakePlatformBootstrap implements PlatformBootstrap {
   final ServerOrchestrator? _orchestrator;
   final ActiveServerScope? _activeServerScope;
   final KnownServerLookup? _knownServerLookup;
+  final RegisteredServers? _registeredServers;
 
   @override
   final bool supportsReset;
@@ -135,6 +137,7 @@ class FakePlatformBootstrap implements PlatformBootstrap {
         orchestrator: _orchestrator,
         activeServerScope: _activeServerScope,
         knownServerLookup: _knownServerLookup,
+        registeredServers: _registeredServers,
       );
     }
     final outcome = _outcomes.length == 1

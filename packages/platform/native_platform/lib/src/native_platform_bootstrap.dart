@@ -22,6 +22,7 @@ import 'package:native_platform/src/deep_links/app_links_deep_link_source.dart';
 import 'package:native_platform/src/deep_links/server_repository_known_server_lookup.dart';
 import 'package:native_platform/src/logging/rotating_file_log_sink.dart';
 import 'package:native_platform/src/native_root_module.dart';
+import 'package:native_platform/src/servers/server_repository_registered_servers.dart';
 import 'package:observability/observability.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:server_settings/server_settings.dart'
@@ -417,6 +418,9 @@ class NativePlatformBootstrap implements PlatformBootstrap {
         hasServer: servers.isNotEmpty,
         orchestrator: orchestrator,
         knownServerLookup: ServerRepositoryKnownServerLookup(
+          serverRepository: serverRepository,
+        ),
+        registeredServers: ServerRepositoryRegisteredServers(
           serverRepository: serverRepository,
         ),
         // #37: the platform-neutral auth seam the shell provisions the
