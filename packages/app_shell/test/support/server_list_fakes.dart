@@ -66,7 +66,8 @@ class FakeRegisteredServers implements RegisteredServers {
 class _FakeServerContext extends Fake implements ServerContext {}
 
 /// An orchestrator that keeps the connected servers and the active one, and
-/// switches or connects the way the real one does once [onActivate] lets it.
+/// switches or connects the way the real one does once [onActivate] lets it,
+/// and adds once [onAdd] does.
 class FakeServerOrchestrator extends Fake implements ServerOrchestrator {
   final Map<String, ServerContext> _connected = {};
   final _contexts = StreamController<Map<String, ServerContext>>.broadcast();
@@ -75,8 +76,8 @@ class FakeServerOrchestrator extends Fake implements ServerOrchestrator {
   @override
   String? activeServerId;
 
-  /// Every switch and connect asked for, in order, as `switch <id>` or
-  /// `connect <id>`.
+  /// Every add, switch and connect asked for, in order, as `add <id>`,
+  /// `switch <id>` or `connect <id>`.
   final List<String> calls = [];
 
   /// Runs before a switch or a connect takes effect. A pending future holds
@@ -112,6 +113,26 @@ class FakeServerOrchestrator extends Fake implements ServerOrchestrator {
     calls.add('switch $targetServerId');
     await onActivate?.call(targetServerId);
     activate(targetServerId);
+  }
+
+  /// Runs as a server is added, with its id and display name, before it
+  /// becomes active. A throw fails the add, as a duplicate does.
+  FutureOr<void> Function(String serverId, String displayName)? onAdd;
+
+  /// Adds a server whose id is `local-<bgeServerId>` and makes it active,
+  /// as the real one does once [onAdd] lets it.
+  @override
+  Future<String> addAndActivateServer({
+    required String displayName,
+    required String serverUrl,
+    required String bgeServerId,
+    required ServerIdentity identity,
+  }) async {
+    final serverId = 'local-$bgeServerId';
+    calls.add('add $serverId');
+    await onAdd?.call(serverId, displayName);
+    activate(serverId);
+    return serverId;
   }
 
   @override

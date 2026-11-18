@@ -2,7 +2,7 @@
   "@@locale": "en",
   "serverAddTitle": "Add a Server",
   "@serverAddTitle": {
-    "description": "Screen title for the first-run add-server flow"
+    "description": "Screen title for the add-server flow, at first run and when adding a server from the server manager"
   },
   "serverAddIntro": "Enter the address of your Board Games Empire server to get started.",
   "@serverAddIntro": {

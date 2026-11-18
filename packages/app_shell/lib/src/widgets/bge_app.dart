@@ -465,6 +465,7 @@ class _BgeAppState extends State<BgeApp> {
       // back to the placeholders, matching the pre-#37 behavior.
       serverAddBuilder: _buildServerAddRoute,
       serversBuilder: _buildServersRoute,
+      managerServerAddBuilder: _buildManagerServerAddRoute,
       authBuilder: _buildAuthRoute,
       homeBuilder: _buildHomeRoute,
       authScopeBuilder: _buildAuthScope,
@@ -2878,11 +2879,45 @@ class _BgeAppState extends State<BgeApp> {
   /// with the set in hand. Null (→ the server-add `ShellPlaceholderScreen`)
   /// is the backstop: no container at all (tests), a bundle that cannot
   /// resolve on a cubit built without the check, or no orchestrator.
-  Widget? _buildServerAddRoute(BuildContext context) {
+  Widget? _buildServerAddRoute(BuildContext context) => _serverAddFlow(
+    onUnavailable: _logServerAddUnavailable,
+    onSucceeded: (_) => widget.bootstrapCubit.onServerRegistered(),
+  );
+
+  /// The #36 flow as the server manager opens it (#134), over the manager
+  /// and with an app bar, signed in or not. Null (→ the router's not-found
+  /// page) on the same terms as [_buildServerAddRoute], unlogged: on the web
+  /// there is no orchestrator, and the location reads as unknown, as the
+  /// manager's does.
+  ///
+  /// A success goes home, and the redirect takes the app to the new
+  /// server's sign-in screen: the server is active, and signed out.
+  /// [AppBootstrapCubit.onServerRegistered] would do nothing here, since a
+  /// server already exists. When the switch has already changed the
+  /// bootstrap state, the redirect has taken the route away, and it goes
+  /// nowhere.
+  Widget? _buildManagerServerAddRoute(BuildContext context) => _serverAddFlow(
+    title: Text(ServerOnboardingLocalizations.of(context).serverAddTitle),
+    onSucceeded: (context) {
+      if (!(ModalRoute.isActiveOf(context) ?? false)) return;
+      GoRouter.of(context).go(AppRoutes.home);
+    },
+  );
+
+  /// The #36 add-server screen over its bloc, built from the root-scope
+  /// [ServerOnboardingDeps] and the late-bound orchestrator, with
+  /// [onSucceeded] run, in the screen's context, once the server is added
+  /// and active. Null, after [onUnavailable] names what is missing, when
+  /// either is absent.
+  Widget? _serverAddFlow({
+    required void Function(BuildContext context) onSucceeded,
+    void Function(List<String> missing)? onUnavailable,
+    Widget? title,
+  }) {
     final deps = _rootService<ServerOnboardingDeps>();
     final orchestrator = widget.bootstrapCubit.orchestrator;
     if (deps == null || orchestrator == null) {
-      _logServerAddUnavailable([
+      onUnavailable?.call([
         if (deps == null) 'ServerOnboardingDeps',
         if (orchestrator == null) 'ServerOrchestrator',
       ]);
@@ -2898,8 +2933,8 @@ class _BgeAppState extends State<BgeApp> {
       ),
       child: BlocListener<ServerOnboardingBloc, ServerOnboardingState>(
         listenWhen: (_, current) => current is ServerOnboardingSucceeded,
-        listener: (_, _) => widget.bootstrapCubit.onServerRegistered(),
-        child: const ServerAddScreen(),
+        listener: (context, _) => onSucceeded(context),
+        child: ServerAddScreen(title: title),
       ),
     );
   }

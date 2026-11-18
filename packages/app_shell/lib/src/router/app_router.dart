@@ -445,7 +445,7 @@ typedef ServerAddScreenBuilder = Widget? Function(BuildContext context);
 /// Builds the server manager (#134) for the [AppRoutes.servers] route.
 /// Always supplied by `BgeApp`; returns null at navigation time when there
 /// is no orchestrator or no registry of the device's servers, in which case
-/// the route, and the add route beneath it, show [RouteNotFoundScreen].
+/// the route shows [RouteNotFoundScreen].
 ///
 /// The manager belongs to the device, not to a server's session, so its
 /// route sits outside both shells and opens while signed out on native.
@@ -453,16 +453,24 @@ typedef ServerAddScreenBuilder = Widget? Function(BuildContext context);
 /// sends its location to sign-in, and signed in it reads as unknown.
 typedef ServersScreenBuilder = Widget? Function(BuildContext context);
 
+/// Builds the add-server screen the manager opens (#134), for the
+/// [AppRoutes.serversAdd] route. Always supplied by `BgeApp`; returns null
+/// at navigation time when the composition cannot back the flow, as
+/// [ServerAddScreenBuilder] does, in which case the route shows
+/// [RouteNotFoundScreen], as the manager's does: web has no orchestrator.
+typedef ManagerServerAddScreenBuilder = Widget? Function(BuildContext context);
+
 /// Builds the real auth screen subtree (#37) for the [AppRoutes.auth]
 /// route — the `AuthGate` rendered against the active server's bloc.
 /// Always supplied by `BgeApp`; returns null at navigation time when no
 /// active server is resolvable, in which case the route falls back to the
 /// placeholder.
 ///
-/// That fallback is a dead end, not a transient state: the redirect pins
-/// [AppBootstrapNeedsAuth] to this route. Native bootstrap fails as a
-/// retryable error rather than reach it (#217), and the builder logs an
-/// error naming the cause if it ever is reached.
+/// That fallback is a dead end, not a transient state: under
+/// [AppBootstrapNeedsAuth] the redirect sends every location here but a
+/// public link and, on native, the server manager (#134). Native bootstrap
+/// fails as a retryable error rather than reach it (#217), and the builder
+/// logs an error naming the cause if it ever is reached.
 typedef AuthScreenBuilder = Widget? Function(BuildContext context);
 
 /// Builds the user-initiated feedback flow (#107) for the
@@ -894,6 +902,7 @@ GoRouter buildAppRouter({
   required BootstrapStreamListenable refreshListenable,
   ServerAddScreenBuilder? serverAddBuilder,
   ServersScreenBuilder? serversBuilder,
+  ManagerServerAddScreenBuilder? managerServerAddBuilder,
   AuthScreenBuilder? authBuilder,
   HomeScreenBuilder? homeBuilder,
   AuthScopeBuilder? authScopeBuilder,
@@ -1012,8 +1021,9 @@ GoRouter buildAppRouter({
       }
       return target;
     },
-    // An unknown location, reachable only once ready: before that the
-    // redirect above pins every location to a bootstrap screen.
+    // An unknown location. Before Ready the redirect above sends one to a
+    // bootstrap screen, except one under the server manager's path, which
+    // native lets through while signed out (#134) and lands here.
     errorPageBuilder: (context, state) =>
         _materialPage(state, const RouteNotFoundScreen()),
     // Every route builds its page explicitly; see [_materialPage] for why,
@@ -1059,8 +1069,11 @@ GoRouter buildAppRouter({
         routes: [
           GoRoute(
             path: AppRoutes._serversAddSegment,
-            pageBuilder: (context, state) =>
-                _materialPage(state, const RouteNotFoundScreen()),
+            pageBuilder: (context, state) => _materialPage(
+              state,
+              managerServerAddBuilder?.call(context) ??
+                  const RouteNotFoundScreen(),
+            ),
           ),
         ],
       ),

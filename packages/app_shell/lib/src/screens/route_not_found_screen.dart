@@ -7,10 +7,12 @@ import 'package:ui_tokens/ui_tokens.dart';
 
 /// The router's error page (#465): an address that matches no screen.
 ///
-/// Reached only once bootstrap is ready, since the redirect pins every
-/// location to a bootstrap screen before that. A location that matched
-/// nothing has nothing beneath it to go back to, so the page offers a way
-/// home instead.
+/// Mostly reached once bootstrap is ready, since before that the redirect
+/// sends a location to a bootstrap screen; native lets the server manager's
+/// paths through while signed out, so an unknown one under them lands here
+/// too. It is also the server manager's page where the composition has no
+/// manager, as on web (#134). A location that matched nothing has nothing
+/// beneath it to go back to, so the page offers a way home instead.
 class RouteNotFoundScreen extends StatelessWidget {
   const RouteNotFoundScreen({super.key});
 
