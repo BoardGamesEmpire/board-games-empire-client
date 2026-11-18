@@ -19,7 +19,9 @@ final class GameSearchIdle extends GameSearchState {
   const GameSearchIdle({super.filter});
 }
 
-/// A search is running. Searching DataGateways can take up to 15 seconds.
+/// A search is running, with nothing to show yet: over the server's socket,
+/// until this server's own half has finished (#473); over REST, until the
+/// whole answer has, which waits for the DataGateways for up to 15 seconds.
 final class GameSearchLoading extends GameSearchState {
   const GameSearchLoading({required this.query, super.filter});
 
@@ -49,6 +51,12 @@ final class GameSearchLoading extends GameSearchState {
 /// never asked (#795). [refusalMessage] is the server's own words for it,
 /// null when it gave none or the session never asked. An answer from the
 /// cache is neither.
+///
+/// [searching] says more answers are on their way: the answer streams in over
+/// the server's socket as each source answers, and this is one so far
+/// (#473). [cutShort] says the search stopped short of hearing from every
+/// source, so some results may be missing. An answer over REST, or from the
+/// cache, is neither.
 final class GameSearchReady extends GameSearchState {
   const GameSearchReady({
     required this.query,
@@ -59,6 +67,8 @@ final class GameSearchReady extends GameSearchState {
     this.fromCache = false,
     this.dataGatewaysRefused = false,
     this.refusalMessage,
+    this.searching = false,
+    this.cutShort = false,
     super.filter,
   });
 
@@ -70,6 +80,8 @@ final class GameSearchReady extends GameSearchState {
   final bool fromCache;
   final bool dataGatewaysRefused;
   final String? refusalMessage;
+  final bool searching;
+  final bool cutShort;
 
   /// How many results the screen lists.
   int get resultCount => onServer.length + fromSources.length;
@@ -84,6 +96,8 @@ final class GameSearchReady extends GameSearchState {
     fromCache,
     dataGatewaysRefused,
     refusalMessage,
+    searching,
+    cutShort,
     filter,
   ];
 }

@@ -65,30 +65,13 @@ class FakeGamesRemote implements GamesRemoteDataSource {
     GameSearchFilter filter = const GameSearchFilter(),
     bool includeExternal = true,
   }) {
-    final external = includeExternal ? '' : ' -external';
-    calls.add('search($query${_describe(filter)}$external)');
+    final described = describeSearch(
+      query,
+      filter,
+      includeExternal: includeExternal,
+    );
+    calls.add('search($described)');
     return _run(onSearch, 'search')(query, filter, includeExternal);
-  }
-
-  /// [filter] as a search's call records it: ` [content] {platform}`, then
-  /// `year(…)`, `players(…)` and `time(…)` for each range that narrows, as
-  /// `min..max`, with `+?` when it keeps unknown values.
-  static String _describe(GameSearchFilter filter) {
-    String names(Iterable<Enum> types) =>
-        (types.map((t) => t.name).toList()..sort()).join(',');
-    String range(String name, GameSearchRange range) => range.narrows
-        ? ' $name(${range.min ?? ''}..${range.max ?? ''}'
-              '${range.includeUnknown ? '+?' : ''})'
-        : '';
-
-    final GameSearchFilter(:contentTypes, :platformTypes) = filter;
-    return [
-      if (contentTypes.isNotEmpty) ' [${names(contentTypes)}]',
-      if (platformTypes.isNotEmpty) ' {${names(platformTypes)}}',
-      range('year', filter.publishYear),
-      range('players', filter.playerCount),
-      range('time', filter.playTime),
-    ].join();
   }
 
   @override
@@ -113,6 +96,35 @@ class FakeGamesRemote implements GamesRemoteDataSource {
 
   static T _run<T>(T? handler, String name) =>
       handler ?? (throw StateError('$name was not scripted'));
+}
+
+/// A search as the fakes record it, over REST or the socket alike: [query],
+/// then [filter] as ` [content] {platform}`, then `year(…)`, `players(…)` and
+/// `time(…)` for each range that narrows, as `min..max`, with `+?` when it
+/// keeps unknown values, and ` -external` when it leaves the DataGateways
+/// out.
+String describeSearch(
+  String query,
+  GameSearchFilter filter, {
+  required bool includeExternal,
+}) {
+  String names(Iterable<Enum> types) =>
+      (types.map((t) => t.name).toList()..sort()).join(',');
+  String range(String name, GameSearchRange range) => range.narrows
+      ? ' $name(${range.min ?? ''}..${range.max ?? ''}'
+            '${range.includeUnknown ? '+?' : ''})'
+      : '';
+
+  final GameSearchFilter(:contentTypes, :platformTypes) = filter;
+  return [
+    query,
+    if (contentTypes.isNotEmpty) ' [${names(contentTypes)}]',
+    if (platformTypes.isNotEmpty) ' {${names(platformTypes)}}',
+    range('year', filter.publishYear),
+    range('players', filter.playerCount),
+    range('time', filter.playTime),
+    if (!includeExternal) ' -external',
+  ].join();
 }
 
 final _seeded = DateTime.utc(2026, 10);
