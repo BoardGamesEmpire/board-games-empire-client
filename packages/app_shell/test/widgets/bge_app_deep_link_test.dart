@@ -398,14 +398,21 @@ void main() {
     final secondCheck = Completer<void>();
     secondRepo.sessionCheckGate = secondCheck;
     await orchestrator.connectServer('server-uuid-2', makeActive: true);
-    await tester.pumpAndSettle();
+    // Not pumpAndSettle, here or below: until a session is live on the
+    // server switched to, home waits on the splash (#134), which never
+    // settles.
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
     expect(cubit.state, isA<AppBootstrapReady>());
+    expect(find.byType(SplashScreen), findsOneWidget);
+    expect(find.byType(HomeScreen), findsNothing);
 
     // Back to A for a link: A's bloc is built afresh, its check held too.
     final firstCheck = Completer<void>();
     firstRepo.sessionCheckGate = firstCheck;
     holder.set(firstServerLink);
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
 
     verify(() => orchestrator.switchActiveServer('server-uuid-1')).called(1);
     expect(holder.peek, firstServerLink);

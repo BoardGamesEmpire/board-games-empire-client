@@ -405,19 +405,23 @@ class _BgeAppState extends State<BgeApp> {
   final StreamController<String> _gamesFoundGone =
       StreamController<String>.broadcast();
 
-  /// Whose session home is built for, set by [_AuthScope] (#432).
+  /// Whose session home is built for, and on which server, set by
+  /// [_AuthScope] (#432, #134).
   ///
   /// Home rebuilds on it. A user switched in place — another tab's sign-in
   /// moving the shared cookie — never leaves home, so nothing else would
   /// rebuild it, and it would go on holding the departed user's services.
+  /// Nor does a server picked while home is showing: going home from there
+  /// builds no new page.
   ///
-  /// While a switch is under way home is the splash instead. The departing
-  /// user's scope is being torn down and the arriving user's is not live
-  /// yet, and home's entries open screens over those services.
+  /// While either switch is under way home is the splash instead. The
+  /// departing session's scope is being torn down and the arriving one's is
+  /// not live yet, and home's entries open screens over those services.
   ///
   /// Never cleared on sign-out: home unmounts then anyway, and a rebuild
   /// in that frame would only resolve services on their way out.
   final ValueNotifier<_HomeSession> _homeSession = ValueNotifier((
+    serverId: null,
     userId: null,
     switching: false,
   ));
@@ -805,9 +809,10 @@ class _BgeAppState extends State<BgeApp> {
   /// navigation shell holds it, around every signed-in page
   /// ([_buildNavigationShell], #414).
   ///
-  /// Rebuilt whenever the session's user changes (#432), so a user switched
-  /// in place gets a home built from their own services, and the splash
-  /// until then. See [_homeSession].
+  /// Rebuilt whenever the session changes (#432, #134), so a user switched
+  /// in place, or a server switched to, gets a home built from its own
+  /// session's services, and the splash until that session is live. See
+  /// [_homeSession].
   ///
   /// The active server is read in that rebuild, not when the route was
   /// built: a server picked while home is already showing goes to the same
@@ -834,12 +839,12 @@ class _BgeAppState extends State<BgeApp> {
   /// pages' navigator.
   ///
   /// The pages go bare where no active server is resolvable, and while a
-  /// user is switched in place (#432): the departing user's scope is being
-  /// torn down, and the shell's destinations and entries open screens over
-  /// its services. Rebuilt on [_homeSession], so the shell comes back, built
-  /// from the arriving user's services, once their session is live. The
-  /// pages keep their state across that: go_router keys their navigator
-  /// globally.
+  /// user is switched in place (#432) or a server is switched to (#134):
+  /// the departing session's scope is being torn down, and the shell's
+  /// destinations and entries open screens over its services. Rebuilt on
+  /// [_homeSession], so the shell comes back, built from the arriving
+  /// session's services, once it is live. The pages keep their state across
+  /// that: go_router keys their navigator globally.
   Widget _buildNavigationShell(
     BuildContext context,
     String location,
@@ -3578,6 +3583,18 @@ class _BgeAppState extends State<BgeApp> {
 /// cookie. The first user's session ends — not deliberately, and without
 /// routing to the sign-in screen — and the second's starts, with a
 /// one-time notice once it is live.
+///
+/// ## A server switched to (#134)
+///
+/// A switch ends the session on the server it leaves: the orchestrator
+/// backgrounds that server, which tears its user scope down. Nothing of
+/// that reaches the departed bloc's listener, which unmounts with its
+/// provider, so the scope watches the active server itself and puts home
+/// behind the splash until the new server's bloc has an outcome
+/// ([_AuthScopeState._onActiveServer]). Each outcome ends the splash:
+/// signed in rebuilds home for that session, signed out routes to the
+/// sign-in screen, and a session check that failed routes there too, for
+/// its retry view.
 class _AuthScope extends StatefulWidget {
   const _AuthScope({
     required this.scope,
@@ -3608,8 +3625,8 @@ class _AuthScope extends StatefulWidget {
   /// Told when a session starts and ends (#142).
   final _UnsentChanges unsentChanges;
 
-  /// Told when a user switch begins and when a session goes live (#432);
-  /// see `_BgeAppState._homeSession`.
+  /// Told when a user or a server switch begins and when a session goes
+  /// live (#432, #134); see `_BgeAppState._homeSession`.
   final ValueNotifier<_HomeSession> homeSession;
 
   final Widget child;
@@ -3618,8 +3635,9 @@ class _AuthScope extends StatefulWidget {
   State<_AuthScope> createState() => _AuthScopeState();
 }
 
-/// Stateful only to hold [_authEpoch] (#383) and the listener's record of
-/// sessions (#432); nothing here affects build.
+/// Stateful only to hold [_authEpoch] (#383), the listener's record of
+/// sessions (#432) and the watch on the active server (#134); nothing here
+/// affects build.
 class _AuthScopeState extends State<_AuthScope> {
   static final BgeLogger _log = BgeLogger('bge.shell.auth_scope');
 
@@ -3666,6 +3684,80 @@ class _AuthScopeState extends State<_AuthScope> {
   /// `listenWhen` answers true, for the same transition.
   AuthBlocState? _arrivedFrom;
 
+  /// The home session a server switch ended, while the bloc it was live
+  /// under is still the one mounted (#134).
+  ///
+  /// Two switches can land before a frame builds: away, and back. The
+  /// provider is keyed by server and builds once, for the server it started
+  /// on, so that server's bloc stays and no sign-in outcome is coming to
+  /// take home off the splash. Home's session is put back instead. Cleared
+  /// once another bloc is created, after which every outcome is a new one.
+  _HomeSession? _leftSession;
+
+  StreamSubscription<ActiveServer?>? _activeSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+    _watchActive();
+  }
+
+  @override
+  void didUpdateWidget(_AuthScope oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.scope != widget.scope) _watchActive();
+  }
+
+  @override
+  void dispose() {
+    unawaited(_activeSubscription?.cancel());
+    super.dispose();
+  }
+
+  void _watchActive() {
+    unawaited(_activeSubscription?.cancel());
+    _activeSubscription = widget.scope?.watchActive().listen(
+      _onActiveServer,
+      onError: (Object error, StackTrace stackTrace) => _log.warn(
+        'The active-server stream failed; home keeps the session it has',
+        error: error,
+        stackTrace: stackTrace,
+      ),
+    );
+  }
+
+  /// Puts home behind the splash when the server its session is live on
+  /// stops being the active one (#134).
+  ///
+  /// That session is over: the switch backgrounded its server, which ends
+  /// the user session there. Home would otherwise go on showing it, built
+  /// from services already torn down, until the new server's session went
+  /// live, and the shell around it would offer the new server's screens
+  /// with no session to read. [_handleAuthenticated] brings home back, for
+  /// the new session.
+  ///
+  /// Runs on the stream's event, never during build: home rebuilds on the
+  /// notifier.
+  void _onActiveServer(ActiveServer? active) {
+    // With no server active at all, home stays as it was.
+    if (active == null) return;
+    final session = widget.homeSession.value;
+    final left = _leftSession;
+    if (left != null && left.serverId == active.serverId) {
+      // Back before a frame built: see [_leftSession].
+      _leftSession = null;
+      widget.homeSession.value = left;
+      return;
+    }
+    // No session to leave, or still on its server. The stream replays the
+    // active server to each listener, and may repeat it.
+    if (session.serverId == null || session.serverId == active.serverId) {
+      return;
+    }
+    _leftSession = session;
+    widget.homeSession.value = (serverId: null, userId: null, switching: true);
+  }
+
   @override
   Widget build(BuildContext context) {
     final scope = widget.scope;
@@ -3698,6 +3790,9 @@ class _AuthScopeState extends State<_AuthScope> {
             // below reads the bloc in this same build, so this runs on
             // every key change, during build.
             widget.onSignedInServer(null);
+            // And whatever session a switch ended can't come back under
+            // it (#134).
+            _leftSession = null;
             return AuthBloc(
               // Required, so unguarded: every active server has one, and
               // both compositions register it unconditionally (native
@@ -3742,12 +3837,17 @@ class _AuthScopeState extends State<_AuthScope> {
             // AuthAuthenticated` (#208): a sign-out passes through
             // `AuthLoading` first, so the narrower test would miss every
             // ordinary one.
+            //
+            // And a session check that failed (#134), for a server
+            // switched to while the app is past the auth leg.
             listenWhen: (previous, current) {
               final acts =
                   (current is AuthAuthenticated &&
                       previous is! AuthAuthenticated) ||
                   (current is AuthUnauthenticated &&
                       previous is! AuthUnauthenticated) ||
+                  (current is AuthSessionCheckFailed &&
+                      previous is! AuthSessionCheckFailed) ||
                   (current is AuthAuthenticated &&
                       previous is AuthAuthenticated &&
                       current.session.user.id != previous.session.user.id);
@@ -3828,6 +3928,15 @@ class _AuthScopeState extends State<_AuthScope> {
                 _closePopUps(context);
                 widget.onSignedOut();
                 unawaited(_deactivateSessionScope(active));
+              } else if (state is AuthSessionCheckFailed) {
+                // Only a bloc's first check, or a retry of it, fails this
+                // way, so no session is open here to end. At startup the
+                // gate is already on the auth leg and this does nothing.
+                // After a switch from a signed-in server it is still past
+                // it, with home behind the splash (#134): going back to the
+                // auth leg is what shows this server's retry view, and its
+                // way to the server manager.
+                widget.onSignedOut();
               }
             },
             // #141: app resume, the third revalidation trigger. A dispatch
@@ -4002,11 +4111,20 @@ class _AuthScopeState extends State<_AuthScope> {
       return;
     }
     // Ahead of the gate callback, so a home it routes to is built for this
-    // user. A user switched in place is already on home, and this is what
-    // rebuilds it (#432). Not once this scope has unmounted: the app may be
+    // session. A user switched in place is already on home, and so may be a
+    // server switched to, and this is what rebuilds it (#432, #134). The
+    // server is part of the value because two servers can sign in users
+    // with the same id. Not once this scope has unmounted: the app may be
     // gone, and the notifier with it, while a route builds home afresh
     // anyway.
-    if (mounted) widget.homeSession.value = (userId: userId, switching: false);
+    if (mounted) {
+      _leftSession = null;
+      widget.homeSession.value = (
+        serverId: active.serverId,
+        userId: userId,
+        switching: false,
+      );
+    }
     // After the checks above, so this publishes only while the server is
     // still active, its bloc still signed in as this user and that user's
     // scope live, and only while this scope is mounted. The epoch isn't
@@ -4047,7 +4165,11 @@ class _AuthScopeState extends State<_AuthScope> {
   /// rebuilt for them then (see `_BgeAppState._homeSession`).
   void _endSessionInPlace(BuildContext context, ActiveServer active) {
     widget.unsentChanges.sessionEnded(active, deliberately: false);
-    widget.homeSession.value = (userId: null, switching: true);
+    widget.homeSession.value = (
+      serverId: active.serverId,
+      userId: null,
+      switching: true,
+    );
     _closePopUps(context);
     GoRouter.maybeOf(context)?.go(AppRoutes.home);
     unawaited(_deactivateSessionScope(active));
@@ -4127,9 +4249,9 @@ final class _NoSessionLease implements SessionLease {
   bool get isLive => false;
 }
 
-/// Whose session home is built for, and whether a switch to another user is
-/// under way (#432).
-typedef _HomeSession = ({String? userId, bool switching});
+/// Whose session home is built for and on which server, and whether a
+/// switch to another user (#432) or another server (#134) is under way.
+typedef _HomeSession = ({String? serverId, String? userId, bool switching});
 
 /// Resolves an **optional** service from [active]'s per-server container,
 /// or null where the composition registers none or its factory throws. A

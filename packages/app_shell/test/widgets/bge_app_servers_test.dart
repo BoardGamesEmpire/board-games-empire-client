@@ -174,6 +174,19 @@ _TieredServer _tiered({
   );
 }
 
+/// A server's auth whose session check answers only once [_release] has.
+class _HeldAuth extends FakeAuthRepository {
+  _HeldAuth(this._release, {super.initialSession});
+
+  final Future<void> _release;
+
+  @override
+  Future<AuthResponse?> getSession() async {
+    await _release;
+    return super.getSession();
+  }
+}
+
 class _WellKnownClient implements WellKnownClient {
   @override
   Future<ServerIdentity> fetchIdentity(String serverUrl) async => _betaIdentity;
@@ -671,10 +684,12 @@ void main() {
     late _TieredServer beta;
 
     /// Boots signed in on `Alpha`, with `Beta` registered beside it and
-    /// not connected, signed in or not as [betaSignedIn] says.
+    /// not connected, signed in or not as [betaSignedIn] says, or with
+    /// [betaAuth] where a test scripts `Beta`'s session check.
     Future<AppBootstrapCubit> boot(
       WidgetTester tester, {
-      required bool betaSignedIn,
+      bool betaSignedIn = true,
+      FakeAuthRepository? betaAuth,
     }) async {
       final alphaAuth = FakeAuthRepository(
         initialSession: _sessionOf('user-alpha'),
@@ -683,9 +698,11 @@ void main() {
       beta = _tiered(
         id: 'local-beta',
         name: 'Beta',
-        auth: FakeAuthRepository(
-          initialSession: betaSignedIn ? _sessionOf('user-beta') : null,
-        ),
+        auth:
+            betaAuth ??
+            FakeAuthRepository(
+              initialSession: betaSignedIn ? _sessionOf('user-beta') : null,
+            ),
       );
       final cubit = await pumpApp(
         tester,
@@ -718,7 +735,7 @@ void main() {
 
     testWidgets('picking a signed-in server from the drawer lands on its '
         'home', (tester) async {
-      final cubit = await boot(tester, betaSignedIn: true);
+      final cubit = await boot(tester);
       await openCollection(tester);
       await openManagerFromMenu(tester);
 
@@ -768,6 +785,148 @@ void main() {
       expectNoSignedInPages();
     });
 
+    testWidgets('picking a server signed in as a user with the same id, '
+        'from the manager over home, lands on its home', (tester) async {
+      // Two servers can give their users the same id: one restored from
+      // the other's backup does.
+      final cubit = await boot(
+        tester,
+        betaAuth: FakeAuthRepository(initialSession: _sessionOf('user-alpha')),
+      );
+      await openManagerFromMenu(tester);
+
+      await tester.tap(betaRow());
+      await tester.pumpAndSettle();
+
+      expect(alpha.session.activeUserId, isNull);
+      expect(beta.session.activeUserId, 'user-alpha');
+      expectHomeFor(tester, cubit, beta);
+    });
+
+    /// Nothing signed in shows but the splash: no home, and no shell around
+    /// it to open a screen from.
+    void expectSplashAtHome(WidgetTester tester) {
+      expect(routerOf(tester).state.uri.path, AppRoutes.home);
+      expect(find.byType(SplashScreen), findsOneWidget);
+      for (final type in [NavigationShell, HomeScreen, StatsCard]) {
+        expect(find.byType(type, skipOffstage: false), findsNothing);
+      }
+      expect(tester.takeException(), isNull);
+    }
+
+    /// Lets a pick or a switch land and the manager finish leaving. Not
+    /// `pumpAndSettle`: the splash never settles.
+    Future<void> pumpPastSwitch(WidgetTester tester) async {
+      await tester.pump();
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+    }
+
+    testWidgets("home waits on the splash until the picked server's session "
+        'is live', (tester) async {
+      final checked = Completer<void>();
+      final cubit = await boot(
+        tester,
+        betaAuth: _HeldAuth(
+          checked.future,
+          initialSession: _sessionOf('user-beta'),
+        ),
+      );
+      await openManagerFromMenu(tester);
+
+      await tester.tap(betaRow());
+      await pumpPastSwitch(tester);
+
+      // Alpha's session ended with the switch, and Beta's isn't known yet.
+      expect(alpha.session.activeUserId, isNull);
+      expect(beta.session.activeUserId, isNull);
+      expect(cubit.state, isA<AppBootstrapReady>());
+      expect(find.byType(ServersScreen, skipOffstage: false), findsNothing);
+      expectSplashAtHome(tester);
+
+      checked.complete();
+      await tester.pumpAndSettle();
+
+      expect(beta.session.activeUserId, 'user-beta');
+      expectHomeFor(tester, cubit, beta);
+    });
+
+    testWidgets('a switch made elsewhere puts home behind the splash until '
+        "the new server's session is live", (tester) async {
+      final checked = Completer<void>();
+      final cubit = await boot(
+        tester,
+        betaAuth: _HeldAuth(
+          checked.future,
+          initialSession: _sessionOf('user-beta'),
+        ),
+      );
+
+      // As a link for Beta does: no manager, and no navigation after it.
+      await orchestrator.connectServer(beta.server.serverId, makeActive: true);
+      await pumpPastSwitch(tester);
+
+      expectSplashAtHome(tester);
+
+      checked.complete();
+      await tester.pumpAndSettle();
+
+      expectHomeFor(tester, cubit, beta);
+    });
+
+    testWidgets('picking a server whose session check fails lands on its '
+        'failed check, which can be tried again', (tester) async {
+      final betaAuth = FakeAuthRepository(
+        initialSession: _sessionOf('user-beta'),
+        sessionCheckError: const AuthNetworkException(message: 'offline'),
+      );
+      final cubit = await boot(tester, betaAuth: betaAuth);
+      await openManagerFromMenu(tester);
+
+      await tester.tap(betaRow());
+      await tester.pumpAndSettle();
+
+      expect(cubit.state, isA<AppBootstrapNeedsAuth>());
+      expect(routerOf(tester).state.uri.path, AppRoutes.auth);
+      expect(find.byType(SessionCheckFailedView), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('auth_bloc_local-beta')),
+        findsOneWidget,
+      );
+      for (final type in [NavigationShell, HomeScreen, SplashScreen]) {
+        expect(find.byType(type, skipOffstage: false), findsNothing);
+      }
+      // The way back to the other servers.
+      expect(manageServers, findsOneWidget);
+
+      betaAuth.sessionCheckError = null;
+      await tester.tap(find.text('Try Again'));
+      await tester.pumpAndSettle();
+
+      expectHomeFor(tester, cubit, beta);
+    });
+
+    testWidgets('a switch away and straight back, inside one frame, keeps '
+        'home', (tester) async {
+      final cubit = await boot(tester);
+
+      // Two switches the fake makes without ending a session: what is
+      // pinned is that home isn't left behind the splash, with the first
+      // server's bloc still mounted and no sign-in outcome to come. The
+      // idle delivers the first switch, as the real orchestrator's awaits
+      // do, and builds no frame.
+      orchestrator.activate(beta.server.serverId);
+      await tester.idle();
+      orchestrator.activate(alpha.server.serverId);
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(ValueKey('auth_bloc_${alpha.server.serverId}')),
+        findsOneWidget,
+      );
+      expectHomeFor(tester, cubit, alpha);
+    });
+
     group('a pick that lands after Back from the manager', () {
       /// Picks `Beta` from the manager, held mid-switch until [switched]
       /// completes, then goes Back to the page the manager was opened
@@ -788,7 +947,7 @@ void main() {
       }
 
       testWidgets("still lands on the new server's home", (tester) async {
-        final cubit = await boot(tester, betaSignedIn: true);
+        final cubit = await boot(tester);
         final switched = Completer<void>();
         await pickThenBack(tester, switched);
 
@@ -801,7 +960,7 @@ void main() {
 
       testWidgets("from a page that isn't home still lands on the new "
           "server's home", (tester) async {
-        final cubit = await boot(tester, betaSignedIn: true);
+        final cubit = await boot(tester);
         await openCollection(tester);
         final switched = Completer<void>();
         await pickThenBack(tester, switched);
