@@ -19,6 +19,7 @@ class CatalogGameRow extends StatelessWidget {
     this.nested = false,
     this.spokenTitle,
     this.note,
+    this.summary,
     super.key,
   });
 
@@ -47,6 +48,10 @@ class CatalogGameRow extends StatelessWidget {
   /// A line above the facts, shown and spoken.
   final String? note;
 
+  /// A line under the facts (#558): a DataGateway result's summary as plain
+  /// text, cut to one line. Spoken after the facts, in the row's one node.
+  final String? summary;
+
   @override
   Widget build(BuildContext context) {
     // MergeSemantics rather than a Semantics container: a tappable ListTile
@@ -67,13 +72,20 @@ class CatalogGameRow extends StatelessWidget {
         title: onlineOnly
             ? BgeOnlineOnlyLabel(title, semanticsLabel: spokenTitle)
             : Text(title, semanticsLabel: spokenTitle),
-        subtitle: note == null && facts.isEmpty
+        subtitle: note == null && facts.isEmpty && summary == null
             ? null
             : Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   if (note != null) Text(note!),
                   if (facts.isNotEmpty) CatalogFactsText(facts),
+                  if (summary != null)
+                    Text(
+                      summary!,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
                 ],
               ),
       ),

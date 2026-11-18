@@ -47,10 +47,18 @@ holds its `GameSearchFilter` in its bloc and hands the sheet a
 
 When the server's search fails, the bloc searches the games cached on this
 device instead (`GameRepository.searchGames`). The cache holds no platform
-types, so a search narrowed by one finds nothing there. A 403 is a refusal,
-not a failure: the screen says the user has no access, as browse does. The
-refusal forgets this user's catalog on this device, and offline search then
-shows only games their collection reaches (#557).
+types, so a search narrowed by one finds nothing there.
+
+A 403 is a refusal, not a failure. On a search that asked the DataGateways,
+it may be only the DataGateways that are refused (#795), so the bloc asks
+once more without them. If that answers, the screen shows this server's
+games, with the server's explanation where the DataGateways' results would
+be, and the session's later searches leave them out from the start
+(`DataGatewaySearchReach`). A signed-out session leaves them out from its
+first. A second 403, or one on a search that left them out, means the user
+may not read the server's games at all: the screen says so, as browse does.
+That refusal forgets this user's catalog on this device, and offline search
+then shows only games their collection reaches (#557).
 
 ## Import
 

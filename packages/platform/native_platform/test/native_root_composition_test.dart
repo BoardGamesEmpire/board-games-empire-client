@@ -13,6 +13,7 @@ import 'package:dio_network/dio_network.dart';
 import 'package:drift_storage/drift_storage.dart';
 import 'package:events/events.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:game_catalog/game_catalog.dart';
 import 'package:game_collection/game_collection.dart';
 import 'package:household/household.dart';
 import 'package:interfaces/orchestration.dart';
@@ -77,6 +78,8 @@ void main() {
               container.isRegistered<EventHydrationStatus>,
           'CallerAccessRepository, by CallerAccessInstaller':
               container.isRegistered<CallerAccessRepository>,
+          'DataGatewaySearchReach, by DataGatewaySearchReachInstaller':
+              container.isRegistered<DataGatewaySearchReach>,
           'SyncOperationSender, by SyncSenderInstaller':
               container.isRegistered<SyncOperationSender>,
           'SyncQueueDrain, by SyncQueueDrainInstaller':

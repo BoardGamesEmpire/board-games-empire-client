@@ -220,12 +220,14 @@ Map<String, dynamic> _gatewayHit({
   String? gameId,
   String contentType = 'CONTENT_TYPE_EXPANSION',
   String thumbnailUrl = '',
+  String? summary,
 }) => {
   'externalId': externalId,
   'title': title,
   'contentType': contentType,
   'yearPublished': 1996,
   'thumbnailUrl': thumbnailUrl,
+  'summary': ?summary,
   'sourceUrl': 'https://boardgamegeek.com/boardgame/$externalId',
   'minPlayers': 2,
   'maxPlayers': 6,
@@ -950,6 +952,30 @@ void main() {
       },
     );
 
+    Future<GameSearchHit> hitWith({String? summary}) async {
+      final remote = answering(
+        jsonEncode({
+          'correlationId': 'c-1',
+          'resultsBySource': {
+            'dg_bgg': [_gatewayHit(summary: summary)],
+          },
+        }),
+      );
+      return (await remote.search('catan')).byDataGateway['dg_bgg']!.single;
+    }
+
+    test("search reads a DataGateway result's summary", () async {
+      expect((await hitWith(summary: '**Big** box')).summary, '**Big** box');
+    });
+
+    test('search reads no summary as null', () async {
+      expect((await hitWith()).summary, isNull);
+    });
+
+    test('search reads an empty summary as null', () async {
+      expect((await hitWith(summary: '')).summary, isNull);
+    });
+
     test('names every source that did not answer, by how', () async {
       final remote = answering(searchBody());
 
@@ -1149,6 +1175,41 @@ void main() {
       expect(() => remote.search('x', limit: 0), throwsArgumentError);
       expect(() => remote.search('x', offset: -1), throwsArgumentError);
       expect(adapter.sent, isEmpty);
+    });
+
+    test('search sends includeExternal=false only when asked', () async {
+      final remote = answering(searchBody());
+
+      await remote.search('catan', includeExternal: false);
+      await remote.search('catan');
+
+      expect(
+        adapter.sent.first.query,
+        containsPair('includeExternal', 'false'),
+      );
+      expect(adapter.sent.last.query, isNot(contains('includeExternal')));
+    });
+
+    test("a 403 keeps the server's message as apiMessage", () {
+      final remote = answering(
+        jsonEncode({
+          'statusCode': 403,
+          'message': 'Searching beyond this server is not available to you.',
+          'error': 'Forbidden',
+        }),
+        status: 403,
+      );
+
+      expect(
+        remote.search('catan'),
+        throwsA(
+          isA<GamesForbiddenException>().having(
+            (e) => e.apiMessage,
+            'apiMessage',
+            'Searching beyond this server is not available to you.',
+          ),
+        ),
+      );
     });
 
     test('a 404 from the search route is transient, envelope or not', () {

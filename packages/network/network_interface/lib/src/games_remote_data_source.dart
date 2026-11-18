@@ -66,8 +66,9 @@ typedef GameWithPlatformGames = ({Game game, List<PlatformGame> platformGames});
 ///   is a full replace, so caching one would empty the lists a detail fetch
 ///   wrote. Nothing shows them yet.
 /// - **A search result keeps** what a row shows and what opening it needs
-///   ([GameSearchHit]). It drops the rating, the source URL, the base game's
-///   id, each platform's id and the releases.
+///   ([GameSearchHit]), the summary a DataGateway sends included (#558). It
+///   drops the rating, the source URL, the base game's id, each platform's
+///   id and the releases.
 ///
 /// Search results name content and platform types two ways: local results
 /// use the stored names (`BaseGame`, `Tabletop`) and DataGateway results the
@@ -193,11 +194,17 @@ abstract class GamesRemoteDataSource {
   /// A DataGateway that can't apply the filter's player count or play time
   /// isn't asked, and is named in
   /// [GameSearchResults.unfilterableDataGateways].
+  ///
+  /// [includeExternal] false asks only this server's catalog and skips the
+  /// DataGateways; the default asks them too. Asking them takes a grant, and
+  /// an actor without it gets a [GamesForbiddenException], so a caller
+  /// refused retries with this off (#795).
   Future<GameSearchResults> search(
     String query, {
     int limit = searchPageSize,
     int offset = 0,
     GameSearchFilter filter = const GameSearchFilter(),
+    bool includeExternal = true,
   });
 
   /// Starts importing the game [externalId] from the DataGateway [gatewayId],
@@ -242,7 +249,20 @@ sealed class GamesRemoteException implements Exception {
 
 /// The caller may not read this: a 403 from the API itself.
 final class GamesForbiddenException extends GamesRemoteException {
-  const GamesForbiddenException(super.message, {super.statusCode, super.cause});
+  const GamesForbiddenException(
+    super.message, {
+    super.statusCode,
+    super.cause,
+    this.apiMessage,
+  });
+
+  /// The `message` of the API's error envelope, when it is a string, where
+  /// [message] is this client's own.
+  ///
+  /// The server translates it into the request's locale, so it is kept as
+  /// sent. A refused search shows it where the DataGateway results would be
+  /// (#795, #499).
+  final String? apiMessage;
 }
 
 /// There is no game with this id.

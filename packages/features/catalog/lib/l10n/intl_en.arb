@@ -233,6 +233,10 @@
   "@catalogSearchFromSources": {
     "description": "Heading over the search results that other catalogs found, such as BoardGameGeek, which the server does not hold yet."
   },
+  "catalogSearchDataGatewaysRefused": "Searching beyond this server is not available to you. You can still search the games this server knows about.",
+  "@catalogSearchDataGatewaysRefused": {
+    "description": "Shown under the data sources heading in place of their results, and at the foot of the screen, when this session did not ask the DataGateways and no message came from the server. It is the client's copy of the server's own words for the refusal (#795). Announced once from the foot of the screen, as the results arrive."
+  },
   "catalogSearchFromCache": "Couldn't search the server, so this searched the games saved on this device.",
   "@catalogSearchFromCache": {
     "description": "Banner over the search results when the server's search failed, for any reason, so the results are the games this device saved earlier. Offers a retry."

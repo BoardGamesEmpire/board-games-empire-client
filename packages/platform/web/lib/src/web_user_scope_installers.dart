@@ -4,6 +4,8 @@ import 'package:di/di.dart' show SessionRehydratorInstaller;
 import 'package:drift_storage/drift_storage.dart'
     show UserSessionScopeInstaller;
 import 'package:events/events.dart' show EventHydrateInstaller;
+import 'package:game_catalog/game_catalog.dart'
+    show DataGatewaySearchReachInstaller;
 import 'package:game_collection/game_collection.dart'
     show GameCollectionHydrateInstaller;
 import 'package:household/household.dart'
@@ -61,6 +63,14 @@ import 'package:sync_queue/sync_queue.dart'
 /// origin scope, and registers its re-ask with the rehydrator above, so it
 /// runs after both that and [UserSessionScopeInstaller].
 ///
+/// [DataGatewaySearchReachInstaller] is shared with native (#795), and runs
+/// after [CallerAccessInstaller]. It registers the session's memory of
+/// whether the server refused the DataGateways to this user, which the
+/// search screen's bloc reads, so a refusal is asked once a session and
+/// forgotten when the session ends. It resolves nothing, so it never throws
+/// or waits, and its place is for reading order: it sits with the other
+/// installers the search reads.
+///
 /// [SyncSenderInstaller] registers the sender the create screen's inline
 /// send goes through (#121), over the repositories above it. On web it asks
 /// before each delivery whether the session is still this user's, since
@@ -94,6 +104,7 @@ List<UserScopeInstaller> buildWebUserScopeInstallers() => const [
       ...serverSettingsResourceTypes,
     },
   ),
+  DataGatewaySearchReachInstaller(),
   SyncSenderInstaller(),
   SyncQueueDrainInstaller(),
 ];

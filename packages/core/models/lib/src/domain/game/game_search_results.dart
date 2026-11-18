@@ -39,6 +39,11 @@ abstract class GameSearchHit with _$GameSearchHit {
     int? minPlayers,
     int? maxPlayers,
     String? thumbnailUrl,
+
+    /// A short description in Markdown, from a DataGateway (#558). Null when
+    /// the result has none or sends it empty; this server's own results carry
+    /// none, since it stores no summary for its games.
+    String? summary,
     @Default(<GameSearchPlatform>[]) List<GameSearchPlatform> platforms,
   }) = _GameSearchHit;
   const GameSearchHit._();

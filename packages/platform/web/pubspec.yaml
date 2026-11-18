@@ -33,6 +33,10 @@ dependencies:
     path: ../../features/events
   flutter:
     sdk: flutter
+  # The catalog feature, for the shared `DataGatewaySearchReachInstaller`
+  # (#795), on the same rule as `household` below.
+  game_catalog:
+    path: ../../features/catalog
   # The collection feature, for the shared `GameCollectionHydrateInstaller`
   # (#259), on the same rule as `household` below.
   game_collection:

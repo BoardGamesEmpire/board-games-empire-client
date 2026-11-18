@@ -33,6 +33,8 @@ dependencies:
   flutter:
     sdk: flutter
   flutter_web_auth_2: ^5.1.0
+  game_catalog:
+    path: ../../features/catalog
   game_collection:
     path: ../../features/collection
   household:

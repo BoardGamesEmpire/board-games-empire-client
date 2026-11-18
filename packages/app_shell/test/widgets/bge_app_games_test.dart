@@ -162,6 +162,9 @@ class _GamesRemote implements GamesRemoteDataSource {
   /// Where every poll says the import's requested game stands.
   ImportJobStatus importStatus = ImportJobStatus.completed;
 
+  /// Each search's `includeExternal`, in the order they were asked.
+  final List<bool> searches = [];
+
   /// The platforms every detail read gives Catan.
   List<PlatformGame> platformGames = [_tabletop];
 
@@ -204,7 +207,13 @@ class _GamesRemote implements GamesRemoteDataSource {
     int limit = GamesRemoteDataSource.searchPageSize,
     int offset = 0,
     GameSearchFilter filter = const GameSearchFilter(),
-  }) async => const GameSearchResults(
+    bool includeExternal = true,
+  }) async {
+    searches.add(includeExternal);
+    return _found;
+  }
+
+  static const _found = GameSearchResults(
     local: [
       GameSearchHit(
         externalId: 'g_catan',
@@ -343,6 +352,7 @@ void main() {
     GameCollectionRepository? collection,
     GameCollectionHydrationStatus? collectionHydration,
     SyncOperationSender? sender,
+    bool withReach = true,
   }) => FakeActiveServerScope(
     buildActiveServer(
       FakeAuthRepository(initialSession: testAuthResponse()),
@@ -353,6 +363,8 @@ void main() {
       gameCollectionRepository: collection,
       gameCollectionHydrationStatus: collectionHydration,
       syncOperationSender: sender,
+      // A signed-in session registers its reach; a signed-out one has none.
+      dataGatewaySearchReach: withReach ? DataGatewaySearchReach() : null,
     ),
   );
 
@@ -363,6 +375,7 @@ void main() {
     GameCollectionRepository? collection,
     GameCollectionHydrationStatus? collectionHydration,
     SyncOperationSender? sender,
+    bool withReach = true,
   }) async {
     when(() => cubit.activeServerScope).thenReturn(
       activeServer(
@@ -371,6 +384,7 @@ void main() {
         collection: collection,
         collectionHydration: collectionHydration,
         sender: sender,
+        withReach: withReach,
       ),
     );
     whenListen(
@@ -660,6 +674,34 @@ void main() {
     await searchFor(tester, 'catan');
 
     expect(find.textContaining('BoardGameGeek'), findsOneWidget);
+  });
+
+  testWidgets("the search reads the session's reach (#795)", (tester) async {
+    await pumpHome(tester);
+    await openGames(tester);
+    await searchFor(tester, 'catan');
+
+    // A session with a reach asks the DataGateways, and shows their rows.
+    expect(games.searches, [true]);
+    expect(
+      find.byKey(GameSearchScreen.sourceRowKey('dg_bgg', '926')),
+      findsOneWidget,
+    );
+    expect(find.byKey(GameSearchScreen.dataGatewaysRefusedKey), findsNothing);
+  });
+
+  testWidgets('a signed-out search never asks the DataGateways, and says '
+      'so (#795)', (tester) async {
+    await pumpHome(tester, withReach: false);
+    await openGames(tester);
+    await searchFor(tester, 'catan');
+
+    expect(games.searches, [false]);
+    expect(find.byKey(GameSearchScreen.dataGatewaysRefusedKey), findsOneWidget);
+    expect(
+      find.byKey(GameSearchScreen.sourceRowKey('dg_bgg', '926')),
+      findsNothing,
+    );
   });
 
   testWidgets('search names are read only with read (#456)', (tester) async {

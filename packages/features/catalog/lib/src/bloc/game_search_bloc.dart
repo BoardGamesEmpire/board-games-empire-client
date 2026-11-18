@@ -4,6 +4,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:game_catalog/src/bloc/debounce_restartable.dart';
 import 'package:game_catalog/src/bloc/game_search_event.dart';
 import 'package:game_catalog/src/bloc/game_search_state.dart';
+import 'package:game_catalog/src/search/data_gateway_search_reach.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
@@ -60,10 +61,29 @@ import 'package:observability/observability.dart';
 /// is taken down from both sections when `gone` says so, and stays down
 /// while this screen is open.
 ///
+/// ## When the DataGateways are refused
+///
+/// A user who may read the server's games but not its DataGateways is
+/// refused (403) by a search that asks for them (#795). So a search asks
+/// them only while the session's [DataGatewaySearchReach] says it may, and a
+/// 403 on a search that asked is retried once without them. If the retry
+/// answers, the session remembers the refusal, the answer is shown with
+/// [GameSearchReady.dataGatewaysRefused] and the server's own
+/// [GameSearchReady.refusalMessage], and later searches skip the DataGateways
+/// from the start. A retry that is refused too is the refusal below; one
+/// that fails otherwise is the failure below, and remembers nothing.
+///
+/// A retry whose search has been superseded shows nothing, but still
+/// remembers the refusal: the server did say it, whoever is waiting. A
+/// search superseded before its 403 lands still retries, for much the same
+/// reason: the 403 may be the catalog's, and a refused catalog is forgotten
+/// whoever is waiting (#557).
+///
 /// ## When the server refuses
 ///
-/// A 403 says this user may not read the server's games at all: the route
-/// checks that before it searches. So the bloc reports [GameSearchDenied]
+/// A 403 on a search that left the DataGateways out says this user may not
+/// read the server's games at all: the route checks that before it
+/// searches. So the bloc reports [GameSearchDenied]
 /// rather than searching the cache: the server's answer wins over an old
 /// copy, as it does on the detail. The refusal also forgets this user's
 /// catalog on this device, so offline browse and search show only the games
@@ -85,9 +105,11 @@ class GameSearchBloc extends Bloc<GameSearchEvent, GameSearchState> {
     this._cache,
     Future<Map<String, String>> Function()? sourceNames,
     Stream<String>? gone,
+    DataGatewaySearchReach? reach,
     Duration debounce = defaultDebounce,
     BgeLogger? logger,
-  }) : _logger = logger ?? BgeLogger('bge.catalog.search'),
+  }) : _reach = reach ?? DataGatewaySearchReach(),
+       _logger = logger ?? BgeLogger('bge.catalog.search'),
        super(const GameSearchIdle()) {
     on<GameSearchQueryChanged>(
       _onQueryChanged,
@@ -110,6 +132,7 @@ class GameSearchBloc extends Bloc<GameSearchEvent, GameSearchState> {
 
   final GamesRemoteDataSource _remote;
   final GameRepository? _cache;
+  final DataGatewaySearchReach _reach;
   final BgeLogger _logger;
 
   /// The trimmed text being searched for. Empty when there is none.
@@ -246,19 +269,39 @@ class GameSearchBloc extends Bloc<GameSearchEvent, GameSearchState> {
     }
 
     emit(GameSearchLoading(query: query, filter: filter));
+    final asked = _reach.mayAsk;
     try {
-      final results = await _remote.search(query, filter: filter);
+      GameSearchResults results;
+      try {
+        results = await _remote.search(
+          query,
+          filter: filter,
+          includeExternal: asked,
+        );
+      } on GamesForbiddenException catch (refusal) {
+        // Only a search that asked the DataGateways can learn they are what
+        // is refused. One that did not is refused the catalog.
+        if (!asked) rethrow;
+        // Retried even once a newer search has started: the 403 may be the
+        // catalog's, and only the retry tells, so that a refused catalog is
+        // forgotten (#557) whoever is waiting.
+        results = await _remote.search(
+          query,
+          filter: filter,
+          includeExternal: false,
+        );
+        // Remembered before the sequence is checked, so a search that was
+        // superseded while its retry ran still teaches the session what the
+        // server said: it is true of the session, not of this search. What
+        // the retry found is shown only if this is still the latest search.
+        // A retry that throws gets here no further, and remembers nothing.
+        _reach.refuse(refusal.apiMessage);
+      }
       if (search != _sequence) return;
       _shown = results;
       emit(_ready(results, fromCache: false));
     } on GamesForbiddenException {
-      // A stale 403 still says the catalog is refused.
-      await _forgetCatalog();
-      if (search != _sequence) return;
-      // [_filter], not the filter searched with: one that narrows no
-      // differently may have come in since, and the controls read it here,
-      // as they do from [_ready].
-      emit(GameSearchDenied(query: query, filter: _filter));
+      await _denied(emit, search, query);
     } on Object catch (error, stackTrace) {
       if (search != _sequence) return;
       _logger.warn(
@@ -268,6 +311,21 @@ class GameSearchBloc extends Bloc<GameSearchEvent, GameSearchState> {
       );
       await _searchCache(emit, search: search, query: query, filter: filter);
     }
+  }
+
+  /// The catalog is refused: shown as [GameSearchDenied].
+  Future<void> _denied(
+    Emitter<GameSearchState> emit,
+    int search,
+    String query,
+  ) async {
+    // A stale 403 still says the catalog is refused.
+    await _forgetCatalog();
+    if (search != _sequence) return;
+    // [_filter], not the filter searched with: one that narrows no
+    // differently may have come in since, and the controls read it here,
+    // as they do from [_ready].
+    emit(GameSearchDenied(query: query, filter: _filter));
   }
 
   Future<void> _forgetCatalog() async {
@@ -347,6 +405,10 @@ class GameSearchBloc extends Bloc<GameSearchEvent, GameSearchState> {
       query: _query,
       filter: _filter,
       fromCache: fromCache,
+      // The cache never asked the DataGateways, so it has no refusal to
+      // report: it stands for the server being out of reach (#795).
+      dataGatewaysRefused: !fromCache && !_reach.mayAsk,
+      refusalMessage: fromCache ? null : _reach.serverMessage,
       onServer: [
         for (final hit in results.local)
           if (!_gone.contains(hit.gameId)) hit,

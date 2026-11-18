@@ -26,4 +26,6 @@ export 'src/screens/game_detail_collection.dart';
 export 'src/screens/game_detail_screen.dart';
 export 'src/screens/game_import_dialog.dart';
 export 'src/screens/game_search_screen.dart';
+export 'src/search/data_gateway_search_reach.dart';
+export 'src/search/data_gateway_search_reach_installer.dart';
 export 'src/widgets/game_description.dart' show GameDescription;

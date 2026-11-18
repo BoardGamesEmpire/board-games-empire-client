@@ -12,7 +12,13 @@ class FakeGamesRemote implements GamesRemoteDataSource {
   Future<PaginatedResult<Game>> Function(int page, int limit)? onFetchPage;
   Future<List<GameSummary>> Function(int size)? onFetchRandom;
   Future<GameWithPlatformGames> Function(String id)? onFetchGame;
-  Future<GameSearchResults> Function(String query, GameSearchFilter filter)?
+  Future<GameSearchResults> Function(
+    String query,
+    GameSearchFilter filter,
+    // The handler's shape is positional like its neighbours'.
+    // ignore: avoid_positional_boolean_parameters
+    bool includeExternal,
+  )?
   onSearch;
   Future<GameImportReceipt> Function(
     String gatewayId,
@@ -57,9 +63,11 @@ class FakeGamesRemote implements GamesRemoteDataSource {
     int limit = GamesRemoteDataSource.searchPageSize,
     int offset = 0,
     GameSearchFilter filter = const GameSearchFilter(),
+    bool includeExternal = true,
   }) {
-    calls.add('search($query${_describe(filter)})');
-    return _run(onSearch, 'search')(query, filter);
+    final external = includeExternal ? '' : ' -external';
+    calls.add('search($query${_describe(filter)}$external)');
+    return _run(onSearch, 'search')(query, filter, includeExternal);
   }
 
   /// [filter] as a search's call records it: ` [content] {platform}`, then

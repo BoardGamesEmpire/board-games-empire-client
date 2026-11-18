@@ -4,9 +4,11 @@ import 'package:game_catalog/l10n/game_catalog_localizations.dart';
 import 'package:game_catalog/src/bloc/game_search_bloc.dart';
 import 'package:game_catalog/src/bloc/game_search_event.dart';
 import 'package:game_catalog/src/bloc/game_search_state.dart';
+import 'package:game_catalog/src/search/data_gateway_search_reach.dart';
 import 'package:game_catalog/src/widgets/catalog_facts.dart';
 import 'package:game_catalog/src/widgets/catalog_game_row.dart';
 import 'package:game_catalog/src/widgets/catalog_slivers.dart';
+import 'package:game_catalog/src/widgets/summary_text.dart';
 import 'package:game_filters/game_filters.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
@@ -28,6 +30,17 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// field the user is typing in. The page's scroll view counts the result
 /// rows, not the headings, for "result 3 of 12".
 ///
+/// ## When the DataGateways are left out
+///
+/// A user the server refuses the DataGateways, or a session that never asks
+/// them, still gets this server's games (#795). Under the data sources
+/// heading, a quiet note takes the place of their rows: the server's own
+/// message where one came, kept as sent, and the client's copy of the same
+/// words where none did. The page's footer says it too, and that is what a
+/// screen reader hears, once, as the answer lands: the note in the list sits
+/// after this server's rows, and a page of them takes it out of the
+/// semantics tree before it could be heard (see [_SearchFooter]).
+///
 /// ## Filters
 ///
 /// A Filters button beside the field opens a sheet holding every control
@@ -45,6 +58,7 @@ class GameSearchScreen extends StatelessWidget {
     this.gone,
     this.onOpen,
     this.onImport,
+    this.reach,
     super.key,
   });
 
@@ -57,6 +71,18 @@ class GameSearchScreen extends StatelessWidget {
   static const Key fromCacheBannerKey = Key('catalog_search.from_cache');
   static const Key errorKey = Key('catalog_search.error');
   static const Key deniedKey = Key('catalog_search.denied');
+
+  /// The note under the data sources heading saying why none of their rows
+  /// show (#795), where they would be.
+  static const Key dataGatewaysRefusedKey = Key(
+    'catalog_search.data_gateways_refused',
+  );
+
+  /// The footer's note saying the same, which is what a screen reader hears
+  /// (#795).
+  static const Key footerDataGatewaysRefusedKey = Key(
+    'catalog_search.footer_data_gateways_refused',
+  );
   static const Key missingSourcesKey = Key('catalog_search.missing_sources');
   static const Key unfilterableNoteKey = Key('catalog_search.unfilterable');
   static const Key platformOfflineNoteKey = Key(
@@ -152,6 +178,11 @@ class GameSearchScreen extends StatelessWidget {
   final void Function(BuildContext context, String sourceId, GameSearchHit hit)?
   onImport;
 
+  /// Whether this session may ask the DataGateways, and what the server
+  /// said when it refused (#795). Null remembers for this screen alone; the
+  /// shell passes the session's, so a refusal outlasts the screen.
+  final DataGatewaySearchReach? reach;
+
   @override
   Widget build(BuildContext context) => BlocProvider<GameSearchBloc>(
     create: (_) => GameSearchBloc(
@@ -159,6 +190,7 @@ class GameSearchScreen extends StatelessWidget {
       cache: cache,
       sourceNames: sourceNames,
       gone: gone,
+      reach: reach,
     ),
     child: _GameSearchPage(onOpen: onOpen, onImport: onImport),
   );
@@ -227,6 +259,7 @@ class _GameSearchPageState extends State<_GameSearchPage> {
   Widget build(BuildContext context) {
     final l10n = GameCatalogLocalizations.of(context);
     final tokens = BgeTokens.of(context);
+    final inset = tokens.spaceLg;
 
     return BlocBuilder<GameSearchBloc, GameSearchState>(
       builder: (context, state) => BgePage.slivers(
@@ -237,6 +270,13 @@ class _GameSearchPageState extends State<_GameSearchPage> {
             resultCount,
           _ => null,
         },
+        // The bottom inset ends the slivers instead. The page would put it
+        // around the footer, which would then be a band with nothing in it.
+        padding: EdgeInsets.fromLTRB(inset, inset, inset, 0),
+        // On every build, in every state: BgePage builds a different tree
+        // with a footer than without one, so a footer that came and went
+        // would lose the scroll position and focus.
+        footer: _SearchFooter(state: state),
         slivers: [
           SliverToBoxAdapter(
             // The Filters button sits beside the field where both have room,
@@ -313,6 +353,7 @@ class _GameSearchPageState extends State<_GameSearchPage> {
             ),
           ),
           ..._results(context, state),
+          const SliverToBoxAdapter(child: BgeGap.lg()),
         ],
       ),
     );
@@ -424,7 +465,23 @@ class _GameSearchPageState extends State<_GameSearchPage> {
             ),
           ),
         ],
-        if (ready.fromSources.isNotEmpty) ...[
+        if (ready.dataGatewaysRefused && !ready.fromCache) ...[
+          SliverToBoxAdapter(
+            child: CatalogSectionHeading(l10n.catalogSearchFromSources),
+          ),
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: EdgeInsets.only(bottom: tokens.spaceMd),
+              // Read where the DataGateways' rows would be, and heard from
+              // the footer, which says the same (#795).
+              child: Text(
+                ready.refusalMessage ?? l10n.catalogSearchDataGatewaysRefused,
+                key: GameSearchScreen.dataGatewaysRefusedKey,
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+            ),
+          ),
+        ] else if (ready.fromSources.isNotEmpty) ...[
           SliverToBoxAdapter(
             child: CatalogSectionHeading(l10n.catalogSearchFromSources),
           ),
@@ -491,6 +548,7 @@ class _GameSearchPageState extends State<_GameSearchPage> {
               : () => import(this.context, result.source.id, hit));
 
     final sourceName = result.source.name;
+    final summary = hit.summary == null ? null : summaryPlainText(hit.summary!);
     return CatalogGameRow(
       key: GameSearchScreen.sourceRowKey(result.source.id, hit.externalId),
       title: hit.title,
@@ -499,6 +557,7 @@ class _GameSearchPageState extends State<_GameSearchPage> {
         ..._facts(l10n, hit),
         if (sourceName != null) sameFact(sourceName),
       ],
+      summary: summary == null || summary.isEmpty ? null : summary,
       onTap: onTap,
       // Only an import writes; opening a game the server holds does not.
       onlineOnly: gameId == null && import != null,
@@ -515,6 +574,73 @@ class _GameSearchPageState extends State<_GameSearchPage> {
     maxPlayers: hit.maxPlayers,
     contentType: hit.contentType,
   );
+}
+
+/// The page's footer (#795): why a search shows only this server's games,
+/// said to a screen reader wherever the page is scrolled.
+///
+/// A live region among the slivers is in the semantics tree only while it
+/// is near the view: past the cache extent the page drops it, and out of
+/// view within it Android hears nothing. The note under the data sources
+/// heading comes after this server's rows, and a page of them puts it there
+/// before the answer lands. So the footer says it too, where it is always
+/// built and on screen, and moves no row.
+///
+/// - **A search refused the DataGateways** shows the note from its answer
+///   until the next search starts or the text is cleared, as a live region
+///   heard once. The answer shown again, as games are found gone or the
+///   DataGateways' names arrive, keeps its node, so it isn't heard again.
+///   The next search's note is a node of its own, heard as that answer
+///   lands: the note goes while the search loads, and is keyed by the text
+///   searched for, which tells two answers apart where no frame of loading
+///   came between them.
+/// - **Otherwise it renders nothing,** and pads itself only while it says
+///   something, so the page leaves no empty band.
+///
+/// Given to the page on every build: [BgePage] builds a different tree with
+/// a footer than without one.
+class _SearchFooter extends StatelessWidget {
+  const _SearchFooter({required this.state});
+
+  final GameSearchState state;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = BgeTokens.of(context);
+    final said = [
+      if (state case GameSearchReady(
+        dataGatewaysRefused: true,
+        fromCache: false,
+        :final query,
+        :final refusalMessage,
+      ))
+        KeyedSubtree(
+          key: GameSearchScreen.footerDataGatewaysRefusedKey,
+          child: Semantics(
+            // A node of its own for each search's answer.
+            key: ValueKey<String>(query),
+            liveRegion: true,
+            child: Text(
+              refusalMessage ??
+                  GameCatalogLocalizations.of(
+                    context,
+                  ).catalogSearchDataGatewaysRefused,
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+          ),
+        ),
+    ];
+    if (said.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: EdgeInsets.only(top: tokens.spaceSm, bottom: tokens.spaceLg),
+      // Each line at the page's measure, starting where the page's do.
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: said,
+      ),
+    );
+  }
 }
 
 /// The quiet note under the results naming the DataGateways that did not
