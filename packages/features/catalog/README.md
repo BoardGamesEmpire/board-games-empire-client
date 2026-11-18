@@ -60,7 +60,7 @@ it may be only the DataGateways that are refused (#795), so the bloc asks
 once more without them. If that answers, the screen shows this server's
 games, with the server's explanation where the DataGateways' results would
 be, and the session's later searches leave them out from the start
-(`DataGatewaySearchReach`). A signed-out session leaves them out from its
+(`DataGatewaySearchGrant`). A signed-out session leaves them out from its
 first. A second 403, or one on a search that left them out, means the user
 may not read the server's games at all: the screen says so, as browse does.
 That refusal forgets this user's catalog on this device, and offline search

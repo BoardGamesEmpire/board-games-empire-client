@@ -2094,7 +2094,7 @@ class _BgeAppState extends State<BgeApp> {
   /// A DataGateway result the server does not hold imports through
   /// [_importGame] (#43), over the same games remote the search reads.
   ///
-  /// The search reads the session's [DataGatewaySearchReach] (#795), so a
+  /// The search reads the session's [DataGatewaySearchGrant] (#795), so a
   /// refusal is remembered for the session, not the screen. Where none is
   /// registered, as with no signed-in user, the search never asks the
   /// DataGateways: an anonymous user never holds the grant to search them.
@@ -2111,9 +2111,9 @@ class _BgeAppState extends State<BgeApp> {
       remote: remote,
       cache: _gamesCache(container),
       sourceNames: _dataGatewayNames(container),
-      reach: container.isRegistered<DataGatewaySearchReach>()
-          ? container.get<DataGatewaySearchReach>()
-          : DataGatewaySearchReach.signedOut(),
+      grant: container.isRegistered<DataGatewaySearchGrant>()
+          ? container.get<DataGatewaySearchGrant>()
+          : DataGatewaySearchGrant.signedOut(),
       streamSource: container.isRegistered<GameSearchStreamSource>()
           ? container.get<GameSearchStreamSource>()
           : null,

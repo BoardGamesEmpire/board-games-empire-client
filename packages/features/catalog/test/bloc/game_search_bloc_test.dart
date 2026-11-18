@@ -80,7 +80,7 @@ void main() {
     GameSearchChannel? stream,
     Future<Map<String, String>> Function()? sourceNames,
     Stream<String>? gone,
-    DataGatewaySearchReach? reach,
+    DataGatewaySearchGrant? grant,
     BgeLogger? logger,
   }) => GameSearchBloc(
     remote: remote,
@@ -88,7 +88,7 @@ void main() {
     stream: stream,
     sourceNames: sourceNames,
     gone: gone,
-    reach: reach,
+    grant: grant,
     logger: logger,
     debounce: Duration.zero,
   );
@@ -740,11 +740,11 @@ void main() {
     );
 
     blocTest<GameSearchBloc, GameSearchState>(
-      'a signed-out reach never asks the DataGateways',
+      'a signed-out grant never asks the DataGateways',
       setUp: () =>
           remote.onSearch = (_, _, _) async =>
               GameSearchResults(local: [hit('catan')]),
-      build: () => build(reach: DataGatewaySearchReach.signedOut()),
+      build: () => build(grant: DataGatewaySearchGrant.signedOut()),
       act: (bloc) async {
         bloc.add(const GameSearchQueryChanged('catan'));
         await settle();
@@ -763,7 +763,7 @@ void main() {
     blocTest<GameSearchBloc, GameSearchState>(
       'a 403 on a search that did not ask the DataGateways is not retried',
       setUp: () => remote.onSearch = (_, _, _) async => throw refused,
-      build: () => build(reach: DataGatewaySearchReach.signedOut()),
+      build: () => build(grant: DataGatewaySearchGrant.signedOut()),
       act: (bloc) async {
         bloc.add(const GameSearchQueryChanged('catan'));
         await settle();
@@ -1354,7 +1354,7 @@ void main() {
 
   group('as each source answers', () {
     late FakeGameSearchChannel channel;
-    late DataGatewaySearchReach reach;
+    late DataGatewaySearchGrant grant;
 
     setUp(() => channel = FakeGameSearchChannel());
 
@@ -1876,7 +1876,7 @@ void main() {
         }
       },
       build: () =>
-          build(stream: channel, reach: reach = DataGatewaySearchReach()),
+          build(stream: channel, grant: grant = DataGatewaySearchGrant()),
       act: (bloc) async {
         bloc.add(const GameSearchQueryChanged('catan'));
         await settle();
@@ -1901,7 +1901,7 @@ void main() {
         expect(channel.calls, ['search(catan)', 'search(catan -external)']);
         expect(remote.calls, isEmpty);
         // The session remembers it, as it does a refusal over REST.
-        expect(reach.mayAsk, isFalse);
+        expect(grant.mayAsk, isFalse);
       },
     );
 

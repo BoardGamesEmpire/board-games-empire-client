@@ -24,65 +24,65 @@ class _RecordingContainer extends Fake implements DependencyContainer {
 class _Server extends Fake implements ScopedServer {}
 
 void main() {
-  group('DataGatewaySearchReach', () {
+  group('DataGatewaySearchGrant', () {
     test('a signed-in session asks until refused', () {
-      final reach = DataGatewaySearchReach();
+      final grant = DataGatewaySearchGrant();
 
-      expect(reach.mayAsk, isTrue);
-      expect(reach.serverMessage, isNull);
+      expect(grant.mayAsk, isTrue);
+      expect(grant.serverMessage, isNull);
     });
 
     test('a signed-out session never asks', () {
-      final reach = DataGatewaySearchReach.signedOut();
+      final grant = DataGatewaySearchGrant.signedOut();
 
-      expect(reach.mayAsk, isFalse);
-      expect(reach.serverMessage, isNull);
+      expect(grant.mayAsk, isFalse);
+      expect(grant.serverMessage, isNull);
     });
 
     test('refuse keeps the first message and stops asking', () {
-      final reach = DataGatewaySearchReach()
+      final grant = DataGatewaySearchGrant()
         ..refuse('first')
         ..refuse('other');
 
-      expect(reach.mayAsk, isFalse);
-      expect(reach.serverMessage, 'first');
+      expect(grant.mayAsk, isFalse);
+      expect(grant.serverMessage, 'first');
     });
 
     test('a refusal with no message stays without one', () {
-      final reach = DataGatewaySearchReach()..refuse(null);
+      final grant = DataGatewaySearchGrant()..refuse(null);
 
-      expect(reach.mayAsk, isFalse);
-      expect(reach.serverMessage, isNull);
+      expect(grant.mayAsk, isFalse);
+      expect(grant.serverMessage, isNull);
     });
   });
 
-  group('DataGatewaySearchReachInstaller', () {
-    test('registers a reach that may ask, with nothing to dispose', () async {
+  group('DataGatewaySearchGrantInstaller', () {
+    test('registers a grant that may ask, with nothing to dispose', () async {
       final container = _RecordingContainer();
 
-      await const DataGatewaySearchReachInstaller().install(
+      await const DataGatewaySearchGrantInstaller().install(
         container,
         _Server(),
         'user-1',
       );
 
-      final reach = container.registered.single as DataGatewaySearchReach;
-      expect(reach.mayAsk, isTrue);
+      final grant = container.registered.single as DataGatewaySearchGrant;
+      expect(grant.mayAsk, isTrue);
       expect(container.disposers.single, isNull);
     });
 
-    test('registers a new reach for each install', () async {
+    test('registers a new grant for each install', () async {
       final first = _RecordingContainer();
       final second = _RecordingContainer();
-      const installer = DataGatewaySearchReachInstaller();
+      const installer = DataGatewaySearchGrantInstaller();
 
       await installer.install(first, _Server(), 'user-1');
-      (first.registered.single as DataGatewaySearchReach).refuse('no');
+      (first.registered.single as DataGatewaySearchGrant).refuse('no');
       await installer.install(second, _Server(), 'user-1');
 
       expect(first.registered.single, isNot(same(second.registered.single)));
       expect(
-        (second.registered.single as DataGatewaySearchReach).mayAsk,
+        (second.registered.single as DataGatewaySearchGrant).mayAsk,
         isTrue,
       );
     });

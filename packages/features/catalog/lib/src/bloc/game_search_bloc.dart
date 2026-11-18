@@ -4,7 +4,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:game_catalog/src/bloc/debounce_restartable.dart';
 import 'package:game_catalog/src/bloc/game_search_event.dart';
 import 'package:game_catalog/src/bloc/game_search_state.dart';
-import 'package:game_catalog/src/search/data_gateway_search_reach.dart';
+import 'package:game_catalog/src/search/data_gateway_search_grant.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
@@ -99,7 +99,7 @@ import 'package:observability/observability.dart';
 ///
 /// A user who may read the server's games but not its DataGateways is
 /// refused (403) by a search that asks for them (#795). So a search asks
-/// them only while the session's [DataGatewaySearchReach] says it may, and a
+/// them only while the session's [DataGatewaySearchGrant] says it may, and a
 /// 403 on a search that asked is retried once without them. If the retry
 /// answers, the session remembers the refusal, the answer is shown with
 /// [GameSearchReady.dataGatewaysRefused] and the server's own
@@ -153,10 +153,10 @@ class GameSearchBloc extends Bloc<GameSearchEvent, GameSearchState> {
     this._stream,
     Future<Map<String, String>> Function()? sourceNames,
     Stream<String>? gone,
-    DataGatewaySearchReach? reach,
+    DataGatewaySearchGrant? grant,
     Duration debounce = defaultDebounce,
     BgeLogger? logger,
-  }) : _reach = reach ?? DataGatewaySearchReach(),
+  }) : _grant = grant ?? DataGatewaySearchGrant(),
        _logger = logger ?? BgeLogger('bge.catalog.search'),
        super(const GameSearchIdle()) {
     on<GameSearchQueryChanged>(
@@ -184,7 +184,7 @@ class GameSearchBloc extends Bloc<GameSearchEvent, GameSearchState> {
   /// The channel this screen's searches stream over (#473). Null where they
   /// go over REST alone.
   final GameSearchChannel? _stream;
-  final DataGatewaySearchReach _reach;
+  final DataGatewaySearchGrant _grant;
   final BgeLogger _logger;
 
   /// The trimmed text being searched for. Empty when there is none.
@@ -390,7 +390,7 @@ class GameSearchBloc extends Bloc<GameSearchEvent, GameSearchState> {
     GameSearchFilter filter,
   ) async {
     emit(GameSearchLoading(query: query, filter: filter));
-    final asked = _reach.mayAsk;
+    final asked = _grant.mayAsk;
     try {
       try {
         await _follow(
@@ -411,7 +411,7 @@ class GameSearchBloc extends Bloc<GameSearchEvent, GameSearchState> {
           // refusal. Over REST, so the newer search's stream stays the one
           // the next search stops.
           await _remote.search(query, filter: filter, includeExternal: false);
-          _reach.refuse(refusal.apiMessage);
+          _grant.refuse(refusal.apiMessage);
           return;
         }
         await _follow(
@@ -426,7 +426,7 @@ class GameSearchBloc extends Bloc<GameSearchEvent, GameSearchState> {
           // the session, not of this search. What the retry found is shown
           // only if this is still the latest search. A retry that fails
           // before it answers remembers nothing.
-          onAnswered: () => _reach.refuse(refusal.apiMessage),
+          onAnswered: () => _grant.refuse(refusal.apiMessage),
         );
       }
     } on GamesForbiddenException {
@@ -682,8 +682,8 @@ class GameSearchBloc extends Bloc<GameSearchEvent, GameSearchState> {
       fromCache: fromCache,
       // The cache never asked the DataGateways, so it has no refusal to
       // report: it stands for the server being out of reach (#795).
-      dataGatewaysRefused: !fromCache && !_reach.mayAsk,
-      refusalMessage: fromCache ? null : _reach.serverMessage,
+      dataGatewaysRefused: !fromCache && !_grant.mayAsk,
+      refusalMessage: fromCache ? null : _grant.serverMessage,
       streamed: streamed,
       searching: searching,
       cutShort: cutShort,

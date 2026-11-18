@@ -44,7 +44,7 @@ void main() {
     onImport,
     ValueListenable<bool>? offline,
     ThemeData? theme,
-    DataGatewaySearchReach? reach,
+    DataGatewaySearchGrant? grant,
     GameSearchStreamSource? streamSource,
   }) async {
     await tester.pumpWidget(
@@ -53,7 +53,7 @@ void main() {
         GameSearchScreen(
           remote: remote,
           streamSource: streamSource,
-          reach: reach,
+          grant: grant,
           cache: cache,
           sourceNames: sourceNames,
           gone: gone,
@@ -1401,7 +1401,7 @@ void main() {
         'in both places', (tester) async {
       remote.onSearch = (_, _, _) async => results;
 
-      await show(tester, reach: DataGatewaySearchReach.signedOut());
+      await show(tester, grant: DataGatewaySearchGrant.signedOut());
       await search(tester, 'catan');
 
       expect(
@@ -1664,14 +1664,14 @@ void main() {
       WidgetTester tester, {
       String text = 'catan',
       void Function(BuildContext context, String gameId)? onOpen,
-      DataGatewaySearchReach? reach,
+      DataGatewaySearchGrant? grant,
       Stream<String>? gone,
     }) async {
       await show(
         tester,
         streamSource: _StreamSource(channel: channel),
         onOpen: onOpen,
-        reach: reach,
+        grant: grant,
         gone: gone,
       );
       await tester.enterText(find.byKey(GameSearchScreen.fieldKey), text);
@@ -2060,7 +2060,7 @@ void main() {
       // weren't asked, so nothing is still being searched there.
       final search = await startSearch(
         tester,
-        reach: DataGatewaySearchReach.signedOut(),
+        grant: DataGatewaySearchGrant.signedOut(),
       );
       await answer(tester, search, local);
 
@@ -2373,7 +2373,7 @@ void main() {
         final search = await startSearch(
           tester,
           text: 'zzz',
-          reach: DataGatewaySearchReach.signedOut(),
+          grant: DataGatewaySearchGrant.signedOut(),
         );
 
         final heardAtStart = heard.listen();
@@ -2408,7 +2408,7 @@ void main() {
         final handle = tester.ensureSemantics();
         final search = await startSearch(
           tester,
-          reach: DataGatewaySearchReach.signedOut(),
+          grant: DataGatewaySearchGrant.signedOut(),
         );
 
         final heardAtStart = heard.listen();
@@ -2541,7 +2541,7 @@ void main() {
             final handle = tester.ensureSemantics();
             final search = await startSearch(
               tester,
-              reach: DataGatewaySearchReach.signedOut(),
+              grant: DataGatewaySearchGrant.signedOut(),
             );
 
             final heardAtStart = heard.listen();

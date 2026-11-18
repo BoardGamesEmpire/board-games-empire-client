@@ -10,7 +10,7 @@ import 'package:drift_storage/drift_storage.dart';
 import 'package:drift_storage/drift_storage_native.dart';
 import 'package:events/events.dart';
 import 'package:game_catalog/game_catalog.dart'
-    show DataGatewaySearchReachInstaller;
+    show DataGatewaySearchGrantInstaller;
 import 'package:game_collection/game_collection.dart';
 import 'package:household/household.dart';
 import 'package:hydrated_bloc/hydrated_bloc.dart';
@@ -122,7 +122,7 @@ List<ServerScopeInstaller> buildNativeServerScopeInstallers({
 /// network installer registers per server, which the user scope falls
 /// through to, and nothing the storage tier registers.
 ///
-/// [DataGatewaySearchReachInstaller] runs after [CallerAccessInstaller]
+/// [DataGatewaySearchGrantInstaller] runs after [CallerAccessInstaller]
 /// (#795). It registers the session's memory of whether the server refused
 /// the DataGateways to this user, which the search screen's bloc reads, so a
 /// refusal is asked once a session and forgotten when the session ends. It
@@ -150,7 +150,7 @@ List<UserScopeInstaller> buildNativeUserScopeInstallers() => const [
       ...serverSettingsResourceTypes,
     },
   ),
-  DataGatewaySearchReachInstaller(),
+  DataGatewaySearchGrantInstaller(),
   SyncSenderInstaller(),
   SyncQueueDrainInstaller(),
 ];

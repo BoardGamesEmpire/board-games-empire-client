@@ -388,7 +388,7 @@ void main() {
     GameCollectionRepository? collection,
     GameCollectionHydrationStatus? collectionHydration,
     SyncOperationSender? sender,
-    bool withReach = true,
+    bool withGrant = true,
     GameSearchStreamSource? streamSource,
   }) => FakeActiveServerScope(
     buildActiveServer(
@@ -400,8 +400,8 @@ void main() {
       gameCollectionRepository: collection,
       gameCollectionHydrationStatus: collectionHydration,
       syncOperationSender: sender,
-      // A signed-in session registers its reach; a signed-out one has none.
-      dataGatewaySearchReach: withReach ? DataGatewaySearchReach() : null,
+      // A signed-in session registers its grant; a signed-out one has none.
+      dataGatewaySearchGrant: withGrant ? DataGatewaySearchGrant() : null,
       gameSearchStreamSource: streamSource,
     ),
   );
@@ -413,7 +413,7 @@ void main() {
     GameCollectionRepository? collection,
     GameCollectionHydrationStatus? collectionHydration,
     SyncOperationSender? sender,
-    bool withReach = true,
+    bool withGrant = true,
     GameSearchStreamSource? streamSource,
   }) async {
     when(() => cubit.activeServerScope).thenReturn(
@@ -423,7 +423,7 @@ void main() {
         collection: collection,
         collectionHydration: collectionHydration,
         sender: sender,
-        withReach: withReach,
+        withGrant: withGrant,
         streamSource: streamSource,
       ),
     );
@@ -716,12 +716,12 @@ void main() {
     expect(find.textContaining('BoardGameGeek'), findsOneWidget);
   });
 
-  testWidgets("the search reads the session's reach (#795)", (tester) async {
+  testWidgets("the search reads the session's grant (#795)", (tester) async {
     await pumpHome(tester);
     await openGames(tester);
     await searchFor(tester, 'catan');
 
-    // A session with a reach asks the DataGateways, and shows their rows.
+    // A session with a grant asks the DataGateways, and shows their rows.
     expect(games.searches, [true]);
     expect(
       find.byKey(GameSearchScreen.sourceRowKey('dg_bgg', '926')),
@@ -744,7 +744,7 @@ void main() {
 
   testWidgets('a signed-out search has no stream source, and goes over REST '
       '(#473)', (tester) async {
-    await pumpHome(tester, withReach: false);
+    await pumpHome(tester, withGrant: false);
     await openGames(tester);
     await searchFor(tester, 'catan');
 
@@ -753,7 +753,7 @@ void main() {
 
   testWidgets('a signed-out search never asks the DataGateways, and says '
       'so (#795)', (tester) async {
-    await pumpHome(tester, withReach: false);
+    await pumpHome(tester, withGrant: false);
     await openGames(tester);
     await searchFor(tester, 'catan');
 

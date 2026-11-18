@@ -33,7 +33,7 @@ void main() {
       expect(installers[4], isA<GameCollectionHydrateInstaller>());
       expect(installers[5], isA<EventHydrateInstaller>());
       expect(installers[6], isA<CallerAccessInstaller>());
-      expect(installers[7], isA<DataGatewaySearchReachInstaller>());
+      expect(installers[7], isA<DataGatewaySearchGrantInstaller>());
       expect(installers[8], isA<SyncSenderInstaller>());
       expect(installers[9], isA<SyncQueueDrainInstaller>());
     });
@@ -51,11 +51,11 @@ void main() {
       );
     });
 
-    test('has one DataGatewaySearchReachInstaller, so a refusal ends with '
+    test('has one DataGatewaySearchGrantInstaller, so a refusal ends with '
         'the session (#795)', () {
       expect(
         buildWebUserScopeInstallers()
-            .whereType<DataGatewaySearchReachInstaller>(),
+            .whereType<DataGatewaySearchGrantInstaller>(),
         hasLength(1),
       );
     });

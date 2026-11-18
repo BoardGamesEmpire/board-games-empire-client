@@ -4,7 +4,7 @@ import 'package:game_catalog/l10n/game_catalog_localizations.dart';
 import 'package:game_catalog/src/bloc/game_search_bloc.dart';
 import 'package:game_catalog/src/bloc/game_search_event.dart';
 import 'package:game_catalog/src/bloc/game_search_state.dart';
-import 'package:game_catalog/src/search/data_gateway_search_reach.dart';
+import 'package:game_catalog/src/search/data_gateway_search_grant.dart';
 import 'package:game_catalog/src/widgets/catalog_facts.dart';
 import 'package:game_catalog/src/widgets/catalog_game_row.dart';
 import 'package:game_catalog/src/widgets/catalog_slivers.dart';
@@ -93,7 +93,7 @@ class GameSearchScreen extends StatelessWidget {
     this.gone,
     this.onOpen,
     this.onImport,
-    this.reach,
+    this.grant,
     super.key,
   });
 
@@ -237,7 +237,7 @@ class GameSearchScreen extends StatelessWidget {
   /// Whether this session may ask the DataGateways, and what the server
   /// said when it refused (#795). Null remembers for this screen alone; the
   /// shell passes the session's, so a refusal outlasts the screen.
-  final DataGatewaySearchReach? reach;
+  final DataGatewaySearchGrant? grant;
 
   @override
   Widget build(BuildContext context) => BlocProvider<GameSearchBloc>(
@@ -249,7 +249,7 @@ class GameSearchScreen extends StatelessWidget {
       stream: _openChannel(),
       sourceNames: sourceNames,
       gone: gone,
-      reach: reach,
+      grant: grant,
     ),
     child: _GameSearchPage(onOpen: onOpen, onImport: onImport),
   );
