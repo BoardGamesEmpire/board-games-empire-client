@@ -9,6 +9,7 @@ export 'src/household_remote_data_source.dart';
 export 'src/http_date.dart';
 export 'src/notification_remote_data_source.dart';
 export 'src/paginated_result.dart';
+export 'src/realtime_connection.dart';
 export 'src/server_onboarding_deps.dart';
 export 'src/server_string_length.dart';
 export 'src/system_settings_remote_data_source.dart';

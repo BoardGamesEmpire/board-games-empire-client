@@ -23,12 +23,13 @@ import 'package:observability/observability.dart';
 /// [initialize] accepts a platform [LogSink] (see
 /// `PlatformBootstrap.createLogSink`) and a [BgeLogLevel] `consoleThreshold`.
 /// The root logger stays pinned to [Level.ALL] so the breadcrumb ring sees
-/// every record — its bounded capacity, NOT the root level, is the
-/// retention policy. The build-mode gate lives on the **sink path** here
-/// instead: a record is forwarded to the sink only when it meets the
-/// threshold (`warn+` in release, everything in debug/profile). So a
-/// release build shows warnings/errors on the console yet still carries a
-/// full-fidelity breadcrumb trail into any feedback report.
+/// every record but those [keeps] drops — its bounded capacity, NOT the
+/// root level, is the retention policy. The build-mode gate lives on the
+/// **sink path** here instead: a record is forwarded to the sink only when
+/// it meets the threshold (`warn+` in release, everything in debug/profile),
+/// and [keeps] keeps it. So a release build shows warnings/errors on the
+/// console yet still carries a full-fidelity breadcrumb trail into any
+/// feedback report.
 abstract final class ShellObservability {
   static BreadcrumbBuffer? _buffer;
   static ValueNotifier<UncaughtErrorRecord?>? _lastUncaughtError;
@@ -110,26 +111,49 @@ abstract final class ShellObservability {
   /// (`BgeLogLevel.warn` in release, `BgeLogLevel.verbose` in
   /// debug/profile — see `runBgeApp`). With no [sink] (most unit tests)
   /// only breadcrumb capture is wired.
+  ///
+  /// A [buffer] must not be attached yet: it would keep its own filter, so
+  /// [keeps] would never run on it, and throws [ArgumentError].
   static void initialize({
     BreadcrumbBuffer? buffer,
     LogSink? sink,
     BgeLogLevel consoleThreshold = BgeLogLevel.verbose,
   }) {
     if (_buffer != null) return;
+    if (buffer != null && buffer.isAttached) {
+      throw ArgumentError.value(
+        buffer,
+        'buffer',
+        'is already attached, so it would not apply ShellObservability.keeps',
+      );
+    }
     _previousRootLevel = Logger.root.level;
     Logger.root.level = Level.ALL;
-    _buffer = (buffer ?? BreadcrumbBuffer())..attach();
+    _buffer = (buffer ?? BreadcrumbBuffer())..attach(where: keeps);
     _lastUncaughtError = ValueNotifier<UncaughtErrorRecord?>(null);
     if (sink != null) {
       _sink = sink;
       final threshold = consoleThreshold.level;
       _sinkSubscription = Logger.root.onRecord.listen((record) {
-        if (record.level >= threshold) {
+        if (record.level >= threshold && keeps(record)) {
           sink.emit(record);
         }
       });
     }
   }
+
+  /// Whether [record] may be kept, in the breadcrumbs or by the sink.
+  ///
+  /// socket.io's client logs each packet it writes, whole, below
+  /// [Level.INFO], from loggers named `socket_io_client:…` and
+  /// `socket_io:…`. On native the handshake's packet carries the session
+  /// token (#473), and only emails are masked in a message, so those
+  /// records would put the token in a feedback report, or a log file in a
+  /// debug build. They are dropped, and socket.io's warnings and errors
+  /// kept.
+  @visibleForTesting
+  static bool keeps(LogRecord record) =>
+      record.level >= Level.INFO || !record.loggerName.startsWith('socket_io');
 
   /// Detaches and clears all wiring so tests can re-initialize cleanly,
   /// including restoring [Logger.root]'s level to whatever it was before

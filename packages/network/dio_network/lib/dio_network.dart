@@ -27,6 +27,11 @@ export 'src/network/redact_uri.dart' show redactUri;
 
 export 'src/notification/notification_remote_data_source_impl.dart';
 
+export 'src/realtime/realtime_connection_impl.dart';
+export 'src/realtime/realtime_endpoint.dart';
+export 'src/realtime/realtime_installer.dart';
+export 'src/realtime/socket_manager.dart' hide socketIoOptions;
+
 export 'src/system_settings/system_settings_remote_data_source_impl.dart';
 
 export 'src/user/user_profile_remote_data_source_impl.dart';

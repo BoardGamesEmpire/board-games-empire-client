@@ -21,6 +21,7 @@ dependencies:
     path: ../network_interface
   observability:
     path: ../../core/observability
+  socket_io_client: ^3.1.6
 
 dev_dependencies:
   # Shared test helpers (#354, #213, #257, #409): canned Dio transports and/or
@@ -28,6 +29,9 @@ dev_dependencies:
   # `domain.dart` model builders.
   bge_test_support:
     path: ../../testing/support
+  # The realtime installer's test runs it through a real user scope (#473).
+  di:
+    path: ../../core/di
   flutter_test:
     sdk: flutter
   logging: ^1.3.0

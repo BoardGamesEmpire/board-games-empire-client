@@ -28,8 +28,9 @@ import 'package:native_network/src/auth/token_storage_service.dart';
 /// window between a sign-in and the `getSession` that confirms an expiry is
 /// exactly when the app is busiest, and refusing to attach the token there
 /// would break the reconcile call that fills the value in — a deadlock.
-/// [StoredSession.isExpiredAt] encodes this: it is true only for a
-/// *known-dead* session.
+/// [StoredSession.tokenToSendAt] encodes this: it withholds the token only
+/// for a *known-dead* session, by [StoredSession.isExpiredAt]. The session's
+/// socket sends its handshake's token by the same rule (#473).
 ///
 /// The check itself is a courtesy that saves a doomed round trip; the server
 /// is the authority either way. It reads the per-server [ClockService] so a
@@ -65,10 +66,10 @@ class TokenInterceptor extends Interceptor {
       return;
     }
 
-    final stored = await _tokenStorage.retrieve();
-    if (stored != null && !stored.isExpiredAt(_clock.nowUtc())) {
-      options.headers['Authorization'] = 'Bearer ${stored.token}';
-    }
+    final token = (await _tokenStorage.retrieve())?.tokenToSendAt(
+      _clock.nowUtc(),
+    );
+    if (token != null) options.headers['Authorization'] = 'Bearer $token';
 
     handler.next(options);
   }

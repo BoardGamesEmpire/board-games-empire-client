@@ -58,6 +58,31 @@ void main() {
       );
     });
 
+    test("socket.io's packet records reach neither the breadcrumbs nor the "
+        'sink, and its warnings reach both (#473)', () {
+      final sink = _RecordingSink();
+      ShellObservability.initialize(sink: sink);
+      const token = 'sentinel-session-token';
+
+      // What socket_io_client 3.1.6 logs as it sends a handshake on native.
+      Logger(
+        'socket_io_client:Manager',
+      ).fine('writing packet {type: 0, data: {token: $token}}');
+      Logger(
+        'socket_io:parser.Encoder',
+      ).fine('encoding packet {type: 0, data: {token: $token}}');
+      Logger('socket_io_client:Socket').warning('socket.io warns');
+      BgeLogger('bge.test.sink').verbose('our own detail');
+
+      final crumbs = ShellObservability.breadcrumbs.snapshot();
+      expect(crumbs.where((c) => c.message.contains(token)), isEmpty);
+      expect(sink.emitted.where((r) => r.message.contains(token)), isEmpty);
+      for (final kept in ['socket.io warns', 'our own detail']) {
+        expect(crumbs.where((c) => c.message == kept), hasLength(1));
+        expect(sink.emitted.where((r) => r.message == kept), hasLength(1));
+      }
+    });
+
     test('breadcrumbs still capture everything even when the sink gate is '
         'warn — the ring, not the gate, is the retention policy', () {
       final sink = _RecordingSink();
