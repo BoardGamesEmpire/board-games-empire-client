@@ -1,6 +1,6 @@
 // A 429 on sign-in and sign-up is a rate limit with its wait (#559).
 //
-// The web twin of `dio_network/test/auth/auth_repository_rate_limit_test.dart`:
+// The web twin of `native_network/test/auth/auth_repository_rate_limit_test.dart`:
 // a resolved and a thrown 429, through a real Dio. `parseRetryAfter` is
 // unit-tested in `interfaces`, beside it; it is one shared function.
 
@@ -170,7 +170,7 @@ void main() {
       });
 
       test('with a duplicate-email body code is still a rate limit', () async {
-        // `_isEmailAlreadyExists` reads the code at any status, so the 429
+        // `isEmailAlreadyExists` reads the code at any status, so the 429
         // has to be classified first.
         final repo = repoWith(
           _dio(

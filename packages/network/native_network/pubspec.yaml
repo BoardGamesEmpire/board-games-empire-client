@@ -1,0 +1,41 @@
+name: native_network
+description: "Native (mobile and desktop) network stack: bearer-token custody, auth and per-server composition over dio_network"
+version: 1.0.0
+publish_to: none
+
+environment:
+  sdk: ^3.13.0
+  flutter: ">=3.47.1"
+resolution: workspace
+
+dependencies:
+  crypto: ^3.0.7
+  di:
+    path: ../../core/di
+  dio: ^5.11.0
+  dio_network:
+    path: ../dio_network
+  flutter:
+    sdk: flutter
+  flutter_secure_storage: ^11.0.0
+  http_status: ^3.3.3
+  interfaces:
+    path: ../../core/interfaces
+  models:
+    path: ../../core/models
+  network_interface:
+    path: ../network_interface
+  observability:
+    path: ../../core/observability
+
+dev_dependencies:
+  # Shared test helpers (#354, #213, #257, #409): canned Dio transports and the
+  # `domain.dart` model builders.
+  bge_test_support:
+    path: ../../testing/support
+  flutter_test:
+    sdk: flutter
+  logging: ^1.3.0
+  mocktail: ^1.0.5
+
+flutter:

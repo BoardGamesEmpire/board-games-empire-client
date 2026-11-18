@@ -9,13 +9,9 @@ environment:
 resolution: workspace
 
 dependencies:
-  crypto: ^3.0.7
-  di:
-    path: ../../core/di
   dio: ^5.11.0
   flutter:
     sdk: flutter
-  flutter_secure_storage: ^11.0.0
   http_status: ^3.3.3
   interfaces:
     path: ../../core/interfaces

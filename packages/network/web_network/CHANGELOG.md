@@ -12,6 +12,10 @@
   `serverId`/`displayName` sourced from the identity. Well-known failures
   propagate unchanged for the shell to surface as a retryable bootstrap
   failure (#96).
+* `WebAuthRepositoryImpl` now maps auth errors, decodes auth bodies and
+  sends the email/password sign-in and sign-up requests through the helpers
+  it shares with the native repository in `dio_network` (#877). Its grant
+  handling stays its own. No behaviour change.
 
 ## 0.0.1
 

@@ -63,7 +63,7 @@ A short orientation for anyone (human or LLM) picking this up cold:
 - `ServerContextImpl` skeleton with state machine and per-server GetIt container.
   Activate/suspend still carry `TODO(phase2)` DB-lifecycle markers (closed in P3).
 - `WellKnownClient` (discovery via `/.well-known/bge-identity`).
-- `AuthRepositoryImpl` (dio_network, bearer) + `WebAuthRepositoryImpl` (web_network,
+- `AuthRepositoryImpl` (native_network, bearer) + `WebAuthRepositoryImpl` (web_network,
   cookie); `TokenStorageService` (`flutter_secure_storage`, per-server keyed);
   `AuthBloc` with full event + exception→message mapping; `auth_screen.dart` + i18n.
 - `MetaDatabase` + `ServerRepository` for `ServerConfig` persistence.

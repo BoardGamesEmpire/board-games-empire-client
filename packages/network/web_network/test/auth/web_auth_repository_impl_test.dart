@@ -448,7 +448,7 @@ void main() {
     });
 
     // Native's matrix for the same contract lives in
-    // dio_network/test/auth/auth_repository_restore_test.dart under
+    // native_network/test/auth/auth_repository_restore_test.dart under
     // "getSession() definitive vs indeterminate"; these mirror it (#180).
     //
     // What makes every case below reachable at all: WebDioFactory sets

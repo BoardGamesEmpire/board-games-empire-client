@@ -9,11 +9,7 @@ import 'package:bge_test_support/domain.dart';
 import 'package:di/di.dart';
 import 'package:dio/dio.dart';
 import 'package:dio_network/dio_network.dart'
-    show
-        ClockSkewInterceptor,
-        DioFactory,
-        NetworkLogInterceptor,
-        TokenStorageService;
+    show ClockSkewInterceptor, DioFactory, NetworkLogInterceptor;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:interfaces/services.dart';
@@ -75,13 +71,6 @@ void main() {
       register();
 
       expect(container.get<AuthRepository>(), isA<WebAuthRepositoryImpl>());
-    });
-
-    test('registers no TokenStorageService — the browser owns the session '
-        'cookie', () {
-      register();
-
-      expect(container.isRegistered<TokenStorageService>(), isFalse);
     });
 
     test('registers the skew-corrected clock, not the pass-through null '

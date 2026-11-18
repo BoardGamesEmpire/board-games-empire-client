@@ -1,7 +1,7 @@
-export 'src/auth/auth_repository_impl.dart';
+export 'src/auth/auth_wire_errors.dart';
+export 'src/auth/credential_grant_requests.dart';
 export 'src/auth/rate_limited.dart';
 export 'src/auth/session_read_status.dart';
-export 'src/auth/token_storage_service.dart';
 
 export 'src/data_gateway/data_gateway_remote_data_source_impl.dart';
 
@@ -23,9 +23,7 @@ export 'src/network/clock_skew_interceptor.dart';
 export 'src/network/decode_json_body.dart';
 export 'src/network/dio_factory.dart';
 export 'src/network/network_log_interceptor.dart';
-export 'src/network/network_scope_installer.dart';
-export 'src/network/register_server_network.dart';
-export 'src/network/token_interceptor.dart';
+export 'src/network/redact_uri.dart' show redactUri;
 
 export 'src/notification/notification_remote_data_source_impl.dart';
 

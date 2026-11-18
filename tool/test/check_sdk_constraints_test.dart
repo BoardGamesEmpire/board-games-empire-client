@@ -281,6 +281,29 @@ void main() {
       expect(lastOutput, contains('apps/mobile reaches packages/platform/web'));
     });
 
+    test('web app reaching a native implementation', () async {
+      workspace = await createFixtureWorkspace(
+        members: {
+          'apps/browser':
+              'name: browser\npublish_to: none\nversion: 1.0.0+1\n'
+              'environment:\n  sdk: ^3.13.0\nresolution: workspace\n'
+              'dependencies:\n'
+              '  native_network:\n'
+              '    path: ../../packages/network/native_network\n',
+          'packages/network/native_network': validMemberPubspec.replaceFirst(
+            'name: member',
+            'name: native_network',
+          ),
+        },
+      );
+
+      expect(await fixThenCheck(), (1, 1), reason: lastOutput);
+      expect(
+        lastOutput,
+        contains('apps/browser reaches packages/network/native_network'),
+      );
+    });
+
     // Pub resolves a `workspace:` entry with a trailing slash like one
     // without, so the check must not miss the web package under it.
     test('web implementation listed with a trailing slash', () async {

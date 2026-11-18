@@ -1,4 +1,3 @@
-import 'package:dio_network/dio_network.dart' show NetworkScopeInstaller;
 import 'package:drift_storage/drift_storage.dart';
 import 'package:drift_storage/drift_storage_native.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -6,6 +5,7 @@ import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:interfaces/services.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:native_network/native_network.dart' show NetworkScopeInstaller;
 import 'package:native_platform/native_platform.dart';
 
 class _MockKeyService extends Mock implements EncryptionKeyService {}

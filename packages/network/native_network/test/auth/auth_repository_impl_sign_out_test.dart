@@ -1,0 +1,257 @@
+import 'dart:convert';
+
+import 'package:bge_test_support/domain.dart';
+import 'package:dio/dio.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:interfaces/repositories.dart';
+import 'package:mocktail/mocktail.dart';
+import 'package:native_network/src/auth/auth_repository_impl.dart';
+import 'package:native_network/src/auth/token_storage_service.dart';
+
+class MockDio extends Mock implements Dio {}
+
+class MockTokenStorage extends Mock implements TokenStorageService {}
+
+/// Pins the [AuthRepository.signOut] persistence invariant (#37 review):
+/// the in-memory transition to [AuthStateUnauthenticated] is
+/// UNCONDITIONAL — it happens even when clearing the persisted token
+/// fails — and the failure surfaces as [AuthSignOutPersistenceException]
+/// with the underlying fault as [AuthException.cause]. Without this,
+/// `watchAuthState` could re-assert a session the user just ended (the
+/// sign-out resurrection hole).
+void main() {
+  late MockDio mockDio;
+  late MockTokenStorage mockStorage;
+  late AuthRepositoryImpl repo;
+
+  setUp(() {
+    mockDio = MockDio();
+    mockStorage = MockTokenStorage();
+    repo = AuthRepositoryImpl(
+      identity: testServerIdentity(),
+      serverUrl: testServerUrl,
+      tokenStorage: mockStorage,
+      dio: mockDio,
+    );
+    // signOut() reads the token to authenticate the best-effort POST before
+    // latching; default to none stored. Tests needing a token re-stub this.
+    when(() => mockStorage.retrieve()).thenAnswer((_) async => null);
+  });
+
+  tearDown(() async => repo.onDispose());
+
+  void stubSignOutPostOk() =>
+      when(
+        () => mockDio.post<String>(
+          '$testAuthBasePath/sign-out',
+          options: any(named: 'options'),
+        ),
+      ).thenAnswer(
+        (_) async => Response<String>(
+          statusCode: 200,
+          requestOptions: RequestOptions(),
+        ),
+      );
+
+  void stubSignOutPostFails() =>
+      when(
+        () => mockDio.post<String>(
+          '$testAuthBasePath/sign-out',
+          options: any(named: 'options'),
+        ),
+      ).thenThrow(
+        DioException(
+          type: DioExceptionType.connectionError,
+          requestOptions: RequestOptions(),
+        ),
+      );
+
+  group('signOut() persistence invariant', () {
+    test('happy path: completes and transitions to unauthenticated', () async {
+      stubSignOutPostOk();
+      when(() => mockStorage.clear()).thenAnswer((_) async {});
+
+      await repo.signOut();
+
+      expect(
+        await repo.watchAuthState().first,
+        const AuthStateUnauthenticated(),
+      );
+      verify(() => mockStorage.clear()).called(1);
+    });
+
+    test('carries the stored bearer token on the server sign-out POST so the '
+        'session is revoked server-side — the token is read BEFORE clear() '
+        'latches it away, not left to the racing TokenInterceptor', () async {
+      when(() => mockStorage.retrieve()).thenAnswer(
+        (_) async => StoredSession(
+          token: 'live-token-xyz',
+          expiresAt: DateTime(2099).toUtc(),
+          persistedAt: DateTime.utc(2026),
+        ),
+      );
+      when(() => mockStorage.clear()).thenAnswer((_) async {});
+
+      Options? sentOptions;
+      when(
+        () => mockDio.post<String>(
+          '$testAuthBasePath/sign-out',
+          options: any(named: 'options'),
+        ),
+      ).thenAnswer((invocation) async {
+        sentOptions = invocation.namedArguments[#options] as Options?;
+        return Response<String>(
+          statusCode: 200,
+          requestOptions: RequestOptions(),
+        );
+      });
+
+      await repo.signOut();
+      // The POST is fire-and-forget (unawaited); let it run.
+      await pumpEventQueue();
+
+      expect(sentOptions?.headers?['Authorization'], 'Bearer live-token-xyz');
+      expect(sentOptions?.responseType, ResponseType.plain);
+    });
+
+    test('a failed server call alone does not throw — best-effort — and '
+        'still transitions to unauthenticated', () async {
+      stubSignOutPostFails();
+      when(() => mockStorage.clear()).thenAnswer((_) async {});
+
+      await expectLater(repo.signOut(), completes);
+
+      expect(
+        await repo.watchAuthState().first,
+        const AuthStateUnauthenticated(),
+      );
+    });
+
+    test('a failed storage clear throws AuthSignOutPersistenceException '
+        'with the fault preserved as cause — AND the state has still '
+        'transitioned to unauthenticated', () async {
+      stubSignOutPostOk();
+      final storageFault = StateError('keychain unavailable');
+      when(() => mockStorage.clear()).thenThrow(storageFault);
+
+      final emissions = <AuthState>[];
+      final sub = repo.watchAuthState().listen(emissions.add);
+      await pumpEventQueue();
+
+      await expectLater(
+        repo.signOut(),
+        throwsA(
+          isA<AuthSignOutPersistenceException>().having(
+            (e) => e.cause,
+            'cause',
+            same(storageFault),
+          ),
+        ),
+      );
+      await pumpEventQueue();
+      await sub.cancel();
+
+      // The live stream saw the transition despite the throw…
+      expect(emissions.last, const AuthStateUnauthenticated());
+      // …and the repository's replayed current state agrees: a mirror
+      // subscribing later can only confirm the sign-out, never resurrect
+      // the ended session.
+      expect(
+        await repo.watchAuthState().first,
+        const AuthStateUnauthenticated(),
+      );
+    });
+
+    test('server call AND storage clear both failing still yields the '
+        'typed exception and the unauthenticated transition', () async {
+      stubSignOutPostFails();
+      final storageFault = StateError('keychain unavailable');
+      when(() => mockStorage.clear()).thenThrow(storageFault);
+
+      await expectLater(
+        repo.signOut(),
+        throwsA(isA<AuthSignOutPersistenceException>()),
+      );
+
+      expect(
+        await repo.watchAuthState().first,
+        const AuthStateUnauthenticated(),
+      );
+    });
+
+    test('an ended (authenticated → signed-out) session is never '
+        're-asserted by the stream after a failed clear', () async {
+      // Reach an authenticated state first, via a stored token + a valid
+      // session response.
+      when(() => mockStorage.retrieve()).thenAnswer(
+        (_) async => StoredSession(
+          token: 'session-tok-abc',
+          expiresAt: DateTime(2099).toUtc(),
+          persistedAt: DateTime.utc(2026),
+        ),
+      );
+      when(
+        () => mockStorage.store(
+          token: any(named: 'token'),
+          expiresAt: any(named: 'expiresAt'),
+          persistedAt: any(named: 'persistedAt'),
+          user: any(named: 'user'),
+        ),
+      ).thenAnswer((_) async {});
+      when(
+        () => mockDio.get<String>(
+          '$testAuthBasePath/get-session',
+          options: any(named: 'options'),
+        ),
+      ).thenAnswer(
+        (_) async => Response(
+          data: jsonEncode({
+            'session': {
+              'id': 'sess-1',
+              'token': 'session-tok-abc',
+              'expiresAt': '2099-01-01T00:00:00.000Z',
+              'userId': 'user-1',
+              'createdAt': '2026-01-01T00:00:00.000Z',
+              'updatedAt': '2026-01-01T00:00:00.000Z',
+            },
+            'user': {
+              'id': 'user-1',
+              'name': 'testuser',
+              'email': 'testuser@example.com',
+              'emailVerified': true,
+              'createdAt': '2026-01-01T00:00:00.000Z',
+              'updatedAt': '2026-01-01T00:00:00.000Z',
+            },
+          }),
+          statusCode: 200,
+          requestOptions: RequestOptions(),
+        ),
+      );
+      await repo.getSession();
+      expect(await repo.watchAuthState().first, isA<AuthStateAuthenticated>());
+
+      stubSignOutPostOk();
+      when(() => mockStorage.clear())
+          .thenThrow(StateError('keychain unavailable'));
+
+      final emissions = <AuthState>[];
+      final sub = repo.watchAuthState().listen(emissions.add);
+      await pumpEventQueue();
+
+      await expectLater(
+        repo.signOut(),
+        throwsA(isA<AuthSignOutPersistenceException>()),
+      );
+      await pumpEventQueue();
+      await sub.cancel();
+
+      // Replay (authenticated) + the sign-out transition — and nothing
+      // authenticated ever again after it.
+      final afterSignOut = emissions.skipWhile(
+        (s) => s is! AuthStateUnauthenticated,
+      );
+      expect(afterSignOut, isNotEmpty);
+      expect(afterSignOut.whereType<AuthStateAuthenticated>(), isEmpty);
+    });
+  });
+}

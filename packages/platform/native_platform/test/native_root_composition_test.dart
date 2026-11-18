@@ -9,7 +9,6 @@
 // root need real time, and the widget tester's fake async would stall them.
 
 import 'package:bge_test_support/waits.dart';
-import 'package:dio_network/dio_network.dart';
 import 'package:drift_storage/drift_storage.dart';
 import 'package:events/events.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -20,6 +19,7 @@ import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:interfaces/services.dart';
 import 'package:interfaces/sync.dart';
+import 'package:native_network/native_network.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:sync_queue/sync_queue.dart';
 

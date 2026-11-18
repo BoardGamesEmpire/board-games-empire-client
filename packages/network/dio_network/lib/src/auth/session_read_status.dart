@@ -28,7 +28,7 @@ enum SessionReadStatus {
 /// for [SessionReadStatus.undecided] is the caller's too, because the two
 /// paths need different ones: a resolved response with no session answer is
 /// a server fault, while a thrown request with no status was never answered
-/// at all, which `_mapDioException` reports as a network failure.
+/// at all, which `mapAuthDioException` reports as a network failure.
 ///
 /// - **401 and 403 are [SessionReadStatus.noSession], resolved or thrown.**
 ///   A thrown one comes from an injected `Dio` whose `validateStatus` is not
