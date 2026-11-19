@@ -2,6 +2,7 @@ import 'package:auth/l10n/auth_localizations.dart';
 import 'package:auth/src/bloc/auth_bloc.dart';
 import 'package:auth/src/bloc/auth_bloc_state.dart';
 import 'package:auth/src/bloc/auth_event.dart';
+import 'package:auth/src/rate_limited_message.dart';
 import 'package:auth/src/widgets/login_form.dart';
 import 'package:auth/src/widgets/manage_servers_button.dart';
 import 'package:auth/src/widgets/oidc_strategy_button.dart';
@@ -509,7 +510,10 @@ class _AuthScreenState extends State<AuthScreen> {
     AuthFailureSessionNotGranted() => l10n.authErrorSessionNotGranted,
     AuthFailureEmailNotVerified() => l10n.authErrorEmailNotVerified,
     AuthFailureServer() => l10n.authErrorServer,
-    AuthFailureRateLimited(:final retryAfter) => _rateLimited(l10n, retryAfter),
+    AuthFailureRateLimited(:final retryAfter) => rateLimitedMessage(
+      l10n,
+      retryAfter,
+    ),
     AuthFailureProviderSignIn(:final reason, :final retryAfter) =>
       switch (reason) {
         ProviderSignInFailureReason.registrationDisabled =>
@@ -525,7 +529,7 @@ class _AuthScreenState extends State<AuthScreen> {
           l10n.authProviderErrorUnavailable,
         ProviderSignInFailureReason.startAgain =>
           l10n.authProviderErrorStartAgain,
-        ProviderSignInFailureReason.rateLimited => _rateLimited(
+        ProviderSignInFailureReason.rateLimited => rateLimitedMessage(
           l10n,
           retryAfter,
         ),
@@ -533,14 +537,6 @@ class _AuthScreenState extends State<AuthScreen> {
         ProviderSignInFailureReason.generic => l10n.authProviderErrorGeneric,
       },
   };
-
-  /// The rate-limit copy for a sign-in, a sign-up or a provider sign-in
-  /// (#559). A wait under a second would read "in 0 seconds", which is no
-  /// advice, so it reads as no wait.
-  String _rateLimited(AuthLocalizations l10n, Duration? retryAfter) =>
-      retryAfter == null || retryAfter < const Duration(seconds: 1)
-      ? l10n.authErrorRateLimitedNoWait
-      : l10n.authErrorRateLimited(retryAfter.inSeconds);
 
   void _switchMode({required bool signIn}) {
     // Retire any failure first: it describes a submission to the form the
