@@ -27,7 +27,13 @@ it fails.
 `GameSearchBloc` reads one page of `GET /api/games/search`. The server waits
 for every DataGateway, for up to 15 seconds, so a search can take that long.
 There is no "load more": the search has no stable order and no has-more
-signal yet (backend#792). Streaming over the WebSocket is #473.
+signal yet (backend#792).
+
+Where the session has a `GameSearchStreamSource`, the screen opens one channel
+on the session's socket and the bloc follows it, so this server's results
+show as they arrive instead of waiting on the DataGateways (#473). A server
+with no socket, or a socket that can't serve the search, searches over REST
+as above.
 
 Results come in two sections: what this server holds, then what its
 DataGateways found that the first section does not already list. A
@@ -54,7 +60,7 @@ it may be only the DataGateways that are refused (#795), so the bloc asks
 once more without them. If that answers, the screen shows this server's
 games, with the server's explanation where the DataGateways' results would
 be, and the session's later searches leave them out from the start
-(`DataGatewaySearchReach`). A signed-out session leaves them out from its
+(`DataGatewaySearchGrant`). A signed-out session leaves them out from its
 first. A second 403, or one on a search that left them out, means the user
 may not read the server's games at all: the screen says so, as browse does.
 That refusal forgets this user's catalog on this device, and offline search

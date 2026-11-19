@@ -72,11 +72,18 @@ class BreadcrumbBuffer {
   /// Whether the buffer is currently subscribed to `Logger.root`.
   bool get isAttached => _subscription != null;
 
-  /// Starts capturing from `Logger.root.onRecord`. Idempotent — calling
-  /// while attached is a no-op (no duplicate subscription).
-  void attach() {
+  /// Starts capturing from `Logger.root.onRecord`, each record [where]
+  /// keeps, or every one. Idempotent — calling while attached is a no-op
+  /// (no duplicate subscription), and keeps the first call's [where].
+  void attach({bool Function(LogRecord record)? where}) {
     if (_subscription != null) return;
-    _subscription = Logger.root.onRecord.listen(add);
+    _subscription = Logger.root.onRecord.listen(
+      where == null
+          ? add
+          : (record) {
+              if (where(record)) add(record);
+            },
+    );
   }
 
   /// Stops capturing. Buffered crumbs are retained; call [clear] to drop

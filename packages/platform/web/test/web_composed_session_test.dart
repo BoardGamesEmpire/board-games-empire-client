@@ -148,8 +148,8 @@ void main() {
         container.isRegistered<EventHydrationStatus>,
     'CallerAccessRepository, by CallerAccessInstaller':
         container.isRegistered<CallerAccessRepository>,
-    'DataGatewaySearchReach, by DataGatewaySearchReachInstaller':
-        container.isRegistered<DataGatewaySearchReach>,
+    'DataGatewaySearchGrant, by DataGatewaySearchGrantInstaller':
+        container.isRegistered<DataGatewaySearchGrant>,
     'SyncOperationSender, by SyncSenderInstaller':
         container.isRegistered<SyncOperationSender>,
     'SyncQueueDrain, by SyncQueueDrainInstaller':

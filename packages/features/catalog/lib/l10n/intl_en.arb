@@ -203,7 +203,7 @@
   },
   "catalogSearchResultCount": "{count, plural, =0{No results} =1{1 result} other{{count} results}}",
   "@catalogSearchResultCount": {
-    "description": "How many games a search found, shown above the results and announced when they arrive.",
+    "description": "How many games a search found, shown above the results and announced when they arrive. For a search whose results arrive a few at a time, it is also shown at the foot of the screen once the search has ended, and announced from there.",
     "placeholders": {
       "count": {
         "type": "int",
@@ -237,6 +237,14 @@
   "@catalogSearchDataGatewaysRefused": {
     "description": "Shown under the data sources heading in place of their results, and at the foot of the screen, when this session did not ask the DataGateways and no message came from the server. It is the client's copy of the server's own words for the refusal (#795). Announced once from the foot of the screen, as the results arrive."
   },
+  "catalogSearchStillSearching": "Showing the first results. Still searching data sources…",
+  "@catalogSearchStillSearching": {
+    "description": "Shown beside a small spinner while a search is still running, as the last row under the data sources heading and at the foot of the screen: the results shown so far are the first to arrive, and more may come as other catalogs, such as BoardGameGeek, answer. Announced once from the foot of the screen, as the first results appear."
+  },
+  "catalogSearchStillSearchingNoneYet": "Still searching data sources…",
+  "@catalogSearchStillSearchingNoneYet": {
+    "description": "Shown in place of catalogSearchStillSearching, in both its places, while a search is still running and nothing has been found yet: this server found no match, and other catalogs, such as BoardGameGeek, have yet to answer. Not announced, as the search was announced when it began."
+  },
   "catalogSearchFromCache": "Couldn't search the server, so this searched the games saved on this device.",
   "@catalogSearchFromCache": {
     "description": "Banner over the search results when the server's search failed, for any reason, so the results are the games this device saved earlier. Offers a retry."
@@ -268,6 +276,10 @@
         "example": "2"
       }
     }
+  },
+  "catalogSearchCutShort": "The search ended before every data source answered, so some results may be missing.",
+  "@catalogSearchCutShort": {
+    "description": "A quiet note under the search results when the search stopped before every data source had answered, such as when the connection dropped. The results already shown stay."
   },
   "catalogSearchSourceSeparator": ", ",
   "@catalogSearchSourceSeparator": {

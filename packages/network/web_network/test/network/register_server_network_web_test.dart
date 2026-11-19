@@ -9,7 +9,11 @@ import 'package:bge_test_support/domain.dart';
 import 'package:di/di.dart';
 import 'package:dio/dio.dart';
 import 'package:dio_network/dio_network.dart'
-    show ClockSkewInterceptor, DioFactory, NetworkLogInterceptor;
+    show
+        ClockSkewInterceptor,
+        DioFactory,
+        NetworkLogInterceptor,
+        RealtimeEndpoint;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:interfaces/services.dart';
@@ -236,6 +240,19 @@ void main() {
       await container.dispose();
 
       await completes;
+    });
+  });
+
+  // #473: where the session's socket connects. The browser sends the session
+  // cookie with the socket's upgrade request, so there is no token to send.
+  group('registerServerNetworkWeb realtime endpoint (#473)', () {
+    test('the web server scope registers one at the origin, with no token', () {
+      register(origin: 'https://play.example.org');
+
+      final endpoint = container.get<RealtimeEndpoint>();
+
+      expect(endpoint.server, Uri.parse('https://play.example.org'));
+      expect(endpoint.token, isNull);
     });
   });
 }

@@ -462,6 +462,16 @@ class StoredSession {
     return expiry != null && correctedNowUtc.isAfter(expiry);
   }
 
+  /// The bearer token to send at [correctedNowUtc], or null when the session
+  /// is known to be dead ([isExpiredAt]).
+  ///
+  /// The one rule for every credential this client sends: `TokenInterceptor`
+  /// reads it for a request's Authorization header, and the realtime
+  /// endpoint for the socket's handshake (#473). Not sending a dead token
+  /// only saves a doomed round trip; the server decides either way.
+  String? tokenToSendAt(DateTime correctedNowUtc) =>
+      isExpiredAt(correctedNowUtc) ? null : token;
+
   /// Whether the device's own clock is plausible — i.e. it has not moved
   /// backwards past the moment this payload was written.
   ///

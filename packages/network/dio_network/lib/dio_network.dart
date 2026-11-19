@@ -11,6 +11,7 @@ export 'src/feedback/feedback_dio_transport.dart';
 
 export 'src/game_collection/game_collection_remote_data_source_impl.dart';
 
+export 'src/games/game_search_channel_impl.dart';
 export 'src/games/games_remote_data_source_impl.dart';
 
 export 'src/household/admin_household_remote_data_source_impl.dart';
@@ -26,6 +27,11 @@ export 'src/network/network_log_interceptor.dart';
 export 'src/network/redact_uri.dart' show redactUri;
 
 export 'src/notification/notification_remote_data_source_impl.dart';
+
+export 'src/realtime/realtime_connection_impl.dart';
+export 'src/realtime/realtime_endpoint.dart';
+export 'src/realtime/realtime_installer.dart';
+export 'src/realtime/socket_manager.dart' hide socketIoOptions;
 
 export 'src/system_settings/system_settings_remote_data_source_impl.dart';
 

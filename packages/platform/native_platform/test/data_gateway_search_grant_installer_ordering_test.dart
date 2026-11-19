@@ -14,16 +14,16 @@ import 'package:native_platform/native_platform.dart';
 /// package. The web list has its own equivalent in
 /// `packages/platform/web/test/web_user_scope_installers_test.dart`.
 void main() {
-  test('has one DataGatewaySearchReachInstaller, right after the '
+  test('has one DataGatewaySearchGrantInstaller, right after the '
       'CallerAccessInstaller', () {
     final installers = buildNativeUserScopeInstallers();
 
     expect(
-      installers.whereType<DataGatewaySearchReachInstaller>(),
+      installers.whereType<DataGatewaySearchGrantInstaller>(),
       hasLength(1),
     );
     expect(
-      installers.indexWhere((i) => i is DataGatewaySearchReachInstaller),
+      installers.indexWhere((i) => i is DataGatewaySearchGrantInstaller),
       installers.indexWhere((i) => i is CallerAccessInstaller) + 1,
     );
   });

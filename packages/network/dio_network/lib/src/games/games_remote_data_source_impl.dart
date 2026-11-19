@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:dio_network/src/games/game_search_wire.dart';
 import 'package:dio_network/src/games/game_summary_json.dart';
 import 'package:dio_network/src/network/api_error_envelope.dart';
 import 'package:dio_network/src/network/non_empty_string.dart';
@@ -46,7 +47,7 @@ class GamesRemoteDataSourceImpl implements GamesRemoteDataSource {
     int limit = GamesRemoteDataSource.maxPageSize,
     GameSort sort = GameSort.title,
   }) async {
-    _checkLimit(limit);
+    checkPageLimit(limit);
     if (page < 1) {
       throw ArgumentError.value(page, 'page', 'is 1-based');
     }
@@ -157,45 +158,7 @@ class GamesRemoteDataSourceImpl implements GamesRemoteDataSource {
     GameSearchFilter filter = const GameSearchFilter(),
     bool includeExternal = true,
   }) async {
-    _checkLimit(limit);
-    if (offset < 0 || offset > GamesRemoteDataSource.maxDepth) {
-      throw ArgumentError.value(
-        offset,
-        'offset',
-        'must be between 0 and ${GamesRemoteDataSource.maxDepth}',
-      );
-    }
-    final GameSearchFilter(:contentTypes, :platformTypes) = filter;
-    if (contentTypes.contains(ContentType.unknown)) {
-      // The server refuses `Unknown` as a filter: it names no kind of game.
-      throw ArgumentError.value(
-        contentTypes,
-        'contentTypes',
-        'cannot name ContentType.unknown',
-      );
-    }
-    if (platformTypes.contains(PlatformType.unknown)) {
-      throw ArgumentError.value(
-        platformTypes,
-        'platformTypes',
-        'cannot name PlatformType.unknown',
-      );
-    }
-    _checkRange(
-      filter.publishYear,
-      'publishYear',
-      lowest: GamesRemoteDataSource.minRangeBound,
-    );
-    _checkRange(
-      filter.playerCount,
-      'playerCount',
-      lowest: GamesRemoteDataSource.minPlayerCount,
-    );
-    _checkRange(
-      filter.playTime,
-      'playTime',
-      lowest: GamesRemoteDataSource.minPlayTime,
-    );
+    checkSearchArguments(limit: limit, offset: offset, filter: filter);
 
     const action = 'Game search';
     const failures = _GamesFailures();
@@ -213,13 +176,14 @@ class GamesRemoteDataSourceImpl implements GamesRemoteDataSource {
           // Comma-separated: the server's list transform reads that and the
           // repeated form alike, and this one does not depend on how the
           // injected Dio formats a list.
-          if (contentTypes.isNotEmpty)
-            'contentTypes': contentTypes.map((t) => t.toWire()).join(','),
-          if (platformTypes.isNotEmpty)
-            'platformTypes': platformTypes.map((t) => t.toWire()).join(','),
-          ..._rangeParams('publishYear', filter.publishYear),
-          ..._rangeParams('playerCount', filter.playerCount),
-          ..._rangeParams('playTime', filter.playTime),
+          for (final MapEntry(:key, :value) in searchFilterFields(
+            filter,
+          ).entries)
+            key: switch (value) {
+              List() => value.join(','),
+              bool() => '$value',
+              _ => value,
+            },
         },
       ),
       action: action,
@@ -422,7 +386,7 @@ class GamesRemoteDataSourceImpl implements GamesRemoteDataSource {
 
     List<GameSearchHit> hits(Object? rows) => [
       for (final row in (rows! as List).cast<Map<String, dynamic>>())
-        _mapHit(row),
+        mapSearchHit(row),
     ];
 
     final errors = body['errors'] as Map<String, dynamic>? ?? const {};
@@ -443,66 +407,6 @@ class GamesRemoteDataSourceImpl implements GamesRemoteDataSource {
 
   static Set<String> _sources(Object? wire) =>
       wire == null ? const {} : (wire as List).cast<String>().toSet();
-
-  static GameSearchHit _mapHit(Map<String, dynamic> json) => GameSearchHit(
-    externalId: json['externalId'] as String,
-    title: json['title'] as String,
-    contentType: _searchContentType(json['contentType'] as String),
-    // The server's id only means "on this server" alongside `inSystem`.
-    gameId: json['inSystem'] == true ? json['gameId'] as String? : null,
-    yearPublished: json['yearPublished'] as int?,
-    minPlayers: json['minPlayers'] as int?,
-    maxPlayers: json['maxPlayers'] as int?,
-    // A DataGateway's unset proto string arrives as "", not absent.
-    thumbnailUrl: nonEmptyString(json['thumbnailUrl']),
-    summary: nonEmptyString(json['summary']),
-    platforms: [
-      for (final p
-          in (json['platforms'] as List? ?? const [])
-              .cast<Map<String, dynamic>>())
-        GameSearchPlatform(
-          name: p['name'] as String,
-          abbreviation: nonEmptyString(p['abbreviation']),
-          platformType: _searchPlatformType(p['platformType'] as String),
-        ),
-    ],
-  );
-
-  /// The proto name of each content type a DataGateway result may carry
-  /// (`bge.gateway.v1.ContentType`), with its stored name.
-  static const Map<String, String> _protoContentTypes = {
-    'CONTENT_TYPE_BASE_GAME': 'BaseGame',
-    'CONTENT_TYPE_EXPANSION': 'Expansion',
-    'CONTENT_TYPE_DLC': 'DLC',
-    'CONTENT_TYPE_STANDALONE_EXPANSION': 'StandaloneExpansion',
-    'CONTENT_TYPE_ACCESSORY': 'Accessory',
-    'CONTENT_TYPE_BUNDLE': 'Bundle',
-    'CONTENT_TYPE_REMAKE': 'Remake',
-    'CONTENT_TYPE_REMASTER': 'Remaster',
-    'CONTENT_TYPE_EXPANDED_EDITION': 'ExpandedEdition',
-    'CONTENT_TYPE_PORT': 'Port',
-    'CONTENT_TYPE_MOD': 'Mod',
-  };
-
-  /// As [_protoContentTypes], for `bge.gateway.v1.PlatformType`.
-  static const Map<String, String> _protoPlatformTypes = {
-    'PLATFORM_TYPE_TABLETOP': 'Tabletop',
-    'PLATFORM_TYPE_CONSOLE': 'Console',
-    'PLATFORM_TYPE_PORTABLE': 'Portable',
-    'PLATFORM_TYPE_PC': 'PC',
-    'PLATFORM_TYPE_MOBILE': 'Mobile',
-    'PLATFORM_TYPE_ARCADE': 'Arcade',
-    'PLATFORM_TYPE_OTHER': 'Other',
-  };
-
-  /// Reads either naming scheme (backend#662). An unspecified or
-  /// unrecognised proto name falls through to `unknown`, as an unknown stored
-  /// name does.
-  static ContentType _searchContentType(String wire) =>
-      ContentType.fromWire(_protoContentTypes[wire] ?? wire);
-
-  static PlatformType _searchPlatformType(String wire) =>
-      PlatformType.fromWire(_protoPlatformTypes[wire] ?? wire);
 
   // ── Import ──────────────────────────────────────────────────────────
 
@@ -584,54 +488,6 @@ class GamesRemoteDataSourceImpl implements GamesRemoteDataSource {
         value,
         name,
         'is not a UUID, which the server refuses with a 400',
-      );
-    }
-  }
-
-  /// Refuses a [range] the server would answer with a 400: a bound below
-  /// [lowest] or past an int32, or a minimum above the maximum.
-  static void _checkRange(
-    GameSearchRange range,
-    String name, {
-    required int lowest,
-  }) {
-    for (final bound in [range.min, range.max]) {
-      if (bound != null &&
-          (bound < lowest || bound > GamesRemoteDataSource.maxRangeBound)) {
-        throw ArgumentError.value(
-          range,
-          name,
-          'bounds must be between $lowest and '
-          '${GamesRemoteDataSource.maxRangeBound}',
-        );
-      }
-    }
-    if (range.isReversed) {
-      throw ArgumentError.value(range, name, 'min is above max');
-    }
-  }
-
-  /// [range]'s query fields, named from [prefix]: none without a bound, and
-  /// the include-unknown flag only when set, as `true`.
-  static Map<String, Object> _rangeParams(
-    String prefix,
-    GameSearchRange range,
-  ) => {
-    if (range.narrows) ...{
-      '${prefix}Min': ?range.min,
-      '${prefix}Max': ?range.max,
-      if (range.includeUnknown) '${prefix}IncludeUnknown': 'true',
-    },
-  };
-
-  void _checkLimit(int limit) {
-    const maxPageSize = GamesRemoteDataSource.maxPageSize;
-    if (limit < 1 || limit > maxPageSize) {
-      throw ArgumentError.value(
-        limit,
-        'limit',
-        'must be between 1 and $maxPageSize (the server rejects a larger '
-            'page rather than clamping it)',
       );
     }
   }

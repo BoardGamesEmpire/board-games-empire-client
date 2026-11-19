@@ -104,9 +104,10 @@ that names a different port is cosmetic for the alpha.
 ## Extending the routes
 
 Backend paths live in `BACKEND_PREFIXES` in `dev_proxy.mjs`. Add a prefix when
-the backend gains surface outside `/api` and `/.well-known` — for example
-`'/socket.io'` when the realtime (Socket.io) features land, so the websocket
-upgrade is routed to the backend rather than the Flutter dev server.
+the backend gains surface outside the prefixes it lists. `'/socket.io'` is
+there already (#473), so the realtime socket the game search streams over, and
+its websocket upgrade, are routed to the backend rather than the Flutter dev
+server.
 
 ## Troubleshooting
 

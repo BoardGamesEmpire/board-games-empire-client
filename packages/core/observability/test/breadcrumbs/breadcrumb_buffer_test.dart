@@ -94,6 +94,17 @@ void main() {
       BgeLogger('bge.test.idempotent').info('once');
       expect(buffer.length, 1);
     });
+
+    test('attach with where captures only the records it keeps', () {
+      final buffer = BreadcrumbBuffer(capacity: 5)
+        ..attach(where: (record) => record.loggerName != 'bge.test.dropped');
+      addTearDown(buffer.detach);
+
+      BgeLogger('bge.test.dropped').info('dropped');
+      BgeLogger('bge.test.kept').info('kept');
+
+      expect(buffer.snapshot().map((c) => c.message), ['kept']);
+    });
   });
 
   group('BreadcrumbBuffer record mapping', () {

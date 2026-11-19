@@ -34,7 +34,9 @@ abstract class ServerContext {
 
   /// Transitions to [ServerContextState.active].
   ///
-  /// Opens the per-server DB and WebSocket connection.
+  /// Opens the per-server DB. The realtime socket is not opened here: the
+  /// user-session scope owns it, one connection per server and signed-in
+  /// session (#473).
   /// Throws [StateError] if current state is not
   /// [ServerContextState.monitoring], [ServerContextState.backgrounding], or
   /// [ServerContextState.initializing].
@@ -50,7 +52,8 @@ abstract class ServerContext {
 
   /// Transitions to [ServerContextState.monitoring].
   ///
-  /// Closes the WebSocket and per-server DB. Only the root DB summary path
+  /// Closes the per-server DB. The realtime socket goes with the user-session
+  /// scope, not with this call (#473). Only the root DB summary path
   /// remains live for incoming OS push notifications (post-MVP stub).
   /// Throws [StateError] if current state is not
   /// [ServerContextState.backgrounding].

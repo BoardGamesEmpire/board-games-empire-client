@@ -9,8 +9,10 @@ import 'package:game_catalog/game_catalog.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
+import 'package:observability/observability.dart';
 
 import '../support/catalog_app.dart';
+import '../support/fake_game_search_channel.dart';
 import '../support/fake_games_remote.dart';
 
 /// A cache that cannot forget, as a session ending mid-refusal would leave it.
@@ -37,6 +39,21 @@ class _CountingForgetCache extends FakeGamesCache {
   Future<void> forgetCatalog() async => forgotten++;
 }
 
+/// A logger that keeps the errors it is warned of.
+class _WarnedLogger extends BgeLogger {
+  _WarnedLogger() : super('test.catalog.search');
+
+  final List<Object?> warned = [];
+
+  @override
+  void warn(
+    String message, {
+    Object? error,
+    StackTrace? stackTrace,
+    Map<String, dynamic>? context,
+  }) => warned.add(error);
+}
+
 const _expansions = GameSearchFilter(contentTypes: {ContentType.expansion});
 
 void main() {
@@ -60,15 +77,19 @@ void main() {
   /// out the real debounce.
   GameSearchBloc build({
     GameRepository? cache,
+    GameSearchChannel? stream,
     Future<Map<String, String>> Function()? sourceNames,
     Stream<String>? gone,
-    DataGatewaySearchReach? reach,
+    DataGatewaySearchGrant? grant,
+    BgeLogger? logger,
   }) => GameSearchBloc(
     remote: remote,
     cache: cache,
+    stream: stream,
     sourceNames: sourceNames,
     gone: gone,
-    reach: reach,
+    grant: grant,
+    logger: logger,
     debounce: Duration.zero,
   );
 
@@ -163,29 +184,26 @@ void main() {
   });
 
   blocTest<GameSearchBloc, GameSearchState>(
-    'retyping the same text while it is being searched still answers',
-    setUp: () {
-      final first = Completer<GameSearchResults>();
-      var calls = 0;
-      remote.onSearch = (_, _, _) =>
-          calls++ == 0 ? first.future : Future.value(const GameSearchResults());
-      addTearDown(() {
-        if (!first.isCompleted) first.complete(const GameSearchResults());
-      });
-    },
+    'retyping the same text while it is being searched still answers, from '
+    'the same search',
     build: build,
     act: (bloc) async {
+      final first = Completer<GameSearchResults>();
+      remote.onSearch = (_, _, _) => first.future;
       bloc.add(const GameSearchQueryChanged('catan'));
       await settle();
-      // A trailing space: the same search, and it cancels the handler
-      // waiting on the first.
+      // A trailing space: the same search. It cancels the handler waiting on
+      // the first, and its own handler waits in its place.
       bloc.add(const GameSearchQueryChanged('catan '));
+      await settle();
+      first.complete(GameSearchResults(local: [hit('g_catan')]));
       await settle();
     },
     expect: () => [
       const GameSearchLoading(query: 'catan'),
-      const GameSearchReady(query: 'catan'),
+      GameSearchReady(query: 'catan', onServer: [hit('g_catan')]),
     ],
+    verify: (_) => expect(remote.calls, ['search(catan)']),
   );
 
   blocTest<GameSearchBloc, GameSearchState>(
@@ -244,6 +262,62 @@ void main() {
                 hit: hit('c-1', gameId: 'g_elsewhere'),
               ),
             ]),
+      ],
+    );
+
+    // The screen keys each row by its id, and a keyed list needs each key
+    // once, but nothing under the bloc drops a result a source repeats
+    // (#473).
+    blocTest<GameSearchBloc, GameSearchState>(
+      'lists a result its source sends twice once, where it first came',
+      setUp: () => remote.onSearch = (_, _, _) async => GameSearchResults(
+        local: [
+          hit('g_catan', gameId: 'g_catan', title: 'Catan'),
+          hit('g_azul', gameId: 'g_azul', title: 'Azul'),
+          hit('g_catan', gameId: 'g_catan', title: 'Catan again'),
+        ],
+        byDataGateway: {
+          'dg_bgg': [
+            hit('926', title: 'Seafarers'),
+            // Its first copy is the game this server lists, so neither copy
+            // is a row: the first copy decides for the repeat.
+            hit('13', gameId: 'g_catan'),
+            hit('927', title: 'Cities'),
+            hit('926', title: 'Seafarers again'),
+            hit('13', title: 'Catan, unlinked'),
+          ],
+          // Another DataGateway's result with the same id is a row of its
+          // own.
+          'dg_igdb': [hit('926', title: 'Something else')],
+        },
+      ),
+      build: build,
+      act: (bloc) async {
+        bloc.add(const GameSearchQueryChanged('catan'));
+        await settle();
+      },
+      skip: 1,
+      expect: () => [
+        isA<GameSearchReady>()
+            .having((s) => s.onServer, 'onServer', [
+              hit('g_catan', gameId: 'g_catan', title: 'Catan'),
+              hit('g_azul', gameId: 'g_azul', title: 'Azul'),
+            ])
+            .having((s) => s.fromSources, 'fromSources', [
+              GameSearchSourceHit(
+                source: const GameSearchSource(id: 'dg_bgg'),
+                hit: hit('926', title: 'Seafarers'),
+              ),
+              GameSearchSourceHit(
+                source: const GameSearchSource(id: 'dg_bgg'),
+                hit: hit('927', title: 'Cities'),
+              ),
+              GameSearchSourceHit(
+                source: const GameSearchSource(id: 'dg_igdb'),
+                hit: hit('926', title: 'Something else'),
+              ),
+            ])
+            .having((s) => s.resultCount, 'resultCount', 5),
       ],
     );
 
@@ -666,11 +740,11 @@ void main() {
     );
 
     blocTest<GameSearchBloc, GameSearchState>(
-      'a signed-out reach never asks the DataGateways',
+      'a signed-out grant never asks the DataGateways',
       setUp: () =>
           remote.onSearch = (_, _, _) async =>
               GameSearchResults(local: [hit('catan')]),
-      build: () => build(reach: DataGatewaySearchReach.signedOut()),
+      build: () => build(grant: DataGatewaySearchGrant.signedOut()),
       act: (bloc) async {
         bloc.add(const GameSearchQueryChanged('catan'));
         await settle();
@@ -689,7 +763,7 @@ void main() {
     blocTest<GameSearchBloc, GameSearchState>(
       'a 403 on a search that did not ask the DataGateways is not retried',
       setUp: () => remote.onSearch = (_, _, _) async => throw refused,
-      build: () => build(reach: DataGatewaySearchReach.signedOut()),
+      build: () => build(grant: DataGatewaySearchGrant.signedOut()),
       act: (bloc) async {
         bloc.add(const GameSearchQueryChanged('catan'));
         await settle();
@@ -1275,6 +1349,803 @@ void main() {
         const GameSearchLoading(query: 'catan'),
         const GameSearchReady(query: 'catan'),
       ],
+    );
+  });
+
+  group('as each source answers', () {
+    late FakeGameSearchChannel channel;
+    late DataGatewaySearchGrant grant;
+
+    setUp(() => channel = FakeGameSearchChannel());
+
+    final onServer = [hit('g_catan', gameId: 'g_catan')];
+
+    /// A DataGateway's row: [externalId], as [sourceId] found it.
+    GameSearchSourceHit row(String sourceId, String externalId) =>
+        GameSearchSourceHit(
+          source: GameSearchSource(id: sourceId),
+          hit: hit(externalId),
+        );
+
+    blocTest<GameSearchBloc, GameSearchState>(
+      'answers stream in as they arrive, searching until done',
+      build: () => build(stream: channel),
+      act: (bloc) async {
+        bloc.add(const GameSearchQueryChanged('catan'));
+        await settle();
+        final search = channel.searches.single;
+        final local = GameSearchResults(local: onServer);
+        search.answer(local, localDone: true);
+        await settle();
+        final twoSources = local.copyWith(
+          byDataGateway: {
+            'dg_bgg': [hit('926')],
+            'dg_igdb': [hit('c-1')],
+          },
+        );
+        search.answer(twoSources, localDone: true);
+        await settle();
+        // More from the first source, after the second's: its rows stay
+        // together, in the order the sources first answered.
+        search.answer(
+          twoSources.copyWith(
+            byDataGateway: {
+              'dg_bgg': [hit('926'), hit('927')],
+              'dg_igdb': [hit('c-1')],
+            },
+          ),
+          localDone: true,
+          done: true,
+        );
+        await settle();
+      },
+      expect: () => [
+        const GameSearchLoading(query: 'catan'),
+        GameSearchReady(
+          query: 'catan',
+          onServer: onServer,
+          searching: true,
+          streamed: true,
+        ),
+        GameSearchReady(
+          query: 'catan',
+          onServer: onServer,
+          fromSources: [row('dg_bgg', '926'), row('dg_igdb', 'c-1')],
+          searching: true,
+          streamed: true,
+        ),
+        GameSearchReady(
+          query: 'catan',
+          onServer: onServer,
+          fromSources: [
+            row('dg_bgg', '926'),
+            row('dg_bgg', '927'),
+            row('dg_igdb', 'c-1'),
+          ],
+          streamed: true,
+        ),
+      ],
+      verify: (_) {
+        expect(channel.calls, ['search(catan)']);
+        expect(remote.calls, isEmpty);
+      },
+    );
+
+    // The screen says a streamed search's first results and its end from
+    // its footer, and an answer that came whole from the count above the
+    // results (#473), so it reads which this is from the answer itself.
+    blocTest<GameSearchBloc, GameSearchState>(
+      'says which answers came over the stream, search by search',
+      setUp: () {
+        remote.onSearch = (_, _, _) async => GameSearchResults(local: onServer);
+        // The socket can't serve the second search, so REST does.
+        channel.onListen = (search) {
+          if (search.described == 'azul') {
+            search.fail(const RealtimeUnavailableException('down'));
+          }
+        };
+      },
+      build: () => build(stream: channel),
+      act: (bloc) async {
+        bloc.add(const GameSearchQueryChanged('catan'));
+        await settle();
+        // This server's half and the end in one answer: streamed all the
+        // same.
+        channel.searches.single.answer(
+          GameSearchResults(local: onServer),
+          localDone: true,
+          done: true,
+        );
+        await settle();
+        bloc.add(const GameSearchQueryChanged('azul'));
+        await settle();
+        bloc.add(const GameSearchQueryChanged('catan'));
+        await settle();
+        channel.searches.last.answer(
+          GameSearchResults(local: onServer),
+          localDone: true,
+        );
+        await settle();
+      },
+      expect: () => [
+        const GameSearchLoading(query: 'catan'),
+        GameSearchReady(query: 'catan', onServer: onServer, streamed: true),
+        const GameSearchLoading(query: 'azul'),
+        // Over REST, in a session that has a channel: not streamed.
+        GameSearchReady(query: 'azul', onServer: onServer),
+        const GameSearchLoading(query: 'catan'),
+        GameSearchReady(
+          query: 'catan',
+          onServer: onServer,
+          searching: true,
+          streamed: true,
+        ),
+      ],
+      verify: (_) {
+        expect(channel.calls, [
+          'search(catan)',
+          'search(azul)',
+          'search(catan)',
+          // Still running as the bloc closes.
+          'cancel(catan)',
+        ]);
+        expect(remote.calls, ['search(azul)']);
+      },
+    );
+
+    blocTest<GameSearchBloc, GameSearchState>(
+      "loading lasts until this server's half finishes",
+      build: () => build(stream: channel),
+      act: (bloc) async {
+        bloc.add(const GameSearchQueryChanged('catan'));
+        await settle();
+        final search = channel.searches.single;
+        final local = GameSearchResults(local: onServer);
+        search.answer(local);
+        await settle();
+        final found = local.copyWith(
+          byDataGateway: {
+            'dg_bgg': [hit('926')],
+          },
+        );
+        search.answer(found);
+        await settle();
+        search.answer(found, localDone: true);
+        await settle();
+      },
+      expect: () => [
+        const GameSearchLoading(query: 'catan'),
+        GameSearchReady(
+          query: 'catan',
+          onServer: onServer,
+          fromSources: [row('dg_bgg', '926')],
+          searching: true,
+          streamed: true,
+        ),
+      ],
+    );
+
+    // The server reports a game it imported again under the DataGateway it
+    // came from (backend#662). Shown before the server's own half, its row
+    // would go again when that half lists the game.
+    blocTest<GameSearchBloc, GameSearchState>(
+      "DataGateway rows wait for this server's half",
+      build: () => build(stream: channel),
+      act: (bloc) async {
+        bloc.add(const GameSearchQueryChanged('catan'));
+        await settle();
+        final search = channel.searches.single;
+        final early = GameSearchResults(
+          byDataGateway: {
+            'dg_bgg': [hit('13', gameId: 'g1')],
+          },
+        );
+        search.answer(early);
+        await settle();
+        final both = early.copyWith(local: [hit('g1', gameId: 'g1')]);
+        search.answer(both);
+        await settle();
+        search.answer(both, localDone: true);
+        await settle();
+        search.answer(both, localDone: true, done: true);
+        await settle();
+      },
+      // No state ever lists the DataGateway's g1.
+      expect: () => [
+        const GameSearchLoading(query: 'catan'),
+        GameSearchReady(
+          query: 'catan',
+          onServer: [hit('g1', gameId: 'g1')],
+          searching: true,
+          streamed: true,
+        ),
+        GameSearchReady(
+          query: 'catan',
+          onServer: [hit('g1', gameId: 'g1')],
+          streamed: true,
+        ),
+      ],
+    );
+
+    blocTest<GameSearchBloc, GameSearchState>(
+      'a cut-short answer ends not searching, marked cutShort',
+      build: () => build(stream: channel),
+      act: (bloc) async {
+        bloc.add(const GameSearchQueryChanged('catan'));
+        await settle();
+        final local = GameSearchResults(local: onServer);
+        channel.searches.single
+          ..answer(local, localDone: true)
+          ..answer(local, localDone: true, done: true, cutShort: true);
+        await settle();
+      },
+      expect: () => [
+        const GameSearchLoading(query: 'catan'),
+        GameSearchReady(
+          query: 'catan',
+          onServer: onServer,
+          searching: true,
+          streamed: true,
+        ),
+        GameSearchReady(
+          query: 'catan',
+          onServer: onServer,
+          cutShort: true,
+          streamed: true,
+        ),
+      ],
+    );
+
+    blocTest<GameSearchBloc, GameSearchState>(
+      'a new query cancels the running stream before the next search starts',
+      build: () => build(stream: channel),
+      act: (bloc) async {
+        bloc.add(const GameSearchQueryChanged('cat'));
+        await settle();
+        final older = channel.searches.single
+          ..answer(GameSearchResults(local: [hit('older')]), localDone: true);
+        await settle();
+        bloc.add(const GameSearchQueryChanged('catan'));
+        await settle();
+        // The cancelled search's last answer reaches no one.
+        older.answer(
+          GameSearchResults(local: [hit('older'), hit('late')]),
+          localDone: true,
+          done: true,
+        );
+        await settle();
+        channel.searches.last.answer(
+          GameSearchResults(local: [hit('newer')]),
+          localDone: true,
+          done: true,
+        );
+        await settle();
+      },
+      expect: () => [
+        const GameSearchLoading(query: 'cat'),
+        GameSearchReady(
+          query: 'cat',
+          onServer: [hit('older')],
+          searching: true,
+          streamed: true,
+        ),
+        const GameSearchLoading(query: 'catan'),
+        GameSearchReady(
+          query: 'catan',
+          onServer: [hit('newer')],
+          streamed: true,
+        ),
+      ],
+      verify: (_) => expect(channel.calls, [
+        'search(cat)',
+        'cancel(cat)',
+        'search(catan)',
+      ]),
+    );
+
+    blocTest<GameSearchBloc, GameSearchState>(
+      'a filter change mid-stream cancels it',
+      build: () => build(stream: channel),
+      act: (bloc) async {
+        bloc.add(const GameSearchQueryChanged('catan'));
+        await settle();
+        final unfiltered = channel.searches.single
+          ..answer(GameSearchResults(local: [hit('older')]), localDone: true);
+        await settle();
+        bloc.add(const GameSearchFilterChanged(_expansions));
+        await settle();
+        unfiltered.answer(
+          GameSearchResults(local: [hit('older'), hit('late')]),
+          localDone: true,
+          done: true,
+        );
+        await settle();
+        channel.searches.last.answer(
+          GameSearchResults(local: [hit('newer')]),
+          localDone: true,
+          done: true,
+        );
+        await settle();
+      },
+      expect: () => [
+        const GameSearchLoading(query: 'catan'),
+        GameSearchReady(
+          query: 'catan',
+          onServer: [hit('older')],
+          searching: true,
+          streamed: true,
+        ),
+        const GameSearchLoading(query: 'catan', filter: _expansions),
+        GameSearchReady(
+          query: 'catan',
+          onServer: [hit('newer')],
+          filter: _expansions,
+          streamed: true,
+        ),
+      ],
+      verify: (_) => expect(channel.calls, [
+        'search(catan)',
+        'cancel(catan)',
+        'search(catan [expansion])',
+      ]),
+    );
+
+    // Its handler was following the answers still arriving, and the change
+    // cancelled it, as one waiting on a REST answer is.
+    blocTest<GameSearchBloc, GameSearchState>(
+      'retyping the same text while its answers arrive keeps them arriving',
+      build: () => build(stream: channel),
+      act: (bloc) async {
+        bloc.add(const GameSearchQueryChanged('catan'));
+        await settle();
+        final search = channel.searches.single
+          ..answer(GameSearchResults(local: onServer), localDone: true);
+        await settle();
+        // A trailing space, then another: each change cancels the handler
+        // showing the search, and the next takes it over.
+        bloc.add(const GameSearchQueryChanged('catan '));
+        await settle();
+        bloc.add(const GameSearchQueryChanged('catan  '));
+        await settle();
+        search.answer(
+          GameSearchResults(
+            local: onServer,
+            byDataGateway: {
+              'dg_bgg': [hit('926')],
+            },
+          ),
+          localDone: true,
+          done: true,
+        );
+        await settle();
+      },
+      expect: () => [
+        const GameSearchLoading(query: 'catan'),
+        GameSearchReady(
+          query: 'catan',
+          onServer: onServer,
+          searching: true,
+          streamed: true,
+        ),
+        GameSearchReady(
+          query: 'catan',
+          onServer: onServer,
+          fromSources: [row('dg_bgg', '926')],
+          streamed: true,
+        ),
+      ],
+      verify: (_) => expect(channel.calls, ['search(catan)']),
+    );
+
+    blocTest<GameSearchBloc, GameSearchState>(
+      'other text typed after a hand-over still starts its own search',
+      build: () => build(stream: channel),
+      act: (bloc) async {
+        bloc.add(const GameSearchQueryChanged('catan'));
+        await settle();
+        channel.searches.single.answer(
+          GameSearchResults(local: onServer),
+          localDone: true,
+        );
+        await settle();
+        bloc.add(const GameSearchQueryChanged('catan '));
+        await settle();
+        bloc.add(const GameSearchQueryChanged('azul'));
+        await settle();
+        channel.searches.last.answer(
+          GameSearchResults(local: [hit('g_azul', gameId: 'g_azul')]),
+          localDone: true,
+          done: true,
+        );
+        await settle();
+      },
+      expect: () => [
+        const GameSearchLoading(query: 'catan'),
+        GameSearchReady(
+          query: 'catan',
+          onServer: onServer,
+          searching: true,
+          streamed: true,
+        ),
+        const GameSearchLoading(query: 'azul'),
+        GameSearchReady(
+          query: 'azul',
+          onServer: [hit('g_azul', gameId: 'g_azul')],
+          streamed: true,
+        ),
+      ],
+      verify: (_) => expect(channel.calls, [
+        'search(catan)',
+        'cancel(catan)',
+        'search(azul)',
+      ]),
+    );
+
+    blocTest<GameSearchBloc, GameSearchState>(
+      'names that arrive while answers do leave it searching',
+      build: () {
+        lateNames = Completer();
+        return build(stream: channel, sourceNames: () => lateNames.future);
+      },
+      act: (bloc) async {
+        bloc.add(const GameSearchQueryChanged('catan'));
+        await settle();
+        channel.searches.single.answer(
+          GameSearchResults(
+            local: onServer,
+            byDataGateway: {
+              'dg_bgg': [hit('926')],
+            },
+          ),
+          localDone: true,
+        );
+        await settle();
+        lateNames.complete({'dg_bgg': 'BoardGameGeek'});
+        await settle();
+      },
+      skip: 2,
+      expect: () => [
+        isA<GameSearchReady>()
+            .having(
+              (s) => s.fromSources.single.source.name,
+              'name',
+              'BoardGameGeek',
+            )
+            .having((s) => s.searching, 'searching', isTrue)
+            .having((s) => s.streamed, 'streamed', isTrue),
+      ],
+    );
+
+    blocTest<GameSearchBloc, GameSearchState>(
+      'a failed socket searches over REST without waiting',
+      setUp: () {
+        remote.onSearch = (_, _, _) async => GameSearchResults(local: onServer);
+        // A lease that has already failed to connect answers at once.
+        channel.onListen = (search) =>
+            search.fail(const RealtimeUnavailableException('down'));
+      },
+      build: () => build(stream: channel),
+      act: (bloc) async {
+        bloc.add(const GameSearchQueryChanged('catan'));
+        // Turns of the event queue, which no timer outlasts.
+        await settle();
+      },
+      expect: () => [
+        const GameSearchLoading(query: 'catan'),
+        GameSearchReady(query: 'catan', onServer: onServer),
+      ],
+      verify: (_) {
+        expect(channel.calls, ['search(catan)']);
+        expect(remote.calls, ['search(catan)']);
+      },
+    );
+
+    blocTest<GameSearchBloc, GameSearchState>(
+      "a socket lost after only a DataGateway's answer searches over REST",
+      setUp: () =>
+          remote.onSearch = (_, _, _) async =>
+              GameSearchResults(local: onServer),
+      build: () => build(stream: channel),
+      act: (bloc) async {
+        bloc.add(const GameSearchQueryChanged('catan'));
+        await settle();
+        // Not shown: it waits for this server's half, which never comes.
+        channel.searches.single
+          ..answer(
+            GameSearchResults(
+              byDataGateway: {
+                'dg_bgg': [hit('926')],
+              },
+            ),
+          )
+          ..fail(const RealtimeUnavailableException('dropped'));
+        await settle();
+      },
+      expect: () => [
+        const GameSearchLoading(query: 'catan'),
+        GameSearchReady(query: 'catan', onServer: onServer),
+      ],
+      verify: (_) => expect(remote.calls, ['search(catan)']),
+    );
+
+    blocTest<GameSearchBloc, GameSearchState>(
+      'a 403 on the stream retries the stream without the DataGateways',
+      setUp: () => channel.onListen = (search) {
+        if (search.described == 'catan') {
+          search.fail(const GamesForbiddenException('403', apiMessage: 'm'));
+        }
+      },
+      build: () =>
+          build(stream: channel, grant: grant = DataGatewaySearchGrant()),
+      act: (bloc) async {
+        bloc.add(const GameSearchQueryChanged('catan'));
+        await settle();
+        channel.searches.last.answer(
+          GameSearchResults(local: onServer),
+          localDone: true,
+          done: true,
+        );
+        await settle();
+      },
+      expect: () => [
+        const GameSearchLoading(query: 'catan'),
+        GameSearchReady(
+          query: 'catan',
+          onServer: onServer,
+          dataGatewaysRefused: true,
+          refusalMessage: 'm',
+          streamed: true,
+        ),
+      ],
+      verify: (_) {
+        expect(channel.calls, ['search(catan)', 'search(catan -external)']);
+        expect(remote.calls, isEmpty);
+        // The session remembers it, as it does a refusal over REST.
+        expect(grant.mayAsk, isFalse);
+      },
+    );
+
+    blocTest<GameSearchBloc, GameSearchState>(
+      'a 403 retry the socket cannot serve goes over REST',
+      setUp: () {
+        remote.onSearch = (_, _, _) async => GameSearchResults(local: onServer);
+        channel.onListen = (search) => search.fail(
+          search.described == 'catan'
+              ? const GamesForbiddenException('403', apiMessage: 'm')
+              : const RealtimeUnavailableException('down'),
+        );
+      },
+      build: () => build(stream: channel),
+      act: (bloc) async {
+        bloc.add(const GameSearchQueryChanged('catan'));
+        await settle();
+      },
+      expect: () => [
+        const GameSearchLoading(query: 'catan'),
+        GameSearchReady(
+          query: 'catan',
+          onServer: onServer,
+          dataGatewaysRefused: true,
+          refusalMessage: 'm',
+        ),
+      ],
+      verify: (_) {
+        expect(channel.calls, ['search(catan)', 'search(catan -external)']);
+        expect(remote.calls, ['search(catan -external)']);
+      },
+    );
+
+    // A stream followed for the superseded search's retry would take the
+    // newer search's place as the one the next search stops.
+    blocTest<GameSearchBloc, GameSearchState>(
+      "a superseded search's retry goes over REST, and the next search stops "
+      "the newer search's stream",
+      setUp: () {
+        superseded = Completer();
+        addTearDown(() {
+          if (!superseded.isCompleted) {
+            superseded.complete(const GameSearchResults());
+          }
+        });
+        // The socket can't serve the first search, so REST does.
+        channel.onListen = (search) {
+          if (search.described == 'old') {
+            search.fail(const RealtimeUnavailableException('down'));
+          }
+        };
+        remote.onSearch = (_, _, includeExternal) => includeExternal
+            ? superseded.future
+            : Future.value(GameSearchResults(local: [hit('older')]));
+      },
+      build: () => build(stream: channel),
+      act: (bloc) async {
+        bloc.add(const GameSearchQueryChanged('old'));
+        await settle();
+        bloc.add(const GameSearchQueryChanged('new'));
+        await settle();
+        superseded.completeError(
+          const GamesForbiddenException('403', apiMessage: 'm'),
+        );
+        await settle();
+        bloc.add(const GameSearchQueryChanged('next'));
+        await settle();
+      },
+      expect: () => [
+        const GameSearchLoading(query: 'old'),
+        const GameSearchLoading(query: 'new'),
+        const GameSearchLoading(query: 'next'),
+      ],
+      verify: (_) {
+        expect(remote.calls, ['search(old)', 'search(old -external)']);
+        expect(channel.calls, [
+          'search(old)',
+          'search(new)',
+          'cancel(new)',
+          'search(next -external)',
+          // Closing the bloc stops the last.
+          'cancel(next -external)',
+        ]);
+      },
+    );
+
+    blocTest<GameSearchBloc, GameSearchState>(
+      'a stream failure after answers searches this device',
+      build: () => build(
+        stream: channel,
+        cache: FakeGamesCache([game('g_catan', title: 'Catan')]),
+      ),
+      act: (bloc) async {
+        bloc.add(const GameSearchQueryChanged('catan'));
+        await settle();
+        final search = channel.searches.single
+          ..answer(
+            GameSearchResults(local: [hit('streamed')]),
+            localDone: true,
+          );
+        await settle();
+        search.fail(unreachable());
+        await settle();
+      },
+      expect: () => [
+        const GameSearchLoading(query: 'catan'),
+        GameSearchReady(
+          query: 'catan',
+          onServer: [hit('streamed')],
+          searching: true,
+          streamed: true,
+        ),
+        // The device's answer comes whole: not streamed.
+        isA<GameSearchReady>()
+            .having((s) => s.fromCache, 'fromCache', isTrue)
+            .having((s) => s.searching, 'searching', isFalse)
+            .having((s) => s.streamed, 'streamed', isFalse)
+            .having((s) => s.onServer.map((h) => h.gameId), 'gameIds', [
+              'g_catan',
+            ]),
+      ],
+      verify: (_) => expect(remote.calls, isEmpty),
+    );
+
+    test('close cancels the running search and closes the channel', () async {
+      final bloc = build(stream: channel);
+      final states = <GameSearchState>[];
+      final heard = bloc.stream.listen(states.add);
+      addTearDown(heard.cancel);
+      bloc.add(const GameSearchQueryChanged('catan'));
+      await settle();
+      final search = channel.searches.single
+        ..answer(GameSearchResults(local: onServer), localDone: true);
+      await settle();
+
+      await bloc.close();
+      // Nothing reaches a closed bloc.
+      search.answer(
+        GameSearchResults(local: [...onServer, hit('late')]),
+        localDone: true,
+        done: true,
+      );
+      await settle();
+
+      expect(channel.calls, ['search(catan)', 'cancel(catan)']);
+      expect(search.cancelled, isTrue);
+      expect(channel.closes, 1);
+      expect(states, [
+        const GameSearchLoading(query: 'catan'),
+        GameSearchReady(
+          query: 'catan',
+          onServer: onServer,
+          searching: true,
+          streamed: true,
+        ),
+      ]);
+    });
+
+    test('a channel that fails to close still leaves the bloc closed, and '
+        'is logged rather than thrown', () async {
+      // The screen's provider doesn't await close, so a throw here would
+      // reach the uncaught-error hook and show the user a crash prompt.
+      final gone = StreamController<String>.broadcast();
+      addTearDown(gone.close);
+      final failure = StateError('the lease would not release');
+      channel.closeError = failure;
+      final logger = _WarnedLogger();
+      final bloc = build(stream: channel, gone: gone.stream, logger: logger);
+
+      await bloc.close();
+
+      expect(channel.closes, 1);
+      expect(bloc.isClosed, isTrue);
+      expect(gone.hasListener, isFalse);
+      expect(logger.warned, [same(failure)]);
+    });
+
+    test('a REST answer that lands as the bloc closes is not shown', () async {
+      final pending = Completer<GameSearchResults>();
+      remote.onSearch = (_, _, _) => pending.future;
+      final bloc = build();
+      final states = <GameSearchState>[];
+      final heard = bloc.stream.listen(states.add);
+      addTearDown(heard.cancel);
+      bloc.add(const GameSearchQueryChanged('catan'));
+      await settle();
+
+      final closed = bloc.close();
+      pending.complete(GameSearchResults(local: onServer));
+      await closed;
+
+      expect(states, [const GameSearchLoading(query: 'catan')]);
+    });
+
+    test(
+      'a search that reaches the bloc as it closes starts nothing',
+      () async {
+        final bloc = build(stream: channel);
+        final states = <GameSearchState>[];
+        final heard = bloc.stream.listen(states.add);
+        addTearDown(heard.cancel);
+        bloc.add(const GameSearchQueryChanged('catan'));
+        await settle();
+        channel.searches.single.answer(
+          GameSearchResults(local: onServer),
+          localDone: true,
+          done: true,
+        );
+        await settle();
+
+        // Added in the same turn as the close, so its handler still runs.
+        bloc.add(const GameSearchFilterChanged(_expansions));
+        await bloc.close();
+
+        expect(channel.calls, ['search(catan)']);
+        expect(states, [
+          const GameSearchLoading(query: 'catan'),
+          GameSearchReady(query: 'catan', onServer: onServer, streamed: true),
+        ]);
+      },
+    );
+
+    blocTest<GameSearchBloc, GameSearchState>(
+      'with no channel, REST answers as one finished answer',
+      setUp: () => remote.onSearch = (_, _, _) async => GameSearchResults(
+        local: onServer,
+        byDataGateway: {
+          'dg_bgg': [hit('926')],
+        },
+      ),
+      build: build,
+      act: (bloc) async {
+        bloc.add(const GameSearchQueryChanged('catan'));
+        await settle();
+      },
+      expect: () => [
+        const GameSearchLoading(query: 'catan'),
+        isA<GameSearchReady>()
+            .having((s) => s.resultCount, 'resultCount', 2)
+            .having((s) => s.searching, 'searching', isFalse)
+            .having((s) => s.cutShort, 'cutShort', isFalse)
+            .having((s) => s.streamed, 'streamed', isFalse),
+      ],
+      verify: (_) => expect(remote.calls, ['search(catan)']),
     );
   });
 }

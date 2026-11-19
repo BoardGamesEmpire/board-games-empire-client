@@ -271,6 +271,37 @@ void main() {
     });
   });
 
+  // The one rule for the token every request and the session's socket send
+  // (#98, #473): TokenInterceptor and the realtime endpoint both read it.
+  group('StoredSession.tokenToSendAt', () {
+    StoredSession session({DateTime? expiresAt}) => StoredSession(
+      token: 'tok-abc',
+      persistedAt: persistedAt,
+      expiresAt: expiresAt,
+    );
+
+    test('sends the token while the expiry is unknown: the server '
+        'decides', () {
+      expect(session().tokenToSendAt(DateTime.utc(2030)), 'tok-abc');
+    });
+
+    test('sends the token until the confirmed expiry has passed', () {
+      final stored = session(expiresAt: confirmedExpiry);
+
+      expect(stored.tokenToSendAt(DateTime.utc(2026, 1, 2)), 'tok-abc');
+      expect(stored.tokenToSendAt(confirmedExpiry), 'tok-abc');
+    });
+
+    test('sends none once the session is known to be dead', () {
+      expect(
+        session(
+          expiresAt: confirmedExpiry,
+        ).tokenToSendAt(confirmedExpiry.add(const Duration(seconds: 1))),
+        isNull,
+      );
+    });
+  });
+
   group('sign-out latch (#37 / PR #99)', () {
     test('retrieve returns null after clear, even if the payload physically '
         'survives a failed delete', () async {

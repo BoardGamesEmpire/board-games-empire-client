@@ -6,6 +6,7 @@ library;
 
 import 'package:access/access.dart';
 import 'package:di/di.dart';
+import 'package:dio_network/dio_network.dart';
 import 'package:drift_storage/drift_storage.dart';
 import 'package:events/events.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -24,23 +25,37 @@ void main() {
       // Order is structural: the re-hydrate registry has to exist before any
       // hydrating installer can register itself with it (#302), and each
       // hydrate installer resolves a repository the tier above it registers.
-      expect(installers, hasLength(9));
+      expect(installers, hasLength(10));
       expect(installers[0], isA<SessionRehydratorInstaller>());
-      expect(installers[1], isA<UserSessionScopeInstaller>());
-      expect(installers[2], isA<HouseholdHydrateInstaller>());
-      expect(installers[3], isA<GameCollectionHydrateInstaller>());
-      expect(installers[4], isA<EventHydrateInstaller>());
-      expect(installers[5], isA<CallerAccessInstaller>());
-      expect(installers[6], isA<DataGatewaySearchReachInstaller>());
-      expect(installers[7], isA<SyncSenderInstaller>());
-      expect(installers[8], isA<SyncQueueDrainInstaller>());
+      expect(installers[1], isA<RealtimeInstaller>());
+      expect(installers[2], isA<UserSessionScopeInstaller>());
+      expect(installers[3], isA<HouseholdHydrateInstaller>());
+      expect(installers[4], isA<GameCollectionHydrateInstaller>());
+      expect(installers[5], isA<EventHydrateInstaller>());
+      expect(installers[6], isA<CallerAccessInstaller>());
+      expect(installers[7], isA<DataGatewaySearchGrantInstaller>());
+      expect(installers[8], isA<SyncSenderInstaller>());
+      expect(installers[9], isA<SyncQueueDrainInstaller>());
     });
 
-    test('has one DataGatewaySearchReachInstaller, so a refusal ends with '
+    test('has one RealtimeInstaller, after the rehydrator, so the session owns '
+        'its socket (#473)', () {
+      final installers = buildWebUserScopeInstallers();
+
+      expect(installers.whereType<RealtimeInstaller>(), hasLength(1));
+      expect(
+        installers.indexWhere((i) => i is RealtimeInstaller),
+        greaterThan(
+          installers.indexWhere((i) => i is SessionRehydratorInstaller),
+        ),
+      );
+    });
+
+    test('has one DataGatewaySearchGrantInstaller, so a refusal ends with '
         'the session (#795)', () {
       expect(
         buildWebUserScopeInstallers()
-            .whereType<DataGatewaySearchReachInstaller>(),
+            .whereType<DataGatewaySearchGrantInstaller>(),
         hasLength(1),
       );
     });

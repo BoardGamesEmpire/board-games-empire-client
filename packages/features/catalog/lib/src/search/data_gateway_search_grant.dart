@@ -8,13 +8,13 @@
 ///
 /// One lives for a user session on a server: the installer registers a new
 /// one on each sign-in, so a user whose role changes is asked again.
-final class DataGatewaySearchReach {
+final class DataGatewaySearchGrant {
   /// A signed-in session, which asks the DataGateways until one refuses.
-  DataGatewaySearchReach() : _mayAsk = true;
+  DataGatewaySearchGrant() : _mayAsk = true;
 
   /// An anonymous session, which never asks: it may not read DataGateways, so
   /// the request would only be refused (#795).
-  DataGatewaySearchReach.signedOut() : _mayAsk = false;
+  DataGatewaySearchGrant.signedOut() : _mayAsk = false;
 
   bool _mayAsk;
   String? _serverMessage;

@@ -39,6 +39,10 @@ import 'package:observability/observability.dart' show FeedbackTransport;
 /// inherit the interceptor stack — including token attachment — without any
 /// construction-order dependency.
 ///
+/// Beside the Dio, it registers the [RealtimeEndpoint] the session's socket
+/// connects with, whose token comes from the same [TokenStorageService]
+/// (#473).
+///
 /// Lifecycle: the container owns the shared [Dio] and closes it on dispose; the
 /// repository only closes its own resources (it must not close a [Dio] that
 /// other repositories share).
@@ -76,7 +80,23 @@ void registerServerNetwork({
     serverId: config.bgeServerId,
     tombstones: sessionTombstones,
   );
-  container.registerSingleton<TokenStorageService>(tokenStorage);
+  container
+    ..registerSingleton<TokenStorageService>(tokenStorage)
+    // #473: where the session's socket connects, and the token its handshake
+    // sends. The server scope holds it, and the user scope's RealtimeInstaller
+    // builds the session's connection from it. The token is read on every
+    // connect and reconnect, never once here, as the stored session can change
+    // or expire between connects. The expiry rule is the one TokenInterceptor
+    // reads, StoredSession.tokenToSendAt: a session known to be dead sends no
+    // token, and the server refuses the handshake, which leaves search on
+    // REST.
+    ..registerSingleton<RealtimeEndpoint>(
+      RealtimeEndpoint(
+        server: Uri.parse(config.serverUrl),
+        token: () async =>
+            (await tokenStorage.retrieve())?.tokenToSendAt(clock.nowUtc()),
+      ),
+    );
 
   const factory = DefaultDioFactory();
   container.registerSingleton<DioFactory>(factory);

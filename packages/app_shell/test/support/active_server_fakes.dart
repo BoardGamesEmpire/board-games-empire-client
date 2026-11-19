@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:bge_test_support/domain.dart';
 import 'package:di/di.dart';
 import 'package:events/events.dart';
-import 'package:game_catalog/game_catalog.dart' show DataGatewaySearchReach;
+import 'package:game_catalog/game_catalog.dart' show DataGatewaySearchGrant;
 import 'package:game_collection/game_collection.dart';
 import 'package:household/household.dart';
 import 'package:interfaces/orchestration.dart';
@@ -190,7 +190,8 @@ ActiveServer buildActiveServer(
   GamesRemoteDataSource? gamesRemoteDataSource,
   GameRepository? gameRepository,
   ListLayoutRepository? listLayoutRepository,
-  DataGatewaySearchReach? dataGatewaySearchReach,
+  DataGatewaySearchGrant? dataGatewaySearchGrant,
+  GameSearchStreamSource? gameSearchStreamSource,
   String serverId = 'server-uuid-1',
 }) {
   final container = DependencyContainerImpl()
@@ -314,10 +315,13 @@ ActiveServer buildActiveServer(
   if (listLayoutRepository != null) {
     container.registerSingleton<ListLayoutRepository>(listLayoutRepository);
   }
-  if (dataGatewaySearchReach != null) {
-    container.registerSingleton<DataGatewaySearchReach>(
-      dataGatewaySearchReach,
+  if (dataGatewaySearchGrant != null) {
+    container.registerSingleton<DataGatewaySearchGrant>(
+      dataGatewaySearchGrant,
     );
+  }
+  if (gameSearchStreamSource != null) {
+    container.registerSingleton<GameSearchStreamSource>(gameSearchStreamSource);
   }
   return ActiveServer(
     serverId: serverId,

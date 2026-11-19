@@ -15,6 +15,7 @@ import 'package:dio_network/dio_network.dart'
         HouseholdRemoteDataSourceImpl,
         NetworkLogInterceptor,
         NotificationRemoteDataSourceImpl,
+        RealtimeEndpoint,
         SystemSettingsRemoteDataSourceImpl,
         UserProfileRemoteDataSourceImpl,
         UserRemoteDataSourceImpl;
@@ -53,9 +54,10 @@ import 'package:web_network/src/network/web_dio_factory.dart';
 /// [ServerIdentity] directly.
 ///
 /// The browser owns the session cookie, so there is no `TokenStorageService`
-/// and no `TokenInterceptor`. The base URL comes from [originProvider],
-/// which defaults to the browser's current origin ([Uri.base] has no origin
-/// on the VM, which is also why tests inject a fixed one).
+/// and no `TokenInterceptor`, and the [RealtimeEndpoint] carries no token
+/// (#473). The base URL comes from [originProvider], which defaults to the
+/// browser's current origin ([Uri.base] has no origin on the VM, which is also
+/// why tests inject a fixed one).
 ///
 /// The skew-corrected clock (#118) is registered here rather than in a
 /// clock-specific installer, for the same reason as the native leg: the
@@ -105,8 +107,9 @@ void registerServerNetworkWeb({
     dispose: (_) => clock.dispose(),
   );
 
+  final origin = originProvider();
   final dio = factory.buildForServer(
-    baseUrl: originProvider(),
+    baseUrl: origin,
     interceptors: [
       // #282: permanent network observability, first of the three installed
       // here so it observes every outgoing request and its resolution — the
@@ -134,7 +137,15 @@ void registerServerNetworkWeb({
       WebClockSkewDiagnosticInterceptor(),
     ],
   );
-  container.registerSingleton<Dio>(dio, dispose: (_) => dio.close());
+  container
+    ..registerSingleton<Dio>(dio, dispose: (_) => dio.close())
+    // #473: where the session's socket connects: this origin, as for the Dio.
+    // The user scope's RealtimeInstaller builds the session's connection from
+    // it. No token: the browser sends the session cookie with the socket's
+    // upgrade request, as it does with every request to the origin.
+    ..registerSingleton<RealtimeEndpoint>(
+      RealtimeEndpoint(server: Uri.parse(origin)),
+    );
 
   final authRepository = WebAuthRepositoryImpl(
     identity: identity,

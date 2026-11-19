@@ -4,24 +4,42 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:game_catalog/src/bloc/debounce_restartable.dart';
 import 'package:game_catalog/src/bloc/game_search_event.dart';
 import 'package:game_catalog/src/bloc/game_search_state.dart';
-import 'package:game_catalog/src/search/data_gateway_search_reach.dart';
+import 'package:game_catalog/src/search/data_gateway_search_grant.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
 
-/// Drives the search screen (#42): one page of `GET /games/search`, shown in
-/// two sections.
+/// Drives the search screen (#42): one page of a game search, shown in two
+/// sections.
 ///
-/// ## One page, over REST
+/// ## One page, as it arrives
 ///
-/// The search asks once and shows what comes back. There is no "load more":
-/// the server puts no order on its local half and sends no has-more signal,
-/// so a second page could repeat or skip results (backend#792). Streaming
-/// over the WebSocket is #473.
+/// The search asks for one page and shows what comes back. There is no "load
+/// more": the server puts no order on its local half and sends no has-more
+/// signal, so a second page could repeat or skip results (backend#792).
 ///
-/// The server waits for every DataGateway, for up to 15 seconds, before it
-/// answers, so [GameSearchLoading] can last that long.
+/// Given a [GameSearchChannel], the page streams in over the server's socket
+/// as each source answers, so this server's own results stop waiting on the
+/// DataGateways (#473). [GameSearchLoading] lasts until this server's half
+/// has finished, which is the fast one, and each answer from then on is
+/// shown as it comes, [GameSearchReady.searching] until the last. The
+/// DataGateways' results wait for that half: one for a game the server holds
+/// would otherwise show, then go when the server's half listed the game. A
+/// search that stops short of hearing from every source keeps what it found,
+/// marked [GameSearchReady.cutShort]: the connection dropped, nothing came
+/// for too long, or the server's search of the DataGateways failed as a
+/// whole. Every answer that came over the socket is
+/// [GameSearchReady.streamed], its last included, so the screen can tell it
+/// from one that came whole. The bloc owns the channel, and closes it with
+/// itself.
+///
+/// Without a channel, or when the socket can't serve a search before this
+/// server's half has answered, the search goes over REST, as one finished
+/// answer, not streamed. Nothing of it is on screen by then, as a
+/// DataGateway's answer waits for that half. The server waits for every
+/// DataGateway, for up to 15 seconds, before it answers, so
+/// [GameSearchLoading] can last that long there.
 ///
 /// ## Two sections
 ///
@@ -29,6 +47,14 @@ import 'package:observability/observability.dart';
 /// results follow, in [GameSearchReady.fromSources], less any game the
 /// first section already lists: the server reports a game it imported both
 /// as its own and again under the DataGateway it came from (backend#662).
+/// Each DataGateway's results stay together, in the order
+/// [GameSearchResults.byDataGateway] holds them, so one that arrives later
+/// joins the end of its own DataGateway's run (#473).
+///
+/// Each section lists a result once. A result its source sends again, by
+/// the same `externalId`, is dropped where it repeats, and the first copy
+/// stands for both. The screen keys its rows by those ids, and a keyed list
+/// needs each key once, but nothing below the bloc drops a repeat (#473).
 ///
 /// A DataGateway is named only where `sourceNames` can name it. The shell
 /// passes one only when the user may read DataGateways, which ordinary users
@@ -46,9 +72,17 @@ import 'package:observability/observability.dart';
 /// takes a sequence number, and an answer that lands after a newer search
 /// started is dropped, as `DataGatewayListBloc`'s reads are.
 ///
+/// Each search also cancels the stream of the one before it, whichever event
+/// started either, so the server stops a search no one is waiting for and
+/// no more of its answers arrive (#473). A REST request can't be cancelled:
+/// the sequence number drops its answer.
+///
 /// A query change whose text, trimmed, is what is already shown searches
-/// nothing. One that arrives while that search is still running searches
-/// again, because the change cancelled the handler that was waiting for it.
+/// nothing. Nor does one that arrives while the search for that text is
+/// still running, its answers still arriving included: the change has
+/// cancelled the handler that was showing them, so its own handler takes
+/// that over, and waits for the search's end in its place. So a trailing
+/// space neither clears the rows on screen nor asks the server again.
 ///
 /// Clearing the text skips the debounce: the screen goes back to
 /// [GameSearchIdle] at once, rather than showing the old text's results
@@ -65,7 +99,7 @@ import 'package:observability/observability.dart';
 ///
 /// A user who may read the server's games but not its DataGateways is
 /// refused (403) by a search that asks for them (#795). So a search asks
-/// them only while the session's [DataGatewaySearchReach] says it may, and a
+/// them only while the session's [DataGatewaySearchGrant] says it may, and a
 /// 403 on a search that asked is retried once without them. If the retry
 /// answers, the session remembers the refusal, the answer is shown with
 /// [GameSearchReady.dataGatewaysRefused] and the server's own
@@ -73,11 +107,20 @@ import 'package:observability/observability.dart';
 /// from the start. A retry that is refused too is the refusal below; one
 /// that fails otherwise is the failure below, and remembers nothing.
 ///
-/// A retry whose search has been superseded shows nothing, but still
-/// remembers the refusal: the server did say it, whoever is waiting. A
-/// search superseded before its 403 lands still retries, for much the same
-/// reason: the 403 may be the catalog's, and a refused catalog is forgotten
-/// whoever is waiting (#557).
+/// The socket's 403 means what REST's does, so a search over either is
+/// retried the same way, and the retry, like any search, goes over the
+/// socket where it can and REST where it can't (#473). The refusal is
+/// remembered once the retry answers.
+///
+/// A retry over REST whose search has been superseded shows nothing, but
+/// still remembers the refusal when it answers: the server did say it,
+/// whoever is waiting. One over the socket is cancelled with its search, so
+/// it remembers the refusal only if it had answered by then.
+///
+/// A search superseded before its 403 lands still retries, quietly and
+/// always over REST: the 403 may be the catalog's, and a refused catalog is
+/// forgotten whoever is waiting (#557). A stream followed for it would take
+/// the newer search's place as the one the next search stops.
 ///
 /// ## When the server refuses
 ///
@@ -97,18 +140,23 @@ import 'package:observability/observability.dart';
 /// server's rules, and reports them as [GameSearchReady.fromCache]. Without a
 /// cache, or when that read fails too, it reports [GameSearchFailed].
 ///
+/// A stream that fails after its first answers fails the same way, and what
+/// it showed gives way to the cache's answer (#473). One that ends early
+/// has not failed: see "One page, as it arrives".
+///
 /// The cache holds no platform types, so a search narrowed by platform type
 /// finds nothing there rather than showing games it cannot vouch for.
 class GameSearchBloc extends Bloc<GameSearchEvent, GameSearchState> {
   GameSearchBloc({
     required this._remote,
     this._cache,
+    this._stream,
     Future<Map<String, String>> Function()? sourceNames,
     Stream<String>? gone,
-    DataGatewaySearchReach? reach,
+    DataGatewaySearchGrant? grant,
     Duration debounce = defaultDebounce,
     BgeLogger? logger,
-  }) : _reach = reach ?? DataGatewaySearchReach(),
+  }) : _grant = grant ?? DataGatewaySearchGrant(),
        _logger = logger ?? BgeLogger('bge.catalog.search'),
        super(const GameSearchIdle()) {
     on<GameSearchQueryChanged>(
@@ -132,7 +180,11 @@ class GameSearchBloc extends Bloc<GameSearchEvent, GameSearchState> {
 
   final GamesRemoteDataSource _remote;
   final GameRepository? _cache;
-  final DataGatewaySearchReach _reach;
+
+  /// The channel this screen's searches stream over (#473). Null where they
+  /// go over REST alone.
+  final GameSearchChannel? _stream;
+  final DataGatewaySearchGrant _grant;
   final BgeLogger _logger;
 
   /// The trimmed text being searched for. Empty when there is none.
@@ -154,10 +206,42 @@ class GameSearchBloc extends Bloc<GameSearchEvent, GameSearchState> {
   final Set<String> _gone = {};
   StreamSubscription<String>? _goneSubscription;
 
+  /// The search whose answers are arriving, while one is. The next search
+  /// cancels it, whichever event starts that one, and so does [close].
+  _RunningSearch? _running;
+
+  /// The latest search, from its start until its last state is shown, and
+  /// the handler that shows its states.
+  _Showing? _showing;
+
+  /// Set as [close] begins, so a search that reaches the bloc while it
+  /// closes opens no stream that [close] has already gone past.
+  bool _closing = false;
+
   @override
   Future<void> close() async {
+    _closing = true;
+    // Whatever is still running is stale from here, as if a newer search
+    // had started, so nothing more is shown.
+    _sequence++;
+    // Before the channel closes, so the server hears the cancel while the
+    // channel still holds its lease.
+    await _stopRunning();
+    // A channel that fails to close is logged, not thrown: the screen's
+    // provider doesn't await this, so a throw would reach the uncaught-error
+    // hook and show the user a crash prompt for a screen they have left. The
+    // bloc closes all the same.
+    try {
+      await _stream?.close();
+    } on Object catch (error, stackTrace) {
+      _logger.warn(
+        'Closing the game search channel failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
     await _goneSubscription?.cancel();
-    return super.close();
+    await super.close();
   }
 
   Future<void> _loadSourceNames(
@@ -182,7 +266,16 @@ class GameSearchBloc extends Bloc<GameSearchEvent, GameSearchState> {
     Emitter<GameSearchState> emit,
   ) async {
     final query = event.query.trim();
-    if (query == _query && state is GameSearchReady) return;
+    if (query == _query) {
+      if (state case GameSearchReady(searching: false)) return;
+      // Still running: this change has cancelled the handler showing it, so
+      // this one shows the rest.
+      final showing = _showing;
+      if (showing != null && showing.search == _sequence) {
+        await showing.handOver(emit);
+        return;
+      }
+    }
     _query = query;
     await _search(emit);
   }
@@ -253,12 +346,24 @@ class GameSearchBloc extends Bloc<GameSearchEvent, GameSearchState> {
     final shown = _shown;
     final current = state;
     if (current is GameSearchReady && shown != null) {
-      emit(_ready(shown, fromCache: current.fromCache));
+      emit(
+        _ready(
+          shown,
+          fromCache: current.fromCache,
+          streamed: current.streamed,
+          searching: current.searching,
+          cutShort: current.cutShort,
+        ),
+      );
     }
   }
 
   Future<void> _search(Emitter<GameSearchState> emit) async {
+    if (_closing) return;
     final search = ++_sequence;
+    // Whichever event started this search, the stream of the one before it
+    // stops here, and so does the server's search for it (#473).
+    unawaited(_stopRunning());
     final query = _query;
     final filter = _filter;
     _shown = null;
@@ -268,13 +373,30 @@ class GameSearchBloc extends Bloc<GameSearchEvent, GameSearchState> {
       return;
     }
 
-    emit(GameSearchLoading(query: query, filter: filter));
-    final asked = _reach.mayAsk;
+    final showing = _showing = _Showing(search, emit);
     try {
-      GameSearchResults results;
+      await _run(showing.show, search, query, filter);
+    } finally {
+      showing.end();
+      if (identical(_showing, showing)) _showing = null;
+    }
+  }
+
+  /// Runs search number [search], showing its states through [emit].
+  Future<void> _run(
+    _Show emit,
+    int search,
+    String query,
+    GameSearchFilter filter,
+  ) async {
+    emit(GameSearchLoading(query: query, filter: filter));
+    final asked = _grant.mayAsk;
+    try {
       try {
-        results = await _remote.search(
-          query,
+        await _follow(
+          emit,
+          search: search,
+          query: query,
           filter: filter,
           includeExternal: asked,
         );
@@ -282,24 +404,31 @@ class GameSearchBloc extends Bloc<GameSearchEvent, GameSearchState> {
         // Only a search that asked the DataGateways can learn they are what
         // is refused. One that did not is refused the catalog.
         if (!asked) rethrow;
-        // Retried even once a newer search has started: the 403 may be the
-        // catalog's, and only the retry tells, so that a refused catalog is
-        // forgotten (#557) whoever is waiting.
-        results = await _remote.search(
-          query,
+        if (search != _sequence) {
+          // No one is waiting for this search, but its 403 may be the
+          // catalog's, and only the retry tells: a 403 here too forgets the
+          // catalog (#557), and an answer remembers the DataGateways'
+          // refusal. Over REST, so the newer search's stream stays the one
+          // the next search stops.
+          await _remote.search(query, filter: filter, includeExternal: false);
+          _grant.refuse(refusal.apiMessage);
+          return;
+        }
+        await _follow(
+          emit,
+          search: search,
+          query: query,
           filter: filter,
           includeExternal: false,
+          // Remembered at the retry's first answer, before the sequence is
+          // checked, so a search superseded while its retry ran over REST
+          // still teaches the session what the server said: it is true of
+          // the session, not of this search. What the retry found is shown
+          // only if this is still the latest search. A retry that fails
+          // before it answers remembers nothing.
+          onAnswered: () => _grant.refuse(refusal.apiMessage),
         );
-        // Remembered before the sequence is checked, so a search that was
-        // superseded while its retry ran still teaches the session what the
-        // server said: it is true of the session, not of this search. What
-        // the retry found is shown only if this is still the latest search.
-        // A retry that throws gets here no further, and remembers nothing.
-        _reach.refuse(refusal.apiMessage);
       }
-      if (search != _sequence) return;
-      _shown = results;
-      emit(_ready(results, fromCache: false));
     } on GamesForbiddenException {
       await _denied(emit, search, query);
     } on Object catch (error, stackTrace) {
@@ -313,9 +442,134 @@ class GameSearchBloc extends Bloc<GameSearchEvent, GameSearchState> {
     }
   }
 
+  /// Runs one search to its end, showing each answer as it comes: over the
+  /// channel where there is one, and over REST, as one finished answer,
+  /// where there isn't or the socket can't serve the search (#473).
+  ///
+  /// [onAnswered] runs at the search's first answer that shows, whichever
+  /// way it came, before the sequence is checked. Throws what the search
+  /// failed with, except a socket that couldn't serve it, which REST takes
+  /// over from.
+  Future<void> _follow(
+    _Show emit, {
+    required int search,
+    required String query,
+    required GameSearchFilter filter,
+    required bool includeExternal,
+    void Function()? onAnswered,
+  }) async {
+    final stream = _stream;
+    if (stream != null) {
+      final served = await _listen(
+        emit,
+        search,
+        stream.search(query, filter: filter, includeExternal: includeExternal),
+        onAnswered: onAnswered,
+      );
+      if (served || search != _sequence) return;
+    }
+    final results = await _remote.search(
+      query,
+      filter: filter,
+      includeExternal: includeExternal,
+    );
+    onAnswered?.call();
+    if (search != _sequence) return;
+    _show(
+      emit,
+      GameSearchProgress(results: results, localDone: true, done: true),
+      streamed: false,
+    );
+  }
+
+  /// Follows [answers] until the stream ends, showing each as it comes, and
+  /// runs [onAnswered] at the first that [_show] shows.
+  ///
+  /// Returns false when the socket couldn't serve the search: the stream
+  /// failed with [RealtimeUnavailableException] before an answer [_show]
+  /// shows, so none of it is on screen and REST can take over. The channel
+  /// fails that way only before this server's half has finished, which is
+  /// that answer, so a DataGateway's answer before it doesn't keep REST
+  /// away. Throws any other failure. Returns at once, as if the stream had
+  /// ended, when the next search or [close] cancels it.
+  Future<bool> _listen(
+    _Show emit,
+    int search,
+    Stream<GameSearchProgress> answers, {
+    void Function()? onAnswered,
+  }) async {
+    var shown = false;
+    final running = _running = _RunningSearch(answers, (progress) {
+      if (!shown && _shows(progress)) {
+        shown = true;
+        onAnswered?.call();
+      }
+      if (search == _sequence) _show(emit, progress, streamed: true);
+    });
+    try {
+      await running.ended;
+      return true;
+    } on RealtimeUnavailableException {
+      if (shown) rethrow;
+      return false;
+    } finally {
+      if (identical(_running, running)) _running = null;
+    }
+  }
+
+  /// Shows [progress], the latest search's answer so far, from the first
+  /// answer in which this server's own half has finished, or the search has:
+  /// [GameSearchLoading] stays until then. [streamed] says it came over the
+  /// socket rather than whole, over REST.
+  ///
+  /// So the DataGateways' rows wait for that half (#473). A DataGateway can
+  /// report a game the server holds before the server's half lists it
+  /// (backend#662): shown then, its row would go again once [_ready] took it
+  /// out.
+  void _show(
+    _Show emit,
+    GameSearchProgress progress, {
+    required bool streamed,
+  }) {
+    if (!_shows(progress)) return;
+    final GameSearchProgress(:results, :done, :cutShort) = progress;
+    _shown = results;
+    emit(
+      _ready(
+        results,
+        fromCache: false,
+        streamed: streamed,
+        searching: !done,
+        cutShort: cutShort,
+      ),
+    );
+  }
+
+  /// Whether [_show] shows [progress].
+  static bool _shows(GameSearchProgress progress) =>
+      progress.localDone || progress.done;
+
+  /// Stops following the search whose answers are arriving, if one is,
+  /// which cancels it on the server.
+  Future<void> _stopRunning() async {
+    final running = _running;
+    if (running == null) return;
+    _running = null;
+    try {
+      await running.cancel();
+    } on Object catch (error, stackTrace) {
+      // Its answers have stopped all the same: the subscription is gone.
+      _logger.info(
+        'Cancelling the running game search failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+  }
+
   /// The catalog is refused: shown as [GameSearchDenied].
   Future<void> _denied(
-    Emitter<GameSearchState> emit,
+    _Show emit,
     int search,
     String query,
   ) async {
@@ -343,7 +597,7 @@ class GameSearchBloc extends Bloc<GameSearchEvent, GameSearchState> {
   }
 
   Future<void> _searchCache(
-    Emitter<GameSearchState> emit, {
+    _Show emit, {
     required int search,
     required String query,
     required GameSearchFilter filter,
@@ -395,7 +649,28 @@ class GameSearchBloc extends Bloc<GameSearchEvent, GameSearchState> {
   GameSearchSource _source(String id) =>
       GameSearchSource(id: id, name: _names[id]);
 
-  GameSearchReady _ready(GameSearchResults results, {required bool fromCache}) {
+  /// One source's [hits] with each `externalId` once, at its first copy's
+  /// place, in their order.
+  ///
+  /// The screen keys a source's rows by `externalId`, and a keyed list needs
+  /// each key once, but no layer below de-duplicates a source's hits (#473).
+  /// A repeat is the same result, so the first copy stands for it, and the
+  /// filters after this one read that copy.
+  static List<GameSearchHit> _onceEach(List<GameSearchHit> hits) {
+    final seen = <String>{};
+    return [
+      for (final hit in hits)
+        if (seen.add(hit.externalId)) hit,
+    ];
+  }
+
+  GameSearchReady _ready(
+    GameSearchResults results, {
+    required bool fromCache,
+    bool streamed = false,
+    bool searching = false,
+    bool cutShort = false,
+  }) {
     final onServerIds = {
       for (final hit in results.local)
         if (hit.gameId != null) hit.gameId,
@@ -407,16 +682,19 @@ class GameSearchBloc extends Bloc<GameSearchEvent, GameSearchState> {
       fromCache: fromCache,
       // The cache never asked the DataGateways, so it has no refusal to
       // report: it stands for the server being out of reach (#795).
-      dataGatewaysRefused: !fromCache && !_reach.mayAsk,
-      refusalMessage: fromCache ? null : _reach.serverMessage,
+      dataGatewaysRefused: !fromCache && !_grant.mayAsk,
+      refusalMessage: fromCache ? null : _grant.serverMessage,
+      streamed: streamed,
+      searching: searching,
+      cutShort: cutShort,
       onServer: [
-        for (final hit in results.local)
+        for (final hit in _onceEach(results.local))
           if (!_gone.contains(hit.gameId)) hit,
       ],
       fromSources: [
         for (final MapEntry(key: sourceId, value: hits)
             in results.byDataGateway.entries)
-          for (final hit in hits)
+          for (final hit in _onceEach(hits))
             if (!onServerIds.contains(hit.gameId) &&
                 !_gone.contains(hit.gameId))
               GameSearchSourceHit(source: _source(sourceId), hit: hit),
@@ -435,5 +713,72 @@ class GameSearchBloc extends Bloc<GameSearchEvent, GameSearchState> {
         for (final id in results.unfilterableDataGateways) _source(id),
       ],
     );
+  }
+}
+
+/// The search whose answers [GameSearchBloc] is following (#473): its
+/// subscription, and the end its handler waits for.
+final class _RunningSearch {
+  _RunningSearch(
+    Stream<GameSearchProgress> answers,
+    void Function(GameSearchProgress progress) onAnswer,
+  ) {
+    // An error ends the search for the bloc, so nothing it sends after one
+    // is heard.
+    _subscription = answers.listen(
+      onAnswer,
+      onError: _ended.completeError,
+      onDone: _ended.complete,
+      cancelOnError: true,
+    );
+  }
+
+  final Completer<void> _ended = Completer<void>();
+  late final StreamSubscription<GameSearchProgress> _subscription;
+
+  /// Completes when the stream ends, with its error if it failed, or when
+  /// [cancel] stops it.
+  Future<void> get ended => _ended.future;
+
+  /// Stops following the search, which cancels it on the server, and lets
+  /// the handler waiting on [ended] go on.
+  Future<void> cancel() {
+    // A stream that ended just now has completed it already.
+    if (!_ended.isCompleted) _ended.complete();
+    return _subscription.cancel();
+  }
+}
+
+/// Shows one state of a search: [_Showing.show].
+typedef _Show = void Function(GameSearchState state);
+
+/// The latest search [GameSearchBloc] is running, and the handler whose
+/// emitter shows its states (#473).
+///
+/// A query change for the text being searched cancels the handler showing
+/// it (`restartable()`), whose emitter then drops every state. So that
+/// change's own handler takes the search over with [handOver], rather than
+/// starting it again.
+final class _Showing {
+  _Showing(this.search, this._emit);
+
+  /// The search's sequence number.
+  final int search;
+
+  Emitter<GameSearchState> _emit;
+  final Completer<void> _ended = Completer<void>();
+
+  void show(GameSearchState state) => _emit(state);
+
+  /// Shows the rest of the search through [emit], and completes once its
+  /// last state is shown, so [emit]'s handler stays open until then.
+  Future<void> handOver(Emitter<GameSearchState> emit) {
+    _emit = emit;
+    return _ended.future;
+  }
+
+  /// The search has shown its last state.
+  void end() {
+    if (!_ended.isCompleted) _ended.complete();
   }
 }

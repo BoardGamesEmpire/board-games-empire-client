@@ -53,6 +53,21 @@ void main() {
       expect(ShellObservability.breadcrumbs, same(buffer));
     });
 
+    test('initialize() refuses a buffer already attached, which would keep '
+        'its own filter and let socket.io packet logs into breadcrumbs '
+        '(#473)', () async {
+      final buffer = BreadcrumbBuffer(capacity: 5)..attach();
+      addTearDown(buffer.detach);
+      final level = Logger.root.level;
+
+      expect(
+        () => ShellObservability.initialize(buffer: buffer),
+        throwsArgumentError,
+      );
+      expect(ShellObservability.isInitialized, isFalse);
+      expect(Logger.root.level, level);
+    });
+
     test('reset() restores the prior Logger.root.level so the Level.ALL '
         'override does not leak across tests or into embedding apps', () async {
       Logger.root.level = Level.WARNING;

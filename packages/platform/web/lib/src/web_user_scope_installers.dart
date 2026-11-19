@@ -1,11 +1,12 @@
 import 'package:access/access.dart' show CallerAccessInstaller;
 import 'package:data_gateway/data_gateway.dart' show dataGatewayResourceTypes;
 import 'package:di/di.dart' show SessionRehydratorInstaller;
+import 'package:dio_network/dio_network.dart' show RealtimeInstaller;
 import 'package:drift_storage/drift_storage.dart'
     show UserSessionScopeInstaller;
 import 'package:events/events.dart' show EventHydrateInstaller;
 import 'package:game_catalog/game_catalog.dart'
-    show DataGatewaySearchReachInstaller;
+    show DataGatewaySearchGrantInstaller;
 import 'package:game_collection/game_collection.dart'
     show GameCollectionHydrateInstaller;
 import 'package:household/household.dart'
@@ -38,6 +39,15 @@ import 'package:sync_queue/sync_queue.dart'
 /// [GameCollectionHydrateInstaller] the `GameCollectionRepository` (#259), and
 /// [EventHydrateInstaller] the `EventRepository` (#496).
 ///
+/// [RealtimeInstaller] is shared with native (#473) and runs right after the
+/// rehydrator. It registers the session's socket connection and the games
+/// search stream source over it, only when the server scope has a
+/// `RealtimeEndpoint` (`registerServerNetworkWeb` registers one); otherwise
+/// search goes over REST. It never throws or waits, and connects nothing
+/// until a screen takes a lease. It needs only that endpoint, which the user
+/// scope falls through to, so it can sit this early, ahead of every
+/// installer that might one day lease the socket.
+///
 /// The resources these installers need — the `ServerDatabase` (#288), the
 /// skew-corrected `ClockService` (#118) and the `AuthRepository` — live in
 /// the origin scope, which the user-scope container view resolves by falling
@@ -63,7 +73,7 @@ import 'package:sync_queue/sync_queue.dart'
 /// origin scope, and registers its re-ask with the rehydrator above, so it
 /// runs after both that and [UserSessionScopeInstaller].
 ///
-/// [DataGatewaySearchReachInstaller] is shared with native (#795), and runs
+/// [DataGatewaySearchGrantInstaller] is shared with native (#795), and runs
 /// after [CallerAccessInstaller]. It registers the session's memory of
 /// whether the server refused the DataGateways to this user, which the
 /// search screen's bloc reads, so a refusal is asked once a session and
@@ -93,6 +103,7 @@ import 'package:sync_queue/sync_queue.dart'
 /// wasm executor — passes it to `bootstrapWebServerScope`.
 List<UserScopeInstaller> buildWebUserScopeInstallers() => const [
   SessionRehydratorInstaller(),
+  RealtimeInstaller(),
   UserSessionScopeInstaller(),
   HouseholdHydrateInstaller(),
   GameCollectionHydrateInstaller(),
@@ -104,7 +115,7 @@ List<UserScopeInstaller> buildWebUserScopeInstallers() => const [
       ...serverSettingsResourceTypes,
     },
   ),
-  DataGatewaySearchReachInstaller(),
+  DataGatewaySearchGrantInstaller(),
   SyncSenderInstaller(),
   SyncQueueDrainInstaller(),
 ];
