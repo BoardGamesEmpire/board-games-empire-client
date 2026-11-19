@@ -1,13 +1,19 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:game_catalog/l10n/game_catalog_localizations.dart';
 import 'package:game_catalog/src/bloc/game_search_bloc.dart';
 import 'package:game_catalog/src/bloc/game_search_event.dart';
 import 'package:game_catalog/src/bloc/game_search_state.dart';
+import 'package:game_catalog/src/quick_look/game_quick_look.dart';
+import 'package:game_catalog/src/quick_look/game_quick_look_seed.dart';
+import 'package:game_catalog/src/quick_look/search_hit_quick_look.dart';
 import 'package:game_catalog/src/search/data_gateway_search_grant.dart';
 import 'package:game_catalog/src/widgets/catalog_facts.dart';
 import 'package:game_catalog/src/widgets/catalog_game_row.dart';
 import 'package:game_catalog/src/widgets/catalog_slivers.dart';
+import 'package:game_catalog/src/widgets/game_import_panel.dart';
 import 'package:game_catalog/src/widgets/summary_text.dart';
 import 'package:game_filters/game_filters.dart';
 import 'package:interfaces/repositories.dart';
@@ -19,9 +25,18 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// Searches this server and its DataGateways by title (#42).
 ///
 /// One page of results, in two sections: what this server holds, then what
-/// its DataGateways found. Each result the server holds opens its detail.
-/// A DataGateway result it does not hold goes to [onImport], which imports it
-/// (#43); without one, those rows are inert content.
+/// its DataGateways found. Each result opens a quick look over the page, not
+/// an import or a page (#713). A game the server holds, from either section,
+/// opens its [GameQuickLook], read by its id, whose View full details goes
+/// to [onOpen]. A DataGateway result it doesn't hold opens a
+/// [SearchHitQuickLook], drawn from the hit alone.
+///
+/// A DataGateway result's quick look also offers Import, or Re-import for a
+/// game the server holds, with the expansions the user ticks: a
+/// [GameImportPanel], shown only when [access] allows `create` on `Game` as
+/// the quick look opens. The game the import makes opens through [onOpen].
+/// Opening a quick look is a read, so every row opens one offline too; only
+/// the import waits for the connection.
 ///
 /// ## As results arrive
 ///
@@ -92,7 +107,8 @@ class GameSearchScreen extends StatelessWidget {
     this.sourceNames,
     this.gone,
     this.onOpen,
-    this.onImport,
+    this.onGone,
+    this.access,
     this.grant,
     super.key,
   });
@@ -223,20 +239,27 @@ class GameSearchScreen extends StatelessWidget {
   /// taken down from the results. Null hears of none.
   final Stream<String>? gone;
 
-  /// Opens a game this server holds. Null leaves those rows inert.
+  /// Opens a game this server holds: from its quick look's View full
+  /// details, or once an import has made it. The context is the quick
+  /// look's, which a page pushed from it removes once it has arrived. Null
+  /// offers no View full details, and an import ends in place.
   final void Function(BuildContext context, String gameId)? onOpen;
 
-  /// Imports a DataGateway result this server does not hold (#43). Null
-  /// leaves those rows inert.
-  ///
-  /// The context is the screen's, which stays mounted while the results
-  /// change beneath an import.
-  final void Function(BuildContext context, String sourceId, GameSearchHit hit)?
-  onImport;
+  /// Told the id of a game a quick look finds gone. Null tells no one.
+  final void Function(String gameId)? onGone;
+
+  /// What this session may do on the server (#456), read as each quick look
+  /// opens: `create` on `Game` offers a DataGateway result's import (#713).
+  /// Null, as where the session has none to ask, offers none.
+  final CallerAccessRepository? access;
 
   /// Whether this session may ask the DataGateways, and what the server
   /// said when it refused (#795). Null remembers for this screen alone; the
   /// shell passes the session's, so a refusal outlasts the screen.
+  ///
+  /// A quick look's import asks them for the game's expansions only while
+  /// this says it may, and records a refusal here too: the bloc's
+  /// [GameSearchBloc.grant] is the one both use.
   final DataGatewaySearchGrant? grant;
 
   @override
@@ -251,7 +274,13 @@ class GameSearchScreen extends StatelessWidget {
       gone: gone,
       grant: grant,
     ),
-    child: _GameSearchPage(onOpen: onOpen, onImport: onImport),
+    child: _GameSearchPage(
+      remote: remote,
+      cache: cache,
+      onOpen: onOpen,
+      onGone: onGone,
+      access: access,
+    ),
   );
 
   /// This screen's channel on the server's socket, or null where its
@@ -274,11 +303,19 @@ class GameSearchScreen extends StatelessWidget {
 }
 
 class _GameSearchPage extends StatefulWidget {
-  const _GameSearchPage({this.onOpen, this.onImport});
+  const _GameSearchPage({
+    required this.remote,
+    this.cache,
+    this.onOpen,
+    this.onGone,
+    this.access,
+  });
 
+  final GamesRemoteDataSource remote;
+  final GameRepository? cache;
   final void Function(BuildContext context, String gameId)? onOpen;
-  final void Function(BuildContext context, String sourceId, GameSearchHit hit)?
-  onImport;
+  final void Function(String gameId)? onGone;
+  final CallerAccessRepository? access;
 
   @override
   State<_GameSearchPage> createState() => _GameSearchPageState();
@@ -645,34 +682,18 @@ class _GameSearchPageState extends State<_GameSearchPage> {
 
   Widget _serverRow(BuildContext context, GameSearchHit hit) {
     final l10n = GameFiltersLocalizations.of(context);
-    final open = widget.onOpen;
-    final gameId = hit.gameId;
     return CatalogGameRow(
       title: hit.title,
       thumbnailUrl: hit.thumbnailUrl,
       facts: _facts(l10n, hit),
-      onTap: open == null || gameId == null
-          ? null
-          : () => open(context, gameId),
+      // Every result this server sends has its game id.
+      onTap: hit.gameId == null ? null : () => _openServerHit(hit),
     );
   }
 
   Widget _sourceRow(BuildContext context, GameSearchSourceHit result) {
     final l10n = GameFiltersLocalizations.of(context);
     final hit = result.hit;
-    final gameId = hit.gameId;
-    final open = widget.onOpen;
-    final import = widget.onImport;
-
-    // A game the server already holds opens like one from this server;
-    // anything else is an import. The import gets the screen's context, not
-    // the row's: it outlasts the tap, and the row can go while it runs.
-    final onTap = gameId != null
-        ? (open == null ? null : () => open(context, gameId))
-        : (import == null
-              ? null
-              : () => import(this.context, result.source.id, hit));
-
     final sourceName = result.source.name;
     final summary = hit.summary == null ? null : summaryPlainText(hit.summary!);
     return CatalogGameRow(
@@ -683,9 +704,70 @@ class _GameSearchPageState extends State<_GameSearchPage> {
         if (sourceName != null) sameFact(sourceName),
       ],
       summary: summary == null || summary.isEmpty ? null : summary,
-      onTap: onTap,
-      // Only an import writes; opening a game the server holds does not.
-      onlineOnly: gameId == null && import != null,
+      onTap: () => _openSourceHit(result),
+    );
+  }
+
+  /// Opens the quick look of a result this server holds, by its game id,
+  /// with [sections] under its description.
+  ///
+  /// Each quick look opens from the screen's context rather than the row's,
+  /// which can be taken down beneath it, as a game found gone is.
+  void _openServerHit(GameSearchHit hit, {List<Widget> sections = const []}) =>
+      unawaited(
+        showGameQuickLook(
+          context,
+          seed: GameQuickLookSeed.fromHit(hit),
+          remote: widget.remote,
+          cache: widget.cache,
+          onGone: widget.onGone,
+          onViewDetails: widget.onOpen,
+          sections: sections,
+        ),
+      );
+
+  /// Opens a DataGateway result's quick look: the ordinary one where the
+  /// server holds the game, and one drawn from the hit where it doesn't.
+  /// Either offers the import where the session may import games, read now,
+  /// as the quick look opens.
+  void _openSourceHit(GameSearchSourceHit result) {
+    final hit = result.hit;
+    final mayImport =
+        widget.access?.current.allows(ResourceType.game, AccessAction.create) ??
+        false;
+    final sections = [if (mayImport) _importPanel(result)];
+    if (hit.isOnServer) {
+      _openServerHit(hit, sections: sections);
+      return;
+    }
+    unawaited(
+      showSearchHitQuickLook(
+        context,
+        hit: hit,
+        sourceName: result.source.name,
+        sections: sections,
+      ),
+    );
+  }
+
+  /// The import of [result], with the expansions the user ticks where this
+  /// session may ask the DataGateways. It shares the search's grant, so a
+  /// refusal either meets is kept for both (#795).
+  Widget _importPanel(GameSearchSourceHit result) {
+    final grant = context.read<GameSearchBloc>().grant;
+    final GameSearchSourceHit(:source, :hit) = result;
+    final sourceName = source.name;
+    final open = widget.onOpen;
+    return GameImportPanel(
+      remote: widget.remote,
+      gatewayId: source.id,
+      hit: hit,
+      mayChooseExpansions: grant.mayAsk,
+      grant: grant,
+      sourceNames: {source.id: ?sourceName},
+      // The pop-up's context, which the game's page removes once it has
+      // arrived over it (#707).
+      onImported: (popup, gameId) => open?.call(popup, gameId),
     );
   }
 

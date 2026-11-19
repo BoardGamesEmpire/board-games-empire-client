@@ -212,7 +212,16 @@ The same flows as the keyboard tests, plus the screens they don't reach:
 1. Server add → sign-in → register → home → create household.
 2. Home: the drawer, the sections, a destination.
 3. Create event, including the date and time pickers.
-4. Game search, with the filter sheet.
+4. Game search, with the filter sheet. Then open the quick look of a
+   DataGateway result this server doesn't hold, tick an expansion and press
+   Import (#713, #824): check the status ("Sending the import to the
+   server…") is read and focus lands on it, that by keyboard it is ringed
+   and Tab goes on from it rather than stopping on it again, and that the
+   rows are read as one batch ("Importing 2 games"), each saying its game
+   and its state. Make an import fail or finish in part (stop a DataGateway,
+   say): check the outcome is read once, as one banner, and that focus is
+   still on it. Then start another import and close the quick look before
+   it ends: check that no game page opens once it would have ended.
 5. Settings, and the feedback flow with its review screen.
 6. The bootstrap error screen (stop the server, open the app).
 7. Event detail from Events: an answer, with its note and not-going dialogs,

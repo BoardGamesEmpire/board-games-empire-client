@@ -187,6 +187,11 @@ class GameSearchBloc extends Bloc<GameSearchEvent, GameSearchState> {
   final DataGatewaySearchGrant _grant;
   final BgeLogger _logger;
 
+  /// Whether these searches may ask the DataGateways: the grant given, or
+  /// this bloc's own where none was. The search's quick look hands the same
+  /// one to its import (#713), so a refusal either meets is kept for both.
+  DataGatewaySearchGrant get grant => _grant;
+
   /// The trimmed text being searched for. Empty when there is none.
   String _query = '';
   GameSearchFilter _filter = const GameSearchFilter();

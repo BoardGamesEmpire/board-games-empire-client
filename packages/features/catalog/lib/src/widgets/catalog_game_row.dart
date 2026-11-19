@@ -18,7 +18,6 @@ class CatalogGameRow extends StatelessWidget {
     this.thumbnailUrl,
     this.facts = const [],
     this.onTap,
-    this.onlineOnly = false,
     this.nested = false,
     this.spokenTitle,
     this.note,
@@ -35,10 +34,6 @@ class CatalogGameRow extends StatelessWidget {
   final String? thumbnailUrl;
   final List<GameFact> facts;
   final VoidCallback? onTap;
-
-  /// Whether a tap is a write to the server (#49), such as an import. Offline
-  /// the row is disabled and says why, in its own label.
-  final bool onlineOnly;
 
   /// Whether the row is an expansion under its base game's row (#711): its
   /// start is indented beyond the tile's own padding.
@@ -69,17 +64,12 @@ class CatalogGameRow extends StatelessWidget {
           titleAlignment: BgeThumbnail.titleAlignmentOf(context),
           minTileHeight: BgeThumbnail.minTileHeightOf(context),
           onTap: onTap,
-          enabled: !(onlineOnly && BgeConnectivityScope.offlineOf(context)),
           leading: BgeThumbnail(
             url: thumbnailUrl,
             placeholderIcon: Icons.casino_outlined,
             placeholderKey: thumbnailPlaceholderKey,
           ),
-          // The reason is a line of the title, so it stays in the row's one
-          // node, ahead of the facts.
-          title: onlineOnly
-              ? BgeOnlineOnlyLabel(title, semanticsLabel: spokenTitle)
-              : Text(title, semanticsLabel: spokenTitle),
+          title: Text(title, semanticsLabel: spokenTitle),
           subtitle: note == null && facts.isEmpty && summary == null
               ? null
               : Column(

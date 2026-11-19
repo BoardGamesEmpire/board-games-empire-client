@@ -2139,8 +2139,14 @@ class _BgeAppState extends State<BgeApp> {
   /// The #42 search screen. Same gate as [_buildGameBrowseRoute], plus the
   /// DataGateways' names where the user may read them.
   ///
-  /// A DataGateway result the server does not hold has no way to import from
-  /// here yet: the search's quick look takes that over (#824).
+  /// Each result opens a quick look over the search (#713), as a cover does
+  /// ([_openQuickLook]): a game the quick look finds gone is told to
+  /// [_gamesFoundGone], and View full details pushes the game's page through
+  /// [_openGame]. A DataGateway result's quick look offers its import where
+  /// the session's [CallerAccessRepository] allows `create` on `Game`, and
+  /// the game the import makes opens through [_openGame] too, from the quick
+  /// look's own context. The page arrives beneath the quick look, which
+  /// removes itself once it has, so back from the page lands on the search.
   ///
   /// The search reads the session's [DataGatewaySearchGrant] (#795), so a
   /// refusal is remembered for the session, not the screen. Where none is
@@ -2167,6 +2173,8 @@ class _BgeAppState extends State<BgeApp> {
           : null,
       gone: _gamesFoundGone.stream,
       onOpen: _openGame,
+      onGone: _reportGameGone,
+      access: _callerAccess(container),
     );
   }
 

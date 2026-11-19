@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:bge_test_support/access.dart';
 import 'package:bge_test_support/widgets.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -8,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:game_catalog/game_catalog.dart';
+import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:ui/ui.dart';
@@ -40,8 +42,8 @@ void main() {
     Future<Map<String, String>> Function()? sourceNames,
     Stream<String>? gone,
     void Function(BuildContext context, String gameId)? onOpen,
-    void Function(BuildContext context, String sourceId, GameSearchHit hit)?
-    onImport,
+    CallerAccessRepository? access,
+    void Function(String gameId)? onGone,
     ValueListenable<bool>? offline,
     ThemeData? theme,
     DataGatewaySearchGrant? grant,
@@ -58,13 +60,47 @@ void main() {
           sourceNames: sourceNames,
           gone: gone,
           onOpen: onOpen,
-          onImport: onImport,
+          access: access,
+          onGone: onGone,
         ),
         offline: offline,
       ),
     );
     await tester.pump();
   }
+
+  /// A session that may import games: `create` on `Game` (#713).
+  FakeCallerAccessRepository mayImport() => FakeCallerAccessRepository(
+    const CallerAccess.known({
+      ResourceType.game: ResourceAccess(
+        create: AccessExtent.all,
+        read: AccessExtent.all,
+        update: AccessExtent.none,
+        delete: AccessExtent.none,
+        manage: AccessExtent.none,
+      ),
+    }),
+  );
+
+  /// Every detail read answers [game], with no platforms.
+  void readsAs(Game game) =>
+      remote.onFetchGame = (_) async =>
+          (game: game, platformGames: const <PlatformGame>[]);
+
+  /// Taps [row] and waits for its quick look to open.
+  Future<void> openQuickLook(WidgetTester tester, Finder row) async {
+    await tester.tap(row);
+    await tester.pumpAndSettle();
+  }
+
+  final importButton = find.byKey(GameImportPanel.importKey);
+
+  /// The import button's label.
+  String? importLabel(WidgetTester tester) => tester
+      .widget<Text>(
+        find.descendant(of: importButton, matching: find.byType(Text)),
+      )
+      .data;
 
   /// Types [text] and waits out the debounce and the answer.
   Future<void> search(WidgetTester tester, String text) async {
@@ -302,20 +338,6 @@ void main() {
     expect(scrollView.semanticChildCount, 3);
   });
 
-  testWidgets('a game the server holds opens, from either section', (
-    tester,
-  ) async {
-    remote.onSearch = (_, _, _) async => results;
-    final opened = <String>[];
-
-    await show(tester, onOpen: (_, id) => opened.add(id));
-    await search(tester, 'catan');
-    await tester.tap(find.byKey(GameSearchScreen.serverRowKey('g_catan')));
-    await tester.tap(find.byKey(GameSearchScreen.sourceRowKey('dg_bgg', '1')));
-
-    expect(opened, ['g_catan', 'g_imported']);
-  });
-
   testWidgets('a game found gone is taken down', (tester) async {
     remote.onSearch = (_, _, _) async => results;
     final gone = StreamController<String>.broadcast();
@@ -333,169 +355,350 @@ void main() {
     );
   });
 
-  testWidgets('a game the server does not hold goes to the import', (
-    tester,
-  ) async {
-    remote.onSearch = (_, _, _) async => results;
-    final imported = <String>[];
+  group('a result opens its quick look (#713)', () {
+    Finder serverRow(String gameId) =>
+        find.byKey(GameSearchScreen.serverRowKey(gameId));
+    Finder sourceRow(String externalId) =>
+        find.byKey(GameSearchScreen.sourceRowKey('dg_bgg', externalId));
 
-    await show(
+    /// Closes the open quick look, as Escape does.
+    Future<void> closeQuickLook(WidgetTester tester) async {
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> pressViewDetails(WidgetTester tester) async {
+      final button = find.byKey(GameQuickLook.viewDetailsKey);
+      await tester.ensureVisible(button);
+      await tester.pumpAndSettle();
+      await tester.tap(button);
+      await tester.pump();
+    }
+
+    testWidgets('a DataGateway result opens its quick look, not an import', (
       tester,
-      onImport: (_, sourceId, hit) =>
-          imported.add('$sourceId/${hit.externalId}'),
-    );
-    await search(tester, 'catan');
-    await tester.tap(
-      find.byKey(GameSearchScreen.sourceRowKey('dg_bgg', '926')),
-    );
-
-    expect(imported, ['dg_bgg/926']);
-  });
-
-  group('offline (#49)', () {
-    late ValueNotifier<bool> offline;
-    final importRow = find.byKey(
-      GameSearchScreen.sourceRowKey('dg_bgg', '926'),
-    );
-
-    setUp(() => offline = ValueNotifier(true));
-    tearDown(() => offline.dispose());
-
-    testWidgets('the import row is disabled and says why', (tester) async {
-      final handle = tester.ensureSemantics();
-      remote.onSearch = (_, _, _) async => const GameSearchResults(
-        byDataGateway: {
-          'dg_bgg': [
-            GameSearchHit(
-              externalId: '926',
-              title: 'Catan: Seafarers',
-              contentType: ContentType.expansion,
-              yearPublished: 1997,
-              minPlayers: 3,
-              maxPlayers: 4,
-            ),
-          ],
-        },
-      );
-      final imported = <String>[];
-
+    ) async {
+      remote.onSearch = (_, _, _) async => results;
       await show(
         tester,
-        offline: offline,
+        sourceNames: () async => {'dg_bgg': 'BoardGameGeek'},
+        access: mayImport(),
         onOpen: (_, _) {},
-        onImport: (_, sourceId, hit) => imported.add(sourceId),
       );
       await search(tester, 'catan');
-      await tester.tap(importRow, warnIfMissed: false);
+      await openQuickLook(tester, sourceRow('926'));
 
-      expect(imported, isEmpty);
-      expect(
-        tester.getSemantics(
-          find.descendant(
-            of: importRow,
-            matching: find.byType(MergeSemantics),
-          ),
-        ),
-        matchesSemantics(
-          label:
-              'Catan: Seafarers\n$onlineOnlyCopy\n'
-              '1997, 3 to 4 players, Expansion',
-          isButton: true,
-          hasSelectedState: true,
-          hasEnabledState: true,
-        ),
+      expect(find.byType(SearchHitQuickLook), findsOneWidget);
+      expect(remote.calls, isNot(contains(startsWith('startImport'))));
+      // Import waits in the quick look, with the hit's expansions read from
+      // the DataGateway it came from, which the checklist names.
+      expect(importLabel(tester), 'Import');
+      final panel = tester.widget<GameImportPanel>(
+        find.byType(GameImportPanel),
       );
-      expect(find.text(onlineOnlyCopy), findsOneWidget);
-
-      offline.value = false;
-      await tester.pump();
-
-      expect(find.text(onlineOnlyCopy), findsNothing);
-      await tester.tap(importRow);
-      expect(imported, ['dg_bgg']);
-      handle.dispose();
+      expect(panel.gatewayId, 'dg_bgg');
+      expect(panel.hit.externalId, '926');
+      expect(panel.sourceNames, {'dg_bgg': 'BoardGameGeek'});
+      expect(remote.expansionTargets, [
+        const GameExpansionsTarget.dataGateway(
+          gatewayId: 'dg_bgg',
+          externalId: '926',
+        ),
+      ]);
     });
 
-    testWidgets('a game the server holds still opens', (tester) async {
+    testWidgets("a local result opens the game's quick look", (tester) async {
       remote.onSearch = (_, _, _) async => results;
+      readsAs(game('g_catan', title: 'Catan'));
       final opened = <String>[];
 
       await show(
         tester,
-        offline: offline,
+        access: mayImport(),
         onOpen: (_, gameId) => opened.add(gameId),
-        onImport: (_, _, _) {},
       );
       await search(tester, 'catan');
-      await tester.tap(
-        find.byKey(GameSearchScreen.sourceRowKey('dg_bgg', '1')),
-      );
+      await openQuickLook(tester, serverRow('g_catan'));
 
-      expect(opened, ['g_imported']);
+      expect(find.byType(GameQuickLook), findsOneWidget);
+      expect(remote.calls, contains('fetchGame(g_catan)'));
+      // This server's own result came from no DataGateway to import from.
+      expect(find.byType(GameImportPanel), findsNothing);
+
+      await pressViewDetails(tester);
+      expect(opened, ['g_catan']);
     });
 
-    testWidgets('an online scope lays the rows out as no scope does', (
+    testWidgets('a DataGateway result on the server offers Re-import', (
       tester,
     ) async {
       remote.onSearch = (_, _, _) async => results;
-      await show(tester, onOpen: (_, _) {}, onImport: (_, _, _) {});
-      await search(tester, 'catan');
-      final before = tester.getSize(importRow);
+      readsAs(game('g_imported', title: 'Catan Junior'));
+      final opened = <String>[];
 
-      await tester.pumpWidget(const SizedBox());
-      final online = ValueNotifier(false);
-      addTearDown(online.dispose);
       await show(
         tester,
-        offline: online,
+        access: mayImport(),
+        onOpen: (_, gameId) => opened.add(gameId),
+      );
+      await search(tester, 'catan');
+      await openQuickLook(tester, sourceRow('1'));
+
+      // The ordinary quick look, read by the game's id on this server.
+      expect(find.byType(GameQuickLook), findsOneWidget);
+      expect(find.byType(SearchHitQuickLook), findsNothing);
+      expect(remote.calls, contains('fetchGame(g_imported)'));
+      expect(importLabel(tester), 'Re-import');
+      expect(remote.expansionTargets, [
+        const GameExpansionsTarget.dataGateway(
+          gatewayId: 'dg_bgg',
+          externalId: '1',
+        ),
+      ]);
+      // The DataGateway's name was never read, so the checklist has none.
+      expect(
+        tester
+            .widget<GameImportPanel>(find.byType(GameImportPanel))
+            .sourceNames,
+        isEmpty,
+      );
+
+      await pressViewDetails(tester);
+      expect(opened, ['g_imported']);
+    });
+
+    testWidgets('without create on Game there is no Import', (tester) async {
+      remote.onSearch = (_, _, _) async => results;
+      readsAs(game('g_imported', title: 'Catan Junior'));
+
+      // Known, and allowing nothing.
+      await show(
+        tester,
+        access: FakeCallerAccessRepository(const CallerAccess.known({})),
         onOpen: (_, _) {},
-        onImport: (_, _, _) {},
       );
       await search(tester, 'catan');
 
-      expect(tester.getSize(importRow), before);
+      await openQuickLook(tester, sourceRow('926'));
+      expect(find.byType(SearchHitQuickLook), findsOneWidget);
+      expect(find.byType(GameImportPanel), findsNothing);
+      await closeQuickLook(tester);
+
+      await openQuickLook(tester, sourceRow('1'));
+      expect(find.byType(GameQuickLook), findsOneWidget);
+      expect(find.byType(GameImportPanel), findsNothing);
+      // Information only: nothing is read for an import that can't happen.
+      expect(remote.expansionTargets, isEmpty);
     });
-  });
 
-  // An import runs while its dialog is open, and the results can change
-  // beneath it: the context it is given must outlive the row.
-  testWidgets("the import's context is the screen's, not the row's", (
-    tester,
-  ) async {
-    remote.onSearch = (_, _, _) async => results;
-    BuildContext? importedFrom;
+    testWidgets('with no access to ask, there is no Import either', (
+      tester,
+    ) async {
+      remote.onSearch = (_, _, _) async => results;
 
-    await show(tester, onImport: (context, _, _) => importedFrom = context);
-    await search(tester, 'catan');
-    await tester.tap(
-      find.byKey(GameSearchScreen.sourceRowKey('dg_bgg', '926')),
-    );
-    remote.onSearch = (_, _, _) async => const GameSearchResults();
-    await search(tester, 'zzz');
+      await show(tester, onOpen: (_, _) {});
+      await search(tester, 'catan');
+      await openQuickLook(tester, sourceRow('926'));
 
-    expect(
-      find.byKey(GameSearchScreen.sourceRowKey('dg_bgg', '926')),
-      findsNothing,
-    );
-    expect(importedFrom?.mounted, isTrue);
-  });
+      expect(find.byType(SearchHitQuickLook), findsOneWidget);
+      expect(find.byType(GameImportPanel), findsNothing);
+    });
 
-  testWidgets('without an import, that row is content, not a control', (
-    tester,
-  ) async {
-    final handle = tester.ensureSemantics();
-    remote.onSearch = (_, _, _) async => results;
+    testWidgets('access is read as the quick look opens', (tester) async {
+      remote.onSearch = (_, _, _) async => results;
+      // No answer yet when the screen is built.
+      final access = FakeCallerAccessRepository();
 
-    await show(tester, onOpen: (_, _) {});
-    await search(tester, 'catan');
+      await show(tester, access: access, onOpen: (_, _) {});
+      await search(tester, 'catan');
+      access.current = mayImport().current;
+      await openQuickLook(tester, sourceRow('926'));
 
-    expect(
-      tester.getSemantics(
-        find.byKey(GameSearchScreen.sourceRowKey('dg_bgg', '926')),
-      ),
-      isSemantics(hasTapAction: false, isFocusable: false),
-    );
-    handle.dispose();
+      expect(importButton, findsOneWidget);
+    });
+
+    // A signed-out grant shows no DataGateway rows to open at all (#795), so
+    // the session's grant is refused after the rows have shown, as another
+    // quick look's expansions read can refuse it.
+    testWidgets('a grant that may not ask loads no expansions', (tester) async {
+      remote.onSearch = (_, _, _) async => results;
+      final grant = DataGatewaySearchGrant();
+
+      await show(tester, grant: grant, access: mayImport(), onOpen: (_, _) {});
+      await search(tester, 'catan');
+      grant.refuse(null);
+      await openQuickLook(tester, sourceRow('926'));
+
+      // Import takes the game alone.
+      expect(importLabel(tester), 'Import');
+      expect(
+        tester
+            .widget<GameImportPanel>(find.byType(GameImportPanel))
+            .mayChooseExpansions,
+        isFalse,
+      );
+      expect(remote.expansionTargets, isEmpty);
+    });
+
+    testWidgets("the import shares the screen's grant: an expansions read "
+        'refused leaves the DataGateways out of the next search', (
+      tester,
+    ) async {
+      remote
+        ..onSearch = ((_, _, _) async => results)
+        ..onFetchExpansions = ((_) async => throw const GamesForbiddenException(
+          '403',
+          apiMessage: 'Not for you',
+        ));
+
+      // No grant given: the screen remembers for itself.
+      await show(tester, access: mayImport(), onOpen: (_, _) {});
+      await search(tester, 'catan');
+      await openQuickLook(tester, sourceRow('926'));
+      await closeQuickLook(tester);
+      await search(tester, 'catan seafarers');
+
+      expect(remote.calls, contains('search(catan seafarers -external)'));
+      expect(
+        find.byKey(GameSearchScreen.dataGatewaysRefusedKey),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a row opens its quick look offline', (tester) async {
+      final offline = ValueNotifier(true);
+      addTearDown(offline.dispose);
+      remote.onSearch = (_, _, _) async => results;
+      readsAs(game('g_catan', title: 'Catan'));
+
+      await show(
+        tester,
+        offline: offline,
+        access: mayImport(),
+        onOpen: (_, _) {},
+      );
+      await search(tester, 'catan');
+
+      // Opening one is a read: no row waits for the connection.
+      expect(find.text(onlineOnlyCopy), findsNothing);
+      await openQuickLook(tester, sourceRow('926'));
+      expect(find.byType(SearchHitQuickLook), findsOneWidget);
+      // The import is a write, so its button does.
+      expect(tester.widget<FilledButton>(importButton).onPressed, isNull);
+      expect(find.text(onlineOnlyCopy), findsOneWidget);
+      await closeQuickLook(tester);
+
+      await openQuickLook(tester, serverRow('g_catan'));
+      expect(find.byType(GameQuickLook), findsOneWidget);
+    });
+
+    testWidgets('an import that ends opens the game through onOpen, from the '
+        "quick look's context", (tester) async {
+      const imported = ImportBatch(
+        batchId: 'b1',
+        correlationId: 'c1',
+        status: ImportBatchStatus.completed,
+        jobs: [
+          ImportJob(
+            jobId: 'j1',
+            status: ImportJobStatus.completed,
+            origin: ImportJobOrigin.requested,
+            externalId: '926',
+            gameId: 'g_seafarers',
+          ),
+        ],
+      );
+      // The first poll finds the game imported.
+      remote
+        ..onSearch = ((_, _, _) async => results)
+        ..onStartImport = ((_, _, correlationId) async => GameImportReceipt(
+          batchId: 'b1',
+          baseJobId: 'j1',
+          correlationId: correlationId,
+        ))
+        ..onFetchImport = ((_) async => imported);
+      final opened = <String>[];
+      BuildContext? openedFrom;
+
+      await show(
+        tester,
+        access: mayImport(),
+        onOpen: (context, gameId) {
+          openedFrom = context;
+          opened.add(gameId);
+        },
+      );
+      await search(tester, 'catan');
+      await openQuickLook(tester, sourceRow('926'));
+      await tester.ensureVisible(importButton);
+      await tester.pumpAndSettle();
+      await tester.tap(importButton);
+      await tester.pump();
+      // The first poll waits its interval; the progress's spinner never
+      // settles.
+      await tester.pump(const Duration(seconds: 2));
+      await tester.pump();
+
+      expect(opened, ['g_seafarers']);
+      expect(openedFrom?.mounted, isTrue);
+      expect(
+        openedFrom?.findAncestorWidgetOfExactType<SearchHitQuickLook>(),
+        isNotNull,
+      );
+    });
+
+    testWidgets("with no onOpen, a local result's quick look offers no View "
+        'full details', (tester) async {
+      remote.onSearch = (_, _, _) async => results;
+      readsAs(game('g_catan', title: 'Catan'));
+
+      await show(tester);
+      await search(tester, 'catan');
+      await openQuickLook(tester, serverRow('g_catan'));
+
+      expect(find.byType(GameQuickLook), findsOneWidget);
+      expect(find.byKey(GameQuickLook.viewDetailsKey), findsNothing);
+    });
+
+    for (final (name, onOpen)
+        in <(String, void Function(BuildContext, String)?)>[
+          ('without onOpen', null),
+          ('with onOpen', (_, _) {}),
+        ]) {
+      testWidgets('every row is a control, $name', (tester) async {
+        final handle = tester.ensureSemantics();
+        remote.onSearch = (_, _, _) async => results;
+
+        await show(tester, onOpen: onOpen);
+        await search(tester, 'catan');
+
+        for (final row in [serverRow('g_catan'), sourceRow('926')]) {
+          expect(
+            tester.getSemantics(
+              find.descendant(of: row, matching: find.byType(MergeSemantics)),
+            ),
+            isSemantics(hasTapAction: true, isFocusable: true),
+          );
+        }
+        handle.dispose();
+      });
+    }
+
+    testWidgets('a game its quick look finds gone is told to onGone', (
+      tester,
+    ) async {
+      remote
+        ..onSearch = ((_, _, _) async => results)
+        ..onFetchGame = ((_) async => throw const GameNotFoundException('404'));
+      final found = <String>[];
+
+      await show(tester, onGone: found.add);
+      await search(tester, 'catan');
+      await openQuickLook(tester, serverRow('g_catan'));
+
+      expect(find.byKey(GameQuickLook.unavailableKey), findsOneWidget);
+      expect(found, ['g_catan']);
+    });
   });
 
   group('the data sources that did not answer', () {
@@ -1667,8 +1870,8 @@ void main() {
     final local = GameSearchResults(
       local: [hit('g_catan', gameId: 'g_catan', title: 'Catan')],
     );
-    // A row from each of two data sources. The second's is a game the server
-    // holds, so it opens: a row a keyboard user can be on.
+    // A row from each of two data sources, each a row a keyboard user can be
+    // on. The second's is a game the server holds.
     final found = local.copyWith(
       byDataGateway: {
         'dg_bgg': [hit('926', title: 'Catan: Seafarers')],
@@ -2627,7 +2830,7 @@ void main() {
       sourceNames: sourceNames,
       streamSource: streamSource,
       onOpen: (_, _) {},
-      onImport: (_, _, _) {},
+      access: mayImport(),
       theme: theme,
     );
 
@@ -2804,9 +3007,8 @@ void main() {
       },
     );
 
-    // The import rows are disabled while offline; their dimmed labels fail
-    // contrast, which WCAG 1.4.3 exempts for an inactive control. A false
-    // finding: see `docs/design/ACCESSIBILITY_AUDIT.md` §3.
+    // Offline, every row still opens its quick look, a read (#713): none is
+    // dimmed, and none says it waits for the connection.
     auditScreen(
       'offline',
       pump: (tester, theme) async {
@@ -2817,9 +3019,8 @@ void main() {
       },
       arrange: (tester) async {
         await search(tester, 'catan');
-        expect(find.text(onlineOnlyCopy), findsWidgets);
+        expect(find.text(onlineOnlyCopy), findsNothing);
       },
-      textContrast: false,
     );
 
     auditScreen(
@@ -2871,15 +3072,15 @@ void main() {
     setUp(() => semantics = SemanticsBinding.instance.ensureSemantics());
     tearDown(() => semantics.dispose());
 
-    /// Results in both sections, each row a control: a game on the server
-    /// opens, one only a data source holds is an import.
+    /// Results in both sections, each row a control that opens its quick
+    /// look.
     Future<void> showResults(WidgetTester tester) async {
       remote.onSearch = (_, _, _) async => results;
       await show(
         tester,
         sourceNames: () async => {'dg_bgg': 'BoardGameGeek'},
         onOpen: (_, _) {},
-        onImport: (_, _, _) {},
+        access: mayImport(),
       );
       await search(tester, 'catan');
     }
