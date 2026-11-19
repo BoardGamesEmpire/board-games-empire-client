@@ -219,16 +219,93 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     return _writeEvent('Event unarchive', '${_pathOf(id)}/unarchive');
   }
 
-  /// A status write to one event: a POST to [path] that answers
-  /// `{ message, event }`, where the event carries its status and no dates.
+  @override
+  Future<Event> updateEvent(String id, EventUpdate update) async {
+    _checkId(id);
+    _checkNotEmpty(update.isEmpty, update);
+
+    return _writeEvent(
+      'Event update',
+      _pathOf(id),
+      patch: true,
+      data: {
+        'title': ?update.title,
+        // A cleared field goes as null, which the server writes as NULL.
+        if (update.clearDescription)
+          'description': null
+        else
+          'description': ?update.description,
+        if (update.clearLocation)
+          'location': null
+        else
+          'location': ?update.location,
+        if (update.clearUrl) 'url': null else 'url': ?update.url,
+        'type': ?update.type?.toWire(),
+        'reach': ?update.reach?.toWire(),
+      },
+    );
+  }
+
+  @override
+  Future<EventPolicy?> updateEventPolicy(
+    String id,
+    EventPolicyUpdate update,
+  ) async {
+    _checkId(id);
+    _checkNotEmpty(update.isEmpty, update);
+
+    const action = 'Event policy update';
+    const failures = _EventFailures(_Route.write);
+    final response = await sendForJson(
+      () => _dio.patch<String>(
+        '${_pathOf(id)}/policy',
+        options: _plainBody,
+        data: {
+          'gameAdditionMode': ?update.gameAdditionMode?.toWire(),
+          'voteThresholdType': ?update.voteThresholdType?.toWire(),
+          'voteThresholdValue': ?update.voteThresholdValue,
+          'voteQuorumType': ?update.voteQuorumType?.toWire(),
+          'voteQuorumValue': ?update.voteQuorumValue,
+          if (update.clearVotingWindowHours)
+            'votingWindowHours': null
+          else
+            'votingWindowHours': ?update.votingWindowHours,
+        },
+      ),
+      action: action,
+      family: failures,
+    );
+    // Null for a caller who may change the rules but not read them: the
+    // rules are saved all the same.
+    return parseRemote(
+      failures,
+      () => _mapPolicy(response.body['policy']),
+      action: action,
+      status: response.status,
+    );
+  }
+
+  static void _checkNotEmpty(bool isEmpty, Object update) {
+    if (isEmpty) {
+      throw ArgumentError.value(update, 'update', 'must change something');
+    }
+  }
+
+  /// A write to one event: a POST, or a PATCH when [patch], to [path] that
+  /// answers `{ message, event }`, where the event carries its status. Only
+  /// the event's own fields are read: a status write's answer has no dates,
+  /// and the PATCH's has every date and the policy, which are left unread.
   Future<Event> _writeEvent(
     String action,
     String path, {
     Map<String, dynamic>? data,
+    bool patch = false,
   }) async {
     const failures = _EventFailures(_Route.write);
     final response = await sendForJson(
-      () => _dio.post<String>(path, options: _plainBody, data: data),
+      () => patch
+          ? _dio.patch<String>(path, options: _plainBody, data: data)
+          : _dio.post<String>(path, options: _plainBody, data: data),
       action: action,
       // The path names one event, and the call is a write to it.
       family: failures,
@@ -1755,6 +1832,7 @@ final class _EventFailures extends RemoteFailureFamily<EventRemoteException> {
         cause: cause,
         statusCode: status,
         apiMessage: apiErrorField(body, 'message'),
+        code: apiErrorField(body, 'code'),
       );
     }
     if (status == 400 &&
@@ -1765,6 +1843,7 @@ final class _EventFailures extends RemoteFailureFamily<EventRemoteException> {
         cause: cause,
         statusCode: status,
         apiMessage: apiErrorField(body, 'message'),
+        code: apiErrorField(body, 'code'),
       );
     }
     return null;
