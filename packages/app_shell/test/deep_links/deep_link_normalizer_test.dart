@@ -3,10 +3,38 @@ import 'package:flutter_test/flutter_test.dart';
 
 /// `normalizeDeepLink` — validation of the published
 /// `bge://server/{serverId}/{resource-path}[?...]` pattern and rewriting
-/// into the path form declared by `reservedDeepLinkPathPatterns`.
+/// into the path form declared by `reservedDeepLinkPathPatterns`, and of the
+/// app links `bge://settings[/export]` (#126), which name no server.
 void main() {
   group('normalizeDeepLink', () {
     group('accepts and rewrites', () {
+      group('an app link', () {
+        const cases = {
+          'bge://settings': '/settings',
+          'bge://settings/': '/settings',
+          'bge://settings/export': '/settings/export',
+          'bge://settings/export/': '/settings/export',
+          'BGE://SETTINGS/export': '/settings/export',
+          'bge://settings?from=mail': '/settings?from=mail',
+          'bge://settings/export#top': '/settings/export',
+          'bge://settings/%65xport': '/settings/export',
+          // A dot segment resolves inside the host to the declared location.
+          'bge://settings/./export': '/settings/export',
+          'bge://settings?': '/settings',
+        };
+        for (final entry in cases.entries) {
+          test('${entry.key} opens ${entry.value}', () {
+            final result = normalizeDeepLink(Uri.parse(entry.key));
+
+            expect(result, isA<DeepLinkNormalized>());
+            expect(
+              (result as DeepLinkNormalized).link,
+              AppDeepLink(location: entry.value),
+            );
+          });
+        }
+      });
+
       test('a minimal valid link to the declared path form', () {
         final result = normalizeDeepLink(
           Uri.parse('bge://server/abc123/game/42'),
@@ -82,6 +110,48 @@ void main() {
     });
 
     group('rejects', () {
+      group('an app host', () {
+        const undeclared = [
+          'bge://settings/bogus',
+          'bge://settings/%2Fexport',
+          'bge://settings/Export',
+          'bge://settings//',
+          'bge://settings/../server/s1/event/e1',
+          'bge://settings/export/x',
+          'bge://settings/export//',
+        ];
+        for (final input in undeclared) {
+          test('$input is an undeclared app location', () {
+            final result = normalizeDeepLink(Uri.parse(input));
+
+            expect(result, isA<DeepLinkRejected>());
+            expect(
+              (result as DeepLinkRejected).reason,
+              DeepLinkRejectionReason.undeclaredAppLocation,
+            );
+          });
+        }
+
+        const authority = [
+          'bge://settings:8080',
+          'bge://alice@settings',
+          'bge://oauth?code=c&state=s',
+          'bge://settings%2Fexport',
+          'bge:///settings',
+        ];
+        for (final input in authority) {
+          test('$input has an unexpected authority', () {
+            final result = normalizeDeepLink(Uri.parse(input));
+
+            expect(result, isA<DeepLinkRejected>());
+            expect(
+              (result as DeepLinkRejected).reason,
+              DeepLinkRejectionReason.unexpectedAuthority,
+            );
+          });
+        }
+      });
+
       test('a non-bge scheme', () {
         final result = normalizeDeepLink(
           Uri.parse('https://server/abc/game/1'),
