@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:ui_tokens/src/accessibility/bge_button_focus_ring.dart';
 import 'package:ui_tokens/src/accessibility/bge_navigation_focus.dart';
 import 'package:ui_tokens/src/accessibility/bge_selection.dart';
+import 'package:ui_tokens/src/bge_line_colors.dart';
 import 'package:ui_tokens/src/bge_palette.dart';
 import 'package:ui_tokens/src/bge_status_colors.dart';
 import 'package:ui_tokens/src/bge_tokens.dart';
@@ -94,6 +95,9 @@ ButtonStyle _buttonStyle(BgeButtonFocusRingPlacement placement) => ButtonStyle(
 ///   short messages at 2.0 text on a narrow phone (#499).
 /// - **Dimensional tokens** — [BgeTokens.standard] and [BgeStatusColors] are
 ///   installed as `ThemeExtension`s on every theme.
+/// - **Line colors** — [BgeLineColors], the separator and the row outline,
+///   derived from each theme's own scheme and installed on every theme
+///   (#659).
 ///
 /// The high-contrast factories are wired by the shell to
 /// `MaterialApp.highContrastTheme` / `highContrastDarkTheme`, so the OS
@@ -131,13 +135,13 @@ abstract final class BgeTheme {
   /// palette will arrive from persisted state that already has a natural home
   /// to hold the built themes.
   static BgeThemeSet from(BgePalette palette) => BgeThemeSet._(
-    light: _build(palette.light),
-    dark: _build(palette.dark),
-    highContrastLight: _build(palette.highContrastLight),
-    highContrastDark: _build(palette.highContrastDark),
+    light: _build(palette.light, highContrast: false),
+    dark: _build(palette.dark, highContrast: false),
+    highContrastLight: _build(palette.highContrastLight, highContrast: true),
+    highContrastDark: _build(palette.highContrastDark, highContrast: true),
   );
 
-  static ThemeData _build(ColorScheme scheme) {
+  static ThemeData _build(ColorScheme scheme, {required bool highContrast}) {
     const tokens = BgeTokens.standard;
     return ThemeData(
       useMaterial3: true,
@@ -223,7 +227,11 @@ abstract final class BgeTheme {
           size: 24,
         ),
       ),
-      extensions: [tokens, BgeStatusColors.forScheme(scheme)],
+      extensions: [
+        tokens,
+        BgeStatusColors.forScheme(scheme),
+        BgeLineColors.forScheme(scheme, highContrast: highContrast),
+      ],
     );
   }
 }

@@ -16,6 +16,16 @@ void main() {
     ),
   };
 
+  /// The surfaces a control or a row sits on.
+  List<(String, Color)> surfaces(ColorScheme s) => [
+    ('surface', s.surface),
+    ('surfaceContainerLowest', s.surfaceContainerLowest),
+    ('surfaceContainerLow', s.surfaceContainerLow),
+    ('surfaceContainer', s.surfaceContainer),
+    ('surfaceContainerHigh', s.surfaceContainerHigh),
+    ('surfaceContainerHighest', s.surfaceContainerHighest),
+  ];
+
   group('BgeTheme accessibility baseline (all four themes)', () {
     for (final entry in themes.entries) {
       final (theme, scheme) = entry.value;
@@ -71,17 +81,35 @@ void main() {
     }
   });
 
-  group('BgeTheme button focus ring (all four themes, #644)', () {
-    /// The surfaces a button sits on, and so the ones its ring touches.
-    List<(String, Color)> surfaces(ColorScheme s) => [
-      ('surface', s.surface),
-      ('surfaceContainerLowest', s.surfaceContainerLowest),
-      ('surfaceContainerLow', s.surfaceContainerLow),
-      ('surfaceContainer', s.surfaceContainer),
-      ('surfaceContainerHigh', s.surfaceContainerHigh),
-      ('surfaceContainerHighest', s.surfaceContainerHighest),
-    ];
+  group('BgeTheme line colours (all four themes, #659)', () {
+    for (final entry in themes.entries) {
+      final (theme, scheme) = entry.value;
+      final highContrast = entry.key.startsWith('highContrast');
 
+      test('${entry.key}: installs BgeLineColors derived from its own '
+          'scheme', () {
+        final lines = theme.extension<BgeLineColors>()!;
+        expect(lines.separator, scheme.outline);
+        expect(
+          lines.rowOutline,
+          highContrast ? scheme.outline : scheme.outlineVariant,
+        );
+      });
+
+      test('${entry.key}: the separator holds 3:1 against every surface', () {
+        final separator = theme.extension<BgeLineColors>()!.separator;
+        for (final (role, color) in surfaces(scheme)) {
+          expect(
+            Wcag.contrastRatio(separator, color),
+            greaterThanOrEqualTo(3.0),
+            reason: 'separator against $role',
+          );
+        }
+      });
+    }
+  });
+
+  group('BgeTheme button focus ring (all four themes, #644)', () {
     for (final entry in themes.entries) {
       final (theme, scheme) = entry.value;
       final ring = BgeButtonFocusRing.colorOf(scheme);
