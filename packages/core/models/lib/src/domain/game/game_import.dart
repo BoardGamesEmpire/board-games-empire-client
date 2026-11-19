@@ -154,12 +154,18 @@ abstract class ImportJob with _$ImportJob {
     required String jobId,
     required ImportJobStatus status,
 
-    /// Why the job is in the batch. Only the [ImportJobOrigin.requested] job
-    /// decides how the import ends.
+    /// Why the job is in the batch. The [ImportJobOrigin.requested] job
+    /// decides the import's outcome: its game opens, or its failure is
+    /// reported. The batch's other jobs decide when it ends: not until none
+    /// of them is pending or running.
     required ImportJobOrigin origin,
 
     /// The game's id at its DataGateway.
     required String externalId,
+
+    /// The job this one hangs off: the requested job's id on a chosen
+    /// expansion or an added base game, absent on the requested job itself.
+    String? parentJobId,
 
     /// The game's id on this server, once the job has completed.
     String? gameId,

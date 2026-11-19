@@ -126,4 +126,15 @@ void main() {
       );
     });
   });
+  test('ImportJob.parentJobId is absent unless given', () {
+    const root = ImportJob(
+      jobId: 'r',
+      status: ImportJobStatus.running,
+      origin: ImportJobOrigin.requested,
+      externalId: 'x',
+    );
+
+    expect(root.parentJobId, isNull);
+    expect(root.copyWith(parentJobId: 'p').parentJobId, 'p');
+  });
 }

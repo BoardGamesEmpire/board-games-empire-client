@@ -271,11 +271,21 @@ class _GamesRemote implements GamesRemoteDataSource {
     },
   );
 
+  /// The targets every expansions read asked for.
+  final List<GameExpansionsTarget> expansionTargets = [];
+
+  @override
+  Future<GameSearchResults> fetchExpansions(GameExpansionsTarget target) async {
+    expansionTargets.add(target);
+    return const GameSearchResults();
+  }
+
   @override
   Future<GameImportReceipt> startImport({
     required String gatewayId,
     required String externalId,
     required String correlationId,
+    List<String> expansionExternalIds = const [],
   }) async => GameImportReceipt(
     batchId: '0b7c2f9e-3a41-4c8e-9d2a-5f6b7c8d9e0f',
     baseJobId: 'job_base',

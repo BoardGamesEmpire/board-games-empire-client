@@ -138,7 +138,7 @@ const Map<String, Object?> emptyEventPage = {
 };
 
 /// The caller's access to the types the session asks about: DataGateway,
-/// Household and SystemSetting.
+/// Game, Household and SystemSetting.
 ///
 /// `dio_network/test/user/user_remote_data_source_impl_test.dart`, the
 /// `fetchAccess` success case, with the values
@@ -158,6 +158,14 @@ const Map<String, Object?> someAccess = {
     // The session asks about households too (#684); a reply that omits a
     // requested type is malformed, so the canned one answers both.
     'Household': {
+      'create': 'none',
+      'read': 'none',
+      'update': 'none',
+      'delete': 'none',
+      'manage': 'none',
+    },
+    // And the catalog's games (#713), for the same reason.
+    'Game': {
       'create': 'none',
       'read': 'none',
       'update': 'none',

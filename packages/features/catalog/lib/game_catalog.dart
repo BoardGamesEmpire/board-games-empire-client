@@ -2,6 +2,7 @@
 // them (#715); a caller of the game search finds them here too.
 export 'package:game_filters/game_filters.dart' show GameLengthBand;
 
+export 'src/access/catalog_resource_types.dart';
 export 'src/bloc/game_browse_bloc.dart';
 export 'src/bloc/game_browse_event.dart';
 export 'src/bloc/game_browse_state.dart';

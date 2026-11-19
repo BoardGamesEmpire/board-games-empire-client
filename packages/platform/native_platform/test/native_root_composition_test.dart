@@ -133,8 +133,8 @@ void main() {
         );
       });
 
-      test('the one access request names the DataGateway, household and '
-          'system setting types (#684, #807)', () async {
+      test('the one access request names the DataGateway, game, household '
+          'and system setting types (#684, #807, #713)', () async {
         final access = harness.container.get<CallerAccessRepository>();
 
         await pollUntil(
@@ -149,7 +149,7 @@ void main() {
         expect(requests, hasLength(1));
         expect(
           requests.single.queryParameters['resourceTypes'],
-          'DataGateway,Household,SystemSetting',
+          'Game,DataGateway,Household,SystemSetting',
         );
       });
 
