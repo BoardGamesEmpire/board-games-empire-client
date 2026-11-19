@@ -178,26 +178,40 @@ void main() {
                 child: _Host(
                   theme: theme,
                   scale: scale,
-                  child: const Column(
-                    children: [
-                      BgeOutlinedRow(
-                        child: ListTile(
-                          leading: BgeThumbnail(url: _portraitUrl),
-                          title: Text('Wingspan'),
-                        ),
-                      ),
-                      BgeOutlinedRow(
-                        child: ListTile(
-                          leading: BgeThumbnail(url: _portraitUrl),
-                          title: Text(
-                            'Twilight Imperium: Fourth Edition',
-                          ),
-                          subtitle: Text(
-                            '2017 · 3–6 players · 240–480 min',
+                  child: Builder(
+                    builder: (context) => Column(
+                      children: [
+                        BgeOutlinedRow(
+                          child: ListTile(
+                            titleAlignment: BgeThumbnail.titleAlignmentOf(
+                              context,
+                            ),
+                            minTileHeight: BgeThumbnail.minTileHeightOf(
+                              context,
+                            ),
+                            leading: const BgeThumbnail(url: _portraitUrl),
+                            title: const Text('Wingspan'),
                           ),
                         ),
-                      ),
-                    ],
+                        BgeOutlinedRow(
+                          child: ListTile(
+                            titleAlignment: BgeThumbnail.titleAlignmentOf(
+                              context,
+                            ),
+                            minTileHeight: BgeThumbnail.minTileHeightOf(
+                              context,
+                            ),
+                            leading: const BgeThumbnail(url: _portraitUrl),
+                            title: const Text(
+                              'Twilight Imperium: Fourth Edition',
+                            ),
+                            subtitle: const Text(
+                              '2017 · 3–6 players · 240–480 min',
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),

@@ -67,6 +67,7 @@ class CatalogGameRow extends StatelessWidget {
       child: MergeSemantics(
         child: ListTile(
           titleAlignment: BgeThumbnail.titleAlignmentOf(context),
+          minTileHeight: BgeThumbnail.minTileHeightOf(context),
           onTap: onTap,
           enabled: !(onlineOnly && BgeConnectivityScope.offlineOf(context)),
           leading: BgeThumbnail(

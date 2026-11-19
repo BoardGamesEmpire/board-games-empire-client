@@ -102,8 +102,9 @@ ButtonStyle _buttonStyle(BgeButtonFocusRingPlacement placement) => ButtonStyle(
 ///   with a transparent `surfaceTintColor`. Material's default tint took
 ///   `primary` text on the bar below 4.5:1 in light (#802).
 /// - **List rows line up with their title** — `ListTileTitleAlignment
-///   .titleHeight`, so a tall row's thumbnail sits beside its title rather
-///   than centred (#647).
+///   .titleHeight`, so a tall row's icon, switch or chevron sits beside its
+///   title rather than centred (#647). Rows that lead with a thumbnail set
+///   their own alignment through `BgeThumbnail.titleAlignmentOf`.
 ///
 /// The high-contrast factories are wired by the shell to
 /// `MaterialApp.highContrastTheme` / `highContrastDarkTheme`, so the OS
@@ -238,10 +239,12 @@ abstract final class BgeTheme {
       // that at 8%. In light that took `primary` text on the bar to 4.39:1.
       // With no tint the bar stays `surfaceContainer`, 4.88:1.
       appBarTheme: const AppBarThemeData(surfaceTintColor: Colors.transparent),
-      // #647: with Material's default alignment a tall row's thumbnail is
-      // centred, so beside the facts and away from the title. `titleHeight`
-      // puts leading and trailing at the title's first line when the row is
-      // tall, and centres them when it is not.
+      // #647: with Material's default alignment a tall row's leading and
+      // trailing are centred, so beside the subtitle and away from the
+      // title. `titleHeight` puts them at the title's first line when the
+      // row is tall, and centres them when it is not. Rows that lead with a
+      // thumbnail set their own alignment (`BgeThumbnail.titleAlignmentOf`);
+      // this governs every other row: icons, switches, chevrons.
       listTileTheme: const ListTileThemeData(
         titleAlignment: ListTileTitleAlignment.titleHeight,
       ),

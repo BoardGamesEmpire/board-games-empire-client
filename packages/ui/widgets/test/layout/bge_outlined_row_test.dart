@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
+final double spaceSm = BgeTokens.standard.spaceSm;
 const _leadingKey = Key('leading');
 const _longTitle = 'Twilight Imperium: Fourth Edition';
 
@@ -19,11 +20,16 @@ Widget _host(Widget child, {ThemeData? theme, double scale = 1.0}) =>
       home: Scaffold(body: SingleChildScrollView(child: child)),
     );
 
+/// A row as the screens build one that leads with a thumbnail.
 Widget _row(String title, {String? subtitle}) => BgeOutlinedRow(
-  child: ListTile(
-    leading: const SizedBox(key: _leadingKey, width: 56, height: 56),
-    title: Text(title),
-    subtitle: subtitle == null ? null : Text(subtitle),
+  child: Builder(
+    builder: (context) => ListTile(
+      titleAlignment: BgeThumbnail.titleAlignmentOf(context),
+      minTileHeight: BgeThumbnail.minTileHeightOf(context),
+      leading: const SizedBox(key: _leadingKey, width: 56, height: 56),
+      title: Text(title),
+      subtitle: subtitle == null ? null : Text(subtitle),
+    ),
   ),
 );
 
@@ -226,15 +232,15 @@ void main() {
                 .first
                 .bottom +
             titleTop;
-        // A tall row hangs the thumbnail from the title's top; a one-line row
-        // is shorter than its thumbnail, so the title is centred on it and
-        // starts below the thumbnail's top. Either way the thumbnail's top is
-        // within the title's first line.
+        // A tall row hangs the thumbnail from the title's top. A one-line row
+        // is as tall as its thumbnail and the padding around it, so the title
+        // is centred beside the thumbnail and starts below its top. Either way
+        // the thumbnail's top is within the title's first line.
         if (subtitle != null) {
           expect(titleTop, lessThanOrEqualTo(leadingTop));
         } else {
-          // titleHeight centres a one-line 56dp tile's title within the
-          // thumbnail's span.
+          // The 72dp tile centres a one-line title within the thumbnail's
+          // span, which `top` sets 8dp down.
           expect(titleTop, greaterThanOrEqualTo(leadingTop));
           expect(
             titleTop + paragraph.size.height,
@@ -242,6 +248,22 @@ void main() {
           );
         }
         expect(leadingTop, lessThan(firstLineBottom));
+        // Inside the outline, with the tile's least padding above it, so it
+        // never paints over the border (#647).
+        final box = tester.getRect(
+          find
+              .descendant(
+                of: find.byType(BgeOutlinedRow),
+                matching: find.byType(DecoratedBox),
+              )
+              .first,
+        );
+        final leading = tester.getRect(find.byKey(_leadingKey));
+        expect(leading.top - box.top, greaterThanOrEqualTo(spaceSm));
+        expect(box.bottom - leading.bottom, greaterThanOrEqualTo(spaceSm));
+        if (subtitle == null) {
+          expect(box.height, BgeThumbnail.listExtent + 2 * spaceSm);
+        }
         expect(tester.takeException(), isNull);
       });
     }

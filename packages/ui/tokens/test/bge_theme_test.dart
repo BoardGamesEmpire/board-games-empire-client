@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
@@ -500,5 +501,90 @@ void main() {
         expect(tester.getSize(dialogSurface(AlertDialog)).width, 280);
       });
     }
+  });
+
+  group('BgeTheme list rows (#647)', () {
+    Future<void> pumpRow(
+      WidgetTester tester, {
+      required double width,
+      required double scale,
+      required String title,
+    }) async {
+      tester.view.physicalSize = Size(width, 2000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: BgeTheme.light(),
+          builder: (context, app) => MediaQuery(
+            data: MediaQuery.of(
+              context,
+            ).copyWith(textScaler: TextScaler.linear(scale)),
+            child: app!,
+          ),
+          home: Scaffold(
+            body: Align(
+              alignment: Alignment.topLeft,
+              child: ListTile(
+                key: const Key('tile'),
+                leading: const Icon(Icons.casino, key: Key('leading')),
+                title: Text(title),
+                subtitle: const Text('Subtitle'),
+                trailing: Switch(
+                  key: const Key('trailing'),
+                  value: true,
+                  onChanged: (_) {},
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    Rect rectOf(WidgetTester tester, String key) =>
+        tester.getRect(find.byKey(Key(key)));
+
+    testWidgets('at 320dp and 2.0x text, a tall row hangs its leading and '
+        'trailing from the title, not the middle', (tester) async {
+      const title = 'Twilight Imperium Fourth Edition Rules';
+      await pumpRow(tester, width: 320, scale: 2, title: title);
+
+      final paragraph = tester.renderObject<RenderParagraph>(find.text(title));
+      final lines =
+          paragraph.size.height /
+          paragraph.getFullHeightForCaret(
+            const TextPosition(offset: 0),
+          );
+      expect(lines, greaterThanOrEqualTo(3));
+
+      final tile = rectOf(tester, 'tile');
+      for (final key in ['leading', 'trailing']) {
+        final child = rectOf(tester, key);
+        final centred = (tile.height - child.height) / 2;
+        // Measured: a 484dp tile, its icon and switch 16dp down.
+        expect(child.top - tile.top, 16, reason: key);
+        expect(child.top - tile.top, lessThan(centred - 100), reason: key);
+      }
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('at 390dp and 1.0x text, a two-line row sets its leading '
+        'by titleHeight: 16dp down, and a taller trailing centred', (
+      tester,
+    ) async {
+      await pumpRow(tester, width: 390, scale: 1, title: 'Wingspan');
+
+      final tile = rectOf(tester, 'tile');
+      final leading = rectOf(tester, 'leading');
+      final trailing = rectOf(tester, 'trailing');
+      // Measured: a 72dp tile. `titleHeight` takes the lesser of 16dp and the
+      // centred offset, so the 24dp icon is 16dp down and the 48dp switch,
+      // centred at 12dp, is 12dp down.
+      expect(tile.height, 72);
+      expect(leading.top - tile.top, 16);
+      expect(trailing.top - tile.top, 12);
+      expect(tester.takeException(), isNull);
+    });
   });
 }

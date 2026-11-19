@@ -115,8 +115,17 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  SemanticsNode rowSemantics(WidgetTester tester, String id) =>
-      tester.getSemantics(find.byKey(GameCollectionListScreen.rowKey(id)));
+  /// The merged node of the row [row] finds: the `MergeSemantics` sits inside
+  /// the row's outline (#647), below the key.
+  SemanticsNode mergedNode(WidgetTester tester, Finder row) =>
+      tester.getSemantics(
+        find.descendant(of: row, matching: find.byType(MergeSemantics)).first,
+      );
+
+  SemanticsNode rowSemantics(WidgetTester tester, String id) => mergedNode(
+    tester,
+    find.byKey(GameCollectionListScreen.rowKey(id)),
+  );
 
   group('while the cache is filling', () {
     testWidgets('shows a spinner rather than an empty state', (tester) async {
@@ -2267,11 +2276,10 @@ void main() {
     ) async {
       await show(tester, twice);
 
-      final label = tester
-          .getSemantics(
-            find.byKey(GameCollectionListScreen.stackKey('g-wingspan')),
-          )
-          .label;
+      final label = mergedNode(
+        tester,
+        find.byKey(GameCollectionListScreen.stackKey('g-wingspan')),
+      ).label;
       // The title first, then the copies, as a screen reader meets them.
       expect(
         label,
@@ -2294,7 +2302,7 @@ void main() {
       );
       // No comma inside an entry: it would read as a third copy.
       expect(
-        tester.getSemantics(stack).label,
+        mergedNode(tester, stack).label,
         contains('2 copies: Steam Physical, Steam Digital'),
       );
     });
@@ -2322,7 +2330,7 @@ void main() {
         );
         // No comma inside an entry: it would read as a third copy.
         expect(
-          tester.getSemantics(stack).label,
+          mergedNode(tester, stack).label,
           contains('2 copies: Tabletop Physical, Tabletop Digital'),
         );
       },
@@ -2343,7 +2351,7 @@ void main() {
         find.descendant(of: row, matching: find.byIcon(Icons.favorite)),
         findsOneWidget,
       );
-      expect(tester.getSemantics(row).label, contains('Favorite'));
+      expect(mergedNode(tester, row).label, contains('Favorite'));
     });
 
     testWidgets("a stack's cover is a favorite when any of its entries is", (
@@ -3139,7 +3147,7 @@ void main() {
         greaterThan(tester.getTopLeft(find.text('Wingspan')).dx),
       );
       expect(
-        tester.getSemantics(nested).label,
+        mergedNode(tester, nested).label,
         contains('European Expansion, expansion for Wingspan'),
       );
     });
@@ -3183,7 +3191,7 @@ void main() {
       );
       expect(stack, findsOneWidget);
       expect(
-        tester.getSemantics(stack).label,
+        mergedNode(tester, stack).label,
         contains('European Expansion, expansion for Wingspan'),
       );
       await tester.tap(stack);
@@ -3253,7 +3261,7 @@ void main() {
         GameCollectionListScreen.nestedRowKey('g-catan', 'x-2'),
       );
       expect(
-        tester.getSemantics(row).label,
+        mergedNode(tester, row).label,
         contains('Cities, expansion for Catan: Seafarers Edition'),
       );
     });
@@ -4360,6 +4368,42 @@ void main() {
         );
       }
     });
+
+    testWidgets(
+      "a row's node is the outline's: no gap beneath, no indent (#647)",
+      (
+        tester,
+      ) async {
+        final handle = tester.ensureSemantics();
+        await show(tester, [...once, base, expansion('x-1', 'Tabletop')]);
+
+        for (final (key, indented) in [
+          (GameCollectionListScreen.rowKey('e-1'), false),
+          (GameCollectionListScreen.nestedRowKey('g-base', 'x-1'), true),
+        ]) {
+          final row = find.byKey(key);
+          final outline = tester.getRect(
+            find.descendant(of: row, matching: find.byType(DecoratedBox)).first,
+          );
+          final whole = tester.getRect(row);
+          final node = mergedNode(tester, row);
+
+          // The key's box holds the gap below the outline, and the indent.
+          expect(
+            whole.height - outline.height,
+            BgeTokens.standard.spaceSm,
+            reason: '$key',
+          );
+          expect(
+            whole.width - outline.width,
+            indented ? BgeTokens.standard.spaceLg : 0,
+            reason: '$key',
+          );
+          expect(node.rect.size, outline.size, reason: '$key');
+        }
+        handle.dispose();
+      },
+    );
 
     void openPage(BuildContext context, String id) =>
         Navigator.of(context).push(

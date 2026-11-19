@@ -19,10 +19,11 @@ Dark, warm, and electric. The surfaces are walnut in shadow — the table the
 games sit on. The accents are the storm above it: an electric blue strike, a
 violet cast, and a rare ember.
 
-**Dark is the reference.** The palette was authored dark-first and light is
-derived to match it. This is the opposite of the placeholder palette it
-replaced. Light is held to the same bar as dark: the same contrast, the same
-separation between surfaces, the same review (#940).
+**Neither mode is the reference.** Light and dark are held to the same bar:
+the same contrast, the same separation between surfaces, and the same
+rendered review (#940). The palette was authored dark-first and light is
+derived to match it, the opposite of the placeholder palette it replaced;
+that is how it was made, not a rank.
 
 ### Roles and their discipline
 

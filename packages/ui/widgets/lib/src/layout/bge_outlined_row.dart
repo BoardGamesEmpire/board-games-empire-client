@@ -20,24 +20,32 @@ import 'package:ui_tokens/ui_tokens.dart';
 ///
 /// A nested row's caller indents outside this widget, so the outline starts
 /// at the indent.
+///
+/// A row that merges its semantics puts its `MergeSemantics` inside this
+/// widget, around [child]. The merged node's rect then leaves out the gap
+/// below the outline, and a nested row's indent.
 class BgeOutlinedRow extends StatelessWidget {
   const BgeOutlinedRow({required this.child, super.key});
 
   /// The row to outline: a tile, or a tile with its actions beneath it.
   final Widget child;
 
-  /// The shape every row inside takes: [BgeTokens.radiusMd] corners, outlined
-  /// in [BgeLineColors.rowOutline] at [BorderSide]'s default width.
+  /// The corners of the outline, which a focus ring on the row follows:
+  /// [BgeTokens.radiusMd].
+  static BorderRadius borderRadiusOf(BuildContext context) =>
+      BorderRadius.circular(BgeTokens.of(context).radiusMd);
+
+  /// The shape the row paints around its whole child: [borderRadiusOf]
+  /// corners, outlined in [BgeLineColors.rowOutline] at [BorderSide]'s
+  /// default width. The tiles inside take [tileShapeOf].
   static ShapeBorder shapeOf(BuildContext context) => RoundedRectangleBorder(
-    borderRadius: BorderRadius.circular(BgeTokens.of(context).radiusMd),
+    borderRadius: borderRadiusOf(context),
     side: BorderSide(color: BgeLineColors.of(context).rowOutline),
   );
 
   /// The shape a tile inside takes: [shapeOf]'s corners, with no outline.
   static ShapeBorder tileShapeOf(BuildContext context) =>
-      RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(BgeTokens.of(context).radiusMd),
-      );
+      RoundedRectangleBorder(borderRadius: borderRadiusOf(context));
 
   @override
   Widget build(BuildContext context) => Padding(

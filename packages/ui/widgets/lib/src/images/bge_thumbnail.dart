@@ -68,10 +68,20 @@ class BgeThumbnail extends StatelessWidget {
   /// aligns it by [ListTileTitleAlignment.titleHeight] (#647).
   ///
   /// At default sizes [ListTileTitleAlignment.top] keeps every row's
-  /// thumbnail at the same height, where `titleHeight` puts a short row's at
-  /// 8dp and a wrapped row's at 16dp. From this scale every row is tall
-  /// enough that `titleHeight` sets it level with the title's first line.
+  /// thumbnail at the same height, where `titleHeight` would put a short
+  /// row's at 8dp and a wrapped row's at 16dp. From this scale a row with a
+  /// facts line is tall enough that `titleHeight` puts the thumbnail 16dp
+  /// down, level with the title's first line, and a row with a title alone,
+  /// held to [minTileHeightOf], has it centred at 8dp.
   static const double titleHeightTextScale = 1.3;
+
+  /// The least height of a list row that leads with a thumbnail (#647): the
+  /// thumbnail with [BgeTokens.spaceSm] above and below it. That is Material
+  /// 3's `ListTile.minVerticalPadding`, so a row with a title alone holds its
+  /// thumbnail inside its outline, as a tile sizes a one-line row without
+  /// counting the leading's height. Pass it as the tile's `minTileHeight`.
+  static double minTileHeightOf(BuildContext context) =>
+      listExtent + 2 * BgeTokens.of(context).spaceSm;
 
   /// How a list row that leads with a thumbnail sets it beside its title
   /// (#647). Pass it as the tile's `titleAlignment`.
