@@ -613,7 +613,31 @@
   },
   "catalogImportStillRunning": "This is taking longer than usual. The server is still importing it, so you can check again, or close this and search for it later.",
   "@catalogImportStillRunning": {
-    "description": "Shown when an import has run for 90 seconds without finishing. Not a failure: the server keeps importing the game. Followed by the catalogImportCheckAgain button."
+    "description": "Shown when an import has run past its deadline without finishing: 90 seconds for one game, and longer for each further game in the import. Not a failure: the server keeps importing the game. Followed by the catalogImportCheckAgain button."
+  },
+  "catalogImportStillRunningImported": "{title} was imported. The server is still importing the other games, so you can open it now, check again, or close this and search for them later.",
+  "@catalogImportStillRunningImported": {
+    "description": "Shown when an import has run past its deadline after the game asked for was imported but while other games in the same import (its expansions, or a base game it needs) are still importing. Followed by the catalogImportCheckAgain button and a button that opens the game.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Spirit Island"
+      }
+    }
+  },
+  "catalogImportCompleted": "{title} was imported.",
+  "@catalogImportCompleted": {
+    "description": "Shown and announced when the game asked for and every other game in the same import were imported. Usually the game's page opens at once over it.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Spirit Island"
+      }
+    }
+  },
+  "catalogImportFailedTitle": "Import failed",
+  "@catalogImportFailedTitle": {
+    "description": "Title of the banner in the import progress when the game asked for wasn't imported. Some of the messages under it (catalogImportFailedNotOnDataGateway, catalogImportFailedDataGateway, catalogImportFailedUnreachable) state only a cause, so this says what failed."
   },
   "catalogImportFailedNotOnDataGateway": "The data source no longer has this game.",
   "@catalogImportFailedNotOnDataGateway": {
@@ -657,25 +681,25 @@
       }
     }
   },
-  "catalogImportJobAddedBaseGame": "Also importing {title}, the base game {parent} needs",
+  "catalogImportJobAddedBaseGame": "Also importing {title}, the base game {neededBy} needs",
   "@catalogImportJobAddedBaseGame": {
-    "description": "A row of the import's list for a base game the server added because an expansion needs it. The title is the base game's, once the server knows it; the parent is the game that needs it.",
+    "description": "A row of the import's list for a base game the server added because an expansion needs it. {title} is the base game's title, once the server knows it. {neededBy} is the title of the game in the same import that needs this base game, such as the expansion asked for.",
     "placeholders": {
       "title": {
         "type": "String",
         "example": "Spirit Island"
       },
-      "parent": {
+      "neededBy": {
         "type": "String",
         "example": "Spirit Island: Jagged Earth"
       }
     }
   },
-  "catalogImportJobAddedBaseGameUntitled": "Also importing the base game {parent} needs",
+  "catalogImportJobAddedBaseGameUntitled": "Also importing the base game {neededBy} needs",
   "@catalogImportJobAddedBaseGameUntitled": {
-    "description": "catalogImportJobAddedBaseGame before the server knows the base game's title.",
+    "description": "catalogImportJobAddedBaseGame before the server knows the base game's title. {neededBy} is the title of the game in the same import that needs this base game, such as the expansion asked for.",
     "placeholders": {
-      "parent": {
+      "neededBy": {
         "type": "String",
         "example": "Spirit Island: Jagged Earth"
       }
@@ -725,11 +749,39 @@
   },
   "catalogImportOpenGame": "Open {title}",
   "@catalogImportOpenGame": {
-    "description": "Button that opens the game an import brought to the server, when some of the other games in the import were not imported.",
+    "description": "Button that opens the game an import brought to the server, when some of the other games in the import were not imported or are still importing.",
     "placeholders": {
       "title": {
         "type": "String",
         "example": "Spirit Island"
+      }
+    }
+  },
+  "catalogImportAction": "Import",
+  "@catalogImportAction": {
+    "description": "Button in a search result's quick look that imports the game from its data source into this server, with no expansions ticked."
+  },
+  "catalogReimportAction": "Re-import",
+  "@catalogReimportAction": {
+    "description": "catalogImportAction for a game the server already holds: importing it again updates it from the data source."
+  },
+  "catalogImportWithExpansions": "{count, plural, =1{Import with 1 expansion} other{Import with {count} expansions}}",
+  "@catalogImportWithExpansions": {
+    "description": "catalogImportAction once expansions are ticked in the checklist above it: the game is imported together with them.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "2"
+      }
+    }
+  },
+  "catalogReimportWithExpansions": "{count, plural, =1{Re-import with 1 expansion} other{Re-import with {count} expansions}}",
+  "@catalogReimportWithExpansions": {
+    "description": "catalogReimportAction once expansions are ticked in the checklist above it: the game is imported again together with them.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "2"
       }
     }
   },
@@ -769,7 +821,7 @@
   },
   "catalogExpansionOnServer": "On this server",
   "@catalogExpansionOnServer": {
-    "description": "Said on an expansion's row when the server already holds the game, so it is listed but there is nothing to import."
+    "description": "Said on an expansion's row when the server already holds the game. When the game asked for is imported for the first time, such a row can't be ticked; when it is imported again (Re-import), it can be, and importing it again updates it."
   },
   "catalogImageAlt": "Image: {alt}",
   "@catalogImageAlt": {

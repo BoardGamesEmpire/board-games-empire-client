@@ -8,20 +8,42 @@ import 'package:models/domain.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
-/// Where an import stands, in place: one status line, a row for each game of
-/// the import once there is more than one, and what the user can do next
-/// (#43, #824).
+/// Where an import stands, in place: one status, a row for each game of the
+/// import once there is more than one, and what the user can do next (#43,
+/// #824).
 ///
 /// It reads the [GameImportBloc] provided above it and owns none. The quick
 /// look hosts it where the import button was, so the import goes on in the
 /// place the user started it, and nothing opens over it.
 ///
+/// ## The status
+///
+/// While the import runs, the status is a line saying how far it has got.
+/// An outcome the user stays to read, a failure or an import completed in
+/// part, is a banner in its place (STYLE_GUIDE §4), its tone said by its icon
+/// and its words as well as its colour. Line or banner, it is one focus node
+/// and one semantics node, a live region, so each change is heard once and
+/// focus on it stays as the outcome lands.
+///
+/// It takes focus only when handed it ([autofocus], or a button below going)
+/// and is no Tab stop: Tab goes on from it. While it has focus from a
+/// keyboard, it is ringed.
+///
+/// ## Its buttons
+///
+/// Check again and Try again stay where they are through the poll or the
+/// start they began, enabled and inert, so the focus on them stays (#607,
+/// STYLE_GUIDE §5). When the import then lands where the button no longer
+/// applies, focus on it goes to the status.
+///
 /// ## Ending
 ///
 /// [onImported] runs once, when the requested game is on the server and every
-/// other game of the import is too. When some of the others are not, the
-/// status says so and an Open button calls [onImported] when the user
-/// chooses.
+/// other game of the import is too, and the status says it was imported, for
+/// a caller that leaves this in place. When some of the others are not, the
+/// banner says so, and when they are still importing as the polls run out,
+/// the status does. Either way an Open button calls [onImported] when the
+/// user chooses.
 class GameImportProgress extends StatefulWidget {
   const GameImportProgress({
     required this.requestedTitle,
@@ -31,7 +53,8 @@ class GameImportProgress extends StatefulWidget {
     super.key,
   });
 
-  /// One status line, in a live region that keeps its node across states.
+  /// The status: the line, or the outcome's banner in its place. One node
+  /// across every state, in a live region.
   static const Key statusKey = Key('catalog_import.status');
 
   /// The row of the job [jobId].
@@ -50,15 +73,32 @@ class GameImportProgress extends StatefulWidget {
   final Map<String, String> titlesByExternalId;
 
   /// Called with the requested game's id: once when the import completes, and
-  /// on each press of Open after it completes in part.
+  /// on each press of Open after it completes in part, or while the others
+  /// still run.
   final void Function(BuildContext context, String gameId) onImported;
 
-  /// Whether the status takes focus when this is first built, so a screen
-  /// reader lands on where the import stands.
+  /// Whether the status takes focus once this is first drawn, from whatever
+  /// had it, so a keyboard or screen-reader user lands on where the import
+  /// stands.
+  ///
+  /// It asks for focus at the end of that frame rather than through
+  /// [Focus.autofocus]. The control that started the import is usually the
+  /// one this replaces, and once it has gone, Flutter's autofocus gives way
+  /// to the focus the page had before it, such as a description's More
+  /// (#713).
   final bool autofocus;
 
   @override
   State<GameImportProgress> createState() => _GameImportProgressState();
+}
+
+/// A button whose press starts something the import then answers.
+enum _Retry {
+  /// Check again: polls the same import.
+  checkAgain,
+
+  /// Try again: starts the import again.
+  tryAgain,
 }
 
 class _GameImportProgressState extends State<GameImportProgress> {
@@ -66,83 +106,187 @@ class _GameImportProgressState extends State<GameImportProgress> {
   /// bloc, or a stream standing in for it, may announce it twice.
   bool _imported = false;
 
+  /// The status's focus node, line and banner alike. It takes focus only
+  /// when handed it.
+  final FocusNode _statusFocus = FocusNode(
+    debugLabel: 'GameImportProgress status',
+    skipTraversal: true,
+  );
+
+  /// Around each button of [_Retry], to tell whether focus is on it as it
+  /// goes. They take no focus of their own.
+  final Map<_Retry, FocusNode> _areas = {
+    for (final retry in _Retry.values)
+      retry: FocusNode(
+        debugLabel: 'GameImportProgress ${retry.name}',
+        canRequestFocus: false,
+        skipTraversal: true,
+      ),
+  };
+
+  /// The button whose press started what runs now. It stays, inert, until
+  /// the import lands.
+  _Retry? _pressed;
+
+  /// Whether the connection is lost, which disables Try again unless its
+  /// own start runs.
+  bool _offline = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.autofocus) {
+      // After the frame that removed the control that had focus: a request
+      // made then wins over the page's focus history (see autofocus). This
+      // runs in that frame's build, so the callback needs no frame asked
+      // for.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _statusFocus.requestFocus();
+      });
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _offline = BgeConnectivityScope.offlineOf(context);
+  }
+
+  @override
+  void dispose() {
+    _statusFocus.dispose();
+    for (final area in _areas.values) {
+      area.dispose();
+    }
+    super.dispose();
+  }
+
+  void _press(GameImportBloc bloc, _Retry retry) {
+    setState(() => _pressed = retry);
+    bloc.add(switch (retry) {
+      _Retry.checkAgain => const GameImportCheckAgainRequested(),
+      _Retry.tryAgain => const GameImportRequested(),
+    });
+  }
+
+  void _onState(BuildContext context, GameImportState state) {
+    final pressed = _pressed;
+    if (pressed != null && !_runs(state)) {
+      // Landed. Focus on a button that goes, or that is offered again but
+      // disabled offline, where it can't hold focus, moves to the status
+      // first, so it never falls to the page's focus history.
+      final keeps =
+          _offers(state, pressed) && !(pressed == _Retry.tryAgain && _offline);
+      if (!keeps && _areas[pressed]!.hasFocus) _statusFocus.requestFocus();
+      setState(() => _pressed = null);
+    }
+    if (state is GameImportCompleted && !_imported) {
+      _imported = true;
+      widget.onImported(context, state.gameId);
+    }
+  }
+
+  /// Whether the import is under way in [state], as it is after a press of
+  /// either button until it lands.
+  static bool _runs(GameImportState state) =>
+      state is GameImportStarting || state is GameImportInProgress;
+
+  /// Whether [state] offers [retry], live.
+  static bool _offers(GameImportState state, _Retry retry) => switch (retry) {
+    _Retry.checkAgain => state is GameImportStillRunning,
+    _Retry.tryAgain => switch (state) {
+      GameImportFailed(:final failure) => _mayTryAgain(failure),
+      _ => false,
+    },
+  };
+
+  /// Whether [retry] is drawn in [state]: offered, or inert while what its
+  /// press started runs.
+  bool _shows(GameImportState state, _Retry retry) =>
+      _offers(state, retry) || (_pressed == retry && _runs(state));
+
   @override
   Widget build(BuildContext context) {
     final l10n = GameCatalogLocalizations.of(context);
     final tokens = BgeTokens.of(context);
 
     return BlocConsumer<GameImportBloc, GameImportState>(
-      listenWhen: (_, state) => state is GameImportCompleted,
-      listener: (context, state) {
-        if (state is! GameImportCompleted || _imported) return;
-        _imported = true;
-        widget.onImported(context, state.gameId);
-      },
+      listener: _onState,
       builder: (context, state) {
         final bloc = context.read<GameImportBloc>();
         final jobs = state.jobs;
-        final offline = BgeConnectivityScope.offlineOf(context);
+        final offline = _offline;
+        final pressed = _pressed;
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Focus(
-              autofocus: widget.autofocus,
-              child: _status(context, l10n, state),
-            ),
+            _status(context, l10n, tokens, state),
             if (jobs.length > 1) ...[
-              SizedBox(height: tokens.spaceSm),
+              const BgeGap.md(),
               Semantics(
                 container: true,
                 label: l10n.catalogImportBatchLabel(jobs.length),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
+                  spacing: tokens.spaceSm,
                   children: [
                     for (final job in jobs)
-                      Padding(
-                        padding: EdgeInsets.only(top: tokens.spaceXs),
-                        child: _JobRow(
-                          key: GameImportProgress.jobKey(job.jobId),
-                          title: _rowTitle(l10n, job, jobs),
-                          status: _jobStatus(l10n, job),
-                        ),
+                      _JobRow(
+                        key: GameImportProgress.jobKey(job.jobId),
+                        title: _rowTitle(l10n, job, jobs),
+                        status: _jobStatus(l10n, job),
                       ),
                   ],
                 ),
               ),
             ],
-            if (state is GameImportFailed &&
-                _mayTryAgain(state.failure) &&
-                offline) ...[
-              SizedBox(height: tokens.spaceSm),
-              const BgeOnlineOnlyNote(),
-            ],
-            if (state is GameImportStillRunning) ...[
-              SizedBox(height: tokens.spaceSm),
-              TextButton(
-                key: GameImportProgress.checkAgainKey,
-                onPressed: () =>
-                    bloc.add(const GameImportCheckAgainRequested()),
-                child: Text(l10n.catalogImportCheckAgain),
-              ),
-            ],
-            if (state case GameImportFailed(:final failure)
-                when _mayTryAgain(failure)) ...[
-              SizedBox(height: tokens.spaceSm),
-              // A new import is a write (#49). Check again only reads.
-              BgeOnlineOnly(
-                showNote: false,
-                child: TextButton(
-                  key: GameImportProgress.tryAgainKey,
-                  onPressed: offline
-                      ? null
-                      : () => bloc.add(const GameImportRequested()),
-                  child: Text(l10n.catalogImportTryAgain),
+            // Keyed, so each keeps its element and its focus as the rows
+            // above it come and go.
+            if (_shows(state, _Retry.checkAgain)) ...[
+              const BgeGap.md(),
+              _area(
+                _Retry.checkAgain,
+                BgeInertButton(
+                  inert: pressed == _Retry.checkAgain,
+                  label: l10n.catalogImportCheckAgain,
+                  // A poll only reads: offline too.
+                  onPressed: () => _press(bloc, _Retry.checkAgain),
+                  builder: (context, focusNode, onPressed) => TextButton(
+                    key: GameImportProgress.checkAgainKey,
+                    focusNode: focusNode,
+                    onPressed: onPressed,
+                    child: Text(l10n.catalogImportCheckAgain),
+                  ),
                 ),
               ),
             ],
-            if (state case GameImportPartlyCompleted(:final gameId)) ...[
-              SizedBox(height: tokens.spaceSm),
+            if (_shows(state, _Retry.tryAgain)) ...[
+              const BgeGap.md(),
+              _area(
+                _Retry.tryAgain,
+                // A new import is a write (#49); its note goes under it.
+                BgeOnlineOnly(
+                  child: BgeInertButton(
+                    inert: pressed == _Retry.tryAgain,
+                    label: l10n.catalogImportTryAgain,
+                    // Offline it is disabled, unless its own start runs:
+                    // that keeps it, and its focus, until the start lands.
+                    onPressed: offline && pressed != _Retry.tryAgain
+                        ? null
+                        : () => _press(bloc, _Retry.tryAgain),
+                    builder: (context, focusNode, onPressed) => TextButton(
+                      key: GameImportProgress.tryAgainKey,
+                      focusNode: focusNode,
+                      onPressed: onPressed,
+                      child: Text(l10n.catalogImportTryAgain),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+            if (_openable(state) case final gameId?) ...[
+              const BgeGap.md(),
               FilledButton(
                 key: GameImportProgress.openKey,
                 onPressed: () => widget.onImported(context, gameId),
@@ -152,6 +296,96 @@ class _GameImportProgressState extends State<GameImportProgress> {
           ],
         );
       },
+    );
+  }
+
+  /// The requested game's id where [state] offers Open: the import completed
+  /// in part, or ran out of polls with that game on the server.
+  static String? _openable(GameImportState state) => switch (state) {
+    GameImportPartlyCompleted(:final gameId) => gameId,
+    GameImportStillRunning(:final gameId) => gameId,
+    _ => null,
+  };
+
+  /// [button], keyed by [retry] and inside its area.
+  Widget _area(_Retry retry, Widget button) => Focus(
+    key: ValueKey(retry),
+    focusNode: _areas[retry],
+    includeSemantics: false,
+    child: button,
+  );
+
+  /// The status: a line while the import runs, a banner once it has failed
+  /// or completed in part. One focus node and one merged node, a live
+  /// region, whichever it is (see "The status").
+  Widget _status(
+    BuildContext context,
+    GameCatalogLocalizations l10n,
+    BgeTokens tokens,
+    GameImportState state,
+  ) {
+    final content = switch (state) {
+      GameImportStarting() => _Status(l10n.catalogImportStarting),
+      GameImportInProgress(running: false) => _Status(l10n.catalogImportQueued),
+      GameImportInProgress() => _Status(l10n.catalogImportRunning),
+      // Usually the caller replaces this at once; one that doesn't, or that
+      // waits for its page to be uncovered, still says the import ended.
+      GameImportCompleted(:final jobs) => _Status(
+        l10n.catalogImportCompleted(_requestedTitle(jobs)),
+        progress: false,
+      ),
+      GameImportStillRunning(gameId: null) => _Status(
+        l10n.catalogImportStillRunning,
+        progress: false,
+      ),
+      GameImportStillRunning(:final jobs) => _Status(
+        l10n.catalogImportStillRunningImported(_requestedTitle(jobs)),
+        progress: false,
+      ),
+      GameImportPartlyCompleted(:final jobs) => BgeInlineBanner(
+        tone: BgeBannerTone.warning,
+        message: l10n.catalogImportPartlyCompleted(
+          _requestedTitle(jobs),
+          jobs
+              .where(
+                (job) =>
+                    job.origin != ImportJobOrigin.requested &&
+                    job.status != ImportJobStatus.completed,
+              )
+              .length,
+        ),
+      ),
+      GameImportFailed(:final failure) => BgeInlineBanner(
+        tone: BgeBannerTone.error,
+        // Some of the messages state only a cause (STYLE_GUIDE §4).
+        title: l10n.catalogImportFailedTitle,
+        message: _failureCopy(l10n, failure),
+      ),
+    };
+    // The ring is drawn inside its box, focusOutlineWidth wide, so the
+    // content sits that far in and focusRingGap more: clear of the ring, as
+    // a filled button's outside ring keeps clear of its fill.
+    final reach = tokens.focusRingGap + tokens.focusOutlineWidth;
+    return BgeFocusRing(
+      // A banner's corners, out by the ring's reach.
+      borderRadius: BorderRadius.circular(
+        content is BgeInlineBanner ? tokens.radiusMd + reach : tokens.radiusSm,
+      ),
+      builder: (context, onFocusChange) => MergeSemantics(
+        child: Focus(
+          focusNode: _statusFocus,
+          onFocusChange: onFocusChange,
+          child: KeyedSubtree(
+            key: GameImportProgress.statusKey,
+            // Inset from the ring, which would otherwise run through the
+            // spinner, the first letter, or the banner's fill.
+            child: Padding(
+              padding: EdgeInsets.all(reach),
+              child: content,
+            ),
+          ),
+        ),
+      ),
     );
   }
 
@@ -180,11 +414,11 @@ class _GameImportProgressState extends State<GameImportProgress> {
     final parent = jobs
         .where((other) => other.jobId == job.parentJobId)
         .firstOrNull;
-    final parentTitle =
+    final neededBy =
         (parent == null ? null : _titleOf(parent)) ?? widget.requestedTitle;
     return title == null
-        ? l10n.catalogImportJobAddedBaseGameUntitled(parentTitle)
-        : l10n.catalogImportJobAddedBaseGame(title, parentTitle);
+        ? l10n.catalogImportJobAddedBaseGameUntitled(neededBy)
+        : l10n.catalogImportJobAddedBaseGame(title, neededBy);
   }
 
   static String _jobStatus(GameCatalogLocalizations l10n, ImportJob job) {
@@ -201,37 +435,6 @@ class _GameImportProgressState extends State<GameImportProgress> {
       ImportJobStatus.failed => l10n.catalogImportJobFailed,
       ImportJobStatus.cancelled => l10n.catalogImportJobCancelled,
     };
-  }
-
-  Widget _status(
-    BuildContext context,
-    GameCatalogLocalizations l10n,
-    GameImportState state,
-  ) {
-    final (text, progress) = switch (state) {
-      GameImportStarting() => (l10n.catalogImportStarting, true),
-      GameImportInProgress(running: false) => (l10n.catalogImportQueued, true),
-      // A completed import hands over at once, which goes on showing it as
-      // running while the caller replaces this.
-      GameImportInProgress() ||
-      GameImportCompleted() => (l10n.catalogImportRunning, true),
-      GameImportStillRunning() => (l10n.catalogImportStillRunning, false),
-      GameImportPartlyCompleted() => (
-        l10n.catalogImportPartlyCompleted(
-          _requestedTitle(state.jobs),
-          state.jobs
-              .where(
-                (job) =>
-                    job.origin != ImportJobOrigin.requested &&
-                    job.status != ImportJobStatus.completed,
-              )
-              .length,
-        ),
-        false,
-      ),
-      GameImportFailed(:final failure) => (_failureCopy(l10n, failure), false),
-    };
-    return _Status(text, progress: progress);
   }
 
   static String _failureCopy(
@@ -258,11 +461,10 @@ class _GameImportProgressState extends State<GameImportProgress> {
   };
 }
 
-/// Where the import stands: one live region, whatever the state, so a screen
-/// reader hears each change, an outcome included. The region is one node
-/// across the states.
+/// A stage of the import, in a live region: a screen reader hears each
+/// change. Merged into the status's node with its focus.
 class _Status extends StatelessWidget {
-  const _Status(this.text, {required this.progress});
+  const _Status(this.text, {this.progress = true});
 
   final String text;
 
@@ -271,7 +473,6 @@ class _Status extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Semantics(
-    key: GameImportProgress.statusKey,
     container: true,
     liveRegion: true,
     label: text,

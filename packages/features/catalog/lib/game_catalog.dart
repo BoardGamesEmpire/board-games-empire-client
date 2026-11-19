@@ -30,4 +30,5 @@ export 'src/screens/game_search_screen.dart';
 export 'src/search/data_gateway_search_grant.dart';
 export 'src/search/data_gateway_search_grant_installer.dart';
 export 'src/widgets/game_description.dart' show GameDescription;
+export 'src/widgets/game_import_panel.dart';
 export 'src/widgets/game_import_progress.dart';
