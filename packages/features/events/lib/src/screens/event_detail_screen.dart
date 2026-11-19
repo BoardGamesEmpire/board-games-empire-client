@@ -2873,6 +2873,7 @@ class _Dates extends StatelessWidget {
         return removeRequest;
       // A date's menu offers only the date actions above.
       case EventAction.edit:
+      case EventAction.editRules:
       case EventAction.delete:
       case EventAction.cancel:
       case EventAction.archive:
