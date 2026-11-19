@@ -1219,6 +1219,31 @@ void main() {
         }),
       );
 
+      // Save spins while the answer is held, so this never settles. The
+      // failing node is Save, disabled while the save is on its way and
+      // dimmed by design: WCAG 1.4.3 exempts inactive controls. A false
+      // finding: see `docs/design/ACCESSIBILITY_AUDIT.md` §3.
+      auditScreen(
+        'saving',
+        build: build(
+          remote: serving(event: (_) => Completer<Event>().future),
+        ),
+        arrange: (tester) async {
+          await show(tester);
+          await enterText(tester, EventBasicsSection.titleKey, 'Board night');
+          await save(tester);
+          await tester.pump();
+          expect(
+            BlocProvider.of<EditEventBloc>(
+              tester.element(find.byKey(EventBasicsSection.titleKey)),
+            ).state,
+            isA<EditEventSaving>(),
+          );
+        },
+        textContrast: false,
+        settle: false,
+      );
+
       // Refused by the form, not the server: the error shows under its
       // field.
       auditScreen(
