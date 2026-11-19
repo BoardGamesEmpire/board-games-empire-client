@@ -313,6 +313,13 @@ void main() {
   });
 
   group('rows', () {
+    testWidgets('every row is outlined (#647)', (tester) async {
+      remote.listing([ada, bea, gone]);
+      await pumpScreen(tester);
+
+      expect(find.byType(BgeOutlinedRow), findsNWidgets(3));
+    });
+
     testWidgets('a row shows its name, members and owners', (tester) async {
       remote.listing([ada, bea, gone]);
       await pumpScreen(tester);

@@ -70,6 +70,15 @@ void main() {
     ),
   );
 
+  testWidgets('every row is outlined (#647)', (tester) async {
+    remote.listing([invite('i_1'), invite('i_2')]);
+
+    await tester.pumpWidget(harness());
+    await tester.pumpAndSettle();
+
+    expect(find.byType(BgeOutlinedRow), findsNWidgets(2));
+  });
+
   testWidgets('a row shows who it is for, the role and who sent it', (
     tester,
   ) async {
@@ -280,6 +289,10 @@ void main() {
       find.byKey(HouseholdInviteListScreen.moreKey),
       200,
     );
+    // Each row now takes 8dp more (#647), which leaves the button in the
+    // cache extent, not on screen, where the scroll stops.
+    await tester.ensureVisible(find.byKey(HouseholdInviteListScreen.moreKey));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(HouseholdInviteListScreen.moreKey));
     await tester.pumpAndSettle();
 

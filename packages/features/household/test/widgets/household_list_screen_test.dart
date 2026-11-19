@@ -332,6 +332,14 @@ void main() {
       );
     });
 
+    testWidgets('every row is outlined (#647)', (tester) async {
+      await tester.pumpWidget(harness());
+      households.add([_household('h-1'), _household('h-2')]);
+      await tester.pump();
+
+      expect(find.byType(BgeOutlinedRow), findsNWidgets(2));
+    });
+
     testWidgets('tells a screen reader how many rows there are', (
       tester,
     ) async {
@@ -393,7 +401,10 @@ void main() {
       // Read inside the row control's one merged node, as the waiting
       // badge is, and in place of it.
       final semantics = tester.getSemantics(
-        find.byKey(HouseholdListScreen.rowKey('h-1')),
+        find.descendant(
+          of: find.byKey(HouseholdListScreen.rowKey('h-1')),
+          matching: find.byType(MergeSemantics),
+        ),
       );
       expect(semantics, isSemantics(isButton: true));
       expect(semantics.label, contains(_couldNotSyncCopy));
@@ -424,7 +435,10 @@ void main() {
       await tester.pump();
 
       final semantics = tester.getSemantics(
-        find.byKey(HouseholdListScreen.rowKey('h-1')),
+        find.descendant(
+          of: find.byKey(HouseholdListScreen.rowKey('h-1')),
+          matching: find.byType(MergeSemantics),
+        ),
       );
       expect(semantics.label, contains(_notSyncedCopy));
     });
@@ -449,7 +463,10 @@ void main() {
       await tester.pump();
 
       final semantics = tester.getSemantics(
-        find.byKey(HouseholdListScreen.rowKey('h-1')),
+        find.descendant(
+          of: find.byKey(HouseholdListScreen.rowKey('h-1')),
+          matching: find.byType(MergeSemantics),
+        ),
       );
       expect(semantics, isSemantics(isButton: true));
       // Still one merged node, not a control plus loose fragments.
@@ -465,7 +482,10 @@ void main() {
       await tester.pump();
 
       final semantics = tester.getSemantics(
-        find.byKey(HouseholdListScreen.rowKey('h-1')),
+        find.descendant(
+          of: find.byKey(HouseholdListScreen.rowKey('h-1')),
+          matching: find.byType(MergeSemantics),
+        ),
       );
       expect(semantics, isSemantics(isButton: true));
       expect(semantics.label, contains(_notSyncedCopy));
@@ -478,7 +498,10 @@ void main() {
       await tester.pump();
 
       final semantics = tester.getSemantics(
-        find.byKey(HouseholdListScreen.rowKey('h-1')),
+        find.descendant(
+          of: find.byKey(HouseholdListScreen.rowKey('h-1')),
+          matching: find.byType(MergeSemantics),
+        ),
       );
       expect(semantics, isSemantics(hasTapAction: true));
 
@@ -544,7 +567,10 @@ void main() {
       await tester.pump();
 
       final semantics = tester.getSemantics(
-        find.byKey(HouseholdListScreen.rowKey('h-1')),
+        find.descendant(
+          of: find.byKey(HouseholdListScreen.rowKey('h-1')),
+          matching: find.byType(MergeSemantics),
+        ),
       );
       expect(semantics, isSemantics(isButton: false, hasTapAction: false));
     });
@@ -1475,7 +1501,10 @@ void main() {
       ),
       settle: false,
       arrange: (tester) async {
-        households.add(manyRows());
+        // Six rows, not ten: with the 8dp each row now leaves beneath it
+        // (#647), the last two sit under the Create button in the tall view
+        // and the audit reads their words against its colour.
+        households.add(manyRows().take(6).toList());
         await tester.pump();
         await tester.tap(find.byKey(HouseholdListScreen.refreshRetryKey));
         await tester.pump();

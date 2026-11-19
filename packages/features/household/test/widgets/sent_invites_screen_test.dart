@@ -96,6 +96,15 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  testWidgets('every row is outlined (#647)', (tester) async {
+    listing([_sent('i_1'), _sent('i_2')]);
+
+    await tester.pumpWidget(harness());
+    await tester.pumpAndSettle();
+
+    expect(find.byType(BgeOutlinedRow), findsNWidgets(2));
+  });
+
   testWidgets("shows each row's household, invitee and expiry", (tester) async {
     listing([
       _sent('i_1').copyWith(message: 'Bring snacks'),

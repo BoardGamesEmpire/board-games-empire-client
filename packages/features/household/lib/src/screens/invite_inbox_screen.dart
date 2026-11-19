@@ -241,80 +241,84 @@ class _InboxRow extends StatelessWidget {
     final expiry = inviteExpiryLine(l10n, invite);
     final offline = BgeConnectivityScope.offlineOf(context);
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        ListTile(
-          title: Text(invite.householdName ?? l10n.inviteInboxUnknownHousehold),
-          subtitle: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (role != null) Text(householdRoleLabel(l10n, role)),
-              Text(l10n.householdInviteFrom(invite.inviter.label)),
-              if (expiry != null) Text(expiry),
-              if (message != null) ...[
-                const BgeGap.xs(),
-                Text(
-                  message,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    fontStyle: FontStyle.italic,
-                  ),
-                ),
-              ],
-            ],
-          ),
-          trailing: busy ? const HouseholdInviteBusyIndicator() : null,
-        ),
-        Padding(
-          padding: EdgeInsetsDirectional.only(
-            start: tokens.spaceMd,
-            end: tokens.spaceMd,
-            bottom: tokens.spaceSm,
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            spacing: tokens.spaceXs,
-            children: [
-              Wrap(
-                spacing: tokens.spaceSm,
-                runSpacing: tokens.spaceSm,
-                children: [
-                  // Both are direct writes, so they wait for a connection
-                  // (#49). Each carries the reason; the pair shows it once.
-                  BgeOnlineOnly(
-                    showNote: false,
-                    child: FilledButton(
-                      key: InviteInboxScreen.acceptKey(invite.id),
-                      onPressed: busy || offline
-                          ? null
-                          : () => context.read<InviteInboxBloc>().add(
-                              InviteInboxAnswerRequested(
-                                HouseholdInviteAction.accept,
-                                invite.id,
-                              ),
-                            ),
-                      child: Text(l10n.inviteInboxAccept),
-                    ),
-                  ),
-                  BgeOnlineOnly(
-                    showNote: false,
-                    child: TextButton(
-                      key: InviteInboxScreen.declineKey(invite.id),
-                      onPressed: busy || offline
-                          ? null
-                          : () => unawaited(_decline(context)),
-                      child: Text(l10n.inviteInboxDecline),
+    return BgeOutlinedRow(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ListTile(
+            title: Text(
+              invite.householdName ?? l10n.inviteInboxUnknownHousehold,
+            ),
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (role != null) Text(householdRoleLabel(l10n, role)),
+                Text(l10n.householdInviteFrom(invite.inviter.label)),
+                if (expiry != null) Text(expiry),
+                if (message != null) ...[
+                  const BgeGap.xs(),
+                  Text(
+                    message,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontStyle: FontStyle.italic,
                     ),
                   ),
                 ],
-              ),
-              // Only offline: online it would still take the Column's gap.
-              if (offline) const BgeOnlineOnlyNote(),
-            ],
+              ],
+            ),
+            trailing: busy ? const HouseholdInviteBusyIndicator() : null,
           ),
-        ),
-      ],
+          Padding(
+            padding: EdgeInsetsDirectional.only(
+              start: tokens.spaceMd,
+              end: tokens.spaceMd,
+              bottom: tokens.spaceSm,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              spacing: tokens.spaceXs,
+              children: [
+                Wrap(
+                  spacing: tokens.spaceSm,
+                  runSpacing: tokens.spaceSm,
+                  children: [
+                    // Both are direct writes, so they wait for a connection
+                    // (#49). Each carries the reason; the pair shows it once.
+                    BgeOnlineOnly(
+                      showNote: false,
+                      child: FilledButton(
+                        key: InviteInboxScreen.acceptKey(invite.id),
+                        onPressed: busy || offline
+                            ? null
+                            : () => context.read<InviteInboxBloc>().add(
+                                InviteInboxAnswerRequested(
+                                  HouseholdInviteAction.accept,
+                                  invite.id,
+                                ),
+                              ),
+                        child: Text(l10n.inviteInboxAccept),
+                      ),
+                    ),
+                    BgeOnlineOnly(
+                      showNote: false,
+                      child: TextButton(
+                        key: InviteInboxScreen.declineKey(invite.id),
+                        onPressed: busy || offline
+                            ? null
+                            : () => unawaited(_decline(context)),
+                        child: Text(l10n.inviteInboxDecline),
+                      ),
+                    ),
+                  ],
+                ),
+                // Only offline: online it would still take the Column's gap.
+                if (offline) const BgeOnlineOnlyNote(),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

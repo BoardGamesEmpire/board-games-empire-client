@@ -448,56 +448,59 @@ class _DataGatewayRow extends StatelessWidget {
     final l10n = DataGatewayLocalizations.of(context);
     final description = gateway.description;
 
-    return ListTile(
-      // Without an onTap the tile's InkWell has no handler, so the row is no
-      // tap target and no focus stop. The menu in `trailing` is a control of
-      // its own and takes its own taps.
-      onTap: onOpen,
-      focusNode: focusNode,
-      title: Text(gateway.name),
-      // Under the name rather than in `trailing`, for the reason the
-      // household list gives: at 200% text a trailing badge takes the whole
-      // row and fails to lay out.
-      subtitle: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text('${gateway.connectionUrl}:${gateway.connectionPort}'),
-          if (description != null && description.isNotEmpty) Text(description),
-          const BgeGap.xs(),
-          DataGatewayEnabledBadge(enabled: gateway.enabled),
-          // A disabled row has no line, and so no gap for it.
-          if (gateway.enabled) ...[
+    return BgeOutlinedRow(
+      child: ListTile(
+        // Without an onTap the tile's InkWell has no handler, so the row is no
+        // tap target and no focus stop. The menu in `trailing` is a control of
+        // its own and takes its own taps.
+        onTap: onOpen,
+        focusNode: focusNode,
+        title: Text(gateway.name),
+        // Under the name rather than in `trailing`, for the reason the
+        // household list gives: at 200% text a trailing badge takes the whole
+        // row and fails to lay out.
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('${gateway.connectionUrl}:${gateway.connectionPort}'),
+            if (description != null && description.isNotEmpty)
+              Text(description),
             const BgeGap.xs(),
-            DataGatewayStatusLine(
-              key: DataGatewayListScreen.statusKeyOf(gateway.id),
-              gateway: gateway,
-            ),
-          ],
-        ],
-      ),
-      trailing: busy
-          ? Semantics(
-              label: l10n.dataGatewayBusy(gateway.name),
-              child: ExcludeSemantics(
-                child: SizedBox.square(
-                  // The size of the menu button's icon it stands in for.
-                  dimension: BgeTokens.of(context).spaceLg,
-                  child: const CircularProgressIndicator(strokeWidth: 2),
-                ),
-              ),
-            )
-          : mayUpdate || mayDelete
-          ? Focus(
-              focusNode: menuFocusNode,
-              child: _RowMenu(
+            DataGatewayEnabledBadge(enabled: gateway.enabled),
+            // A disabled row has no line, and so no gap for it.
+            if (gateway.enabled) ...[
+              const BgeGap.xs(),
+              DataGatewayStatusLine(
+                key: DataGatewayListScreen.statusKeyOf(gateway.id),
                 gateway: gateway,
-                mayUpdate: mayUpdate,
-                mayDelete: mayDelete,
-                onEdit: onEdit,
               ),
-            )
-          : null,
+            ],
+          ],
+        ),
+        trailing: busy
+            ? Semantics(
+                label: l10n.dataGatewayBusy(gateway.name),
+                child: ExcludeSemantics(
+                  child: SizedBox.square(
+                    // The size of the menu button's icon it stands in for.
+                    dimension: BgeTokens.of(context).spaceLg,
+                    child: const CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
+              )
+            : mayUpdate || mayDelete
+            ? Focus(
+                focusNode: menuFocusNode,
+                child: _RowMenu(
+                  gateway: gateway,
+                  mayUpdate: mayUpdate,
+                  mayDelete: mayDelete,
+                  onEdit: onEdit,
+                ),
+              )
+            : null,
+      ),
     );
   }
 }

@@ -11,6 +11,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
+import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
 import '../support/connectivity.dart';
@@ -130,6 +131,14 @@ void main() {
     expect(find.text('Enabled'), findsOneWidget);
     expect(find.text('Steam'), findsOneWidget);
     expect(find.text('Disabled'), findsOneWidget);
+  });
+
+  testWidgets('every row is outlined (#647)', (tester) async {
+    remote.listing([bgg, steam]);
+
+    await pumpScreen(tester);
+
+    expect(find.byType(BgeOutlinedRow), findsNWidgets(2));
   });
 
   testWidgets('an empty list says what a DataGateway is', (tester) async {

@@ -914,59 +914,61 @@ class _HouseholdRow extends StatelessWidget {
     return Focus(
       focusNode: focusNode,
       includeSemantics: false,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // One node that says the row's facts in a sentence, rather than its
-          // lines one after another. A live row's tile merges its tap and
-          // focus into it; a deleted row's has neither.
-          MergeSemantics(
-            child: Semantics(
-              label: deletedOn == null
-                  ? facts
-                  : l10n.adminHouseholdRowLabelDeleted(facts, deletedOn),
-              child: ListTile(
-                // A deleted household has no detail to open.
-                onTap: deletedAt == null ? onOpen : null,
-                title: ExcludeSemantics(child: Text(row.name)),
-                // Under the name rather than in `trailing`, which at 200%
-                // text takes the whole row and fails to lay out.
-                subtitle: ExcludeSemantics(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(members),
-                      if (owners.isNotEmpty)
-                        Text(l10n.adminHouseholdOwners(owners)),
-                      if (deletedOn != null) ...[
-                        const BgeGap.xs(),
-                        _DeletedLine(l10n.adminHouseholdDeletedOn(deletedOn)),
+      child: BgeOutlinedRow(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // One node that says the row's facts in a sentence, rather than its
+            // lines one after another. A live row's tile merges its tap and
+            // focus into it; a deleted row's has neither.
+            MergeSemantics(
+              child: Semantics(
+                label: deletedOn == null
+                    ? facts
+                    : l10n.adminHouseholdRowLabelDeleted(facts, deletedOn),
+                child: ListTile(
+                  // A deleted household has no detail to open.
+                  onTap: deletedAt == null ? onOpen : null,
+                  title: ExcludeSemantics(child: Text(row.name)),
+                  // Under the name rather than in `trailing`, which at 200%
+                  // text takes the whole row and fails to lay out.
+                  subtitle: ExcludeSemantics(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(members),
+                        if (owners.isNotEmpty)
+                          Text(l10n.adminHouseholdOwners(owners)),
+                        if (deletedOn != null) ...[
+                          const BgeGap.xs(),
+                          _DeletedLine(l10n.adminHouseholdDeletedOn(deletedOn)),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
-          if (restoreFocusNode != null)
-            Padding(
-              padding: EdgeInsetsDirectional.only(
-                start: tokens.spaceMd,
-                end: tokens.spaceMd,
-                bottom: tokens.spaceSm,
-              ),
-              child: Focus(
-                focusNode: restoreFocusNode,
-                includeSemantics: false,
-                child: _RestoreButton(
-                  row: row,
-                  restoring: restoring,
-                  onPressed: onRestore,
+            if (restoreFocusNode != null)
+              Padding(
+                padding: EdgeInsetsDirectional.only(
+                  start: tokens.spaceMd,
+                  end: tokens.spaceMd,
+                  bottom: tokens.spaceSm,
+                ),
+                child: Focus(
+                  focusNode: restoreFocusNode,
+                  includeSemantics: false,
+                  child: _RestoreButton(
+                    row: row,
+                    restoring: restoring,
+                    onPressed: onRestore,
+                  ),
                 ),
               ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }
