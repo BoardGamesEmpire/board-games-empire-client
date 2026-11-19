@@ -329,8 +329,18 @@ void main() {
 
     final id = rowsShown(tester).first;
     await reveal(tester, row(id));
+    // The painted outline, not the row's whole box, which also holds the gap
+    // beneath it.
     final outline = tester.getRect(
-      find.descendant(of: row(id), matching: find.byType(BgeOutlinedRow)),
+      find
+          .descendant(
+            of: find.descendant(
+              of: row(id),
+              matching: find.byType(BgeOutlinedRow),
+            ),
+            matching: find.byType(DecoratedBox),
+          )
+          .first,
     );
     final thumbnail = tester.getRect(
       find.descendant(of: row(id), matching: find.byType(BgeThumbnail)),
@@ -349,8 +359,12 @@ void main() {
       height: Checkbox.width,
     );
     expect(outline.right - drawn.right, greaterThanOrEqualTo(inset));
-    expect(outline.contains(thumbnail.topLeft), isTrue);
-    expect(outline.contains(drawn.bottomRight), isTrue);
+    for (final (name, box) in [('thumbnail', thumbnail), ('checkbox', drawn)]) {
+      expect(box.left, greaterThanOrEqualTo(outline.left), reason: name);
+      expect(box.top, greaterThanOrEqualTo(outline.top), reason: name);
+      expect(box.right, lessThanOrEqualTo(outline.right), reason: name);
+      expect(box.bottom, lessThanOrEqualTo(outline.bottom), reason: name);
+    }
   });
 
   testWidgets('the rows are the collection, flat, in title order', (
