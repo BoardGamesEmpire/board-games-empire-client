@@ -329,6 +329,7 @@ void main() {
 
     Widget host({
       bool readOnly = false,
+      String? note,
       TextScaler textScaler = TextScaler.noScaling,
       bool disableAnimations = false,
     }) => MaterialApp(
@@ -345,7 +346,7 @@ void main() {
       home: BgePage(
         child: ReactiveForm(
           formGroup: form,
-          child: EventRulesSection(readOnly: readOnly),
+          child: EventRulesSection(readOnly: readOnly, note: note),
         ),
       ),
     );
@@ -419,29 +420,33 @@ void main() {
       );
     });
 
-    testWidgets('the locked note shows while the rules are collapsed', (
+    testWidgets('a note shows under the title while the rules are collapsed', (
       tester,
     ) async {
       final semantics = tester.ensureSemantics();
-      const locked = "Rules can't be changed after the event is created.";
-      await tester.pumpWidget(host());
+      const note = 'Only the host or a co-host can change the rules.';
 
-      // Rules left untouched are as final as any, so it shows before they
-      // are opened.
+      // None unless given one.
+      await tester.pumpWidget(host());
+      expect(find.byKey(EventRulesSection.noteKey), findsNothing);
+
+      await tester.pumpWidget(host(note: note));
+
+      // It shows before the rules are opened.
       expect(find.byKey(EventRulesSection.gameAdditionKey), findsNothing);
       expect(
-        tester.widget<Text>(find.byKey(EventRulesSection.lockedKey)).data,
-        locked,
+        tester.widget<Text>(find.byKey(EventRulesSection.noteKey)).data,
+        note,
       );
       // Read with the title, as part of the form: not announced.
       expect(
-        tester.getSemantics(find.byKey(EventRulesSection.lockedKey)),
-        isSemantics(label: 'Advanced: rules\n$locked', isLiveRegion: false),
+        tester.getSemantics(find.byKey(EventRulesSection.noteKey)),
+        isSemantics(label: 'Advanced: rules\n$note', isLiveRegion: false),
       );
 
       // Open, it shows once still.
       await toggleRules(tester);
-      expect(find.text(locked), findsOneWidget);
+      expect(find.text(note), findsOneWidget);
       // With nothing above it, the first menu's label floats above the
       // menu, where the tile clips what it opens below the header.
       expect(

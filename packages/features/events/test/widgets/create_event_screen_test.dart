@@ -1299,17 +1299,15 @@ void main() {
       arrange: (tester) => wholePage(tester, rejectBlankTitle),
     );
 
-    // No 'refused' call at the top: the sent form scrolls to the submit
-    // button, and Flutter's tap-target check fails the field the scroll
-    // leaves half under the top edge, the same limit of the tool. The
-    // whole-page call below audits it.
+    // No 'refused' or 'failure' call at the top: the sent form scrolls to
+    // the submit button, and Flutter's tap-target check fails the field the
+    // scroll leaves half under the top edge, the same limit of the tool.
+    // The whole-page calls below audit them.
     auditScreen(
       'refused, whole page',
       build: build,
       arrange: (tester) => wholePage(tester, refuseInvitee),
     );
-
-    auditScreen('failure', build: build, arrange: failCreate);
 
     auditScreen(
       'failure, whole page',
@@ -1348,8 +1346,7 @@ void main() {
     /// The order the form reads in, top to bottom: the back button, the
     /// basics, the scheduling mode's three segments, when the first date
     /// starts and ends, the invitee search, the rules and the submit. A menu
-    /// reads its label and what it shows; the rules read their title and the
-    /// note under it.
+    /// reads its label and what it shows.
     const readingOrder = [
       'Back',
       'Title',
@@ -1365,7 +1362,7 @@ void main() {
       'Starts',
       'Ends (optional)',
       'Search by name or username',
-      "Advanced: rules\nRules can't be changed after the event is created.",
+      'Advanced: rules',
       'Create event',
     ];
 

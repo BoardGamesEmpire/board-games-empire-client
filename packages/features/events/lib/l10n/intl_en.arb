@@ -3299,10 +3299,6 @@
   "@eventCreateRulesTitle": {
     "description": "Title of the collapsed section at the end of the new-event form that sets the event's rules, such as how games get added to it. Tapping it opens the section."
   },
-  "eventCreateRulesLocked": "Rules can't be changed after the event is created.",
-  "@eventCreateRulesLocked": {
-    "description": "Note at the top of the rules section of the new-event form: the rules picked here are final once the event exists."
-  },
   "eventCreateGameAddition": "How games get added",
   "@eventCreateGameAddition": {
     "description": "Label of the menu in the rules section of the new-event form that sets how games get onto the event's list of games to play."

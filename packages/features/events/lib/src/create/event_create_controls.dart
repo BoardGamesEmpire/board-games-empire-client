@@ -89,32 +89,13 @@ typedef WholeNumberRange = ({int min, int? max});
 /// fixed and a refused submit can focus it. A switch of mode checks every
 /// row again.
 ///
-/// The rules follow how games get added, the moment it changes:
-///
-/// - The voting settings (the threshold and quorum types, their numbers and
-///   the voting window) are disabled unless attendees vote, and a number
-///   unless its type takes one. reactive_forms leaves a disabled control out
-///   of the form's validity, so a bad number left behind a setting no one
-///   can see never blocks a submit. It is checked again when it shows again.
-/// - Switching a threshold or quorum type starts its number over at that
-///   type's default, so a number typed for one type is never read as
-///   another's.
-/// - Each number is a whole number in its type's range, or carries
-///   [EventCreateErrors.wholeNumber]. The window may be left empty, for
-///   voting the host closes.
+/// The rules are [buildEventRulesControls]'s.
 FormGroup buildEventCreateForm() => FormGroup(
   {
-    EventCreateControls.title: FormControl<String>(
-      validators: [Validators.delegate(_checkTitle)],
-    ),
+    ...buildEventBasicsControls(),
+    // The create form's alone: the edit form can't move an event to
+    // another household (#500).
     EventCreateControls.household: FormControl<String>(),
-    EventCreateControls.type: FormControl<EventType>(),
-    EventCreateControls.reach: FormControl<Reach>(),
-    EventCreateControls.description: FormControl<String>(),
-    EventCreateControls.location: FormControl<String>(),
-    EventCreateControls.url: FormControl<String>(
-      validators: [Validators.delegate(_checkLink)],
-    ),
     EventCreateControls.mode: FormControl<EventSchedulingMode>(
       value: EventSchedulingMode.fixed,
     ),
@@ -124,10 +105,31 @@ FormGroup buildEventCreateForm() => FormGroup(
     EventCreateControls.invitees: FormControl<List<UserSummary>>(
       value: const <UserSummary>[],
     ),
-    ..._buildRules(),
+    ...buildEventRulesControls(),
   },
   validators: [Validators.delegate(_checkDates)],
 );
+
+/// The basics' controls, empty, under [EventCreateControls]' names: the
+/// title, the type, who can see it, the description, the place and the
+/// link. The create form and the edit form (#500) both build theirs here,
+/// so the two check a title and a link the same way.
+///
+/// - The title is required, checked trimmed, as it is sent.
+/// - The link may be empty, or is a full one, checked trimmed: see
+///   [EventCreateErrors.fullLink].
+Map<String, AbstractControl<dynamic>> buildEventBasicsControls() => {
+  EventCreateControls.title: FormControl<String>(
+    validators: [Validators.delegate(_checkTitle)],
+  ),
+  EventCreateControls.type: FormControl<EventType>(),
+  EventCreateControls.reach: FormControl<Reach>(),
+  EventCreateControls.description: FormControl<String>(),
+  EventCreateControls.location: FormControl<String>(),
+  EventCreateControls.url: FormControl<String>(
+    validators: [Validators.delegate(_checkLink)],
+  ),
+};
 
 /// One empty row of the form's dates: when it starts and ends, and its
 /// label.
@@ -143,7 +145,7 @@ FormGroup buildEventDateRow() => FormGroup({
 /// Times go out in UTC. A label goes out only for several days, the one
 /// mode that shows it: trimmed, and an empty one as none.
 List<EventOccurrenceDraft> occurrencesOf(FormGroup form) {
-  final mode = _controlOf<EventSchedulingMode>(
+  final mode = controlOf<EventSchedulingMode>(
     form,
     EventCreateControls.mode,
   ).value;
@@ -173,7 +175,7 @@ bool showsEveryEventDate(EventSchedulingMode? mode) =>
 
 /// The ids of the people the form invites, in the order they were picked.
 List<String> inviteeIdsOf(FormGroup form) {
-  final invitees = _controlOf<List<UserSummary>>(
+  final invitees = controlOf<List<UserSummary>>(
     form,
     EventCreateControls.invitees,
   ).value;
@@ -185,34 +187,47 @@ List<String> inviteeIdsOf(FormGroup form) {
 ///
 /// - Null while how games get added is untouched or *Direct*, which is the
 ///   server's own default.
-/// - Any other way is sent alone, but for a vote. A vote also sends its
-///   threshold and quorum types, with a number for each type that takes
-///   one, and the voting window when one is set: what
+/// - Any other way is sent as [rulesOf] reads it: what
 ///   [EventDraft.checkSendable] expects of a draft.
+///
+/// Read it from a valid form, as [rulesOf] is.
+EventPolicyDraft? policyOf(FormGroup form) {
+  final rules = rulesOf(form);
+  final mode = rules.gameAdditionMode;
+  return mode == null || mode == GameAdditionMode.direct ? null : rules;
+}
+
+/// The rules [form] shows, from the controls [buildEventRulesControls]
+/// built: the one place that decides which of them a form carries, for the
+/// create form's [policyOf] and the edit form's values (#500).
+///
+/// - How games get added, always, untouched as null.
+/// - Under a vote, and only then, its threshold and quorum types, with a
+///   number for each type that takes one ([thresholdNumberOf],
+///   [quorumNumberOf]), and the voting window, null when none is set.
 ///
 /// Read it from a valid form, where each number is one its type takes. The
 /// controls are read directly, since a disabled one is left out of the
 /// form's value.
-EventPolicyDraft? policyOf(FormGroup form) {
-  final mode = _controlOf<GameAdditionMode>(
+EventPolicyDraft rulesOf(FormGroup form) {
+  final mode = controlOf<GameAdditionMode>(
     form,
     EventCreateControls.gameAddition,
   ).value;
-  if (mode == null || mode == GameAdditionMode.direct) return null;
   if (mode != GameAdditionMode.requiresVote) {
     return EventPolicyDraft(gameAdditionMode: mode);
   }
 
-  final threshold = _controlOf<VoteThresholdType>(
+  final threshold = controlOf<VoteThresholdType>(
     form,
     EventCreateControls.threshold,
   ).value;
-  final quorum = _controlOf<VoteQuorumType>(
+  final quorum = controlOf<VoteQuorumType>(
     form,
     EventCreateControls.quorum,
   ).value;
   int? numberIn(String name) =>
-      _wholeNumberOf(_controlOf<String>(form, name).value);
+      _wholeNumberOf(controlOf<String>(form, name).value);
 
   return EventPolicyDraft(
     gameAdditionMode: mode,
@@ -236,18 +251,18 @@ EventPolicyDraft? policyOf(FormGroup form) {
 /// Read it from a valid form, as those are.
 EventDraft draftOf(FormGroup form) {
   String? text(String name) =>
-      trimmedOrNull(_controlOf<String>(form, name).value);
+      trimmedOrNull(controlOf<String>(form, name).value);
 
   return EventDraft(
     title: text(EventCreateControls.title) ?? '',
-    householdId: _controlOf<String>(form, EventCreateControls.household).value,
+    householdId: controlOf<String>(form, EventCreateControls.household).value,
     description: text(EventCreateControls.description),
     location: text(EventCreateControls.location),
     url: text(EventCreateControls.url),
-    type: _controlOf<EventType>(form, EventCreateControls.type).value,
-    reach: _controlOf<Reach>(form, EventCreateControls.reach).value,
+    type: controlOf<EventType>(form, EventCreateControls.type).value,
+    reach: controlOf<Reach>(form, EventCreateControls.reach).value,
     schedulingMode:
-        _controlOf<EventSchedulingMode>(form, EventCreateControls.mode).value ??
+        controlOf<EventSchedulingMode>(form, EventCreateControls.mode).value ??
         EventSchedulingMode.fixed,
     occurrences: occurrencesOf(form),
     policy: policyOf(form),
@@ -255,10 +270,12 @@ EventDraft draftOf(FormGroup form) {
   );
 }
 
-FormControl<T> _controlOf<T>(FormGroup form, String name) =>
+/// The control [name] of [form], as the one control it is: for the create
+/// form and the edit form (#500), which share these names.
+FormControl<T> controlOf<T>(FormGroup form, String name) =>
     form.control(name) as FormControl<T>;
 
-/// The dates, which [_controlOf] can't read: an array of rows, not one
+/// The dates, which [controlOf] can't read: an array of rows, not one
 /// control.
 FormArray<Map<String, Object?>> _datesOf(FormGroup form) =>
     form.control(EventCreateControls.dates) as FormArray<Map<String, Object?>>;
@@ -273,7 +290,7 @@ String? trimmedOrNull(Object? value) {
 /// The group's dates check: see [buildEventCreateForm].
 Map<String, dynamic>? _checkDates(AbstractControl<dynamic> control) {
   final form = control as FormGroup;
-  final mode = _controlOf<EventSchedulingMode>(form, EventCreateControls.mode);
+  final mode = controlOf<EventSchedulingMode>(form, EventCreateControls.mode);
   final several = showsEveryEventDate(mode.value);
   final rows = _datesOf(form).controls.cast<FormGroup>();
 
@@ -337,9 +354,26 @@ Map<String, dynamic>? _checkLink(AbstractControl<dynamic> control) {
       : const {EventCreateErrors.fullLink: true};
 }
 
-/// How games get added, and the voting settings that follow it: see
-/// [buildEventCreateForm].
-Map<String, AbstractControl<dynamic>> _buildRules() {
+/// The rules' controls under [EventCreateControls]' names: how games get
+/// added, untouched, and the voting settings that follow it, at their
+/// types' defaults. The create form and the edit form (#500) both build
+/// theirs here.
+///
+/// The rules follow how games get added, the moment it changes:
+///
+/// - The voting settings (the threshold and quorum types, their numbers and
+///   the voting window) are disabled unless attendees vote, and a number
+///   unless its type takes one. reactive_forms leaves a disabled control out
+///   of the form's validity, so a bad number left behind a setting no one
+///   can see never blocks a submit. It is checked again when it shows again.
+/// - Switching a threshold or quorum type starts its number over at that
+///   type's default, so a number typed for one type is never read as
+///   another's. A form filled in from stored rules sets each number after
+///   its type, or the number would be lost to that start.
+/// - Each number is a whole number in its type's range, or carries
+///   [EventCreateErrors.wholeNumber]. The window may be left empty, for
+///   voting the host closes.
+Map<String, AbstractControl<dynamic>> buildEventRulesControls() {
   final gameAddition = _Choice<GameAdditionMode>();
   final threshold = _Choice<VoteThresholdType>(
     value: VoteThresholdType.simpleMajority,
