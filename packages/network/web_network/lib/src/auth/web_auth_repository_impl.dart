@@ -1203,6 +1203,25 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
     );
   }
 
+  // Temporary: a later task replaces these bodies.
+  @override
+  Future<List<SignInMethod>> listSignInMethods() => throw UnimplementedError();
+
+  @override
+  bool get providerLinkSupported => throw UnimplementedError();
+
+  @override
+  Future<void> linkProvider(
+    OidcStrategy strategy, {
+    required String returnPath,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<void> unlinkSignInMethod(String id) => throw UnimplementedError();
+
+  @override
+  ProviderLinkReturn? takeProviderLinkReturn() => throw UnimplementedError();
+
   @override
   Stream<AuthState> watchAuthState() {
     return replayThenForward(

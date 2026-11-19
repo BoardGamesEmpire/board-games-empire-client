@@ -7,6 +7,7 @@ export 'src/repositories/game_repository.dart';
 export 'src/repositories/household_repository.dart';
 export 'src/repositories/list_layout_repository.dart';
 export 'src/repositories/notification_summary_repository.dart';
+export 'src/repositories/provider_link.dart';
 export 'src/repositories/provider_sign_in.dart';
 export 'src/repositories/server_repository.dart';
 export 'src/repositories/session_tombstone_store.dart';

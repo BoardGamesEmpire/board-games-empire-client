@@ -1,3 +1,4 @@
+import 'package:interfaces/src/repositories/provider_link.dart';
 import 'package:interfaces/src/repositories/provider_sign_in.dart';
 import 'package:meta/meta.dart';
 import 'package:models/domain.dart';
@@ -248,6 +249,63 @@ abstract class AuthRepository {
   /// return reaches [signInWithProvider] directly.
   AuthProviderSignInException? takeProviderSignInReturn();
 
+  /// The sign-in methods the signed-in user has: a password row and one row
+  /// per linked provider (#582).
+  ///
+  /// A plain session request to `list-accounts`: the bearer token on native,
+  /// the cookie on web. Throws [AuthNetworkException] for connectivity
+  /// failures and [AuthServerException] for a body it cannot read or a
+  /// non-2xx with no code. A non-2xx with a code throws
+  /// [AuthProviderLinkException]. A 429 throws [AuthRateLimitedException].
+  Future<List<SignInMethod>> listSignInMethods();
+
+  /// Whether this device can link a provider to the signed-in user.
+  ///
+  /// Native: false until #1029, because linking from the apps waits on the
+  /// server.
+  /// Web: true when the page can leave for a provider.
+  bool get providerLinkSupported;
+
+  /// Links the sign-in provider [strategy] names to the signed-in user.
+  ///
+  /// Native: throws [UnsupportedError] and sends nothing.
+  /// Web: posts `link-social` with [returnPath] as the page to come back to,
+  /// then navigates the page to the URL the server answers with. The link
+  /// finishes on the page that loads when the provider sends the user back,
+  /// and the result is read there through [takeProviderLinkReturn], so a page
+  /// that leaves never sees this call complete. One the user stops from
+  /// leaving (Esc, or the browser's Stop) is still here a while later, and
+  /// completes normally after the page-leave grace. A link moves no session.
+  ///
+  /// Throws [AuthProviderLinkException] when the server refuses, its reason
+  /// mapped from the error code, never from text. Throws
+  /// [AuthRateLimitedException] for a 429 and [AuthNetworkException] for
+  /// connectivity failures. Throws [AuthServerException] for a non-2xx with
+  /// no code.
+  Future<void> linkProvider(
+    OidcStrategy strategy, {
+    required String returnPath,
+  });
+
+  /// Removes the sign-in method whose row [id] is given (#582).
+  ///
+  /// Takes [SignInMethod.id], the row's id, not the provider id. Posts to
+  /// `unlink-account` with the same session auth as [listSignInMethods] (the
+  /// bearer token on native, the cookie on web) and classifies a refusal the
+  /// same way, so it throws the same exceptions. The last remaining row is
+  /// refused as [ProviderLinkFailureReason.lastSignInMethod], and a session a
+  /// day or more old as [ProviderLinkFailureReason.needsRecentSignIn].
+  Future<void> unlinkSignInMethod(String id);
+
+  /// The result of a link attempt that arrived with this page load, or null.
+  ///
+  /// Web only: it is present only when this browser tab left the page for a
+  /// provider to link it and came back. Take-once: the first call returns it
+  /// and later calls return null, so a reload or a second reader never shows
+  /// the same result twice. Native always returns null, since a native link
+  /// never leaves the app.
+  ProviderLinkReturn? takeProviderLinkReturn();
+
   /// Stream of auth state changes. Replays current state on subscribe.
   Stream<AuthState> watchAuthState();
 
@@ -447,6 +505,25 @@ final class AuthProviderSignInException extends AuthException {
   });
 
   final ProviderSignInFailureReason reason;
+
+  /// The wire code, for logs only.
+  final String? code;
+}
+
+/// A link or unlink refused by the server or by the provider (#582).
+///
+/// [reason] is what the screen words; it comes from the wire [code] through
+/// [ProviderLinkFailureReason.forCode], never from any text the provider or
+/// server sent.
+final class AuthProviderLinkException extends AuthException {
+  const AuthProviderLinkException(
+    this.reason, {
+    this.code,
+    super.message = 'The provider link was refused.',
+    super.cause,
+  });
+
+  final ProviderLinkFailureReason reason;
 
   /// The wire code, for logs only.
   final String? code;
