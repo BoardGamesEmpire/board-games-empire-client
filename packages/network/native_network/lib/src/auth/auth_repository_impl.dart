@@ -455,109 +455,45 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
       throw mapAuthDioException(e, credentialGrant: false);
     }
 
-    // The user signed out while this request was in flight. Their intent is
-    // newer than this response: discard it without touching storage or
-    // state, so sign-out stays final (see [_sessionEpoch]).
-    if (epoch != _sessionEpoch) {
-      _log.warn(
-        'Discarding a session response that resolved after sign-out',
-        context: {'status': response.statusCode},
-      );
-      return null;
-    }
-
-    final status = response.statusCode;
-
-    // The status decides first, by the rules `readSessionStatus` holds with
-    // their reasons. What is local is the reaction: a definitive "no
-    // session" means the stored material is dead, so `_settleNoSession`
-    // clears it and settles on unauthenticated. BetterAuth's 200-with-no-body
-    // settles the same way, after the decode below — a reordering #352
-    // forced, not a change of rule: reading "no session" off an undecoded
-    // string would call a captive portal's HTML page a rejected session and
-    // clear the user's credentials over it.
-    switch (readSessionStatus(status)) {
-      case SessionReadStatus.noSession:
+    // The status, the body and both supersession checks are read by
+    // `readSessionResponse`, which holds their order and reasons (#878).
+    // What is local is the reaction to each answer.
+    final BgeSessionResponse sessionResponse;
+    switch (await readSessionResponse(
+      response,
+      decode: _decodeJson,
+      superseded: () => epoch != _sessionEpoch,
+    )) {
+      case SessionReadSuperseded(checkpoint: SessionReadCheckpoint.response):
+        // The user signed out while this request was in flight. Their intent
+        // is newer than this response: discard it without touching storage
+        // or state, so sign-out stays final (see [_sessionEpoch]).
+        _log.warn(
+          'Discarding a session response that resolved after sign-out',
+          context: {'status': response.statusCode},
+        );
+        return null;
+      case SessionReadSuperseded(checkpoint: SessionReadCheckpoint.decode):
+        // A sign-out landed during the decode. Discarded here rather than
+        // after the store below: that store would lift the sign-out latch
+        // and re-persist the signed-out user's bearer token and PII snapshot
+        // before the post-store guard undid it. `clear()` is documented as
+        // the single, total teardown path (see [_sessionEpoch]); a write that
+        // has to be taken back is not that.
+        _log.warn(
+          'Discarding a session response decoded after sign-out',
+          context: {'status': response.statusCode},
+        );
+        return null;
+      case SessionReadNoSession(:final status):
+        // A definitive "no session" means the stored material is dead, so
+        // `_settleNoSession` clears it and settles on unauthenticated.
         return _settleNoSession(
           status: status,
           uri: response.requestOptions.uri,
         );
-      case SessionReadStatus.undecided:
-        throw AuthServerException(
-          message: 'Unexpected $status from the session endpoint.',
-          statusCode: status,
-        );
-      case SessionReadStatus.readBody:
-        break;
-    }
-
-    final decoded = await decodeAuthBody(
-      response.data,
-      decode: _decodeJson,
-      context: 'the session check',
-      status: status,
-    );
-
-    // Second checkpoint, and it has to be HERE rather than after the store
-    // below. The decode is a suspension point — `decodeJsonBody` offloads a
-    // body over 50 KB to another isolate — and it now sits between the guard
-    // above and `_tokenStorage.store`. Without this, a sign-out landing
-    // mid-decode still reaches that store, which lifts the sign-out latch and
-    // re-persists the signed-out user's bearer token and PII snapshot to disk
-    // before the post-store guard undoes it. `clear()` is documented as the
-    // single, total teardown path (see [_sessionEpoch]); a write that has to
-    // be taken back is not that.
-    //
-    // Ahead of the throw as well, so a response the user's own sign-out
-    // superseded is discarded rather than reported as a server fault. The web
-    // twin takes the same call at the same point.
-    if (epoch != _sessionEpoch) {
-      _log.warn(
-        'Discarding a session response decoded after sign-out',
-        context: {'status': status},
-      );
-      return null;
-    }
-
-    // A 2xx the transport answered but this client cannot read. Definitive
-    // when the body is not JSON, INDETERMINATE when the decode itself could
-    // not be performed — and the difference is the whole of #352 on this
-    // path, because only one of them may clear the user's credentials.
-    // Neither does: both leave as an exception, and the clear below is
-    // reached only by a session the SERVER disowned.
-    final failure = decoded.failure;
-    if (failure != null) throw failure;
-
-    // The "no session" answer the status could not give, which
-    // `SessionReadStatus.readBody` left to the body: BetterAuth answers 200
-    // with no session payload. An empty body and a literal JSON `null` both
-    // land here as null, which is exactly what
-    // `Response<Map<String, dynamic>>` used to hand over as `data == null`.
-    final body = decoded.value;
-    if (body == null) {
-      return _settleNoSession(status: status, uri: response.requestOptions.uri);
-    }
-
-    if (body is! Map<String, dynamic>) {
-      throw AuthServerException(
-        message:
-            'The session endpoint returned a body that is not a JSON object.',
-        statusCode: status,
-      );
-    }
-
-    // Wrapped so a well-formed body with the WRONG FIELDS cannot escape as a
-    // raw `TypeError` (#181) — see [_parseGrant] for why nothing raw may
-    // leave an auth method.
-    final BgeSessionResponse sessionResponse;
-    try {
-      sessionResponse = BgeSessionResponse.fromJson(body);
-    } on Object catch (error) {
-      throw AuthServerException(
-        message: 'The session endpoint returned an unreadable response.',
-        statusCode: status,
-        cause: error,
-      );
+      case SessionReadFound(response: final found):
+        sessionResponse = found;
     }
 
     // The one path that produces a server-confirmed expiry, and therefore
