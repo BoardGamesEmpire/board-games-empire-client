@@ -80,8 +80,9 @@ class DeepLinkConsumer {
   final void Function(String location) _go;
 
   /// Told when a link is given up on because its lookup or switch failed,
-  /// so the shell can say so (#984). Not called for the deliberate drop or
-  /// for a server not added here.
+  /// so the shell can say so (#984). Not called for the deliberate drop,
+  /// for a server not added here, for a link a newer one replaced while it
+  /// waited, or after [dispose].
   final void Function(DeepLinkFailure failure)? _onFailure;
 
   /// Whether the auth scope's mounted bloc is signed in on the server with
@@ -270,6 +271,10 @@ class DeepLinkConsumer {
     Object error,
     StackTrace stackTrace,
   ) {
+    // A newer link replaced this one during the await, so the user is
+    // waiting on that one, and an error for this one would show over it as
+    // it lands. After dispose, nothing is reported either.
+    final superseded = _disposed || _holder.peek != link;
     _holder.takeIf(link);
     _switchRequestedFor = null;
     _logger.warn(
@@ -277,6 +282,7 @@ class DeepLinkConsumer {
       error: error,
       stackTrace: stackTrace,
     );
+    if (superseded) return;
     // Reporting is best effort: a report that can't be shown was logged
     // above, and must not end the pass loop for the links behind this one.
     try {
