@@ -310,7 +310,7 @@ pushes to `master`, in twelve jobs:
 
 | Job | Gate |
 | --- | --- |
-| `constraints` | `check_sdk_constraints.dart --self-test`; `dart test tool/test`, which holds its exit-code suite and the tests of the scripts' shared helpers under `tool/src/`; then the real check |
+| `constraints` | `check_sdk_constraints.dart --self-test`; `dart test tool/test`, which holds its exit-code suite and the tests of the scripts' shared helpers under `tool/src/` and the Linux desktop install script test; then the real check |
 | `palette` | `derive_palette.dart` re-derives the palette; every contrast target and the ember/error hue separation must hold |
 | `goldens` | `tool/goldens.dart` compares every golden suite against the committed `goldens/ci/` baselines in the golden container; diffs are uploaded on failure |
 | `format` | `dart format --set-exit-if-changed` over the workspace source |

@@ -92,9 +92,10 @@ static gboolean my_application_local_command_line(GApplication* application, gch
   }
   g_ptr_array_add(filtered, nullptr);
   // Free the container but keep the (null-terminated) buffer; g_strfreev in
-  // dispose owns it thereafter.
+  // dispose owns it thereafter. g_ptr_array_free returns gpointer*, hence the
+  // reinterpret_cast.
   self->dart_entrypoint_arguments =
-      static_cast<gchar**>(g_ptr_array_free(filtered, FALSE));
+      reinterpret_cast<gchar**>(g_ptr_array_free(filtered, FALSE));
 
   g_autoptr(GError) error = nullptr;
   // Registration must precede the manual activate below
