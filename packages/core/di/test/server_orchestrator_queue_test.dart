@@ -4,6 +4,7 @@ import 'package:di/di.dart';
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/orchestration.dart';
+import 'package:logging/logging.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
 
@@ -43,6 +44,38 @@ void main() {
           newState: ConnectionState.monitoring,
         ),
       ).called(1);
+    });
+  });
+
+  test('a suspend that fails on expiry is logged, and the queue goes on', () {
+    _run((async, repo, orchestrator) {
+      _settle(async, orchestrator.connectServer('A'));
+      _settle(async, orchestrator.connectServer('B', makeActive: true));
+      final a = _context(orchestrator, 'A');
+      final failure = StateError('suspend boom');
+      when(a.suspend).thenThrow(failure);
+      final records = <LogRecord>[];
+      final subscription = Logger.root.onRecord.listen(records.add);
+      addTearDown(subscription.cancel);
+
+      async.elapse(_pastExpiry);
+
+      final record = records.singleWhere(
+        (r) => r.message == 'suspending A on timer failed',
+      );
+      expect(record.error, same(failure));
+      verifyNever(
+        () => repo.updateConnectionState(
+          serverId: 'A',
+          newState: ConnectionState.monitoring,
+        ),
+      );
+
+      final toA = _Outcome(orchestrator.switchActiveServer('A'));
+      async.flushMicrotasks();
+      expect(toA.isDone, isTrue);
+      expect(toA.error, isNull);
+      expect(orchestrator.activeServerId, 'A');
     });
   });
 
