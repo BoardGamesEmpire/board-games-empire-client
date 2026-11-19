@@ -170,6 +170,37 @@ void main() {
                   ),
                 ),
               ),
+              GoldenTestScenario(
+                // A one-line title and the longest title, outlined (#647): at
+                // 2.0 the thumbnail sits beside the title, not centred in the
+                // tall row.
+                name: 'outlined rows · one-line and long title · ${scale}x',
+                child: _Host(
+                  theme: theme,
+                  scale: scale,
+                  child: const Column(
+                    children: [
+                      BgeOutlinedRow(
+                        child: ListTile(
+                          leading: BgeThumbnail(url: _portraitUrl),
+                          title: Text('Wingspan'),
+                        ),
+                      ),
+                      BgeOutlinedRow(
+                        child: ListTile(
+                          leading: BgeThumbnail(url: _portraitUrl),
+                          title: Text(
+                            'Twilight Imperium: Fourth Edition',
+                          ),
+                          subtitle: Text(
+                            '2017 · 3–6 players · 240–480 min',
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             ],
           ],
         ),

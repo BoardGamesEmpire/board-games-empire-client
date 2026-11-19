@@ -55,6 +55,14 @@ void main() {
         expect(status.offline, scheme.onSurfaceVariant);
       });
 
+      test('${entry.key}: list rows align leading and trailing with the '
+          'title (#647)', () {
+        expect(
+          theme.listTileTheme.titleAlignment,
+          ListTileTitleAlignment.titleHeight,
+        );
+      });
+
       test('${entry.key}: uses the authored color scheme', () {
         expect(theme.colorScheme.primary, scheme.primary);
         expect(theme.colorScheme.surface, scheme.surface);

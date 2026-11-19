@@ -101,6 +101,9 @@ ButtonStyle _buttonStyle(BgeButtonFocusRingPlacement placement) => ButtonStyle(
 /// - **No tint on a scrolled-under app bar** — an authored `appBarTheme`
 ///   with a transparent `surfaceTintColor`. Material's default tint took
 ///   `primary` text on the bar below 4.5:1 in light (#802).
+/// - **List rows line up with their title** — `ListTileTitleAlignment
+///   .titleHeight`, so a tall row's thumbnail sits beside its title rather
+///   than centred (#647).
 ///
 /// The high-contrast factories are wired by the shell to
 /// `MaterialApp.highContrastTheme` / `highContrastDarkTheme`, so the OS
@@ -235,6 +238,13 @@ abstract final class BgeTheme {
       // that at 8%. In light that took `primary` text on the bar to 4.39:1.
       // With no tint the bar stays `surfaceContainer`, 4.88:1.
       appBarTheme: const AppBarThemeData(surfaceTintColor: Colors.transparent),
+      // #647: with Material's default alignment a tall row's thumbnail is
+      // centred, so beside the facts and away from the title. `titleHeight`
+      // puts leading and trailing at the title's first line when the row is
+      // tall, and centres them when it is not.
+      listTileTheme: const ListTileThemeData(
+        titleAlignment: ListTileTitleAlignment.titleHeight,
+      ),
       extensions: [
         tokens,
         BgeStatusColors.forScheme(scheme),
