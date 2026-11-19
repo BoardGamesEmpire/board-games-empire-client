@@ -112,6 +112,16 @@ void main() {
     );
   });
 
+  // Replaces the shared orchestrator, which tearDown still disposes.
+  ServerOrchestratorImpl mockedOrchestrator(
+    ServerContext Function(ServerConfig) factory,
+  ) => ServerOrchestratorImpl(
+    serverRepository: serverRepository,
+    preferencesRepository: preferencesRepository,
+    contextFactory: factory,
+    isDesktopOverride: false,
+  );
+
   tearDown(() => orchestrator.dispose());
 
   group('initialize()', () {
@@ -596,6 +606,33 @@ void main() {
       },
     );
 
+    test(
+      'switching to a context caught transitioning throws and changes nothing',
+      () async {
+        final a = testServerConfig(id: 'a');
+        final b = testServerConfig(id: 'b');
+        when(() => serverRepository.getServer('a')).thenAnswer((_) async => a);
+        when(() => serverRepository.getServer('b')).thenAnswer((_) async => b);
+        orchestrator = mockedOrchestrator(
+          (config) => mockServerContext(config.id),
+        );
+        await orchestrator.initialize();
+        await orchestrator.connectServer('a', makeActive: true);
+        await orchestrator.connectServer('b');
+        final target = orchestrator.getContext('b')! as MockServerContext;
+        when(() => target.state).thenReturn(ServerContextState.transitioning);
+        clearInteractions(target);
+
+        await expectLater(
+          orchestrator.switchActiveServer('b'),
+          throwsStateError,
+        );
+
+        expect(orchestrator.activeServerId, 'a');
+        verifyNever(target.activate);
+      },
+    );
+
     test('successful switch demotes previous and commits target', () async {
       await connectPair(targetFailures: const {});
 
@@ -647,6 +684,31 @@ void main() {
       when(() => serverRepository.getConnectedServers())
           .thenAnswer((_) async => []);
     });
+
+    test(
+      'a disconnect whose dispose throws still unregisters the server',
+      () async {
+        final a = testServerConfig(id: 'a');
+        when(() => serverRepository.getServer('a')).thenAnswer((_) async => a);
+        final contexts = <MockServerContext>[];
+        orchestrator = mockedOrchestrator((config) {
+          final context = mockServerContext(config.id);
+          if (contexts.isEmpty) {
+            when(context.dispose).thenThrow(StateError('dispose boom'));
+          }
+          contexts.add(context);
+          return context;
+        });
+        await orchestrator.initialize();
+        await orchestrator.connectServer('a', makeActive: true);
+
+        await orchestrator.disconnectServer('a');
+
+        expect(orchestrator.getContext('a'), isNull);
+        await orchestrator.connectServer('a');
+        expect(orchestrator.getContext('a'), same(contexts.last));
+      },
+    );
 
     test(
       'failed promotion leaves no active server, app keeps running',

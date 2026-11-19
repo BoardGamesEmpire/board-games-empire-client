@@ -233,17 +233,19 @@ void main() {
     // the drain, in "a switch away between send and acknowledgement…" in
     // `packages/features/sync/test/sync_queue_drain_test.dart`. The native
     // root has no clock seam to move past the lease, and adding one needs a
-    // decision. This is a plain background and resume: #174's race, a
-    // timer-driven suspend that bypasses the operation lock, is not
-    // exercised here.
+    // decision. This is a plain background and resume: a timer-driven
+    // suspend is not exercised here. Since #174 that suspend queues behind
+    // the orchestrator's other lifecycle commands instead of racing them,
+    // and the queue's ordering is pinned in
+    // `packages/core/di/test/server_orchestrator_queue_test.dart`.
     //
     // The test calls the context's `background()`, `suspend()` and
     // `activate()` itself, the calls `ServerOrchestratorImpl` makes. The
     // orchestrator has no call that backgrounds the active server: it
     // backgrounds one only when another server becomes active, and suspends
-    // it only when its backgrounding timer fires, which is #174's path
-    // (#435). Its active id and saved state stay as they were, as across a
-    // resume. The switch-away demotion is pinned in
+    // it only when its backgrounding timer fires (#435). Its active id and
+    // saved state stay as they were, as across a resume. The switch-away
+    // demotion is pinned in
     // `packages/core/di/test/server_orchestrator_impl_test.dart`.
     test('a server backgrounded between send and acknowledgement keeps the '
         "op, and doesn't send it again inside the claim (#121)", () async {

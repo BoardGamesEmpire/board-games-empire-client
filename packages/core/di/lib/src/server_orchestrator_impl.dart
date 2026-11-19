@@ -15,8 +15,38 @@ import 'package:observability/observability.dart';
 /// transitions. Enforces capacity from [DevicePreferences] and manages
 /// backgrounding timers per server.
 ///
-/// Thread-safety: all public methods serialize through [_withLock] to
-/// prevent race conditions during concurrent server switches or connects.
+/// ## Lifecycle commands queue (#174)
+///
+/// [initialize], [connectServer], [disconnectServer], [switchActiveServer]
+/// and a backgrounding timer's expiry each run as one command on a single
+/// queue ([_command]), in the order they were called. A call made while
+/// another command runs waits for it instead of failing. Each command reads
+/// the state it transitions when it runs, not when it was called, so an
+/// expiry that a switch made stale while it waited is dropped.
+///
+/// A call made from inside a running command (say, from a context's
+/// `activate`) would wait on itself forever, so it fails fast with a
+/// [StateError] instead. That includes [dispose], which waits for the
+/// queue. Each command runs in a zone carrying a token of its own under
+/// [_commandZoneKey], and a call is re-entrant when its zone carries the
+/// token of the command running now ([_running]).
+///
+/// The token is the command's, not the orchestrator's, because a zone
+/// outlives the command that ran in it. Whatever a command starts keeps
+/// that zone: the sync engines, listeners and timers a context's `activate`
+/// installs. A call one of them makes once the command has finished carries
+/// a token that is no longer running, so it queues like any other. A call
+/// made from such work while its command still runs is refused, whether or
+/// not the command waits for it: the two can't be told apart.
+///
+/// Backgrounding timers are created outside any command's zone, in the
+/// nearest enclosing zone that isn't one ([_outsideCommands]). A timer
+/// started inside a command would fire in that command's zone, and an
+/// expiry that fired while the command was still running would be refused
+/// as re-entrant. The root zone would be wrong too: it is outside the app's
+/// guarded error zone, and a test's fake clock never fires it.
+///
+/// [dispose] waits for every command queued before it, then tears down.
 ///
 /// ## Activation can fail
 ///
@@ -32,16 +62,11 @@ import 'package:observability/observability.dart';
 ///
 /// [_activeContextController] and [_contextsController] use the default
 /// async delivery. Listener callbacks fire in a microtask after `add()`,
-/// not inside the orchestrator method that emitted the event.
-///
-/// This matters for re-entrancy: a listener that calls back into the
-/// orchestrator (e.g. a Bloc that observes `watchActiveContext` and
-/// reacts by calling `switchActiveServer`) would otherwise execute
-/// inside the original method's lock-held window, tripping the
-/// `_operationInProgress` guard with a confusing
-/// "Concurrent orchestrator operation attempted" error. With async
-/// delivery the listener runs after the originating method returns
-/// and the lock has been released.
+/// not inside the orchestrator method that emitted the event, and in the
+/// zone the listener subscribed from. A listener that calls back into the
+/// orchestrator (e.g. a Bloc that observes `watchActiveContext` and reacts
+/// by calling `switchActiveServer`) is therefore not a re-entrant call: its
+/// command queues behind the one that emitted.
 ///
 /// ## Config bookkeeping (#37)
 ///
@@ -112,6 +137,11 @@ class ServerOrchestratorImpl implements ServerOrchestrator {
 
   final Map<String, Timer> _backgroundingTimers = {};
 
+  /// Bumped on every start and cancel of a server's backgrounding timer. An
+  /// expiry carries the generation its timer started with, and one that
+  /// waited in the queue past a cancel or restart finds it stale.
+  final Map<String, int> _timerGeneration = {};
+
   final StreamController<ServerContext?> _activeContextController =
       StreamController<ServerContext?>.broadcast();
   final StreamController<Map<String, ServerContext>> _contextsController =
@@ -121,12 +151,16 @@ class ServerOrchestratorImpl implements ServerOrchestrator {
   bool _isInitialized = false;
   bool _disposed = false;
 
-  /// Serializes all mutating operations to prevent concurrent transitions.
-  bool _operationInProgress = false;
+  /// Completes when the last queued command has; never completes with an
+  /// error. The next command chains onto it.
+  Future<void> _tail = Future<void>.value();
 
-  /// The currently running locked operation — awaited by [dispose] so
-  /// teardown never interleaves with an in-flight connect/switch.
-  Future<void>? _inFlightOperation;
+  /// The zone key a command's token is carried under (see class docs,
+  /// "Lifecycle commands queue").
+  static final Object _commandZoneKey = Object();
+
+  /// The token of the command running now, or null between commands.
+  Object? _running;
 
   @override
   int get maxMonitoringCapacity => _cachedPreferences?.maxMonitoredServers ?? 5;
@@ -151,11 +185,14 @@ class ServerOrchestratorImpl implements ServerOrchestrator {
   @override
   Future<void> initialize() async {
     _assertNotDisposed();
-    if (_isInitialized) {
-      throw StateError('ServerOrchestrator is already initialized.');
-    }
 
-    await _withLock(() async {
+    await _command(() async {
+      // Checked when the command runs, so a second call that queued behind
+      // the first fails instead of restoring every context again.
+      if (_isInitialized) {
+        throw StateError('ServerOrchestrator is already initialized.');
+      }
+
       _cachedPreferences = await _preferencesRepository.get();
 
       // Restore contexts for servers that were connected at last shutdown.
@@ -221,16 +258,20 @@ class ServerOrchestratorImpl implements ServerOrchestrator {
     required String bgeServerId,
     required ServerIdentity identity,
   }) async {
+    // Checked at call time, unlike the commands: the row below is written
+    // before anything queues, and one written while initialize runs could
+    // be restored by it, leaving connectServer to fail and the rollback to
+    // delete a connected server's row.
     _assertReady();
 
     // Persist first. The repository's table constraints keep a server from
     // being added twice, even by two adds at once, and the repository
     // reports either case as DuplicateServerException (#184). Orchestrator
-    // state is untouched until connectServer below, which serializes
-    // through the standard lock. connectServer cannot be invoked inside
-    // _withLock (the re-entrancy guard would trip), so this composes the
-    // two steps instead — the window between them is harmless: the row
-    // exists in ConnectionState.disconnected, exactly like any other
+    // state is untouched until connectServer below, which queues like any
+    // other command. connectServer cannot be called from inside a command
+    // (it would fail as re-entrant), so this composes the two steps
+    // instead — the window between them is harmless: the row exists in
+    // ConnectionState.disconnected, exactly like any other
     // registered-but-unconnected server.
     final config = await _serverRepository.addServer(
       displayName: displayName,
@@ -266,9 +307,10 @@ class ServerOrchestratorImpl implements ServerOrchestrator {
 
   @override
   Future<void> connectServer(String serverId, {bool makeActive = false}) async {
-    _assertReady();
+    _assertNotDisposed();
 
-    await _withLock(() async {
+    await _command(() async {
+      _assertInitialized();
       final config = await _serverRepository.getServer(serverId);
       if (config == null) throw ServerNotFoundException(serverId);
       if (_contexts.containsKey(serverId)) {
@@ -359,9 +401,10 @@ class ServerOrchestratorImpl implements ServerOrchestrator {
 
   @override
   Future<void> disconnectServer(String serverId) async {
-    _assertReady();
+    _assertNotDisposed();
 
-    await _withLock(() async {
+    await _command(() async {
+      _assertInitialized();
       final config = await _serverRepository.getServer(serverId);
       if (config == null) throw ServerNotFoundException(serverId);
 
@@ -407,7 +450,7 @@ class ServerOrchestratorImpl implements ServerOrchestrator {
         }
       }
 
-      await context.dispose();
+      await _disposeQuietly(context);
       _contexts.remove(serverId);
       _configs.remove(serverId);
       _lastActiveTick.remove(serverId);
@@ -423,9 +466,10 @@ class ServerOrchestratorImpl implements ServerOrchestrator {
 
   @override
   Future<void> switchActiveServer(String targetServerId) async {
-    _assertReady();
+    _assertNotDisposed();
 
-    await _withLock(() async {
+    await _command(() async {
+      _assertInitialized();
       if (targetServerId == _activeServerId) return;
 
       final targetContext = _contexts[targetServerId];
@@ -525,18 +569,16 @@ class ServerOrchestratorImpl implements ServerOrchestrator {
 
   @override
   Future<void> dispose() async {
+    // Teardown waits for the tail, which includes a running command; called
+    // from inside one it would wait on itself.
+    _assertOutsideCommand();
     if (_disposed) return;
     _disposed = true;
 
-    // Let an in-flight operation settle before tearing its contexts down.
-    final inFlight = _inFlightOperation;
-    if (inFlight != null) {
-      try {
-        await inFlight;
-      } on Object catch (_) {
-        // The operation's own caller receives this error.
-      }
-    }
+    // Every command queued before this call still runs; teardown waits for
+    // them so it never interleaves with one. A command's failure reaches its
+    // own caller, never the tail.
+    await _tail;
 
     for (final timer in _backgroundingTimers.values) {
       timer.cancel();
@@ -657,6 +699,17 @@ class ServerOrchestratorImpl implements ServerOrchestrator {
       ServerContextState.monitoring,
     };
 
+    if (context.state == ServerContextState.transitioning) {
+      // Every lifecycle command runs through the serialized queue, so none
+      // can observe another's transition. A transitioning context here is a
+      // broken invariant; activating it would race the transition, and
+      // treating it as active would skip the activation (#174).
+      throw StateError(
+        'Server ${context.serverId} is transitioning; it is neither active '
+        'nor activatable.',
+      );
+    }
+
     if (activateableStates.contains(context.state)) {
       await context.activate();
     }
@@ -731,57 +784,96 @@ class ServerOrchestratorImpl implements ServerOrchestrator {
         (prefs?.backgroundingTimeoutSeconds(isDesktop: _isDesktop) ??
             (_isDesktop ? 900 : 300));
 
-    _backgroundingTimers[serverId] = Timer(
+    final generation = _bumpTimerGeneration(serverId);
+    // Outside the command that started it, so an expiry always queues as a
+    // command of its own, even one that fires while that command still runs
+    // (see class docs).
+    final zone = _outsideCommands();
+    _backgroundingTimers[serverId] = zone.createTimer(
       Duration(seconds: timeoutSeconds),
-      () => _onBackgroundingTimerExpired(serverId),
+      zone.bindCallbackGuarded(
+        () => _onBackgroundingTimerExpired(serverId, generation),
+      ),
     );
   }
 
   void _cancelBackgroundingTimer(String serverId) {
     _backgroundingTimers.remove(serverId)?.cancel();
+    _bumpTimerGeneration(serverId);
   }
 
-  void _onBackgroundingTimerExpired(String serverId) {
-    _backgroundingTimers.remove(serverId);
+  int _bumpTimerGeneration(String serverId) =>
+      _timerGeneration[serverId] = (_timerGeneration[serverId] ?? 0) + 1;
 
+  void _onBackgroundingTimerExpired(String serverId, int generation) {
+    _backgroundingTimers.remove(serverId);
+    unawaited(_command(() => _suspendOnExpiry(serverId, generation)));
+  }
+
+  /// Suspends [serverId] for the timer of [generation]. Whatever ran while
+  /// the expiry waited in the queue may have made it moot: teardown, a
+  /// cancel or restart of the timer, or a transition out of backgrounding.
+  /// Errors are logged, not thrown: nobody awaits a timer's command.
+  Future<void> _suspendOnExpiry(String serverId, int generation) async {
+    if (_disposed || _timerGeneration[serverId] != generation) return;
     final context = _contexts[serverId];
     if (context == null || context.state != ServerContextState.backgrounding) {
       return;
     }
 
-    // Fire-and-forget — errors are logged, not propagated.
-    unawaited(
-      Future(() async {
-        try {
-          await context.suspend();
-          await _serverRepository.updateConnectionState(
-            serverId: serverId,
-            newState: ConnectionState.monitoring,
-          );
-          _emitContextsChange();
-        } on Object catch (e, st) {
-          _logError('suspending $serverId on timer failed', e, st);
-        }
-      }),
-    );
+    try {
+      await context.suspend();
+      await _serverRepository.updateConnectionState(
+        serverId: serverId,
+        newState: ConnectionState.monitoring,
+      );
+      _emitContextsChange();
+    } on Object catch (e, st) {
+      _logError('suspending $serverId on timer failed', e, st);
+    }
   }
 
-  Future<void> _withLock(Future<void> Function() body) async {
-    if (_operationInProgress) {
+  /// Runs [body] once every command queued before it has finished, and
+  /// completes with its outcome. A failure reaches this caller only; the
+  /// next command runs regardless.
+  ///
+  /// Throws [StateError] when called from inside a running command, which
+  /// would otherwise wait on itself forever.
+  Future<T> _command<T>(Future<T> Function() body) {
+    _assertOutsideCommand();
+    final result = _tail.then((_) async {
+      final token = Object();
+      _running = token;
+      try {
+        // zoneValues only: no error zone, so the body's errors still reach
+        // the returned future.
+        return await runZoned(body, zoneValues: {_commandZoneKey: token});
+      } finally {
+        _running = null;
+      }
+    });
+    _tail = result.then<void>((_) {}, onError: (Object _) {});
+    return result;
+  }
+
+  void _assertOutsideCommand() {
+    final token = Zone.current[_commandZoneKey];
+    if (token != null && identical(token, _running)) {
       throw StateError(
-        'Concurrent orchestrator operation attempted. '
-        'Await the previous operation before starting another.',
+        'Re-entrant orchestrator call from inside a running lifecycle '
+        'command.',
       );
     }
-    _operationInProgress = true;
-    final future = Future.sync(body);
-    _inFlightOperation = future;
-    try {
-      await future;
-    } finally {
-      _operationInProgress = false;
-      _inFlightOperation = null;
+  }
+
+  /// The nearest zone enclosing [Zone.current] that isn't a command's. Zone
+  /// values are inherited and the root zone has none, so the walk ends.
+  static Zone _outsideCommands() {
+    var zone = Zone.current;
+    while (zone[_commandZoneKey] != null) {
+      zone = zone.parent!;
     }
+    return zone;
   }
 
   @override
@@ -813,6 +905,14 @@ class ServerOrchestratorImpl implements ServerOrchestrator {
 
   void _assertReady() {
     _assertNotDisposed();
+    _assertInitialized();
+  }
+
+  /// Called from inside a command by every lifecycle method but
+  /// [addAndActivateServer], so a call made while [initialize] runs waits for
+  /// it and sees its outcome. Disposal is still checked at call time: a
+  /// command queued before [dispose] runs before teardown.
+  void _assertInitialized() {
     if (!_isInitialized) {
       throw StateError(
         'ServerOrchestrator is not initialized. Call initialize() first.',

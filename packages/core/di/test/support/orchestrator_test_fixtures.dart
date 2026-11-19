@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:bge_test_support/domain.dart';
 import 'package:di/di.dart';
 import 'package:interfaces/orchestration.dart';
@@ -67,6 +69,24 @@ MockServerContext mockServerContext(
   when(ctx.watchState)
       .thenAnswer((_) => Stream.value(ServerContextState.active));
   return ctx;
+}
+
+/// Holds [ctx]'s `activate` or `suspend` (named by [method]: `#activate` or
+/// `#suspend`) until [release] completes, then applies the state change the
+/// lifecycle contract gives it. Every later call goes through at once.
+void gate(MockServerContext ctx, Symbol method, Completer<void> release) {
+  final (
+    Future<void> Function() call,
+    ServerContextState after,
+  ) = switch (method) {
+    #activate => (ctx.activate, ServerContextState.active),
+    #suspend => (ctx.suspend, ServerContextState.monitoring),
+    _ => throw ArgumentError.value(method, 'method', 'not gateable'),
+  };
+  when(call).thenAnswer((_) async {
+    await release.future;
+    when(() => ctx.state).thenReturn(after);
+  });
 }
 
 /// A real [ServerOrchestratorImpl] over mocked repositories, stubbed for the
