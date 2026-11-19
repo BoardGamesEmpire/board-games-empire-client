@@ -452,6 +452,21 @@ abstract class EventRepository {
   /// (#589): a detail read in flight may still write the event over it.
   Future<bool> cacheEventRow(Event event);
 
+  /// Writes [policy], the rules a policy edit returned, over the cached
+  /// ones of `policy.eventId` (#500).
+  ///
+  /// It writes the policy's own columns and leaves the event row, dates,
+  /// roster and access alone: the answer carries none of them.
+  ///
+  /// Returns false, writing nothing, when the event isn't cached, or is
+  /// `isDirty` or `isLocalOnly`: the sync queue owns those, as
+  /// [cacheEventRow] leaves them. Stamps the event's generation, and
+  /// [watchEvent] emits.
+  ///
+  /// Like the other writes of a server answer, this is last-write-wins
+  /// (#589): a detail read in flight may still write the rules over it.
+  Future<bool> cacheEventPolicy(EventPolicy policy);
+
   /// Removes the cached date [occurrenceId] of [eventId], which the server
   /// removed (#506).
   ///
