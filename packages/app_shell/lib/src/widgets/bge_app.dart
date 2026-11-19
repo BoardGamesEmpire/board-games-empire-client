@@ -3756,6 +3756,10 @@ class _AuthScopeState extends State<_AuthScope> {
     }
     _leftSession = session;
     widget.homeSession.value = (serverId: null, userId: null, switching: true);
+    // A pop-up over home reads through the session that just ended, and
+    // home's page stays, so nothing else takes it down: a deep link's
+    // switch navigates nowhere until it lands.
+    _closePopUps(context);
   }
 
   @override

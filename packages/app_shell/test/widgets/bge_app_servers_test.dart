@@ -874,6 +874,30 @@ void main() {
       expectHomeFor(tester, cubit, beta);
     });
 
+    testWidgets('a switch made elsewhere closes a pop-up open over home', (
+      tester,
+    ) async {
+      final cubit = await boot(tester);
+      // As a game's quick look does: on the root navigator, over home,
+      // reading through the session the switch is about to end.
+      unawaited(
+        showDialog<void>(
+          context: tester.element(find.byType(HomeScreen)),
+          builder: (_) => const Text('Over home'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Over home'), findsOneWidget);
+
+      // As a link for Beta does: home's page stays, so no guard takes the
+      // pop-up down.
+      await orchestrator.connectServer(beta.server.serverId, makeActive: true);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Over home'), findsNothing);
+      expectHomeFor(tester, cubit, beta);
+    });
+
     testWidgets('picking a server whose session check fails lands on its '
         'failed check, which can be tried again', (tester) async {
       final betaAuth = FakeAuthRepository(
