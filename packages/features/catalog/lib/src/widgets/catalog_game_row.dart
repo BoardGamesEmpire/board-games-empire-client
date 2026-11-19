@@ -7,6 +7,9 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// One game in a list (#42): the thumbnail, the title line and the facts
 /// line, as one semantics node.
 ///
+/// Outlined as a [BgeOutlinedRow] (#647), each game its own bordered row with
+/// a gap below it.
+///
 /// The collection row's shape (#44). Without [onTap] a row is inert content,
 /// not a focus stop: a tap that leads nowhere is worse than no tap (#269).
 class CatalogGameRow extends StatelessWidget {
@@ -56,38 +59,42 @@ class CatalogGameRow extends StatelessWidget {
   Widget build(BuildContext context) {
     // MergeSemantics rather than a Semantics container: a tappable ListTile
     // builds an InkWell with its own node, and merging keeps the tap action
-    // and the words on one node (the collection row's reasoning).
+    // and the words on one node (the collection row's reasoning). It sits
+    // inside the outline, so the node's rect leaves out the gap below the
+    // row (#647).
     final tokens = BgeTokens.of(context);
-    final tile = MergeSemantics(
-      child: ListTile(
-        onTap: onTap,
-        enabled: !(onlineOnly && BgeConnectivityScope.offlineOf(context)),
-        leading: BgeThumbnail(
-          url: thumbnailUrl,
-          placeholderIcon: Icons.casino_outlined,
-          placeholderKey: thumbnailPlaceholderKey,
+    final tile = BgeOutlinedRow(
+      child: MergeSemantics(
+        child: ListTile(
+          onTap: onTap,
+          enabled: !(onlineOnly && BgeConnectivityScope.offlineOf(context)),
+          leading: BgeThumbnail(
+            url: thumbnailUrl,
+            placeholderIcon: Icons.casino_outlined,
+            placeholderKey: thumbnailPlaceholderKey,
+          ),
+          // The reason is a line of the title, so it stays in the row's one
+          // node, ahead of the facts.
+          title: onlineOnly
+              ? BgeOnlineOnlyLabel(title, semanticsLabel: spokenTitle)
+              : Text(title, semanticsLabel: spokenTitle),
+          subtitle: note == null && facts.isEmpty && summary == null
+              ? null
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (note != null) Text(note!),
+                    if (facts.isNotEmpty) CatalogFactsText(facts),
+                    if (summary != null)
+                      Text(
+                        summary!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                  ],
+                ),
         ),
-        // The reason is a line of the title, so it stays in the row's one
-        // node, ahead of the facts.
-        title: onlineOnly
-            ? BgeOnlineOnlyLabel(title, semanticsLabel: spokenTitle)
-            : Text(title, semanticsLabel: spokenTitle),
-        subtitle: note == null && facts.isEmpty && summary == null
-            ? null
-            : Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (note != null) Text(note!),
-                  if (facts.isNotEmpty) CatalogFactsText(facts),
-                  if (summary != null)
-                    Text(
-                      summary!,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                ],
-              ),
       ),
     );
     if (!nested) return tile;

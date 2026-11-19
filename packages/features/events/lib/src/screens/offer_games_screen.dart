@@ -550,42 +550,49 @@ class _OfferRow extends StatelessWidget {
     final syncState = this.syncState;
     final theme = Theme.of(context);
 
-    return CheckboxListTile(
-      value: checked,
-      onChanged: reason != null || syncState != null
-          ? null
-          : (value) => onChanged(value ?? false),
-      contentPadding: EdgeInsets.zero,
-      // The intra-control step either side of the text, not the tile's
-      // 16dp: at 320dp and 200% text the picture and the checkbox leave
-      // the title little room, and a long word would break mid-word.
-      horizontalTitleGap: BgeTokens.of(context).spaceSm,
-      secondary: BgeThumbnail(url: item.thumbnail),
-      title: Text(gameName(l10n, item.title, item.subtitle)),
-      subtitle: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            l10n.eventsGamesWhere(item.platformName, medium),
-            semanticsLabel: l10n.eventsGamesWhereSpoken(
-              item.platformName,
-              medium,
-            ),
-          ),
-          if (reason != null)
+    return BgeOutlinedRow(
+      child: CheckboxListTile(
+        value: checked,
+        onChanged: reason != null || syncState != null
+            ? null
+            : (value) => onChanged(value ?? false),
+        // The row is outlined (#647), so the picture sits a step inside the
+        // border: the intra-control step, not the tile's 16/24dp. The
+        // checkbox's own slack around its box already insets it, so the end
+        // takes no padding. At 320dp and 200% text the picture and the
+        // checkbox leave the title little room, and every dp the padding
+        // takes is one a long word could break mid-word for.
+        contentPadding: EdgeInsetsDirectional.only(
+          start: BgeTokens.of(context).spaceSm,
+        ),
+        horizontalTitleGap: BgeTokens.of(context).spaceSm,
+        secondary: BgeThumbnail(url: item.thumbnail),
+        title: Text(gameName(l10n, item.title, item.subtitle)),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
             Text(
-              reason,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
+              l10n.eventsGamesWhere(item.platformName, medium),
+              semanticsLabel: l10n.eventsGamesWhereSpoken(
+                item.platformName,
+                medium,
               ),
             ),
-          if (syncState != null)
-            BgeSyncBadge(
-              state: syncState,
-              label: eventSyncLabel(l10n, syncState),
-            ),
-        ],
+            if (reason != null)
+              Text(
+                reason,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            if (syncState != null)
+              BgeSyncBadge(
+                state: syncState,
+                label: eventSyncLabel(l10n, syncState),
+              ),
+          ],
+        ),
       ),
     );
   }

@@ -308,6 +308,24 @@ void main() {
     });
   });
 
+  testWidgets('every game row is outlined (#647)', (tester) async {
+    await show(tester, [
+      listItem('e-1', title: 'Azul'),
+      listItem('e-2', title: 'Zendo'),
+    ]);
+
+    expect(find.byType(BgeOutlinedRow), findsNWidgets(2));
+    for (final id in ['e-1', 'e-2']) {
+      expect(
+        find.descendant(
+          of: find.byKey(GameCollectionListScreen.rowKey(id)),
+          matching: find.byType(BgeOutlinedRow),
+        ),
+        findsOneWidget,
+      );
+    }
+  });
+
   group('a row (#44)', () {
     testWidgets('shows the title alone when there is no subtitle', (
       tester,
@@ -3106,6 +3124,24 @@ void main() {
       );
     });
 
+    testWidgets("a nested expansion row's outline starts at the indent "
+        '(#647)', (tester) async {
+      await show(tester, [expansion, base]);
+
+      double outlineStart(Finder row) => tester
+          .getTopLeft(
+            find.descendant(of: row, matching: find.byType(BgeOutlinedRow)),
+          )
+          .dx;
+      expect(
+        outlineStart(
+          find.byKey(GameCollectionListScreen.nestedRowKey('g-base', 'exp-1')),
+        ),
+        outlineStart(find.byKey(GameCollectionListScreen.rowKey('base-1'))) +
+            BgeTokens.standard.spaceLg,
+      );
+    });
+
     testWidgets('a nested stack keeps its picker', (tester) async {
       GameCollectionListItem copy(String id, String platform) => listItem(
         id,
@@ -4270,6 +4306,40 @@ void main() {
         expect(ringShown(tester, row), isTrue);
       }
     }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
+
+    testWidgets("a row's focus ring follows its outline (#647)", (
+      tester,
+    ) async {
+      await show(tester, [...once, base, expansion('x-1', 'Tabletop')]);
+
+      for (final key in [
+        GameCollectionListScreen.rowKey('e-1'),
+        GameCollectionListScreen.nestedRowKey('g-base', 'x-1'),
+      ]) {
+        final ring = tester.widget<BgeFocusRing>(
+          find.descendant(
+            of: find.byKey(key),
+            matching: find.byType(BgeFocusRing),
+          ),
+        );
+        expect(
+          ring.borderRadius,
+          BorderRadius.circular(BgeTokens.standard.radiusMd),
+        );
+        final outline = tester.widget<ListTileTheme>(
+          find
+              .descendant(
+                of: find.byKey(key),
+                matching: find.byType(ListTileTheme),
+              )
+              .first,
+        );
+        expect(
+          (outline.data.shape! as RoundedRectangleBorder).borderRadius,
+          ring.borderRadius,
+        );
+      }
+    });
 
     void openPage(BuildContext context, String id) =>
         Navigator.of(context).push(

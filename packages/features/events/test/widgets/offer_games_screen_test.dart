@@ -268,6 +268,57 @@ void main() {
   FocusNode searchFocus(WidgetTester tester) =>
       tester.widget<TextField>(search()).focusNode!;
 
+  testWidgets('every game row is outlined (#647)', (tester) async {
+    await open(tester);
+
+    final shown = rowsShown(tester);
+    expect(shown, isNotEmpty);
+    expect(
+      find.byType(BgeOutlinedRow, skipOffstage: false),
+      findsNWidgets(shown.length),
+    );
+    for (final id in shown) {
+      expect(
+        find.descendant(
+          of: row(id),
+          matching: find.byType(BgeOutlinedRow, skipOffstage: false),
+          skipOffstage: false,
+        ),
+        findsOneWidget,
+      );
+    }
+  });
+
+  testWidgets('the thumbnail and the checkbox sit inside the outline, inset '
+      'from its edges (#647)', (tester) async {
+    await open(tester);
+
+    final id = rowsShown(tester).first;
+    await reveal(tester, row(id));
+    final outline = tester.getRect(
+      find.descendant(of: row(id), matching: find.byType(BgeOutlinedRow)),
+    );
+    final thumbnail = tester.getRect(
+      find.descendant(of: row(id), matching: find.byType(BgeThumbnail)),
+    );
+    final checkbox = tester.getRect(
+      find.descendant(of: row(id), matching: find.byType(Checkbox)),
+    );
+
+    final inset = BgeTokens.standard.spaceSm;
+    expect(thumbnail.left - outline.left, greaterThanOrEqualTo(inset));
+    // The box drawn, centred in the checkbox's wider area: that area's slack
+    // is the inset at the end, where the row adds no padding.
+    final drawn = Rect.fromCenter(
+      center: checkbox.center,
+      width: Checkbox.width,
+      height: Checkbox.width,
+    );
+    expect(outline.right - drawn.right, greaterThanOrEqualTo(inset));
+    expect(outline.contains(thumbnail.topLeft), isTrue);
+    expect(outline.contains(drawn.bottomRight), isTrue);
+  });
+
   testWidgets('the rows are the collection, flat, in title order', (
     tester,
   ) async {
@@ -1164,6 +1215,12 @@ void main() {
         );
         expect(box.right, lessThanOrEqualTo(320), reason: id);
         expect(box.left, greaterThanOrEqualTo(0), reason: id);
+        // The checkbox's own slack is its inset from the outline, so the row
+        // pads only its start: what the end doesn't take is the title's.
+        final outline = tester.getRect(
+          find.descendant(of: row(id), matching: find.byType(BgeOutlinedRow)),
+        );
+        expect(box.right, outline.right, reason: id);
       }
     });
 

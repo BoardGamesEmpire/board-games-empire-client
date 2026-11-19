@@ -1162,33 +1162,37 @@ class _RingedListTileState extends State<_RingedListTile>
   @override
   Widget build(BuildContext context) {
     final onTap = widget.onTap;
-    return Listener(
-      // Every pointer's press on the row, as a list tile offers no tap-down. A
-      // keyboard's activation sends none, so its focus shows.
-      onPointerDown: onTap == null
-          ? null
-          : (event) => notePointerPress(event.kind),
-      child: BgeFocusRing(
-        borderRadius: BorderRadius.circular(BgeTokens.of(context).radiusSm),
-        suppressed: pointerFocus,
-        builder: (context, onFocusChange) => ListTile(
-          focusNode: _focusNode,
-          onFocusChange: onFocusChange,
-          // The theme's tint, with no strength while the focus is a pointer's.
-          focusColor: pointerFocusColor,
-          // Without an onTap the tile's InkWell has no handler, so it is
-          // disabled: no tap action, and not a focus stop under ordinary
-          // keyboard navigation. That is the inert row #44 wants.
-          onTap: onTap == null
-              ? null
-              : () {
-                  _focusNode.requestFocus();
-                  onTap();
-                },
-          leading: widget.leading,
-          title: widget.title,
-          subtitle: widget.subtitle,
-          trailing: widget.trailing,
+    return BgeOutlinedRow(
+      child: Listener(
+        // Every pointer's press on the row, as a list tile offers no
+        // tap-down. A keyboard's activation sends none, so its focus shows.
+        onPointerDown: onTap == null
+            ? null
+            : (event) => notePointerPress(event.kind),
+        child: BgeFocusRing(
+          // The row's outline radius (#647), so the ring follows it.
+          borderRadius: BorderRadius.circular(BgeTokens.of(context).radiusMd),
+          suppressed: pointerFocus,
+          builder: (context, onFocusChange) => ListTile(
+            focusNode: _focusNode,
+            onFocusChange: onFocusChange,
+            // The theme's tint, with no strength while the focus is a
+            // pointer's.
+            focusColor: pointerFocusColor,
+            // Without an onTap the tile's InkWell has no handler, so it is
+            // disabled: no tap action, and not a focus stop under ordinary
+            // keyboard navigation. That is the inert row #44 wants.
+            onTap: onTap == null
+                ? null
+                : () {
+                    _focusNode.requestFocus();
+                    onTap();
+                  },
+            leading: widget.leading,
+            title: widget.title,
+            subtitle: widget.subtitle,
+            trailing: widget.trailing,
+          ),
         ),
       ),
     );
