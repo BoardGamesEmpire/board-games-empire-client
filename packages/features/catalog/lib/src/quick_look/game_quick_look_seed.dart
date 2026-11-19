@@ -40,6 +40,17 @@ class GameQuickLookSeed {
         thumbnail: summary.thumbnail,
       );
 
+  /// From a search hit the server already holds, which has the title and the
+  /// thumbnail and nothing more until the read lands.
+  factory GameQuickLookSeed.fromHit(GameSearchHit hit) {
+    assert(hit.gameId != null, 'Only a hit the server holds has a game id.');
+    return GameQuickLookSeed(
+      id: hit.gameId!,
+      title: hit.title,
+      thumbnail: hit.thumbnailUrl,
+    );
+  }
+
   final String id;
   final String title;
   final String? subtitle;

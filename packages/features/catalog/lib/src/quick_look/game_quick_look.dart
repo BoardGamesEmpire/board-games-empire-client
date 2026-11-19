@@ -7,17 +7,15 @@ import 'package:game_catalog/src/bloc/game_detail_bloc.dart';
 import 'package:game_catalog/src/bloc/game_detail_event.dart';
 import 'package:game_catalog/src/bloc/game_detail_state.dart';
 import 'package:game_catalog/src/quick_look/game_quick_look_seed.dart';
+import 'package:game_catalog/src/quick_look/quick_look_layout.dart';
 import 'package:game_catalog/src/screens/game_detail_screen.dart';
 import 'package:game_catalog/src/widgets/catalog_facts.dart';
 import 'package:game_catalog/src/widgets/catalog_slivers.dart';
-import 'package:game_catalog/src/widgets/cover_beside_title.dart';
-import 'package:game_catalog/src/widgets/folded_description.dart';
 import 'package:game_filters/game_filters.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:ui/ui.dart';
-import 'package:ui_tokens/ui_tokens.dart';
 
 /// Opens [seed]'s [GameQuickLook] over the page (#707), through
 /// [showBgePopup]: a sheet on a phone and a dialog on a wider window, on the
@@ -127,9 +125,9 @@ class GameQuickLook extends StatelessWidget {
     super.key,
   });
 
-  static const Key viewDetailsKey = Key('catalog.quick_look.view_details');
-  static const Key factsKey = Key('catalog.quick_look.facts');
-  static const Key platformsKey = Key('catalog.quick_look.platforms');
+  static const Key viewDetailsKey = QuickLookLayout.viewDetailsKey;
+  static const Key factsKey = QuickLookLayout.factsKey;
+  static const Key platformsKey = QuickLookLayout.platformsKey;
 
   /// The banner over a read that didn't land, with its retry.
   static const Key partialKey = Key('catalog.quick_look.partial');
@@ -210,14 +208,6 @@ class _QuickLookBody extends StatefulWidget {
 }
 
 class _QuickLookBodyState extends State<_QuickLookBody> {
-  /// The cover's side: smaller than the detail page's, as the quick look
-  /// is a glance.
-  static const double _coverExtent = 96;
-
-  /// Keeps the description's state, More or Less, as the platforms and the
-  /// banner arrive above it.
-  static const Key _descriptionKey = ValueKey('description');
-
   /// The read's last answer shown. A retry reads again from
   /// [GameDetailLoading], and this keeps what was shown on screen meanwhile.
   GameDetailState? _answer;
@@ -282,7 +272,6 @@ class _QuickLookBodyState extends State<_QuickLookBody> {
     required bool retrying,
   }) {
     final l10n = GameCatalogLocalizations.of(context);
-    final tokens = BgeTokens.of(context);
     final seed = widget.seed;
     final ready = answer is GameDetailReady ? answer : null;
     // Offline, the newer of a full seed and the cached copy. Either can be
@@ -299,10 +288,6 @@ class _QuickLookBodyState extends State<_QuickLookBody> {
       _ => ready?.game ?? seed.game,
     };
     final platformGames = ready?.platformGames ?? const <PlatformGame>[];
-    final facts = game == null
-        ? const <GameFact>[]
-        : playFacts(l10n, GameFiltersLocalizations.of(context), game);
-    final description = game?.description;
     final banner = switch (answer) {
       GameDetailFailed() ||
       GameDetailReady(fromCache: true) => CatalogFromCacheBanner(
@@ -320,122 +305,30 @@ class _QuickLookBodyState extends State<_QuickLookBody> {
       ),
       _ => null,
     };
-    final viewDetails = widget.onViewDetails;
 
-    return SingleChildScrollView(
-      padding: EdgeInsets.fromLTRB(
-        tokens.spaceMd,
-        tokens.spaceMd,
-        tokens.spaceMd,
-        tokens.spaceLg,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _header(context, game: game),
-          if (facts.isNotEmpty) ...[
-            const BgeGap.md(),
-            CatalogFactsText(facts, key: GameQuickLook.factsKey),
-          ],
-          if (platformGames.isNotEmpty) ...[
-            CatalogSectionHeading(l10n.catalogDetailAvailableOn),
-            // Chips with no action: adding the game on a platform is the
-            // detail page's.
-            Wrap(
-              key: GameQuickLook.platformsKey,
-              spacing: tokens.spaceSm,
-              runSpacing: tokens.spaceSm,
-              children: [
-                for (final platformGame in platformGames)
-                  Chip(
-                    key: ValueKey(platformGame.id),
-                    label: GameFilterChipLabel(platformGame.platformName),
-                  ),
-              ],
-            ),
-          ],
-          if (banner != null) ...[const BgeGap.md(), banner],
-          // Not under a MergeSemantics, which would read the folded
-          // paragraphs out too.
-          if (description != null && description.trim().isNotEmpty) ...[
-            const BgeGap.md(),
-            FoldedDescription(
-              key: _descriptionKey,
-              markdown: description,
-              onOpenLink: widget.openLink,
-            ),
-          ],
-          if (widget.sections.isNotEmpty) ...[
-            const BgeGap.md(),
-            ...widget.sections,
-          ],
-          if (widget.actions.isNotEmpty || viewDetails != null) ...[
-            const BgeGap.md(),
-            OverflowBar(
-              alignment: MainAxisAlignment.end,
-              overflowAlignment: OverflowBarAlignment.end,
-              spacing: tokens.spaceSm,
-              overflowSpacing: tokens.spaceSm,
-              children: [
-                ...widget.actions,
-                if (viewDetails != null)
-                  FilledButton.tonal(
-                    key: GameQuickLook.viewDetailsKey,
-                    onPressed: viewDetails,
-                    child: Text(l10n.catalogQuickLookViewDetails),
-                  ),
-              ],
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  /// The cover beside the title, with the subtitle and the publish year
-  /// under the title, or the cover above them all where the title would
-  /// have too little room beside it: see [CoverBesideTitle].
-  ///
-  /// [game] is the read's, or the seed's until it lands; see "The header
-  /// follows the read".
-  Widget _header(BuildContext context, {required Game? game}) {
-    final l10n = GameCatalogLocalizations.of(context);
-    final theme = Theme.of(context);
-    final seed = widget.seed;
-    final title = game?.title ?? seed.title;
-    final subtitle = game == null ? seed.subtitle : game.subtitle;
-    final year = game?.publishYear;
-    final cover =
-        seed.thumbnail ?? seed.image ?? game?.thumbnail ?? game?.image;
-    final titleStyle = theme.textTheme.titleLarge;
-    final titles = Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Semantics(header: true, child: Text(title, style: titleStyle)),
-        if (subtitle != null && subtitle.isNotEmpty)
-          Text(subtitle, style: theme.textTheme.titleSmall),
-        if (year != null) ...[
-          const BgeGap.xs(),
-          Text(
-            l10n.catalogDetailPublished(
-              yearText(GameFiltersLocalizations.of(context), year),
-            ),
+    // The title and subtitle are the read's once it lands, the seed's until
+    // then; the cover stays the seed's, unless the seed had none.
+    return QuickLookLayout(
+      title: game?.title ?? seed.title,
+      subtitle: game == null ? seed.subtitle : game.subtitle,
+      year: game?.publishYear,
+      coverUrl: seed.thumbnail ?? seed.image ?? game?.thumbnail ?? game?.image,
+      facts: game == null
+          ? const <GameFact>[]
+          : playFacts(l10n, GameFiltersLocalizations.of(context), game),
+      platforms: [
+        for (final platformGame in platformGames)
+          QuickLookPlatform(
+            key: ValueKey(platformGame.id),
+            name: platformGame.platformName,
           ),
-        ],
       ],
-    );
-
-    return CoverBesideTitle(
-      cover: BgeThumbnail(
-        url: cover,
-        extent: _coverExtent,
-        placeholderIcon: Icons.casino_outlined,
-        whole: true,
-      ),
-      coverExtent: _coverExtent,
-      titles: titles,
-      titleFontSize: titleStyle?.fontSize ?? BgeTypography.titleLarge,
+      banner: banner,
+      description: game?.description,
+      sections: widget.sections,
+      actions: widget.actions,
+      onViewDetails: widget.onViewDetails,
+      openLink: widget.openLink,
     );
   }
 }
