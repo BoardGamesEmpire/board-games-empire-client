@@ -385,27 +385,12 @@ class AuthBloc extends Bloc<AuthEvent, AuthBlocState> {
       // protected, as in `_onSignOut` (#280).
       if (state is AuthAuthenticated) return;
       switch (e) {
-        case AuthSupersededException():
-          // A sign-out overtook the grant (#146): the system is already
-          // unauthenticated and storage already reflects it. Not a failure
-          // the user needs to hear about. The repository published that
-          // sign-out, so this lands the way the mirror does, usually by
-          // adding nothing.
-          _mirrorUnauthenticated(emit);
         case AuthInvalidCredentialsException():
           emit(const AuthFailureInvalidCredentials());
-        case AuthSessionNotGrantedException():
-          emit(const AuthFailureSessionNotGranted());
         case AuthEmailNotVerifiedException():
           emit(const AuthFailureEmailNotVerified());
-        case final AuthLocalDecodeException decode:
-          emit(AuthFailureLocalDecode(decode));
-        case AuthNetworkException():
-          emit(const AuthFailureNetwork());
-        case AuthRateLimitedException(:final retryAfter):
-          emit(AuthFailureRateLimited(retryAfter));
         case _:
-          emit(AuthFailureServer(e));
+          _emitCredentialFailure(e, emit);
       }
       return;
     }
@@ -430,27 +415,49 @@ class AuthBloc extends Bloc<AuthEvent, AuthBlocState> {
       // See _onSignIn: a session that arrived meanwhile is kept.
       if (state is AuthAuthenticated) return;
       switch (e) {
-        case AuthSupersededException():
-          // See _onSignIn: the sign-out already won; return quietly.
-          _mirrorUnauthenticated(emit);
         case AuthRegistrationDisabledException():
           emit(const AuthFailureRegistrationDisabled());
         case AuthEmailAlreadyExistsException():
           emit(const AuthFailureEmailAlreadyExists());
-        case AuthSessionNotGrantedException():
-          emit(const AuthFailureSessionNotGranted());
-        case final AuthLocalDecodeException decode:
-          emit(AuthFailureLocalDecode(decode));
-        case AuthNetworkException():
-          emit(const AuthFailureNetwork());
-        case AuthRateLimitedException(:final retryAfter):
-          emit(AuthFailureRateLimited(retryAfter));
         case _:
-          emit(AuthFailureServer(e));
+          _emitCredentialFailure(e, emit);
       }
       return;
     }
     emit(AuthAuthenticated(session: session));
+  }
+
+  /// Emits the state for a sign-in or register failure the two handlers
+  /// share (#880).
+  ///
+  /// Each handler's switch words its own two failures first and hands
+  /// everything else here, so a failure one handler words never reaches
+  /// these arms: the other handler's two fall through to
+  /// [AuthFailureServer] as before.
+  ///
+  /// It emits rather than returning a state because the superseded arm
+  /// hands off to [_mirrorUnauthenticated], which decides for itself
+  /// whether to emit at all.
+  void _emitCredentialFailure(AuthException e, Emitter<AuthBlocState> emit) {
+    switch (e) {
+      case AuthSupersededException():
+        // A sign-out overtook the grant (#146): the system is already
+        // unauthenticated and storage already reflects it. Not a failure
+        // the user needs to hear about. The repository published that
+        // sign-out, so this lands the way the mirror does, usually by
+        // adding nothing.
+        _mirrorUnauthenticated(emit);
+      case AuthSessionNotGrantedException():
+        emit(const AuthFailureSessionNotGranted());
+      case final AuthLocalDecodeException decode:
+        emit(AuthFailureLocalDecode(decode));
+      case AuthNetworkException():
+        emit(const AuthFailureNetwork());
+      case AuthRateLimitedException(:final retryAfter):
+        emit(AuthFailureRateLimited(retryAfter));
+      case _:
+        emit(AuthFailureServer(e));
+    }
   }
 
   Future<void> _onProviderSignIn(
