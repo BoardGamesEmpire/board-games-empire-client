@@ -120,13 +120,13 @@ typedef OpenEventGame = void Function(BuildContext context, String gameId);
 /// ## Which actions it offers
 ///
 /// The bloc works out what the viewer may do, and the screen offers it to a
-/// viewer the role table gives it: the app bar's menu has the event's status
-/// changes (#502) and Delete (#501), the dates have their own (#506), a
-/// poll's dates their answers (#507), who's coming has the viewer's own
-/// answer to the invitation (#508) and adding people, someone else's answer
-/// and removal (#510), and the Games tab has offering a game and taking it
-/// back (#516). It offers no editing of the event (#500) and nothing on a
-/// nominated game (#518), which the role table names.
+/// viewer the role table gives it: the app bar's menu has Edit (#500), the
+/// event's status changes (#502) and Delete (#501), the dates have their own
+/// (#506), a poll's dates their answers (#507), who's coming has the viewer's
+/// own answer to the invitation (#508) and adding people, someone else's
+/// answer and removal (#510), and the Games tab has offering a game and
+/// taking it back (#516). It offers nothing on a nominated game (#518),
+/// which the role table names.
 ///
 /// ## The Games tab
 ///
@@ -273,6 +273,25 @@ typedef OpenEventGame = void Function(BuildContext context, String gameId);
 /// as [EventActionOutcome.rereads] says. None leaves the screen: an
 /// archived event stays, and offers Unarchive.
 ///
+/// ## Edit
+///
+/// The menu's first item opens the page for editing the event (#500),
+/// through [onEdit], where the role table gives the viewer `edit`: the host,
+/// a co-host, an organizer or a moderator, or a household owner or admin on
+/// the household's event. An organizer or a moderator holds no status
+/// change and no Delete, so their menu holds Edit alone. It is offered only
+/// where the menu is, with a [remote] and an [onBack], and only with an
+/// [onEdit].
+///
+/// The page's save goes straight to the server, so Edit waits for a
+/// connection, and for a running read and a request already out, as the
+/// menu's writes do: a read's answer landing after the save would cache the
+/// event as it was. The page sends the edit and says how it went, so none of
+/// it reaches this screen's banner. Once the page has closed the screen reads
+/// the event again, since the server works out other fields from an edit,
+/// and one it refused may mean the viewer's role has changed. Not once the
+/// screen has gone.
+///
 /// ## Dates
 ///
 /// Each date has a menu of what its status and the viewer's role allow, and
@@ -403,6 +422,7 @@ class EventDetailScreen extends StatelessWidget {
     this.householdRole,
     this.onBack,
     this.onWhoAnswered,
+    this.onEdit,
     this.onAddAttendee,
     this.onOfferGames,
     this.onOpenGame,
@@ -764,6 +784,9 @@ class EventDetailScreen extends StatelessWidget {
   /// Key on the app bar's More actions button (#501).
   static const Key moreActionsKey = Key('event_detail.more_actions');
 
+  /// Key on the menu's Edit item (#500).
+  static const Key editKey = Key('event_detail.edit');
+
   /// Key on the menu's Delete item.
   static const Key deleteKey = Key('event_detail.delete');
 
@@ -881,6 +904,12 @@ class EventDetailScreen extends StatelessWidget {
   /// offers no *Who answered*, as does a roster that isn't read yet or isn't
   /// visible.
   final void Function(BuildContext context)? onWhoAnswered;
+
+  /// Opens the page for editing the event (#500), with this screen's
+  /// context, and completes once it has closed, when the screen reads the
+  /// event again: the feature package doesn't know the route table. Null
+  /// offers no Edit.
+  final Future<void> Function(BuildContext context)? onEdit;
 
   /// Opens the Add people page (#510) with [AddAttendeeArgs], with this
   /// screen's context, and completes with whom it picked and their role, or
@@ -1088,6 +1117,7 @@ class _EventDetailBlocsState extends State<_EventDetailBlocs> {
       child: _EventDetailView(
         onBack: screen.onBack,
         onWhoAnswered: screen.onWhoAnswered,
+        onEdit: screen.onEdit,
         onAddAttendee: screen.onAddAttendee,
         onOfferGames: screen.onOfferGames,
         onOpenGame: screen.onOpenGame,
@@ -1110,6 +1140,7 @@ class _EventDetailView extends StatelessWidget {
     required this.screenTab,
     this.onBack,
     this.onWhoAnswered,
+    this.onEdit,
     this.onAddAttendee,
     this.onOfferGames,
     this.onOpenGame,
@@ -1119,6 +1150,7 @@ class _EventDetailView extends StatelessWidget {
   final DateTime Function() now;
   final void Function(BuildContext context)? onBack;
   final void Function(BuildContext context)? onWhoAnswered;
+  final Future<void> Function(BuildContext context)? onEdit;
   final _OpenAddAttendee? onAddAttendee;
   final OpenOfferGames? onOfferGames;
   final OpenEventGame? onOpenGame;
@@ -1173,6 +1205,7 @@ class _EventDetailView extends StatelessWidget {
             now: now,
             hasActions: hasActions,
             onWhoAnswered: onWhoAnswered,
+            onEdit: onEdit,
             onAddAttendee: onAddAttendee,
             onOfferGames: onOfferGames,
           ),
@@ -1733,6 +1766,7 @@ class _ReadyPage extends StatelessWidget {
     required this.now,
     required this.hasActions,
     this.onWhoAnswered,
+    this.onEdit,
     this.onAddAttendee,
     this.onOfferGames,
   });
@@ -1755,6 +1789,7 @@ class _ReadyPage extends StatelessWidget {
   /// tab's [EventGamesTabScope] are provided above.
   final bool hasActions;
   final void Function(BuildContext context)? onWhoAnswered;
+  final Future<void> Function(BuildContext context)? onEdit;
   final _OpenAddAttendee? onAddAttendee;
   final OpenOfferGames? onOfferGames;
 
@@ -1869,6 +1904,8 @@ class _ReadyPage extends StatelessWidget {
       state.actions,
     );
     final deletes = state.actions.contains(EventAction.delete);
+    // Where there is a way to the page (#500).
+    final edits = onEdit != null && state.actions.contains(EventAction.edit);
     // The bar shows only where there is a server that knows the event.
     final shownTabs = event.isLocalOnly ? null : tabs;
     if (tabs != null &&
@@ -1901,17 +1938,18 @@ class _ReadyPage extends StatelessWidget {
       actions: [
         // Only with something in it: a menu would otherwise open on
         // nothing, as an archived event does for a viewer holding cancel
-        // alone.
-        if (actionsState != null && (deletes || writes.isNotEmpty))
+        // alone. An organizer or a moderator holds edit alone (#500).
+        if (actionsState != null && (edits || deletes || writes.isNotEmpty))
           _ActionsMenu(
             title: event.title,
+            onEdit: edits ? onEdit : null,
             writes: writes,
             deletes: deletes,
             now: now,
-            // Not while a read runs, whose answer landing after the write
-            // would cache the event as it was before (#501, #502). Nor
-            // while a request is out or once the delete is done, when a
-            // press would send another.
+            // Not while a read runs, whose answer landing after the write,
+            // or after the edit page's save (#500), would cache the event
+            // as it was before (#501, #502). Nor while a request is out or
+            // once the delete is done, when a press would send another.
             enabled: !state.reading && !acting,
           ),
       ],
@@ -2365,9 +2403,10 @@ class _ClockedPageState extends State<_ClockedPage> {
   Widget build(BuildContext context) => widget.builder(context);
 }
 
-/// The app bar's More actions menu (#501): the event's status changes the
-/// viewer may make as it stands (#502), then Delete where they may delete
-/// it. See [EventDetailScreen] on how each is sent.
+/// The app bar's More actions menu (#501): Edit where the viewer may edit
+/// the event (#500), then the status changes they may make as it stands
+/// (#502), then Delete where they may delete it. See [EventDetailScreen] on
+/// how each is sent.
 class _ActionsMenu extends StatelessWidget {
   const _ActionsMenu({
     required this.title,
@@ -2375,10 +2414,15 @@ class _ActionsMenu extends StatelessWidget {
     required this.deletes,
     required this.enabled,
     required this.now,
+    this.onEdit,
   });
 
   /// The event's title, for the dialogs'.
   final String title;
+
+  /// Opens the edit page ([EventDetailScreen.onEdit]), or null where the
+  /// menu offers no Edit.
+  final Future<void> Function(BuildContext context)? onEdit;
 
   /// The status changes the menu offers, in its order ([_statusWritesFor]).
   final List<EventStatusWrite> writes;
@@ -2397,9 +2441,11 @@ class _ActionsMenu extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = EventsLocalizations.of(context);
-    // Each is a direct write, so it waits for a connection (#49). The anchor
-    // button stays enabled, so the menu can be opened to read why.
+    // Each is a direct write, or opens a page whose save is one (#500), so it
+    // waits for a connection (#49). The anchor button stays enabled, so the
+    // menu can be opened to read why.
     final pressable = enabled && !BgeConnectivityScope.offlineOf(context);
+    final onEdit = this.onEdit;
 
     return BgeOnlineOnlyMenu(
       builder: (context, menu) => MenuAnchor(
@@ -2409,6 +2455,15 @@ class _ActionsMenu extends StatelessWidget {
         // to the screen, the entries wrap instead.
         crossAxisUnconstrained: false,
         menuChildren: [
+          if (onEdit != null)
+            MenuItemButton(
+              key: EventDetailScreen.editKey,
+              overflowAxis: Axis.vertical,
+              onPressed: pressable
+                  ? () => unawaited(_edit(context, onEdit))
+                  : null,
+              child: BgeOnlineOnlyLabel(l10n.eventsDetailEdit),
+            ),
           for (final write in writes)
             MenuItemButton(
               key: switch (write) {
@@ -2449,6 +2504,22 @@ class _ActionsMenu extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  /// Opens the edit page through [open] (#500), and reads the event again
+  /// once it has closed: the server works out other fields from an edit, and
+  /// one it refused may mean the viewer's role has changed. Nothing is read
+  /// once the screen has gone.
+  Future<void> _edit(
+    BuildContext context,
+    Future<void> Function(BuildContext context) open,
+  ) async {
+    // Read before the page opens, as a write's blocs are.
+    final detail = context.read<EventDetailBloc>();
+    await open(context);
+    // The bloc can still read as open just after its provider has gone.
+    if (!context.mounted || detail.isClosed) return;
+    detail.add(const EventDetailRetryRequested());
   }
 
   Future<void> _delete(BuildContext context) async {
@@ -3308,8 +3379,9 @@ class _ActionOutcomeBanner extends StatelessWidget {
     // bloc sends it, as it does an offer.
     EventAction.manageOfferedGames => null,
     // Delete is the only other action whose outcome reaches here: a status
-    // write's and a roster write's take the arms above. The event's edit
-    // (#500) is offered nowhere on this screen, so none reaches here.
+    // write's and a roster write's take the arms above. Edit and its rules
+    // (#500) open a page of their own, whose bloc sends the edit and whose
+    // banner and SnackBar say how it went, so none reaches here.
     _ => _deleteMessage(l10n, outcome),
   };
 

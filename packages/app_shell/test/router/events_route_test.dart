@@ -15,6 +15,7 @@ Key _groupKey(String segment) => Key('events_route.group_$segment');
 Key _detailKey(String eventId) => Key('events_route.detail_$eventId');
 Key _availabilityKey(String eventId) =>
     Key('events_route.availability_$eventId');
+Key _editKey(String eventId) => Key('events_route.edit_$eventId');
 
 /// The create form's marker, naming the household its builder was handed,
 /// if any.
@@ -26,7 +27,7 @@ Key _createKey([String? householdId]) => Key(
 
 /// The #497 routes: the overview, with a page per group beneath it, #498's
 /// event detail beneath that, #499's create form beside the groups, and
-/// #507's who answered beneath the detail.
+/// #507's who answered and #500's edit page beneath the detail.
 void main() {
   late _MockAppBootstrapCubit cubit;
 
@@ -37,6 +38,7 @@ void main() {
     bool withBuilders = true,
     bool withDetailBuilder = true,
     bool withAvailabilityBuilder = true,
+    bool withEditBuilder = true,
   }) async {
     whenListen(
       cubit,
@@ -65,6 +67,9 @@ void main() {
           ? (_, eventId) =>
                 Scaffold(body: SizedBox(key: _availabilityKey(eventId)))
           : null,
+      eventEditBuilder: withBuilders && withEditBuilder
+          ? (_, eventId) => Scaffold(body: SizedBox(key: _editKey(eventId)))
+          : null,
     );
     addTearDown(() {
       router.dispose();
@@ -81,7 +86,7 @@ void main() {
     return router;
   }
 
-  group('buildAppRouter — event routes (#497, #498, #499, #507)', () {
+  group('buildAppRouter — event routes (#497, #498, #499, #500, #507)', () {
     testWidgets('resolves the overview builder', (tester) async {
       final router = await pumpRouter(tester);
 
@@ -302,6 +307,39 @@ void main() {
 
       expect(find.byType(NotYetAvailableScreen), findsOneWidget);
       expect(find.byKey(_availabilityKey('e1')), findsNothing);
+    });
+
+    testWidgets('/events/e1/edit builds the edit page', (tester) async {
+      final router = await pumpRouter(tester);
+
+      router.go(AppRoutes.eventEditOf('e1'));
+      await tester.pumpAndSettle();
+
+      expect(AppRoutes.eventEditOf('e1'), '/events/e1/edit');
+      expect(find.byKey(_editKey('e1')), findsOneWidget);
+
+      // A go straight here builds the event beneath, which a save's pop
+      // and back return to, as the household's edit form has its household
+      // beneath it (#308).
+      router.pop();
+      await tester.pumpAndSettle();
+      expect(find.byKey(_detailKey('e1')), findsOneWidget);
+      expect(find.byKey(_editKey('e1')), findsNothing);
+
+      // An id with a slash stays one id.
+      router.go(AppRoutes.eventEditOf('a/b'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(_editKey('a/b')), findsOneWidget);
+    });
+
+    testWidgets('falls back without a builder', (tester) async {
+      final router = await pumpRouter(tester, withEditBuilder: false);
+
+      router.go(AppRoutes.eventEditOf('e1'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(NotYetAvailableScreen), findsOneWidget);
+      expect(find.byKey(_editKey('e1')), findsNothing);
     });
 
     test('the segments are the EventGroup names', () {

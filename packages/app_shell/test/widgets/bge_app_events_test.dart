@@ -213,6 +213,8 @@ void main() {
     registerFallbackValue(AvailabilityResponse.available);
     registerFallbackValue(EventRole.participant);
     registerFallbackValue(_hosting('e-0'));
+    registerFallbackValue(_upcoming('e-0').event);
+    registerFallbackValue(EventUpdate(title: 'x'));
   });
 
   setUp(() {
@@ -1015,6 +1017,65 @@ void main() {
           expect(guard.asked, ['u1', 'u1', 'u1']);
         },
       );
+    });
+
+    group('editing it (#500)', () {
+      testWidgets("the detail's Edit opens /events/:id/edit, and saving "
+          'returns to the detail', (tester) async {
+        final history = FakeBrowserHistory.install(tester);
+        final remote = _MockEventRemote();
+        when(() => remote.fetchEvent(any()))
+            .thenAnswer((_) async => _detail('e-0').snapshot);
+        when(() => remote.updateEvent(any(), any())).thenAnswer(
+          (call) async => _upcoming('e-0').event.copyWith(
+            title: (call.positionalArguments[1] as EventUpdate).title!,
+          ),
+        );
+        when(() => repository.cacheEventRow(any()))
+            .thenAnswer((_) async => true);
+        await pumpHome(tester, remote: remote, attendance: _hosting('e-0'));
+        await openTheOverview(tester);
+        await openRow(tester, 'e-0');
+        verify(() => remote.fetchEvent('e-0')).called(1);
+
+        await tester.tap(find.byKey(EventDetailScreen.moreActionsKey));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(EventDetailScreen.editKey));
+        // A menu item's press lands a frame after its tap.
+        await tester.pump();
+        await tester.pumpAndSettle();
+
+        expect(find.byType(EditEventScreen), findsOneWidget);
+        // On web it has an address of its own (#321).
+        expect(history.locations.last, AppRoutes.eventEditOf('e-0'));
+
+        // The section the two forms share keeps the create form's keys.
+        await tester.enterText(
+          find.byKey(CreateEventScreen.titleKey),
+          'Board game night',
+        );
+        await tester.pumpAndSettle();
+        final save = find.byKey(EditEventScreen.saveKey);
+        await tester.ensureVisible(save);
+        await tester.pumpAndSettle();
+        await tester.tap(save);
+        await tester.pumpAndSettle();
+
+        final sent =
+            verify(() => remote.updateEvent('e-0', captureAny()))
+                    .captured
+                    .single
+                as EventUpdate;
+        expect(sent.title, 'Board game night');
+        // Back on the event, under the page's SnackBar, which the app's
+        // messenger holds past the route it came from.
+        expect(find.byType(EditEventScreen), findsNothing);
+        expect(find.byType(EventDetailScreen), findsOneWidget);
+        expect(history.locations.last, AppRoutes.eventDetailOf('e-0'));
+        expect(find.text('Event saved.'), findsOneWidget);
+        // And the event is read again, for what the server worked out.
+        verify(() => remote.fetchEvent('e-0')).called(1);
+      });
     });
 
     group('confirming a date (#506)', () {

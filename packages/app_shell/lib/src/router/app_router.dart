@@ -257,6 +257,17 @@ abstract final class AppRoutes {
   static String eventAvailabilityOf(String eventId) =>
       '${eventDetailOf(eventId)}/$_eventAvailabilitySegment';
 
+  /// The page for editing one event (#500), beneath its detail, as
+  /// [householdEdit] is beneath its household. Build a concrete location
+  /// with [eventEditOf].
+  static const eventEdit = '$eventDetail/$_eventEditSegment';
+
+  static const _eventEditSegment = 'edit';
+
+  /// The location of the page for editing one event.
+  static String eventEditOf(String eventId) =>
+      '${eventDetailOf(eventId)}/$_eventEditSegment';
+
   /// The Add people page of one event (#510), beneath its detail. Build a
   /// concrete location with [eventAddAttendeeOf].
   ///
@@ -697,6 +708,20 @@ typedef EventAvailabilityScreenBuilder = Widget? Function(
   String eventId,
 );
 
+/// Builds the page for editing one event (#500) for the
+/// [AppRoutes.eventEdit] route, given the `:eventId` the path carried. Same
+/// null contract as [EventOverviewScreenBuilder], and null too without the
+/// per-server `EventRemoteDataSource` the save is sent through.
+///
+/// The id reaches the builder unvalidated, and the route isn't gated on the
+/// viewer's role. The page answers an event this device doesn't hold, or a
+/// viewer who may not edit it, as from a link or after their role changed,
+/// by saying so, with a way back.
+typedef EventEditScreenBuilder = Widget? Function(
+  BuildContext context,
+  String eventId,
+);
+
 /// Builds one event's Add people page (#510) for the
 /// [AppRoutes.eventAddAttendee] route, given the `:eventId` the path carried
 /// and the `extra` the detail pushed it with: what the page offers, worked
@@ -891,6 +916,7 @@ GoRouter buildAppRouter({
   EventCreateScreenBuilder? eventCreateBuilder,
   EventDetailScreenBuilder? eventDetailBuilder,
   EventAvailabilityScreenBuilder? eventAvailabilityBuilder,
+  EventEditScreenBuilder? eventEditBuilder,
   EventAddAttendeeScreenBuilder? eventAddAttendeeBuilder,
   EventOfferGamesScreenBuilder? eventOfferGamesBuilder,
   StuckChangesScreenBuilder? stuckChangesBuilder,
@@ -1459,6 +1485,9 @@ GoRouter buildAppRouter({
                     // people's is (see [EventOfferGamesScreenBuilder]). Where
                     // it has nothing to build from, it lands on the event's
                     // Pool, where Offer games is (#856).
+                    //
+                    // #500: the edit page, nested as who answered is. A save
+                    // leaves by a plain pop, as the household's edit does.
                     routes: [
                       GoRoute(
                         path: AppRoutes._eventAvailabilitySegment,
@@ -1469,6 +1498,19 @@ GoRouter buildAppRouter({
                           return _materialPage(
                             state,
                             eventAvailabilityBuilder?.call(context, id) ??
+                                const NotYetAvailableScreen(),
+                          );
+                        },
+                      ),
+                      GoRoute(
+                        path: AppRoutes._eventEditSegment,
+                        pageBuilder: (context, state) {
+                          final id =
+                              state.pathParameters[AppRoutes.eventIdParam] ??
+                              '';
+                          return _materialPage(
+                            state,
+                            eventEditBuilder?.call(context, id) ??
                                 const NotYetAvailableScreen(),
                           );
                         },

@@ -215,10 +215,10 @@ EventOccurrence _ahead() =>
 /// The event detail screen (#498): the four states of `EventDetailBloc`, the
 /// header, the dates and who's coming, the Details and Games tabs (#516), and
 /// the refresh banner it shares with the overview. Then Delete (#501), from
-/// the menu to the screen leaving, the event's status writes (#502), the
-/// dates' menus and dialogs (#506), the poll on the dates (#507), the
-/// viewer's own answer (#508), and the page moving on with the clock (#502,
-/// #655).
+/// the menu to the screen leaving, the event's status writes (#502), Edit in
+/// the menu and the read when its page closes (#500), the dates' menus and
+/// dialogs (#506), the poll on the dates (#507), the viewer's own answer
+/// (#508), and the page moving on with the clock (#502, #655).
 void main() {
   // Local, as the device's clock reads it.
   final now = DateTime(2026, 10, 23, 18);
@@ -265,6 +265,7 @@ void main() {
       AddAttendeeArgs args,
     )?
     onAddAttendee,
+    Future<void> Function(BuildContext context)? onEdit,
     Future<bool> Function()? confirmSession,
     TextScaler? textScaler,
     ValueListenable<bool>? offline,
@@ -312,6 +313,7 @@ void main() {
       onBack: onBack,
       onWhoAnswered: onWhoAnswered,
       onAddAttendee: onAddAttendee,
+      onEdit: onEdit,
       confirmSession: confirmSession,
       now: clock ?? () => now,
     ),
@@ -339,6 +341,7 @@ void main() {
       AddAttendeeArgs args,
     )?
     onAddAttendee,
+    Future<void> Function(BuildContext context)? onEdit,
     Future<bool> Function()? confirmSession,
     TextScaler? textScaler,
     ValueListenable<bool>? offline,
@@ -352,6 +355,7 @@ void main() {
         onBack: onBack,
         onWhoAnswered: onWhoAnswered,
         onAddAttendee: onAddAttendee,
+        onEdit: onEdit,
         confirmSession: confirmSession,
         textScaler: textScaler,
         offline: offline,
@@ -4492,6 +4496,258 @@ void main() {
           expect(backs, 0);
         });
       }
+    });
+  });
+
+  group('edit (#500)', () {
+    /// How many times Edit opened the page.
+    var opened = 0;
+
+    setUp(() => opened = 0);
+
+    /// The way back, which the menu needs, as Delete does.
+    void back(BuildContext _) {}
+
+    /// Opens the page, which closes again at once.
+    Future<void> edit(BuildContext _) async => opened++;
+
+    /// Event `e-1`, Scheduled by a date ahead, to a viewer holding [role].
+    EventDetail viewed(EventRole role) =>
+        _detail(occurrences: [_ahead()], attendance: _attending(role));
+
+    /// A server whose reads answer at once.
+    FakeEventRemote answering() =>
+        FakeEventRemote.detail((_) => viewed(EventRole.host).snapshot);
+
+    Future<void> openMenu(WidgetTester tester) async {
+      await tester.tap(find.byKey(EventDetailScreen.moreActionsKey));
+      await animate(tester);
+    }
+
+    /// The open menu's items, by label, in order.
+    List<String> offered(WidgetTester tester) => [
+      for (final item in tester.widgetList<MenuItemButton>(
+        find.byType(MenuItemButton),
+      ))
+        (item.child! as BgeOnlineOnlyLabel).label,
+    ];
+
+    MenuItemButton editItem(WidgetTester tester) =>
+        tester.widget(find.byKey(EventDetailScreen.editKey));
+
+    testWidgets('Edit is the first item for a host', (tester) async {
+      await show(
+        tester,
+        viewed(EventRole.host),
+        remote: answering(),
+        onBack: back,
+        onEdit: edit,
+      );
+      await openMenu(tester);
+
+      expect(offered(tester), ['Edit', 'Cancel event', 'Delete event']);
+      expect(editItem(tester).onPressed, isNotNull);
+    });
+
+    testWidgets("an organizer's menu shows with Edit alone", (tester) async {
+      // The organizer holds edit, and no status write or Delete: before
+      // there was Edit, they had no menu.
+      await show(
+        tester,
+        viewed(EventRole.organizer),
+        remote: answering(),
+        onBack: back,
+        onEdit: edit,
+      );
+
+      expect(find.byKey(EventDetailScreen.moreActionsKey), findsOneWidget);
+      await openMenu(tester);
+
+      expect(offered(tester), ['Edit']);
+    });
+
+    testWidgets('a participant has no Edit', (tester) async {
+      await show(
+        tester,
+        viewed(EventRole.participant),
+        remote: answering(),
+        onBack: back,
+        onEdit: edit,
+      );
+
+      // Nor anything else for the menu to hold, so there is none.
+      expect(find.byKey(EventDetailScreen.moreActionsKey), findsNothing);
+      expect(find.byKey(EventDetailScreen.editKey), findsNothing);
+    });
+
+    testWidgets('without a way to the page there is no Edit', (tester) async {
+      await show(
+        tester,
+        viewed(EventRole.organizer),
+        remote: answering(),
+        onBack: back,
+      );
+
+      expect(find.byKey(EventDetailScreen.moreActionsKey), findsNothing);
+    });
+
+    testWidgets('Edit is disabled offline and says why', (tester) async {
+      final offline = ValueNotifier(true);
+      addTearDown(offline.dispose);
+      await show(
+        tester,
+        viewed(EventRole.host),
+        remote: answering(),
+        onBack: back,
+        onEdit: edit,
+        offline: offline,
+      );
+      await openMenu(tester);
+
+      final item = find.byKey(EventDetailScreen.editKey);
+      expect(editItem(tester).onPressed, isNull);
+      // The item's one node: both lines in its label, not enabled.
+      expect(
+        tester.getSemantics(item),
+        matchesSemantics(
+          label: 'Edit\n$_onlineOnlyCopy',
+          hasEnabledState: true,
+        ),
+      );
+
+      offline.value = false;
+      await tester.pump();
+
+      expect(editItem(tester).onPressed, isNotNull);
+      expect(find.text(_onlineOnlyCopy), findsNothing);
+    });
+
+    testWidgets('Edit is disabled while a read runs', (tester) async {
+      // A save while the read is out would be put back by the read's answer
+      // landing after it (#589).
+      final reads = <Completer<EventSnapshot>>[];
+      await show(
+        tester,
+        viewed(EventRole.host),
+        remote: scripted(reads),
+        onBack: back,
+        onEdit: edit,
+      );
+      await openMenu(tester);
+
+      expect(editItem(tester).onPressed, isNull);
+
+      reads.single.complete(viewed(EventRole.host).snapshot);
+      await settle(tester);
+
+      expect(editItem(tester).onPressed, isNotNull);
+    });
+
+    testWidgets('Edit is disabled while a write is out', (tester) async {
+      // The read the write's outcome starts would land after the page's
+      // save, and cache the event as it was.
+      registerFallbackValue(_event());
+      when(
+        () => repository.cacheEventRow(any()),
+      ).thenAnswer((_) async => true);
+      final cancelling = Completer<Event>();
+      final remote = FakeEventRemote.detail(
+        (_) => viewed(EventRole.host).snapshot,
+        statusWritten: (_) => cancelling.future,
+      );
+      await show(
+        tester,
+        viewed(EventRole.host),
+        remote: remote,
+        onBack: back,
+        onEdit: edit,
+      );
+      await openMenu(tester);
+      await tester.tap(find.byKey(EventDetailScreen.cancelKey));
+      await animate(tester);
+      await tester.tap(find.byKey(EventDetailScreen.cancelConfirmKey));
+      await animate(tester);
+      expect(remote.statusRequests, hasLength(1));
+
+      await openMenu(tester);
+      expect(editItem(tester).onPressed, isNull);
+      await openMenu(tester);
+
+      cancelling.complete(
+        viewed(EventRole.host).snapshot.event.copyWith(
+          status: EventStatus.cancelled,
+        ),
+      );
+      await settle(tester);
+      await openMenu(tester);
+
+      expect(editItem(tester).onPressed, isNotNull);
+      expect(opened, 0);
+    });
+
+    testWidgets('returning from Edit reads the event again', (tester) async {
+      // The server works other fields out from an edit, and one it refused
+      // may mean the viewer's role changed.
+      final page = Completer<void>();
+      final remote = answering();
+      await show(
+        tester,
+        viewed(EventRole.host),
+        remote: remote,
+        onBack: back,
+        onEdit: (_) {
+          opened++;
+          return page.future;
+        },
+      );
+      expect(remote.detailRequests, ['e-1']);
+
+      await openMenu(tester);
+      await tester.tap(find.byKey(EventDetailScreen.editKey));
+      await animate(tester);
+
+      expect(opened, 1);
+      // Nothing is read while the page is open.
+      expect(remote.detailRequests, ['e-1']);
+
+      page.complete();
+      await settle(tester);
+
+      expect(remote.detailRequests, ['e-1', 'e-1']);
+    });
+
+    testWidgets('a page that closes once the screen has gone reads nothing', (
+      tester,
+    ) async {
+      final page = Completer<void>();
+      final remote = answering();
+      await show(
+        tester,
+        viewed(EventRole.host),
+        remote: remote,
+        onBack: back,
+        onEdit: (_) => page.future,
+      );
+      await openMenu(tester);
+      await tester.tap(find.byKey(EventDetailScreen.editKey));
+      await animate(tester);
+      final detail = blocOf(tester);
+
+      await tester.pumpWidget(const SizedBox());
+      // The detail's close ends partly outside the test's fake clock. Once
+      // it has, anything added to the bloc would throw.
+      for (var i = 0; i < 100 && !detail.isClosed; i++) {
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 10)),
+        );
+        await tester.pump();
+      }
+      expect(detail.isClosed, isTrue);
+      page.complete();
+      await settle(tester);
+
+      expect(tester.takeException(), isNull);
+      expect(remote.detailRequests, ['e-1']);
     });
   });
 
@@ -10028,6 +10284,7 @@ void main() {
           onBack: (_) {},
           onWhoAnswered: (_) {},
           onAddAttendee: (_, _) async => null,
+          onEdit: (_) async {},
           offline: isOffline ? offline : null,
         );
 
@@ -10566,6 +10823,7 @@ void main() {
       arrange: (tester) async {
         await showing(tester, host);
         await openMenu(tester);
+        expect(find.byKey(EventDetailScreen.editKey), findsOneWidget);
         expect(find.byKey(EventDetailScreen.cancelKey), findsOneWidget);
       },
     );
@@ -10577,12 +10835,16 @@ void main() {
       arrange: (tester) async {
         await showing(tester, host);
         await openMenu(tester);
-        expect(
-          tester
-              .widget<MenuItemButton>(find.byKey(EventDetailScreen.deleteKey))
-              .onPressed,
-          isNull,
-        );
+        for (final key in [
+          EventDetailScreen.editKey,
+          EventDetailScreen.deleteKey,
+        ]) {
+          expect(
+            tester.widget<MenuItemButton>(find.byKey(key)).onPressed,
+            isNull,
+            reason: '$key',
+          );
+        }
       },
     );
 

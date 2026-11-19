@@ -473,6 +473,7 @@ class _BgeAppState extends State<BgeApp> {
       eventCreateBuilder: _buildEventCreateRoute,
       eventDetailBuilder: _buildEventDetailRoute,
       eventAvailabilityBuilder: _buildEventAvailabilityRoute,
+      eventEditBuilder: _buildEventEditRoute,
       eventAddAttendeeBuilder: _buildEventAddAttendeeRoute,
       eventOfferGamesBuilder: _buildEventOfferGamesRoute,
       stuckChangesBuilder: _buildStuckChangesRoute,
@@ -2324,6 +2325,12 @@ class _BgeAppState extends State<BgeApp> {
   /// *Who answered* pushes the poll's page above the detail (#507), so back
   /// returns here and web shows the page's own address (#321).
   ///
+  /// Edit pushes the edit page above it the same way (#500), and the detail
+  /// reads the event again once the push completes, as the page closes.
+  /// Offered only where the server has the event client the save is sent
+  /// through, so a composition that can't send it is not offered a way to a
+  /// placeholder.
+  ///
   /// *Add people* pushes the Add people page above it the same way (#510),
   /// with what the page offers as the push's `extra`, and the detail sends
   /// the add the page pops with. Offered only where the server has the user
@@ -2365,6 +2372,9 @@ class _BgeAppState extends State<BgeApp> {
       onBack: (ctx) => ctx.pop(),
       onWhoAnswered: (ctx) =>
           unawaited(ctx.push<void>(AppRoutes.eventAvailabilityOf(eventId))),
+      onEdit: _eventRemote(container) == null
+          ? null
+          : (ctx) => ctx.push<void>(AppRoutes.eventEditOf(eventId)),
       onAddAttendee: container.isRegistered<UserRemoteDataSource>()
           ? (ctx, args) => ctx.push<EventAttendeeAddition>(
               AppRoutes.eventAddAttendeeOf(eventId),
@@ -2396,6 +2406,32 @@ class _BgeAppState extends State<BgeApp> {
       repository: container.get<EventRepository>(),
       remote: _eventRemote(container),
       confirmSession: _confirmSession(container),
+    );
+  }
+
+  /// The #500 page for editing the event [eventId]. Null (→
+  /// `NotYetAvailableScreen`) without [_eventsContainer]'s gate or the event
+  /// client the save is sent through, as the detail's way to it is.
+  ///
+  /// Not gated on the viewer's role: a deep link by someone who may not
+  /// edit reaches the page, which says they can't. The viewer's household
+  /// role is looked up as the detail's is. Leaving after a save is a pop:
+  /// the route is the detail's child, so the event is always beneath it,
+  /// and the detail reads it again as the page closes.
+  Widget? _buildEventEditRoute(BuildContext context, String eventId) {
+    final container = _eventsContainer();
+    if (container == null) return null;
+    final remote = _eventRemote(container);
+    if (remote == null) return null;
+
+    return EditEventScreen(
+      eventId: eventId,
+      repository: container.get<EventRepository>(),
+      remote: remote,
+      session: _sessionLease(container),
+      confirmSession: _confirmSession(container),
+      householdRole: _eventHouseholdRole(container),
+      onLeave: (ctx) => _leaveIfCurrent(ctx, () => ctx.pop()),
     );
   }
 
