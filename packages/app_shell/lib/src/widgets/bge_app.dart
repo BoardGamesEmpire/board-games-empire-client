@@ -2095,25 +2095,6 @@ class _BgeAppState extends State<BgeApp> {
     );
   }
 
-  /// Imports a DataGateway result the server does not hold, from the search
-  /// (#43). Once the import completes the dialog closes, and the game it
-  /// became opens in its place, as [_openGame] opens any other. Closing the
-  /// dialog first opens nothing.
-  static Future<void> _importGame(
-    BuildContext context,
-    GamesRemoteDataSource remote,
-    String gatewayId,
-    GameSearchHit hit,
-  ) async {
-    final gameId = await GameImportDialog.show(
-      context,
-      remote: remote,
-      gatewayId: gatewayId,
-      hit: hit,
-    );
-    if (gameId != null && context.mounted) _openGame(context, gameId);
-  }
-
   /// Tells the catalog lists open that a game is gone: see
   /// [_gamesFoundGone]. A detail answering after the app is gone tells no
   /// one.
@@ -2158,8 +2139,8 @@ class _BgeAppState extends State<BgeApp> {
   /// The #42 search screen. Same gate as [_buildGameBrowseRoute], plus the
   /// DataGateways' names where the user may read them.
   ///
-  /// A DataGateway result the server does not hold imports through
-  /// [_importGame] (#43), over the same games remote the search reads.
+  /// A DataGateway result the server does not hold has no way to import from
+  /// here yet: the search's quick look takes that over (#824).
   ///
   /// The search reads the session's [DataGatewaySearchGrant] (#795), so a
   /// refusal is remembered for the session, not the screen. Where none is
@@ -2186,8 +2167,6 @@ class _BgeAppState extends State<BgeApp> {
           : null,
       gone: _gamesFoundGone.stream,
       onOpen: _openGame,
-      onImport: (ctx, sourceId, hit) =>
-          unawaited(_importGame(ctx, remote, sourceId, hit)),
     );
   }
 

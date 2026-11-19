@@ -69,8 +69,8 @@ then shows only games their collection reaches (#557).
 ## Import
 
 A DataGateway result the server doesn't hold imports from the search (#43).
-The shell opens `GameImportDialog` from the search's `onImport`, and the
-dialog's `GameImportBloc` sends `POST /api/games/import`, then polls
+`GameImportProgress` shows where an import stands, in place, over a
+`GameImportBloc` provided above it; the bloc sends `POST /api/games/import`, then polls
 `GET /api/games/import/:batchId`.
 
 One import asks for one game, with no expansions chosen and no locale:
@@ -93,11 +93,10 @@ jobs on the correlation id, the same id will find the batch the server may
 already have queued. A start the server answered drops its id, so trying
 again after a failure takes a new one.
 
-When the requested game's job completes, the dialog closes with the game's
-id and the shell opens the game's detail in its place. Closing the dialog
-first stops the polling and opens nothing. The server finishes the import
-anyway, and the next search shows the game as one it holds. Following an
-import after its dialog closes is #596.
+When the requested game's job completes, `GameImportProgress` calls its
+`onImported` with the game's id, once. The server finishes an import anyway
+if the user leaves, and the next search shows the game as one it holds.
+Following an import after its widget is gone is #596.
 
 Nothing is cached here. The detail caches the game it reads, for this user,
 as it does any game it opens. The poll's platform games are read but unused:
@@ -124,8 +123,7 @@ sign-out, and the lists open then may be the next user's.
 
 ## Screens
 
-`GameBrowseScreen`, `GameSearchScreen`, `GameDetailScreen` and
-`GameImportDialog` each own their bloc; the shell passes in the remote, the
+`GameBrowseScreen`, `GameSearchScreen` and `GameDetailScreen` each own their bloc; the shell passes in the remote, the
 cache and the callbacks, and the screens resolve nothing themselves.
 
 The detail screen renders the description as Markdown with

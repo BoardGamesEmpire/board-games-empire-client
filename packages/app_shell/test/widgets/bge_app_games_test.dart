@@ -817,44 +817,6 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('a DataGateway result imports and opens the game', (
-    tester,
-  ) async {
-    access.current = _mayRead;
-    await pumpHome(tester);
-    await openGames(tester);
-    await searchFor(tester, 'catan');
-
-    await tester.tap(
-      find.byKey(GameSearchScreen.sourceRowKey('dg_bgg', '926')),
-    );
-    await tester.pump(const Duration(seconds: 2));
-    await tester.pumpAndSettle();
-
-    expect(find.byType(GameImportDialog), findsNothing);
-    expect(find.byType(GameDetailScreen), findsOneWidget);
-    expect(games.fetched, contains('g_seafarers'));
-  });
-
-  testWidgets('closing the import opens nothing', (tester) async {
-    games.importStatus = ImportJobStatus.running;
-    access.current = _mayRead;
-    await pumpHome(tester);
-    await openGames(tester);
-    await searchFor(tester, 'catan');
-
-    await tester.tap(
-      find.byKey(GameSearchScreen.sourceRowKey('dg_bgg', '926')),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 150));
-    await tester.tap(find.byKey(GameImportDialog.closeKey));
-    await tester.pump(const Duration(seconds: 4));
-
-    expect(find.byType(GameDetailScreen), findsNothing);
-    expect(find.byType(GameSearchScreen), findsOneWidget);
-  });
-
   group("the detail page's collection (#45, #708)", () {
     final addButton = find.byKey(GameDetailScreen.addKey);
     final ownedCheck = find.descendant(
