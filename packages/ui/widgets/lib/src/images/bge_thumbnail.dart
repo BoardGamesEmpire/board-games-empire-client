@@ -64,6 +64,28 @@ class BgeThumbnail extends StatelessWidget {
   /// How many times its drawn size an image may be decoded at, each way.
   static const int decodeHeadroom = 2;
 
+  /// The body text scale from which a list row that leads with a thumbnail
+  /// aligns it by [ListTileTitleAlignment.titleHeight] (#647).
+  ///
+  /// At default sizes [ListTileTitleAlignment.top] keeps every row's
+  /// thumbnail at the same height, where `titleHeight` puts a short row's at
+  /// 8dp and a wrapped row's at 16dp. From this scale every row is tall
+  /// enough that `titleHeight` sets it level with the title's first line.
+  static const double titleHeightTextScale = 1.3;
+
+  /// How a list row that leads with a thumbnail sets it beside its title
+  /// (#647). Pass it as the tile's `titleAlignment`.
+  static ListTileTitleAlignment titleAlignmentOf(BuildContext context) {
+    // Measured at the row title's size, so a nonlinear scaler is read where
+    // it applies.
+    final size =
+        Theme.of(context).textTheme.bodyLarge?.fontSize ?? kDefaultFontSize;
+    final scale = MediaQuery.textScalerOf(context).scale(size) / size;
+    return scale >= titleHeightTextScale
+        ? ListTileTitleAlignment.titleHeight
+        : ListTileTitleAlignment.top;
+  }
+
   /// The image's address. Null shows the placeholder.
   final String? url;
 

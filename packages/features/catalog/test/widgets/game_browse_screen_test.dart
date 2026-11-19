@@ -113,6 +113,33 @@ void main() {
     }
   });
 
+  testWidgets('a row sets its thumbnail by text scale (#647)', (tester) async {
+    remote.onFetchPage = (_, _) async => pageOf([azul]);
+
+    Future<ListTileTitleAlignment?> alignmentAt(double scale) async {
+      await show(
+        tester,
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(
+            context,
+          ).copyWith(textScaler: TextScaler.linear(scale)),
+          child: child!,
+        ),
+      );
+      return tester
+          .widget<ListTile>(
+            find.descendant(
+              of: find.byKey(GameBrowseScreen.rowKey('g_azul')),
+              matching: find.byType(ListTile),
+            ),
+          )
+          .titleAlignment;
+    }
+
+    expect(await alignmentAt(1), ListTileTitleAlignment.top);
+    expect(await alignmentAt(2), ListTileTitleAlignment.titleHeight);
+  });
+
   testWidgets('reads a row the way it is meant to be heard', (tester) async {
     final handle = tester.ensureSemantics();
     remote.onFetchPage = (_, _) async => pageOf([azul]);

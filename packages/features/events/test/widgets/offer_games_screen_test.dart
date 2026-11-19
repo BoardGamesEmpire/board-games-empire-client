@@ -129,13 +129,24 @@ void main() {
     OfferGamesArgs args = _args,
     ThemeData? theme,
     Set<String> stuck = const {},
+    double? textScale,
   }) => MaterialApp(
     theme: theme ?? BgeTheme.light(),
-    builder: (context, child) => BgeSyncStatusScope(
-      stuck: stuck.length,
-      stuckRecordIds: stuck,
-      child: child!,
-    ),
+    builder: (context, child) {
+      final scoped = BgeSyncStatusScope(
+        stuck: stuck.length,
+        stuckRecordIds: stuck,
+        child: child!,
+      );
+      return textScale == null
+          ? scoped
+          : MediaQuery(
+              data: MediaQuery.of(
+                context,
+              ).copyWith(textScaler: TextScaler.linear(textScale)),
+              child: scoped,
+            );
+    },
     localizationsDelegates: const [
       ...EventsLocalizations.localizationsDelegates,
       GameFiltersLocalizations.delegate,
@@ -185,8 +196,9 @@ void main() {
     WidgetTester tester, {
     List<GameCollectionListItem>? items,
     OfferGamesArgs args = _args,
+    double? textScale,
   }) async {
-    await tester.pumpWidget(harness(args: args));
+    await tester.pumpWidget(harness(args: args, textScale: textScale));
     await reach(tester, items: items ?? _five);
   }
 
@@ -287,6 +299,28 @@ void main() {
         findsOneWidget,
       );
     }
+  });
+
+  testWidgets('a row sets its thumbnail at the top at 100% text (#647)', (
+    tester,
+  ) async {
+    await open(tester);
+
+    expect(
+      tile(tester, rowsShown(tester).first).titleAlignment,
+      ListTileTitleAlignment.top,
+    );
+  });
+
+  testWidgets('a row sets its thumbnail by title height at 200% text (#647)', (
+    tester,
+  ) async {
+    await open(tester, textScale: 2);
+
+    expect(
+      tile(tester, rowsShown(tester).first).titleAlignment,
+      ListTileTitleAlignment.titleHeight,
+    );
   });
 
   testWidgets('the thumbnail and the checkbox sit inside the outline, inset '

@@ -1174,6 +1174,8 @@ class _RingedListTileState extends State<_RingedListTile>
           borderRadius: BorderRadius.circular(BgeTokens.of(context).radiusMd),
           suppressed: pointerFocus,
           builder: (context, onFocusChange) => ListTile(
+            // Both kinds lead with a thumbnail (#647).
+            titleAlignment: BgeThumbnail.titleAlignmentOf(context),
             focusNode: _focusNode,
             onFocusChange: onFocusChange,
             // The theme's tint, with no strength while the focus is a

@@ -552,6 +552,7 @@ class _OfferRow extends StatelessWidget {
 
     return BgeOutlinedRow(
       child: CheckboxListTile(
+        titleAlignment: BgeThumbnail.titleAlignmentOf(context),
         value: checked,
         onChanged: reason != null || syncState != null
             ? null

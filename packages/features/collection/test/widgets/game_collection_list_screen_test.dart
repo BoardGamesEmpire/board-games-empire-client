@@ -326,6 +326,26 @@ void main() {
     }
   });
 
+  testWidgets('a row sets its thumbnail by text scale (#647)', (tester) async {
+    Future<ListTileTitleAlignment?> alignmentAt(double scale) async {
+      await tester.pumpWidget(harness(textScaler: TextScaler.linear(scale)));
+      status.finished(CollectionHydrateOutcome.complete);
+      items.add([listItem('e-1', title: 'Azul')]);
+      await tester.pumpAndSettle();
+      return tester
+          .widget<ListTile>(
+            find.descendant(
+              of: find.byKey(GameCollectionListScreen.rowKey('e-1')),
+              matching: find.byType(ListTile),
+            ),
+          )
+          .titleAlignment;
+    }
+
+    expect(await alignmentAt(1), ListTileTitleAlignment.top);
+    expect(await alignmentAt(2), ListTileTitleAlignment.titleHeight);
+  });
+
   group('a row (#44)', () {
     testWidgets('shows the title alone when there is no subtitle', (
       tester,
