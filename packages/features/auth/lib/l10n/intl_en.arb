@@ -127,9 +127,13 @@
   "@authProviderErrorEmailUnverified": {
     "description": "Provider sign-in failure, under the heading authSignInErrorTitle: the provider reports the user's email address as unconfirmed, so this server won't sign them in with it. The fix is with the provider, not this server."
   },
-  "authProviderErrorAccountNotLinked": "An account with this email already exists here. Sign in with its password instead.",
+  "authProviderErrorAccountNotLinked": "An account with this email already exists here. Sign in another way, then link this provider from Sign-in methods in Settings.",
   "@authProviderErrorAccountNotLinked": {
-    "description": "Provider sign-in failure, under the heading authSignInErrorTitle: an account with the provider's email address already exists on this server, and the provider isn't linked to it. For now the only way in is that account's password. #582 adds the next step later (linking the provider from the account's sign-in methods), and will extend this message when it does."
+    "description": "Provider sign-in failure, under the heading authSignInErrorTitle: an account with the provider's email address already exists on this server, and the provider isn't linked to it. Names the next step, linking the provider from Sign-in methods (#582). Shown when the server's provider linking policy is SignedIn, or when it isn't known (#791)."
+  },
+  "authProviderErrorAccountNotLinkedAutomatic": "An account with this email already exists here, and it couldn't be linked automatically because an email address isn't confirmed. Sign in another way, then link this provider from Sign-in methods in Settings.",
+  "@authProviderErrorAccountNotLinkedAutomatic": {
+    "description": "Same failure as authProviderErrorAccountNotLinked, shown when the server's provider linking policy is AutomaticWhenVerified (#791): the server would have linked the provider by itself had both email addresses been confirmed, so the message says that one isn't. The next step is the same, Sign-in methods (#582)."
   },
   "authProviderErrorAccessDenied": "The sign-in provider didn't allow this sign-in. If you think it should have, ask this server's administrator.",
   "@authProviderErrorAccessDenied": {

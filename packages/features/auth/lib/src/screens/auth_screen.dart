@@ -520,9 +520,17 @@ class _AuthScreenState extends State<AuthScreen> {
           l10n.authProviderErrorRegistrationDisabled,
         ProviderSignInFailureReason.emailUnverified =>
           l10n.authProviderErrorEmailUnverified,
-        // #582 adds the next step, linking the provider to the account.
+        // The server's linking policy (#791) decides whether the copy says
+        // an unconfirmed email is why it wasn't linked automatically. A
+        // saved identity without the policy reads as unknown, which gets
+        // signedIn's copy.
         ProviderSignInFailureReason.accountNotLinked =>
-          l10n.authProviderErrorAccountNotLinked,
+          switch (widget.identity.providerLinkingPolicy) {
+            ProviderLinkingPolicy.automaticWhenVerified =>
+              l10n.authProviderErrorAccountNotLinkedAutomatic,
+            ProviderLinkingPolicy.signedIn || ProviderLinkingPolicy.unknown =>
+              l10n.authProviderErrorAccountNotLinked,
+          },
         ProviderSignInFailureReason.accessDenied =>
           l10n.authProviderErrorAccessDenied,
         ProviderSignInFailureReason.providerUnavailable =>
