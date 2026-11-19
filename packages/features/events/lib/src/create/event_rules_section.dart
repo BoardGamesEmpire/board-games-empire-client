@@ -25,7 +25,10 @@ import 'package:ui_tokens/ui_tokens.dart';
 ///   rules ([policyOf]).
 /// - A rule with an error keeps the rules open, and says what is wrong.
 ///   Collapsed, its field would be gone, so a submit refused for it would
-///   have nothing to focus or show.
+///   have nothing to focus or show. For the same reason, rules handed over
+///   with an error already, such as a number typed before the section was
+///   first built, start open. Neither form opens with one: the edit form
+///   lets the stored numbers through its ranges (#500).
 /// - It opens and closes over `motionShort`, and at once where the platform
 ///   asks for reduced motion (STYLE_GUIDE §5). Left to itself, the tile
 ///   takes 200ms either way (measured).
@@ -74,9 +77,9 @@ class _EventRulesSectionState extends State<EventRulesSection> {
   void _onExpansionChanged(bool expanded) {
     final form = ReactiveForm.of(context, listen: false);
     if (expanded || form is! FormGroup) return;
-    final wrong = [for (final name in _rules) form.control(name)]
-        .where((control) => control.invalid)
-        .toList();
+    final wrong = [
+      for (final name in EventCreateControls.rules) form.control(name),
+    ].where((control) => control.invalid).toList();
     if (wrong.isEmpty) return;
     for (final control in wrong) {
       control.markAsTouched();
@@ -99,6 +102,12 @@ class _EventRulesSectionState extends State<EventRulesSection> {
     return ExpansionTile(
       key: EventRulesSection.tileKey,
       controller: _tile,
+      // Open at first when a rule already has an error, such as a number
+      // typed before the section was built. Read once, when the tile is
+      // first built.
+      initiallyExpanded: EventCreateControls.rules.any(
+        (name) => form.control(name).invalid,
+      ),
       title: Text(
         l10n.eventCreateRulesTitle,
         style: theme.textTheme.titleMedium,
@@ -151,16 +160,6 @@ class _EventRulesSectionState extends State<EventRulesSection> {
     );
   }
 }
-
-/// The controls a rule is set in, for finding one with an error.
-const List<String> _rules = [
-  EventCreateControls.gameAddition,
-  EventCreateControls.threshold,
-  EventCreateControls.thresholdValue,
-  EventCreateControls.quorum,
-  EventCreateControls.quorumValue,
-  EventCreateControls.windowHours,
-];
 
 /// The settings of a vote: how many votes a game needs, how many people
 /// must vote, and how long voting stays open.

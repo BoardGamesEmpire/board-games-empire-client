@@ -74,6 +74,14 @@ void main() {
     (type) => type != VoteQuorumType.unknown,
   );
 
+  test('the list of the rules names every control the rules are built '
+      'with, in their order', () {
+    expect(
+      buildEventRulesControls().keys,
+      orderedEquals(EventCreateControls.rules),
+    );
+  });
+
   group('policyOf', () {
     test('untouched rules send no policy', () {
       final form = buildEventCreateForm();
@@ -592,6 +600,24 @@ void main() {
       );
       await toggleRules(tester);
       expect(find.byKey(EventRulesSection.thresholdValueKey), findsNothing);
+    });
+
+    testWidgets('rules that start with an error start open', (tester) async {
+      // A share below the form's own range, typed before the section is
+      // built.
+      votingWith(form, threshold: VoteThresholdType.supermajority);
+      thresholdValueOf(form).value = '40';
+      await tester.pumpWidget(host());
+
+      expect(find.byKey(EventRulesSection.thresholdValueKey), findsOneWidget);
+      // Untouched, it doesn't say so yet: a refused submit does.
+      expect(find.text('Enter a whole number from 51 to 100.'), findsNothing);
+
+      form.rejectSubmit();
+      await tester.pumpAndSettle();
+
+      expect(thresholdValueOf(form).hasFocus, isTrue);
+      expect(find.text('Enter a whole number from 51 to 100.'), findsOneWidget);
     });
 
     testWidgets('a refused submit goes to a rule with an error', (

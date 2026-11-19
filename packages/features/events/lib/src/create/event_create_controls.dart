@@ -22,6 +22,19 @@ abstract final class EventCreateControls {
   static const quorumValue = 'quorumValue';
   static const windowHours = 'windowHours';
 
+  /// The rules' controls, the ones [buildEventRulesControls] builds, in the
+  /// order the rules section shows them. The one list for every reader of
+  /// them all: the section, for one with an error, and the edit form (#500),
+  /// for rules the viewer may only read.
+  static const List<String> rules = [
+    gameAddition,
+    threshold,
+    thresholdValue,
+    quorum,
+    quorumValue,
+    windowHours,
+  ];
+
   // Each row of [dates] is a group of these, built by [buildEventDateRow].
   static const start = 'start';
   static const end = 'end';
