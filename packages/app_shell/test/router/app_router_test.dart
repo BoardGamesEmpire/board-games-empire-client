@@ -310,7 +310,7 @@ void main() {
       );
 
       expect(holder.peek!.location, '/household/h1');
-      expect(holder.peek!.serverId, webColdLoadServerId);
+      expect(holder.peek, isA<AppDeepLink>());
       expect(find.byType(SplashScreen), findsOneWidget);
     });
 

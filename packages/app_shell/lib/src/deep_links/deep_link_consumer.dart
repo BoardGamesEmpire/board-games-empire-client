@@ -46,10 +46,11 @@ import 'package:observability/observability.dart';
 /// delivery is a new request, so a link sent again, even one equal to the
 /// held link, is switched to again.
 ///
-/// Web passes no lookup and no orchestrator (single-origin, the server
-/// segment is carried but ignored), so a link there goes straight to its
-/// location. The only link web holds is the location the page was loaded
-/// at, which the router writes to the slot on its first redirect (#83).
+/// An app link names no server, so it lands at once with no lookup and no
+/// switch (#126). Web passes no lookup and no orchestrator (single-origin),
+/// so a server link there goes straight to its location too. The only link
+/// web holds is the location the page was loaded at, an app link, which the
+/// router writes to the slot on its first redirect (#83).
 class DeepLinkConsumer {
   DeepLinkConsumer({
     required this._holder,
@@ -99,7 +100,7 @@ class DeepLinkConsumer {
   /// delivery of it is still held. Met again while that server isn't
   /// active, the link is dropped: the switch happened, and the app has moved
   /// off it since. A link arriving clears it.
-  NormalizedDeepLink? _switchRequestedFor;
+  ServerDeepLink? _switchRequestedFor;
 
   /// The local id of a server this consumer switched to that the auth
   /// scope wasn't signed in on, until a sign-in outcome arrives ([drain]).
@@ -164,12 +165,21 @@ class DeepLinkConsumer {
       !_disposed && _isReady() && _holder.peek == link;
 
   Future<void> _pass() async {
-    final link = _holder.peek;
+    final held = _holder.peek;
     // A pending switch belongs to the link it was made for, while that link
     // is held. Once another replaces it or the slot empties, the same link
     // sent again is a new request, not one the app has moved off.
-    if (_switchRequestedFor != link) _switchRequestedFor = null;
-    if (_disposed || !_isReady() || link == null) return;
+    if (_switchRequestedFor != held) _switchRequestedFor = null;
+    if (_disposed || !_isReady() || held == null) return;
+
+    final ServerDeepLink link;
+    switch (held) {
+      case AppDeepLink():
+        _land(held, held.location);
+        return;
+      case ServerDeepLink():
+        link = held;
+    }
 
     final lookup = _lookup();
     final orchestrator = _orchestrator();

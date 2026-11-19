@@ -667,7 +667,7 @@ void main() {
       );
       expect(
         app.pendingDeepLinkHolder!.peek,
-        const NormalizedDeepLink(
+        const ServerDeepLink(
           serverId: 's1',
           location: '/server/s1/game/42',
         ),

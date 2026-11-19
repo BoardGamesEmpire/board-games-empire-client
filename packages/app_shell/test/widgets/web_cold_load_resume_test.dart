@@ -106,10 +106,7 @@ void main() {
 
   testWidgets('a newer link wins over the held location', (tester) async {
     final page = await loadAt(tester, coldLoad);
-    const newer = NormalizedDeepLink(
-      serverId: webColdLoadServerId,
-      location: '/household/h2',
-    );
+    const newer = AppDeepLink(location: '/household/h2');
 
     page.holder.set(newer);
     await tester.pumpAndSettle();

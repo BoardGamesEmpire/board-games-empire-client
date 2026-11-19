@@ -4,17 +4,17 @@ import 'package:flutter_test/flutter_test.dart';
 /// `PendingDeepLinkHolder` — single slot, latest wins,
 /// single-shot consumption (confirmed #10 decision: no queue, no TTL).
 void main() {
-  const first = NormalizedDeepLink(
+  const first = ServerDeepLink(
     serverId: 's1',
     location: '/server/s1/game/1',
   );
-  const second = NormalizedDeepLink(
+  const second = ServerDeepLink(
     serverId: 's2',
     location: '/server/s2/event/9',
   );
 
   // Equal to `first` by value but never the same instance (non-const).
-  NormalizedDeepLink equalCopyOfFirst() => NormalizedDeepLink(
+  NormalizedDeepLink equalCopyOfFirst() => ServerDeepLink(
     serverId: 's1',
     location: ['/server', 's1', 'game', '1'].join('/'),
   );

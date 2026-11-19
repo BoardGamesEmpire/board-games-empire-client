@@ -33,27 +33,39 @@ enum DeepLinkRejectionReason {
 }
 
 /// A deep link that passed validation, expressed in the router's terms.
+///
+/// Either names a server ([ServerDeepLink]) or is the app's own, with no
+/// server to resolve ([AppDeepLink], #126).
 @immutable
-final class NormalizedDeepLink {
-  const NormalizedDeepLink({required this.serverId, required this.location});
+sealed class NormalizedDeepLink {
+  const NormalizedDeepLink();
+
+  /// The `go_router` location the link opens.
+  String get location;
+}
+
+/// A link into one server's resources (`bge://server/{id}/...`).
+@immutable
+final class ServerDeepLink extends NormalizedDeepLink {
+  const ServerDeepLink({required this.serverId, required this.location});
 
   /// The server's `bgeServerId` from the link (the stable UUID from
   /// `/.well-known/bge-identity`, not a hostname or the device-local
   /// `ServerConfig.id`), percent-decoded. Resolved against the server
-  /// registry by `KnownServerLookup` consumers (#82); on web it is carried
-  /// but ignored (single-origin).
+  /// registry by `KnownServerLookup` consumers (#82).
   final String serverId;
 
   /// The `go_router` location: `/server/{serverId}/{resource-path}` plus
   /// the original query, matching a declared reserved pattern's shape.
   /// Path segments keep their original percent-encoding; the fragment, if
   /// any, is dropped during normalization.
+  @override
   final String location;
 
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      other is NormalizedDeepLink &&
+      other is ServerDeepLink &&
           other.serverId == serverId &&
           other.location == location;
 
@@ -70,9 +82,33 @@ final class NormalizedDeepLink {
   /// newline and let a link forge a second log line.
   @override
   String toString() =>
-      'NormalizedDeepLink(serverId: '
+      'ServerDeepLink(serverId: '
       '${redactDeepLinkSegmentForLog(Uri.encodeComponent(serverId))}, '
       'location: ${redactDeepLinkForLog(Uri.parse(location))})';
+}
+
+/// A link to a place in the app itself, naming no server, so it needs no
+/// server lookup or switch (#126). A web cold load is one (#83).
+@immutable
+final class AppDeepLink extends NormalizedDeepLink {
+  const AppDeepLink({required this.location});
+
+  @override
+  final String location;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is AppDeepLink && other.location == location;
+
+  @override
+  int get hashCode => location.hashCode;
+
+  /// Redacted like [ServerDeepLink.toString]: the location can carry a
+  /// token or a query value.
+  @override
+  String toString() =>
+      'AppDeepLink(location: ${redactDeepLinkForLog(Uri.parse(location))})';
 }
 
 /// Outcome of [normalizeDeepLink].
@@ -160,6 +196,6 @@ DeepLinkNormalizationResult normalizeDeepLink(Uri uri) {
   // The fragment is intentionally dropped: no reserved pattern uses one.
 
   return DeepLinkNormalized(
-    NormalizedDeepLink(serverId: serverId, location: location.toString()),
+    ServerDeepLink(serverId: serverId, location: location.toString()),
   );
 }

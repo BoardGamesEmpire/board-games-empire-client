@@ -81,14 +81,14 @@ class _MockServerContext extends Mock implements ServerContext {}
 // `BgeApp` drains the held deep link (#82): when one arrives, and when the
 // shell signals authenticated, which is also how bootstrap enters Ready.
 void main() {
-  const link = NormalizedDeepLink(
+  const link = ServerDeepLink(
     serverId: 'bge-1',
     location: '/server/bge-1/event/ev-1',
   );
   const eventDetail = '/events/ev-1';
 
   /// A link for the second server [buildTwoServerCubit] registers.
-  const secondServerLink = NormalizedDeepLink(
+  const secondServerLink = ServerDeepLink(
     serverId: 'bge-2',
     location: '/server/bge-2/event/ev-1',
   );
@@ -244,7 +244,7 @@ void main() {
     await pumpApp(tester, cubit, holder: holder);
 
     holder.set(
-      const NormalizedDeepLink(
+      const ServerDeepLink(
         serverId: 'bge-unknown',
         location: '/server/bge-unknown/event/ev-1',
       ),
@@ -342,7 +342,7 @@ void main() {
   testWidgets('an A → B → A switch inside one frame lands the link for A', (
     tester,
   ) async {
-    const firstServerLink = NormalizedDeepLink(
+    const firstServerLink = ServerDeepLink(
       serverId: 'bge-1',
       location: '/server/bge-1/event/ev-2',
     );
@@ -375,7 +375,7 @@ void main() {
   // again, so the link must wait for it rather than trust the old session.
   testWidgets('a link for a server whose scope was rebuilt waits for its '
       'sign-in again', (tester) async {
-    const firstServerLink = NormalizedDeepLink(
+    const firstServerLink = ServerDeepLink(
       serverId: 'bge-1',
       location: '/server/bge-1/event/ev-2',
     );
@@ -433,7 +433,7 @@ void main() {
   // fresh bloc whose sign-in outcome the link must wait for.
   testWidgets('a link for a server that stopped being active waits for its '
       'sign-in again', (tester) async {
-    const firstServerLink = NormalizedDeepLink(
+    const firstServerLink = ServerDeepLink(
       serverId: 'bge-1',
       location: '/server/bge-1/event/ev-2',
     );
