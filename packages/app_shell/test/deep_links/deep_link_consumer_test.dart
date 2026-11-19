@@ -542,6 +542,142 @@ void main() {
       },
     );
 
+    // #126: settings shows the active server's section, so an app link that
+    // landed before the switched-to server's sign-in outcome would open on
+    // the old server's.
+    group('an app link after a switch', () {
+      late String active;
+      late Completer<void> switching;
+
+      /// As [connectedInactiveServerSwitchCommits], with the active server
+      /// in [active], and a switch that commits its target and then waits
+      /// on [switching], as the orchestrator's can.
+      void switchCommitsThenWaits() {
+        connectedInactiveServer();
+        active = 'local-0';
+        switching = Completer<void>();
+        when(() => orchestrator.activeServerId).thenAnswer((_) => active);
+        when(() => orchestrator.switchActiveServer(any())).thenAnswer((
+          invocation,
+        ) async {
+          active = invocation.positionalArguments.single as String;
+          await switching.future;
+        });
+      }
+
+      test('waits for the sign-in outcome of the server switched to', () async {
+        switchCommitsThenWaits();
+        switching.complete();
+        // Signed in on the server being left, not the target.
+        final consumer = buildConsumer(
+          isSignedInOn: (localId) => localId == 'local-0',
+        )..start();
+        await pumpEventQueue();
+
+        holder.set(link);
+        await pumpEventQueue();
+        verify(() => orchestrator.switchActiveServer('local-1')).called(1);
+
+        holder.set(appLink);
+        await pumpEventQueue();
+
+        expect(gone, isEmpty);
+        expect(holder.peek, appLink);
+
+        await consumer.drain();
+
+        expect(gone, ['/settings']);
+        expect(holder.peek, isNull);
+        verifyNever(() => orchestrator.switchActiveServer(any()));
+      });
+
+      test(
+        'set during the switch replaces the server link and waits',
+        () async {
+          switchCommitsThenWaits();
+          final consumer = buildConsumer(
+            isSignedInOn: (localId) => localId == 'local-0',
+          )..start();
+          await pumpEventQueue();
+
+          holder.set(link);
+          await pumpEventQueue();
+          verify(() => orchestrator.switchActiveServer('local-1')).called(1);
+
+          // `local-1` is already committed as active, and the switch is
+          // still in flight.
+          holder.set(appLink);
+          await pumpEventQueue();
+          switching.complete();
+          await pumpEventQueue();
+
+          // The server link's pass finds itself replaced; the app link's
+          // pass finds the switched-to server's outcome still to come.
+          expect(gone, isEmpty);
+          expect(holder.peek, appLink);
+
+          await consumer.drain();
+
+          expect(gone, ['/settings']);
+          expect(holder.peek, isNull);
+          verifyNever(() => orchestrator.switchActiveServer(any()));
+        },
+      );
+
+      test(
+        'set during a switch back to a signed-in server lands once it ends',
+        () async {
+          switchCommitsThenWaits();
+          buildConsumer(
+            isSignedInOn: (localId) => localId == 'local-1',
+          ).start();
+          await pumpEventQueue();
+
+          holder.set(link);
+          await pumpEventQueue();
+          verify(() => orchestrator.switchActiveServer('local-1')).called(1);
+
+          holder.set(appLink);
+          await pumpEventQueue();
+          switching.complete();
+          await pumpEventQueue();
+
+          // No sign-in outcome is coming for a server the auth scope never
+          // left, so nothing is left waiting for one.
+          expect(gone, ['/settings']);
+          expect(holder.peek, isNull);
+          verifyNever(() => orchestrator.switchActiveServer(any()));
+        },
+      );
+
+      test(
+        'lands at once after the app has left the server it waited for',
+        () async {
+          switchCommitsThenWaits();
+          switching.complete();
+          buildConsumer(
+            isSignedInOn: (localId) => localId == 'local-0',
+          ).start();
+          await pumpEventQueue();
+
+          holder.set(link);
+          await pumpEventQueue();
+          verify(() => orchestrator.switchActiveServer('local-1')).called(1);
+          expect(holder.peek, link);
+
+          // The user switches back before `local-1`'s outcome arrives; the
+          // wait names a server that is no longer active.
+          active = 'local-0';
+          holder.set(appLink);
+          await pumpEventQueue();
+
+          expect(gone, ['/settings']);
+          expect(holder.peek, isNull);
+          verifyNever(() => orchestrator.switchActiveServer(any()));
+        },
+      );
+    });
+
     test('keeps the link through a switch that ends on the auth leg', () async {
       connectedInactiveServer();
       final consumer = buildConsumer();

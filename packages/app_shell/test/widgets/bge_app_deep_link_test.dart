@@ -235,6 +235,42 @@ void main() {
     expect(holder.peek, isNull);
   });
 
+  // #126: an app link names no server, and opens on the active one.
+  testWidgets('a bge://settings link held at a cold start opens settings '
+      'once signed in', (tester) async {
+    final result =
+        normalizeDeepLink(Uri.parse('bge://settings')) as DeepLinkNormalized;
+    final holder = buildHolder()..set(result.link);
+    final cubit = buildSingleServerCubit(
+      FakeAuthRepository(initialSession: testAuthResponse()),
+    );
+
+    await pumpApp(tester, cubit, holder: holder);
+
+    expect(cubit.state, isA<AppBootstrapReady>());
+    expect(location(tester), AppRoutes.settings);
+    expect(holder.peek, isNull);
+  });
+
+  testWidgets('a bge://settings/export link goes to the export page once '
+      'signed in', (tester) async {
+    final holder = buildHolder();
+    final cubit = buildSingleServerCubit(
+      FakeAuthRepository(initialSession: testAuthResponse()),
+    );
+    await pumpApp(tester, cubit, holder: holder);
+    expect(find.byType(HomeScreen), findsOneWidget);
+
+    final result = normalizeDeepLink(
+      Uri.parse('bge://settings/export'),
+    ) as DeepLinkNormalized;
+    holder.set(result.link);
+    await tester.pumpAndSettle();
+
+    expect(location(tester), AppRoutes.settingsExport);
+    expect(holder.peek, isNull);
+  });
+
   testWidgets('a link for a server not added shows the unknown-server '
       'screen', (tester) async {
     final holder = buildHolder();

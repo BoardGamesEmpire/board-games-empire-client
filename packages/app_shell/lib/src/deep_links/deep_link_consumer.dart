@@ -46,11 +46,12 @@ import 'package:observability/observability.dart';
 /// delivery is a new request, so a link sent again, even one equal to the
 /// held link, is switched to again.
 ///
-/// An app link names no server, so it lands at once with no lookup and no
-/// switch (#126). Web passes no lookup and no orchestrator (single-origin),
-/// so a server link there goes straight to its location too. The only link
-/// web holds is the location the page was loaded at, an app link, which the
-/// router writes to the slot on its first redirect (#83).
+/// An app link names no server, so it needs no lookup and no switch, and
+/// lands at once unless a switch's sign-in outcome is still awaited (#126).
+/// Web passes no lookup and no orchestrator (single-origin) and holds only
+/// app links: the location the page was loaded at, which the router writes
+/// to the slot on its first redirect (#83). A server link would go straight
+/// to its location there, if one arrived.
 class DeepLinkConsumer {
   DeepLinkConsumer({
     required this._holder,
@@ -104,11 +105,22 @@ class DeepLinkConsumer {
 
   /// The local id of a server this consumer switched to that the auth
   /// scope wasn't signed in on, until a sign-in outcome arrives ([drain]).
-  /// While it is the active server, nothing lands. A switch back to the
-  /// server the scope is still signed in on never sets it (#985), so after
-  /// a round trip it can name a server the app has since left; it holds
-  /// links only for the active server, and the next outcome clears it.
+  /// While it is the active server, neither that server's links nor app
+  /// links land, because the page an app link opens reads the active
+  /// server, and would show the old one's (#126). Links for other servers
+  /// still act at once. A switch back to
+  /// the server the scope is still signed in on never sets it (#985), so
+  /// after a round trip it can name a server the app has since left; it
+  /// holds links only for the active server, and the next outcome clears it.
   String? _awaitingSignInOn;
+
+  /// Whether a switched-to server's sign-in outcome is still awaited and
+  /// [activeServerId] is that server. Web has no orchestrator and never sets
+  /// the wait, so it is false there.
+  bool _awaitingSignInOnActive(String? activeServerId) {
+    final awaiting = _awaitingSignInOn;
+    return awaiting != null && awaiting == activeServerId;
+  }
 
   /// Listens to the holder and drains once, for a link held before start.
   void start() {
@@ -175,6 +187,10 @@ class DeepLinkConsumer {
     final ServerDeepLink link;
     switch (held) {
       case AppDeepLink():
+        // The page an app link opens reads the active server, so it waits
+        // out a switched-to server's sign-in outcome, as that server's own
+        // links do (#126).
+        if (_awaitingSignInOnActive(_orchestrator()?.activeServerId)) return;
         _land(held, held.location);
         return;
       case ServerDeepLink():
@@ -213,7 +229,7 @@ class DeepLinkConsumer {
     if (localId == orchestrator.activeServerId) {
       // Switched to, and its sign-in outcome isn't known yet: landing now
       // would take the link from a sign-in that may still need it.
-      if (_awaitingSignInOn == localId) return;
+      if (_awaitingSignInOnActive(localId)) return;
       _switchRequestedFor = null;
       _land(link, link.location);
       return;
