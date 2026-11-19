@@ -733,6 +733,44 @@
       }
     }
   },
+  "catalogExpansionsHeading": "Expansions",
+  "@catalogExpansionsHeading": {
+    "description": "Heading over the checklist of a game's expansions, in the quick look's import panel and on the game page."
+  },
+  "catalogExpansionsLoading": "Looking for expansions…",
+  "@catalogExpansionsLoading": {
+    "description": "Announced, not drawn, while the checklist of a game's expansions loads."
+  },
+  "catalogExpansionsEmpty": "No expansions found.",
+  "@catalogExpansionsEmpty": {
+    "description": "Shown in the expansions checklist when every data source answered and none of them knows an expansion of the game."
+  },
+  "catalogExpansionsFailedTitle": "Couldn't load expansions",
+  "@catalogExpansionsFailedTitle": {
+    "description": "Title of the expansions checklist's failure, shown when the read failed or when no data source answered. Followed by catalogExpansionsFailedBody and a catalogRetry button."
+  },
+  "catalogExpansionsFailedBody": "The data source didn't answer. Try again.",
+  "@catalogExpansionsFailedBody": {
+    "description": "Body under catalogExpansionsFailedTitle."
+  },
+  "catalogExpansionsMissing": "{source} didn't answer, so some expansions may be missing.",
+  "@catalogExpansionsMissing": {
+    "description": "Note under the expansions that were found, naming a data source that failed, was rate limited or could not be reached, so the list may be short.",
+    "placeholders": {
+      "source": {
+        "type": "String",
+        "example": "BoardGameGeek"
+      }
+    }
+  },
+  "catalogExpansionsSelectAll": "Select all",
+  "@catalogExpansionsSelectAll": {
+    "description": "Checkbox that ticks every expansion of a data source that can be ticked, or clears them. Mixed while only some are ticked."
+  },
+  "catalogExpansionOnServer": "On this server",
+  "@catalogExpansionOnServer": {
+    "description": "Said on an expansion's row when the server already holds the game, so it is listed but there is nothing to import."
+  },
   "catalogImageAlt": "Image: {alt}",
   "@catalogImageAlt": {
     "description": "Stands in for a picture in a game's description that cannot be shown, giving its description.",
