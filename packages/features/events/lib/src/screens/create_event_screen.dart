@@ -5,6 +5,7 @@ import 'package:events/src/bloc/create_event_bloc.dart';
 import 'package:events/src/bloc/create_event_event.dart';
 import 'package:events/src/bloc/create_event_state.dart';
 import 'package:events/src/create/create_event_form.dart';
+import 'package:events/src/create/event_basics_section.dart';
 import 'package:events/src/create/event_create_households.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -64,17 +65,18 @@ class CreateEventScreen extends StatefulWidget {
     super.key,
   });
 
-  static const Key titleKey = Key('event_create.title');
-  static const Key householdKey = Key('event_create.household');
-  static const Key typeKey = Key('event_create.type');
-  static const Key reachKey = Key('event_create.reach');
+  // The basics' keys, which [EventBasicsSection] holds, as the edit form
+  // shows the same section.
+  static const Key titleKey = EventBasicsSection.titleKey;
+  static const Key householdKey = EventBasicsSection.householdKey;
+  static const Key typeKey = EventBasicsSection.typeKey;
+  static const Key reachKey = EventBasicsSection.reachKey;
 
-  /// Key on the line under the reach menu saying what *Extended network*
-  /// means, shown while it is chosen.
-  static const Key reachNoteKey = Key('event_create.reach_note');
-  static const Key descriptionKey = Key('event_create.description');
-  static const Key locationKey = Key('event_create.location');
-  static const Key urlKey = Key('event_create.url');
+  /// See [EventBasicsSection.reachNoteKey].
+  static const Key reachNoteKey = EventBasicsSection.reachNoteKey;
+  static const Key descriptionKey = EventBasicsSection.descriptionKey;
+  static const Key locationKey = EventBasicsSection.locationKey;
+  static const Key urlKey = EventBasicsSection.urlKey;
   static const Key submitKey = Key('event_create.submit');
 
   /// Key on the banner saying the server refused the create.

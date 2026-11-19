@@ -8,37 +8,43 @@ import 'package:reactive_forms/reactive_forms.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
-/// The create form's *Advanced: rules* (#499): how games get added to the
-/// event, and while attendees vote on them, how a vote is decided and how
-/// long it stays open.
+/// *Advanced: rules*, on the create form (#499) and the edit form (#500):
+/// how games get added to the event, and while attendees vote on them, how
+/// a vote is decided and how long it stays open.
 ///
-/// It edits the rules of the ambient [ReactiveForm], built by
-/// [buildEventCreateForm], which keeps what follows what: the voting
-/// settings show while attendees vote, a number while its type takes one
-/// ([thresholdNumberOf], [quorumNumberOf]), and a switch of type starts its
-/// number over.
+/// It edits the rules of the ambient [ReactiveForm], whose controls
+/// [buildEventRulesControls] built, and which keep what follows what: the
+/// voting settings show while attendees vote, a number while its type takes
+/// one ([thresholdNumberOf], [quorumNumberOf]), and a switch of type starts
+/// its number over.
 ///
-/// - Collapsed at first, since most events keep the server's rules. The note
-///   that rules can't be changed once the event exists shows under the title
-///   all the same: the server's rules, left as they are, are just as final.
-/// - How games get added starts untouched, and reads as *Direct*, the
-///   server's own default, so an untouched form sends no rules ([policyOf]).
+/// - Collapsed at first, since most events keep the rules they have. A
+///   [note] shows under the title all the same.
+/// - On the create form how games get added starts untouched, and reads as
+///   *Direct*, the server's own default, so an untouched form sends no
+///   rules ([policyOf]).
 /// - A rule with an error keeps the rules open, and says what is wrong.
 ///   Collapsed, its field would be gone, so a submit refused for it would
-///   have nothing to focus or show.
+///   have nothing to focus or show. For the same reason, rules handed over
+///   with an error already, such as a number typed before the section was
+///   first built, start open. Neither form opens with one: the edit form
+///   lets the stored numbers through its ranges (#500).
 /// - It opens and closes over `motionShort`, and at once where the platform
 ///   asks for reduced motion (STYLE_GUIDE §5). Left to itself, the tile
 ///   takes 200ms either way (measured).
 ///
-/// [readOnly] locks it while a create is on its way, as the household forms
-/// lock theirs: the menus don't open and the numbers take no typing, though
-/// the rules still open and close, to be read. No control is disabled for
-/// it, since enabling one again would emit a value change.
+/// [readOnly] locks it while a write is on its way, as the household forms
+/// lock theirs, or where the viewer may not change the rules: the menus
+/// don't open and the numbers take no typing, though the rules still open
+/// and close, to be read. No control is disabled for it, since enabling one
+/// again would emit a value change.
 class EventRulesSection extends StatefulWidget {
-  const EventRulesSection({this.readOnly = false, super.key});
+  const EventRulesSection({this.readOnly = false, this.note, super.key});
 
   static const Key tileKey = Key('event_create.rules');
-  static const Key lockedKey = Key('event_create.rules_locked');
+
+  /// Key on the [note] under the title.
+  static const Key noteKey = Key('event_create.rules_note');
   static const Key gameAdditionKey = Key('event_create.game_addition');
   static const Key thresholdKey = Key('event_create.threshold');
   static const Key thresholdValueKey = Key('event_create.threshold_value');
@@ -46,8 +52,12 @@ class EventRulesSection extends StatefulWidget {
   static const Key quorumValueKey = Key('event_create.quorum_value');
   static const Key windowKey = Key('event_create.window');
 
-  /// Whether a create is on its way: nothing here takes an edit.
+  /// Whether nothing here takes an edit.
   final bool readOnly;
+
+  /// A line under the title about the rules as a whole, such as who may
+  /// change them, or null for none.
+  final String? note;
 
   @override
   State<EventRulesSection> createState() => _EventRulesSectionState();
@@ -67,9 +77,9 @@ class _EventRulesSectionState extends State<EventRulesSection> {
   void _onExpansionChanged(bool expanded) {
     final form = ReactiveForm.of(context, listen: false);
     if (expanded || form is! FormGroup) return;
-    final wrong = [for (final name in _rules) form.control(name)]
-        .where((control) => control.invalid)
-        .toList();
+    final wrong = [
+      for (final name in EventCreateControls.rules) form.control(name),
+    ].where((control) => control.invalid).toList();
     if (wrong.isEmpty) return;
     for (final control in wrong) {
       control.markAsTouched();
@@ -92,20 +102,27 @@ class _EventRulesSectionState extends State<EventRulesSection> {
     return ExpansionTile(
       key: EventRulesSection.tileKey,
       controller: _tile,
+      // Open at first when a rule already has an error, such as a number
+      // typed before the section was built. Read once, when the tile is
+      // first built.
+      initiallyExpanded: EventCreateControls.rules.any(
+        (name) => form.control(name).invalid,
+      ),
       title: Text(
         l10n.eventCreateRulesTitle,
         style: theme.textTheme.titleMedium,
       ),
       // Under the title, so it shows while the rules are collapsed. Read
       // with the title, as part of the form rather than an outcome, so it
-      // announces nothing. The server takes no change to an event's rules
-      // yet: remove this once it does
-      // (BoardGamesEmpire/board-games-empire-backend#796).
-      subtitle: Text(
-        key: EventRulesSection.lockedKey,
-        l10n.eventCreateRulesLocked,
-        style: eventCreateQuiet(theme),
-      ),
+      // announces nothing.
+      subtitle: switch (widget.note) {
+        final note? => Text(
+          key: EventRulesSection.noteKey,
+          note,
+          style: eventCreateQuiet(theme),
+        ),
+        null => null,
+      },
       // Flush with the sections above it, rather than inset as a list row.
       tilePadding: EdgeInsets.zero,
       childrenPadding: EdgeInsets.only(bottom: tokens.spaceMd),
@@ -143,16 +160,6 @@ class _EventRulesSectionState extends State<EventRulesSection> {
     );
   }
 }
-
-/// The controls a rule is set in, for finding one with an error.
-const List<String> _rules = [
-  EventCreateControls.gameAddition,
-  EventCreateControls.threshold,
-  EventCreateControls.thresholdValue,
-  EventCreateControls.quorum,
-  EventCreateControls.quorumValue,
-  EventCreateControls.windowHours,
-];
 
 /// The settings of a vote: how many votes a game needs, how many people
 /// must vote, and how long voting stays open.

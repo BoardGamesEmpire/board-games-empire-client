@@ -33,6 +33,7 @@ export 'src/household/household_events_section.dart';
 export 'src/overview/event_groups.dart';
 export 'src/screens/add_attendee_screen.dart';
 export 'src/screens/create_event_screen.dart';
+export 'src/screens/edit_event_screen.dart' show EditEventScreen;
 export 'src/screens/event_availability_screen.dart';
 export 'src/screens/event_detail_screen.dart';
 export 'src/screens/event_group_screen.dart';

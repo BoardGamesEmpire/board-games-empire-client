@@ -1,10 +1,16 @@
+import 'package:events/l10n/events_localizations.dart';
+import 'package:events/src/create/event_basics_section.dart';
 import 'package:events/src/create/event_create_controls.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:models/domain.dart';
 import 'package:reactive_forms/reactive_forms.dart';
+import 'package:ui/ui.dart';
+import 'package:ui_tokens/ui_tokens.dart';
 
 /// Pins the create form's basics (#499) as [buildEventCreateForm] checks
-/// them, and the draft [draftOf] reads from the whole form.
+/// them, the draft [draftOf] reads from the whole form, and the section
+/// both the create and the edit form show them in (#500).
 void main() {
   FormControl<String> textOf(FormGroup form, String name) =>
       form.control(name) as FormControl<String>;
@@ -193,6 +199,49 @@ void main() {
       expect(draft.inviteUserIds, isEmpty);
       expect(draft.schedulingMode, EventSchedulingMode.fixed);
       expect(draft.checkSendable, returnsNormally);
+    });
+  });
+
+  group('EventBasicsSection', () {
+    testWidgets('without hintsDefaults, an empty type and reach show no hint', (
+      tester,
+    ) async {
+      // On the edit form an untouched menu keeps what the event has, so the
+      // create form's defaults would say something untrue there.
+      final form = buildEventCreateForm();
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: BgeTheme.light(),
+          localizationsDelegates: EventsLocalizations.localizationsDelegates,
+          supportedLocales: EventsLocalizations.supportedLocales,
+          home: BgePage(
+            child: ReactiveForm(
+              formGroup: form,
+              child: const EventBasicsSection(
+                readOnly: false,
+                hintsDefaults: false,
+              ),
+            ),
+          ),
+        ),
+      );
+
+      expect(form.control(EventCreateControls.type).value, isNull);
+      expect(form.control(EventCreateControls.reach).value, isNull);
+      // The menus are there, labelled...
+      for (final (key, label) in [
+        (EventBasicsSection.typeKey, 'Type'),
+        (EventBasicsSection.reachKey, 'Who can see it'),
+      ]) {
+        expect(
+          find.descendant(of: find.byKey(key), matching: find.text(label)),
+          findsOneWidget,
+          reason: label,
+        );
+      }
+      // ...with nothing in them.
+      expect(find.text('Casual gathering'), findsNothing);
+      expect(find.text('Friends'), findsNothing);
     });
   });
 }

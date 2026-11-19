@@ -50,6 +50,7 @@ void main() {
 
   const household = {
     EventAction.edit,
+    EventAction.editRules,
     EventAction.cancel,
     EventAction.addDate,
     EventAction.editDate,
@@ -70,6 +71,7 @@ void main() {
   // co-host holds both status grants (#502).
   const coHost = {
     EventAction.edit,
+    EventAction.editRules,
     EventAction.cancel,
     EventAction.archive,
     EventAction.addDate,
@@ -181,6 +183,32 @@ void main() {
 
         expect(actions, contains(EventAction.editDate));
         expect(actions, isNot(contains(EventAction.removeDate)));
+      }
+    });
+
+    test('the organizer and moderator edit the event but not its rules', () {
+      for (final role in [EventRole.organizer, EventRole.moderator]) {
+        final actions = eventActionsFor(plain, eventRole: role);
+
+        expect(actions, contains(EventAction.edit));
+        expect(actions, isNot(contains(EventAction.editRules)));
+      }
+    });
+
+    test("a household owner or admin changes a household event's rules, "
+        "not another's", () {
+      for (final role in [
+        HouseholdRole.householdOwner,
+        HouseholdRole.householdAdmin,
+      ]) {
+        expect(
+          eventActionsFor(inHousehold, householdRole: role),
+          contains(EventAction.editRules),
+        );
+        expect(
+          eventActionsFor(plain, householdRole: role),
+          isNot(contains(EventAction.editRules)),
+        );
       }
     });
 
@@ -382,6 +410,19 @@ void main() {
 
     test('offers its host nothing, as the server does not know it yet', () {
       expect(eventActionsFor(local, eventRole: EventRole.host), isEmpty);
+    });
+
+    test('offers no editRules', () {
+      for (final role in EventRole.values) {
+        expect(
+          eventActionsFor(local, eventRole: role),
+          isNot(contains(EventAction.editRules)),
+        );
+      }
+      expect(
+        eventActionsFor(local, householdRole: HouseholdRole.householdOwner),
+        isNot(contains(EventAction.editRules)),
+      );
     });
 
     test('offers a household owner nothing either', () {

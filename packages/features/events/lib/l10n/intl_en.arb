@@ -194,7 +194,7 @@
   },
   "eventsDetailLoading": "Loading this event",
   "@eventsDetailLoading": {
-    "description": "Announced and shown on the screen for one event while it is read for the first time, before anything about it is on this device."
+    "description": "Announced and shown on the screen for one event while it is read for the first time, before anything about it is on this device. Also announced on the Edit event page while it reads the event from this device."
   },
   "eventsDetailDates": "Dates",
   "@eventsDetailDates": {
@@ -2348,7 +2348,7 @@
   },
   "eventsOfferBack": "Back to the event",
   "@eventsOfferBack": {
-    "description": "Button under eventsOfferFailedBody on the Offer games page: leaves the page without offering anything, back to the event's screen."
+    "description": "Button under eventsOfferFailedBody on the Offer games page: leaves the page without offering anything, back to the event's screen. Also the button on the Edit event page under eventEditNotAllowed or eventEditNotCached: leaves the page, back to the event's screen."
   },
   "eventsDetailAttendeesNotLoaded": "Not loaded yet.",
   "@eventsDetailAttendeesNotLoaded": {
@@ -3109,15 +3109,15 @@
   },
   "eventCreateBasicsTitle": "Basics",
   "@eventCreateBasicsTitle": {
-    "description": "Heading of the first section of the new-event form: the event's title, its household, its type, who can see it, and its description, place and link."
+    "description": "Heading of the first section of the new-event form and of the Edit event page: the event's title, its household (on the new-event form only), its type, who can see it, and its description, place and link."
   },
   "eventCreateName": "Title",
   "@eventCreateName": {
-    "description": "Label of the text field where the person names a new event, such as 'Game night'. Required."
+    "description": "Label of the text field where the person names an event, such as 'Game night', on the new-event form and the Edit event page. Required."
   },
   "eventCreateNameRequired": "Give the event a title.",
   "@eventCreateNameRequired": {
-    "description": "Error under the title field of the new-event form when it is empty, or holds only spaces."
+    "description": "Error under the title field of the new-event form or the Edit event page when it is empty, or holds only spaces."
   },
   "eventCreateHousehold": "Household",
   "@eventCreateHousehold": {
@@ -3129,31 +3129,31 @@
   },
   "eventCreateType": "Type",
   "@eventCreateType": {
-    "description": "Label of the menu in the new-event form that picks what kind of event it is, such as Casual gathering or Strategy night."
+    "description": "Label of the menu on the new-event form and the Edit event page that picks what kind of event it is, such as Casual gathering or Strategy night."
   },
   "eventCreateReach": "Who can see it",
   "@eventCreateReach": {
-    "description": "Label of the menu in the new-event form that picks who besides the people invited can see the event, such as Friends or Public."
+    "description": "Label of the menu on the new-event form and the Edit event page that picks who besides the people invited can see the event, such as Friends or Public."
   },
   "eventCreateReachExtendedNetworkNote": "Friends up to three steps away",
   "@eventCreateReachExtendedNetworkNote": {
-    "description": "Line under the Who can see it menu in the new-event form, shown while Extended network is chosen: it says who that is, the host's friends, their friends, and their friends' friends."
+    "description": "Line under the Who can see it menu on the new-event form and the Edit event page, shown while Extended network is chosen: it says who that is, the host's friends, their friends, and their friends' friends."
   },
   "eventCreateDescription": "Description (optional)",
   "@eventCreateDescription": {
-    "description": "Label of the text field where the person may describe a new event. It can be left empty."
+    "description": "Label of the text field where the person may describe an event, on the new-event form and the Edit event page. It can be left empty."
   },
   "eventCreateLocation": "Location (optional)",
   "@eventCreateLocation": {
-    "description": "Label of the text field where the person may say where a new event happens, such as an address or 'Ana's place'. It can be left empty."
+    "description": "Label of the text field where the person may say where an event happens, such as an address or 'Ana's place', on the new-event form and the Edit event page. It can be left empty."
   },
   "eventCreateUrl": "Link (optional)",
   "@eventCreateUrl": {
-    "description": "Label of the text field where the person may add a web link for a new event, such as its page on another site. It can be left empty."
+    "description": "Label of the text field where the person may add a web link for an event, such as its page on another site, on the new-event form and the Edit event page. It can be left empty."
   },
   "eventCreateUrlInvalid": "Enter a full link, starting with https://",
   "@eventCreateUrlInvalid": {
-    "description": "Error under the link field of the new-event form when what is typed isn't a full web link the server takes, such as one missing 'https://' or with a space in it. Keep 'https://' as it is."
+    "description": "Error under the link field of the new-event form or the Edit event page when what is typed isn't a full web link the server takes, such as one missing 'https://' or with a space in it. Keep 'https://' as it is."
   },
   "eventCreateSubmit": "Create event",
   "@eventCreateSubmit": {
@@ -3297,95 +3297,91 @@
   },
   "eventCreateRulesTitle": "Advanced: rules",
   "@eventCreateRulesTitle": {
-    "description": "Title of the collapsed section at the end of the new-event form that sets the event's rules, such as how games get added to it. Tapping it opens the section."
-  },
-  "eventCreateRulesLocked": "Rules can't be changed after the event is created.",
-  "@eventCreateRulesLocked": {
-    "description": "Note at the top of the rules section of the new-event form: the rules picked here are final once the event exists."
+    "description": "Title of the collapsed section at the end of the new-event form and the Edit event page that sets the event's rules, such as how games get added to it. Tapping it opens the section. On the Edit event page it is also the heading over a note, when the rules can't be shown there."
   },
   "eventCreateGameAddition": "How games get added",
   "@eventCreateGameAddition": {
-    "description": "Label of the menu in the rules section of the new-event form that sets how games get onto the event's list of games to play."
+    "description": "Label of the menu in the rules section of the new-event form and the Edit event page that sets how games get onto the event's list of games to play."
   },
   "gameAdditionDirect": "Anyone attending adds them",
   "@gameAdditionDirect": {
-    "description": "One way games get onto an event's list of games to play, in the menu of the rules section of the new-event form: anyone attending adds a game straight to the list. Also what the menu shows before anything is picked, since it is the default."
+    "description": "One way games get onto an event's list of games to play, in the menu of the rules section of the new-event form and the Edit event page: anyone attending adds a game straight to the list. Also what the new-event form's menu shows before anything is picked, since it is the default."
   },
   "gameAdditionRequiresVote": "Attendees vote",
   "@gameAdditionRequiresVote": {
-    "description": "One way games get onto an event's list of games to play, in the menu of the rules section of the new-event form: a game someone suggests joins the list only if the people attending vote for it."
+    "description": "One way games get onto an event's list of games to play, in the menu of the rules section of the new-event form and the Edit event page: a game someone suggests joins the list only if the people attending vote for it."
   },
   "gameAdditionHostApproval": "The host approves them",
   "@gameAdditionHostApproval": {
-    "description": "One way games get onto an event's list of games to play, in the menu of the rules section of the new-event form: a game someone suggests joins the list once the host approves it."
+    "description": "One way games get onto an event's list of games to play, in the menu of the rules section of the new-event form and the Edit event page: a game someone suggests joins the list once the host approves it."
   },
   "gameAdditionHostOnly": "Only hosts add them",
   "@gameAdditionHostOnly": {
-    "description": "One way games get onto an event's list of games to play, in the menu of the rules section of the new-event form: only the event's hosts can add games."
+    "description": "One way games get onto an event's list of games to play, in the menu of the rules section of the new-event form and the Edit event page: only the event's hosts can add games."
   },
   "eventCreateThreshold": "Votes needed",
   "@eventCreateThreshold": {
-    "description": "Label of the menu in the rules section of the new-event form that sets how many votes in favour a suggested game needs to join the event's list, when attendees vote on games."
+    "description": "Label of the menu in the rules section of the new-event form and the Edit event page that sets how many votes in favour a suggested game needs to join the event's list, when attendees vote on games."
   },
   "voteThresholdSimpleMajority": "More than half",
   "@voteThresholdSimpleMajority": {
-    "description": "One choice in the Votes needed menu of the new-event form: a game joins the list when more than half of the votes cast are in favour."
+    "description": "One choice in the Votes needed menu of the new-event form and the Edit event page: a game joins the list when more than half of the votes cast are in favour."
   },
   "voteThresholdSupermajority": "A set share",
   "@voteThresholdSupermajority": {
-    "description": "One choice in the Votes needed menu of the new-event form: a game joins the list when a share of the votes cast that the host sets, such as 66%, are in favour."
+    "description": "One choice in the Votes needed menu of the new-event form and the Edit event page: a game joins the list when a share of the votes cast that the host sets, such as 66%, are in favour."
   },
   "voteThresholdUnanimous": "Everyone",
   "@voteThresholdUnanimous": {
-    "description": "One choice in the Votes needed menu of the new-event form: a game joins the list only when every eligible voter is in favour."
+    "description": "One choice in the Votes needed menu of the new-event form and the Edit event page: a game joins the list only when every eligible voter is in favour."
   },
   "voteThresholdFixedCount": "A set number",
   "@voteThresholdFixedCount": {
-    "description": "One choice in the Votes needed menu of the new-event form: a game joins the list when a number of votes in favour that the host sets is reached, however many people vote."
+    "description": "One choice in the Votes needed menu of the new-event form and the Edit event page: a game joins the list when a number of votes in favour that the host sets is reached, however many people vote."
   },
   "eventCreateThresholdPercent": "Share (%)",
   "@eventCreateThresholdPercent": {
-    "description": "Label of the number field under the Votes needed menu of the new-event form, for A set share: the percentage of the votes cast that must be in favour."
+    "description": "Label of the number field under the Votes needed menu of the new-event form and the Edit event page, for A set share: the percentage of the votes cast that must be in favour."
   },
   "eventCreateThresholdCount": "Number of votes",
   "@eventCreateThresholdCount": {
-    "description": "Label of the number field under the Votes needed menu of the new-event form, for A set number: how many votes in favour a game needs."
+    "description": "Label of the number field under the Votes needed menu of the new-event form and the Edit event page, for A set number: how many votes in favour a game needs."
   },
   "eventCreateQuorum": "Turnout needed",
   "@eventCreateQuorum": {
-    "description": "Label of the menu in the rules section of the new-event form that sets how many people must vote on a suggested game before the result counts."
+    "description": "Label of the menu in the rules section of the new-event form and the Edit event page that sets how many people must vote on a suggested game before the result counts."
   },
   "voteQuorumNone": "None",
   "@voteQuorumNone": {
-    "description": "One choice in the Turnout needed menu of the new-event form: a vote's result counts however few people vote."
+    "description": "One choice in the Turnout needed menu of the new-event form and the Edit event page: a vote's result counts however few people vote."
   },
   "voteQuorumPercent": "A share of attendees",
   "@voteQuorumPercent": {
-    "description": "One choice in the Turnout needed menu of the new-event form: a vote's result counts once a percentage of the eligible voters, set by the host, have voted."
+    "description": "One choice in the Turnout needed menu of the new-event form and the Edit event page: a vote's result counts once a percentage of the eligible voters, set by the host, have voted."
   },
   "voteQuorumFixedCount": "A set number",
   "@voteQuorumFixedCount": {
-    "description": "One choice in the Turnout needed menu of the new-event form: a vote's result counts once a number of votes set by the host have been cast."
+    "description": "One choice in the Turnout needed menu of the new-event form and the Edit event page: a vote's result counts once a number of votes set by the host have been cast."
   },
   "eventCreateQuorumPercent": "Share of attendees (%)",
   "@eventCreateQuorumPercent": {
-    "description": "Label of the number field under the Turnout needed menu of the new-event form, for A share of attendees: the percentage of eligible voters who must vote."
+    "description": "Label of the number field under the Turnout needed menu of the new-event form and the Edit event page, for A share of attendees: the percentage of eligible voters who must vote."
   },
   "eventCreateQuorumCount": "Number of voters",
   "@eventCreateQuorumCount": {
-    "description": "Label of the number field under the Turnout needed menu of the new-event form, for A set number: how many votes must be cast."
+    "description": "Label of the number field under the Turnout needed menu of the new-event form and the Edit event page, for A set number: how many votes must be cast."
   },
   "eventCreateWindow": "Voting stays open for (hours)",
   "@eventCreateWindow": {
-    "description": "Label of the number field in the rules section of the new-event form that sets how many hours a vote on a suggested game stays open."
+    "description": "Label of the number field in the rules section of the new-event form and the Edit event page that sets how many hours a vote on a suggested game stays open."
   },
   "eventCreateWindowHint": "Leave empty to close voting yourself",
   "@eventCreateWindowHint": {
-    "description": "Helper text under the Voting stays open for (hours) field of the new-event form: with no number, votes stay open until the host closes them."
+    "description": "Helper text under the Voting stays open for (hours) field of the new-event form and the Edit event page: with no number, votes stay open until the host closes them."
   },
   "eventCreateNumberRange": "Enter a whole number from {min} to {max}.",
   "@eventCreateNumberRange": {
-    "description": "Error under one of the number fields in the rules section of the new-event form when what is typed isn't a whole number between the two limits.",
+    "description": "Error under one of the number fields in the rules section of the new-event form and the Edit event page when what is typed isn't a whole number between the two limits.",
     "placeholders": {
       "min": {
         "type": "int",
@@ -3399,12 +3395,92 @@
   },
   "eventCreateNumberMin": "Enter a whole number of at least {min}.",
   "@eventCreateNumberMin": {
-    "description": "Error under one of the number fields in the rules section of the new-event form when what is typed isn't a whole number, or is smaller than the least it may be.",
+    "description": "Error under one of the number fields in the rules section of the new-event form and the Edit event page when what is typed isn't a whole number, or is smaller than the least it may be.",
     "placeholders": {
       "min": {
         "type": "int",
         "example": "1"
       }
     }
+  },
+  "eventsDetailEdit": "Edit",
+  "@eventsDetailEdit": {
+    "description": "Item in the menu on an event's screen that opens the Edit event page, where the event's details and its rules are changed."
+  },
+  "eventEditTitle": "Edit event",
+  "@eventEditTitle": {
+    "description": "Title in the app bar of the page for changing an event's details and its rules."
+  },
+  "eventEditSave": "Save",
+  "@eventEditSave": {
+    "description": "Button at the end of the Edit event page that saves the changes. Disabled while the device is offline, with the reason under it."
+  },
+  "eventEditSaving": "Saving…",
+  "@eventEditSaving": {
+    "description": "Shown in place of Save, beside a spinner, while the changes on the Edit event page are being saved. Also what screen readers announce."
+  },
+  "eventEditSaved": "Event saved.",
+  "@eventEditSaved": {
+    "description": "Brief message at the bottom of the screen once the changes on the Edit event page are saved, as the page closes. Not shown when nothing had changed. Also shown over whatever page the user went to, when they left the Edit event page while the save was on its way (#464)."
+  },
+  "eventEditFailedTitle": "Your changes weren't saved",
+  "@eventEditFailedTitle": {
+    "description": "Heading of the error above the Save button of the Edit event page when nothing was saved, and the server is known not to have it: it turned the change away, or it was never sent. Names what failed, because the messages under it give only the reason, such as no connection. Also a brief message on its own, without the reason, over whatever page the user went to, when they left the Edit event page while the save was on its way and it failed (#464)."
+  },
+  "eventEditRulesNotSavedTitle": "The details were saved, but the rules weren't",
+  "@eventEditRulesNotSavedTitle": {
+    "description": "Heading of the error above the Save button of the Edit event page when the event's own details (its title, description and so on) were saved but its rules weren't, and the server is known not to have them: it turned them away, or they were never sent. The message under it gives the reason. Also a brief message on its own, without the reason, over whatever page the user went to, when they left the Edit event page while the save was on its way (#464)."
+  },
+  "eventEditUnsettledTitle": "Your changes may not have been saved",
+  "@eventEditUnsettledTitle": {
+    "description": "Heading of the error above the Save button of the Edit event page when the save failed in a way that leaves it unknown whether the server has the changes: there was no answer, the server had a failure of its own, or it answered with something the app couldn't read. They may have gone through, so the copy must not say they didn't. Saving again is safe: it sends the same values. The message under it gives the reason. Also a brief message on its own, without the reason, over whatever page the user went to, when they left the Edit event page while the save was on its way (#464)."
+  },
+  "eventEditRulesUnsettledTitle": "The details were saved, but the rules may not have been",
+  "@eventEditRulesUnsettledTitle": {
+    "description": "Heading of the error above the Save button of the Edit event page when the event's own details (its title, description and so on) were saved, and the save of its rules failed in a way that leaves it unknown whether the server has them: there was no answer, the server had a failure of its own, or it answered with something the app couldn't read. They may have gone through, so the copy must not say they didn't. Saving again is safe: it sends the same values. The message under it gives the reason. Also a brief message on its own, without the reason, over whatever page the user went to, when they left the Edit event page while the save was on its way (#464)."
+  },
+  "eventEditOffline": "Couldn't reach the server. Check your connection and try again.",
+  "@eventEditOffline": {
+    "description": "Error under the heading of a failed save on the Edit event page when the server couldn't be reached, or had a passing failure. Gives only the reason: the heading says what wasn't saved."
+  },
+  "eventEditRefused": "You can't make these changes any more. Your role on this event may have changed.",
+  "@eventEditRefused": {
+    "description": "Error under the heading of a failed save on the Edit event page when the server refused the person the change: their role on the event, or in its household, may have changed since the page opened."
+  },
+  "eventEditInvalid": "The server didn't accept these changes. Check them and try again.",
+  "@eventEditInvalid": {
+    "description": "Error under the heading of a failed save on the Edit event page when the server didn't accept the event's details as they were sent."
+  },
+  "eventEditRulesInvalid": "The server didn't accept these voting rules. Check the threshold and the quorum.",
+  "@eventEditRulesInvalid": {
+    "description": "Error under the heading of a failed save on the Edit event page when the server didn't accept the voting rules, such as a share it takes as out of range. The threshold is the Votes needed setting, and the quorum the Turnout needed setting."
+  },
+  "eventEditError": "Something went wrong. Try again.",
+  "@eventEditError": {
+    "description": "Error under the heading of a failed save on the Edit event page for any failure the app can't name."
+  },
+  "eventEditRulesHostOnly": "Only the host or a co-host can change the rules.",
+  "@eventEditRulesHostOnly": {
+    "description": "Note under the Advanced: rules title on the Edit event page, for a person who may change the event's details but not its rules, on an event that belongs to no household. The rules still show, to be read."
+  },
+  "eventEditRulesHostOrHousehold": "Only the host, a co-host, or the household's owner or an admin can change the rules.",
+  "@eventEditRulesHostOrHousehold": {
+    "description": "Note under the Advanced: rules title on the Edit event page, for a person who may change the event's details but not its rules, on an event that belongs to a household, whose owner and admins may change them too. The rules still show, to be read."
+  },
+  "eventEditRulesUnavailable": "The rules can't be shown here, so they can't be changed.",
+  "@eventEditRulesUnavailable": {
+    "description": "Under the Advanced: rules heading of the Edit event page, in place of the rules, when this device holds none for the event, as when the person may not read them."
+  },
+  "eventEditRulesUnknown": "These rules use a setting this version of the app doesn't know, so they can't be changed here.",
+  "@eventEditRulesUnknown": {
+    "description": "Under the Advanced: rules heading of the Edit event page, in place of the rules, when one of them is a setting from a newer server that this app has no name for. Changing the others could undo it, so none can be changed here."
+  },
+  "eventEditNotAllowed": "You can't edit this event.",
+  "@eventEditNotAllowed": {
+    "description": "Shown on the Edit event page in place of the form, when the person's role doesn't let them change the event, as when they opened a link to the page or their role changed. Above a button back to the event."
+  },
+  "eventEditNotCached": "This event isn't on this device yet. Open it from your events, then edit it.",
+  "@eventEditNotCached": {
+    "description": "Shown on the Edit event page in place of the form, when the event isn't on this device or couldn't be read from it, as when a link to the page is opened before the event was ever loaded. Above a button back to the event."
   }
 }

@@ -2,13 +2,12 @@ import 'dart:async';
 
 import 'package:events/l10n/events_localizations.dart';
 import 'package:events/src/bloc/create_event_state.dart';
+import 'package:events/src/create/event_basics_section.dart';
 import 'package:events/src/create/event_create_controls.dart';
 import 'package:events/src/create/event_create_dates_section.dart';
-import 'package:events/src/create/event_create_parts.dart';
 import 'package:events/src/create/event_invitees_section.dart';
 import 'package:events/src/create/event_rules_section.dart';
 import 'package:events/src/screens/create_event_screen.dart';
-import 'package:events/src/widgets/event_labels.dart';
 import 'package:flutter/foundation.dart' show setEquals;
 import 'package:flutter/material.dart';
 import 'package:models/domain.dart';
@@ -265,11 +264,11 @@ class _CreateEventFormState extends State<CreateEventForm> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
         children: [
-          _Basics(
+          EventBasicsSection(
+            readOnly: busy,
             offersHouseholds: widget.households != null,
             offered: _offered,
             offerVersion: _offerVersion,
-            readOnly: busy,
           ),
           const BgeGap.xl(),
           EventCreateDatesSection(readOnly: busy, now: widget.now),
@@ -290,150 +289,6 @@ class _CreateEventFormState extends State<CreateEventForm> {
           ),
         ],
       ),
-    );
-  }
-}
-
-/// The form's basics: the event's title, its household, what kind it is
-/// and who can see it, then its description, place and link.
-///
-/// The type and who can see it start untouched, and read as the server's
-/// defaults, which is what an untouched one gets. `unknown` is never
-/// offered: it has no label, and nothing to send. Each menu is an
-/// [EventCreateMenu], as the rules' are.
-class _Basics extends StatelessWidget {
-  const _Basics({
-    required this.offersHouseholds,
-    required this.offered,
-    required this.offerVersion,
-    required this.readOnly,
-  });
-
-  /// Whether there is a household picker: false where there are no
-  /// households to read.
-  final bool offersHouseholds;
-
-  /// What the household picker offers besides no household, or null until
-  /// the first list arrives.
-  final List<Household>? offered;
-
-  /// Changes each time [offered] changes which households it holds.
-  final int offerVersion;
-
-  /// Whether a create is on its way: nothing here takes an edit.
-  final bool readOnly;
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = EventsLocalizations.of(context);
-    final offered = this.offered;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        EventCreateHeading(l10n.eventCreateBasicsTitle),
-        const BgeGap.sm(),
-        BgeTextField(
-          key: CreateEventScreen.titleKey,
-          formControlName: EventCreateControls.title,
-          label: l10n.eventCreateName,
-          readOnly: readOnly,
-          validationMessages: {
-            ValidationMessage.required: (_) => l10n.eventCreateNameRequired,
-          },
-        ),
-        if (offersHouseholds) ...[
-          const BgeGap.md(),
-          // Drawn anew when the households offered change, which closes a
-          // menu open on the ones offered before.
-          KeyedSubtree(
-            key: ValueKey(offerVersion),
-            child: EventCreateMenu<String?>(
-              key: CreateEventScreen.householdKey,
-              formControlName: EventCreateControls.household,
-              label: l10n.eventCreateHousehold,
-              items: [
-                // Its value is null: the event joins no household.
-                BgeDropdownItem(
-                  value: null,
-                  label: l10n.eventCreateNoHousehold,
-                ),
-                for (final household in offered ?? const <Household>[])
-                  BgeDropdownItem(value: household.id, label: household.name),
-              ],
-              // Nothing to pick until the households answer.
-              readOnly: readOnly || offered == null,
-            ),
-          ),
-        ],
-        const BgeGap.md(),
-        EventCreateMenu<EventType>(
-          key: CreateEventScreen.typeKey,
-          formControlName: EventCreateControls.type,
-          label: l10n.eventCreateType,
-          hint: l10n.eventsTypeCasualGathering,
-          items: eventCreateMenuItems(
-            EventType.values,
-            (type) => eventTypeLabel(l10n, type),
-          ),
-          readOnly: readOnly,
-        ),
-        const BgeGap.md(),
-        // From the fewest people to the most: the enum's own order is the
-        // backend's alphabetical one, which says nothing about reach.
-        EventCreateMenu<Reach>(
-          key: CreateEventScreen.reachKey,
-          formControlName: EventCreateControls.reach,
-          label: l10n.eventCreateReach,
-          hint: l10n.eventsReachFriends,
-          items: eventCreateMenuItems(
-            Reach.ladder,
-            (reach) => eventReachLabel(l10n, reach),
-          ),
-          readOnly: readOnly,
-        ),
-        // What *Extended network* means, while it is the one chosen (#547).
-        // The other rungs say who they are in their labels.
-        BgeFieldNote<Reach>(
-          formControlName: EventCreateControls.reach,
-          textKey: CreateEventScreen.reachNoteKey,
-          noteFor: (reach) => reach == Reach.extendedNetwork
-              ? l10n.eventCreateReachExtendedNetworkNote
-              : null,
-        ),
-        const BgeGap.md(),
-        BgeTextField(
-          key: CreateEventScreen.descriptionKey,
-          formControlName: EventCreateControls.description,
-          label: l10n.eventCreateDescription,
-          readOnly: readOnly,
-          textInputAction: TextInputAction.newline,
-          keyboardType: TextInputType.multiline,
-          minLines: 2,
-          maxLines: 5,
-        ),
-        const BgeGap.md(),
-        BgeTextField(
-          key: CreateEventScreen.locationKey,
-          formControlName: EventCreateControls.location,
-          label: l10n.eventCreateLocation,
-          readOnly: readOnly,
-        ),
-        const BgeGap.md(),
-        BgeTextField(
-          key: CreateEventScreen.urlKey,
-          formControlName: EventCreateControls.url,
-          label: l10n.eventCreateUrl,
-          keyboardType: TextInputType.url,
-          autocorrect: false,
-          enableSuggestions: false,
-          readOnly: readOnly,
-          validationMessages: {
-            EventCreateErrors.fullLink: (_) => l10n.eventCreateUrlInvalid,
-          },
-        ),
-      ],
     );
   }
 }

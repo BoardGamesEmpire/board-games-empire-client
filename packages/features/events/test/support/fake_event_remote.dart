@@ -27,6 +27,15 @@ typedef EventDateRequest = ({
 /// cancel carried.
 typedef EventStatusRequest = ({String call, String id, String? reason});
 
+/// What an event edit sent (#500): its `call`, `event` or `policy`, the event
+/// it named, and the change it carried, in the field that matches the call.
+typedef EventEditRequest = ({
+  String call,
+  String id,
+  EventUpdate? update,
+  EventPolicyUpdate? policy,
+});
+
 /// What a vote sent (#507): the event, the date, and the answer.
 typedef EventVoteRequest = ({
   String eventId,
@@ -130,6 +139,8 @@ class FakeEventRemote implements EventRemoteDataSource {
     this.voted = _noVote,
     this.summary = _noSummary,
     this.statusWritten = _noStatusWrite,
+    this.eventEdited = _noEventEdit,
+    this.policyEdited = _noPolicyEdit,
     this.rsvp = _noRsvp,
     this.added = _noAdd,
     this.removed = _noRemove,
@@ -158,6 +169,8 @@ class FakeEventRemote implements EventRemoteDataSource {
     this.voted = _noVote,
     this.summary = _noSummary,
     this.statusWritten = _noStatusWrite,
+    this.eventEdited = _noEventEdit,
+    this.policyEdited = _noPolicyEdit,
     this.rsvp = _noRsvp,
     this.added = _noAdd,
     this.removed = _noRemove,
@@ -190,6 +203,8 @@ class FakeEventRemote implements EventRemoteDataSource {
     this.voted = _noVote,
     this.summary = _noSummary,
     this.statusWritten = _noStatusWrite,
+    this.eventEdited = _noEventEdit,
+    this.policyEdited = _noPolicyEdit,
     this.rsvp = _noRsvp,
     this.added = _noAdd,
     this.removed = _noRemove,
@@ -217,6 +232,12 @@ class FakeEventRemote implements EventRemoteDataSource {
 
   static Never _noStatusWrite(EventStatusRequest request) =>
       throw UnimplementedError('the event ${request.call} is not faked');
+
+  static Never _noEventEdit(EventEditRequest request) =>
+      throw UnimplementedError('the event edit is not faked');
+
+  static Never _noPolicyEdit(EventEditRequest request) =>
+      throw UnimplementedError('the policy edit is not faked');
 
   static Never _noRsvp(RsvpRequest request) =>
       throw UnimplementedError('updateAttendeeStatus is not faked');
@@ -302,6 +323,15 @@ class FakeEventRemote implements EventRemoteDataSource {
   /// after, or throws what a test supplies. It throws unless a test supplies
   /// one (#502).
   final FutureOr<Event> Function(EventStatusRequest request) statusWritten;
+
+  /// Answers each event edit with the event as the server holds it after, or
+  /// throws what a test supplies. It throws unless a test supplies one (#500).
+  final FutureOr<Event> Function(EventEditRequest request) eventEdited;
+
+  /// Answers each rules edit with the policy as the server holds it after,
+  /// null for a caller who may not read it, or throws what a test supplies.
+  /// It throws unless a test supplies one (#500).
+  final FutureOr<EventPolicy?> Function(EventEditRequest request) policyEdited;
 
   /// Answers each RSVP with the attendee as the server holds it after, which
   /// throws unless a test supplies one (#508).
@@ -412,6 +442,10 @@ class FakeEventRemote implements EventRemoteDataSource {
 
   /// Each event status write, in order, recorded before it is answered.
   final List<EventStatusRequest> statusRequests = [];
+
+  /// Each event edit and rules edit, in order, recorded before it is answered
+  /// (#500).
+  final List<EventEditRequest> eventEdits = [];
 
   /// Answers each browse read, which throws unless a test supplies one (#613).
   FutureOr<PaginatedResult<EventSnapshot>> Function(EventListRequest request)?
@@ -537,6 +571,23 @@ class FakeEventRemote implements EventRemoteDataSource {
 
   @override
   Future<Event> unarchiveEvent(String id) => _writeStatus('unarchive', id);
+
+  @override
+  Future<Event> updateEvent(String id, EventUpdate update) async {
+    final request = (call: 'event', id: id, update: update, policy: null);
+    eventEdits.add(request);
+    return eventEdited(request);
+  }
+
+  @override
+  Future<EventPolicy?> updateEventPolicy(
+    String id,
+    EventPolicyUpdate update,
+  ) async {
+    final request = (call: 'policy', id: id, update: null, policy: update);
+    eventEdits.add(request);
+    return policyEdited(request);
+  }
 
   /// Records one event status write, then answers it from [statusWritten].
   Future<Event> _writeStatus(String call, String id, {String? reason}) async {

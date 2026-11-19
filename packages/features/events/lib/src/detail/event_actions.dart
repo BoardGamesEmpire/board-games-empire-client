@@ -30,6 +30,12 @@
 /// participant (`:533-556`), and leaves them off the guest's, so the two roles
 /// no longer share a set. An organizer, moderator, spectator, household owner
 /// and household admin hold none of them either.
+///
+/// `editRules` covers changing the event's rules (#500). It follows
+/// `update:event_policy` for the host and co-host and
+/// `update:event_policy:household` for a household owner or admin on a
+/// household event. The organizer and moderator hold `read:event_policy`
+/// only, so they edit the event without its rules.
 library;
 
 import 'package:models/domain.dart';
@@ -38,6 +44,11 @@ import 'package:models/domain.dart';
 enum EventAction {
   /// Change the event's details (#500).
   edit,
+
+  /// Change the event's rules: how games get added and how votes are counted
+  /// (#500). Held apart from [edit], because the organizer and moderator may
+  /// edit the event and only read its rules.
+  editRules,
 
   /// Remove the event (#501).
   delete,
@@ -289,6 +300,8 @@ bool canSetAnswerFor(
 const _host = <EventAction>{
   // `update:event`
   EventAction.edit,
+  // `update:event_policy`
+  EventAction.editRules,
   // `delete:event`, which the catalog's `EVENT_HOST_ONLY` gives the host alone.
   EventAction.delete,
   // `update:event:cancel`
@@ -333,6 +346,8 @@ const _host = <EventAction>{
 /// host alone.
 const _coHost = <EventAction>{
   EventAction.edit,
+  // `update:event_policy`
+  EventAction.editRules,
   // `update:event:cancel` and `update:event:archive`
   EventAction.cancel,
   EventAction.archive,
@@ -433,6 +448,8 @@ const _attending = <EventAction>{
 const _householdOwnerOrAdmin = <EventAction>{
   // `update:event:household`
   EventAction.edit,
+  // `update:event_policy:household`
+  EventAction.editRules,
   // `update:event:cancel:household`
   EventAction.cancel,
   // `create:event_occurrence:household`

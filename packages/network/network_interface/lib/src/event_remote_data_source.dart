@@ -60,6 +60,8 @@ typedef CreatedEvent = ({EventSnapshot snapshot, DateTime? deletedAt});
 /// | [reopenEvent] | `POST /api/events/:id/reopen` | `{ message, event }` |
 /// | [archiveEvent] | `POST /api/events/:id/archive` | `{ message, event }` |
 /// | [unarchiveEvent] | `POST /api/events/:id/unarchive` | `{ message, event }` |
+/// | [updateEvent] | `PATCH /api/events/:id` | `{ message, event }` |
+/// | [updateEventPolicy] | `PATCH /api/events/:id/policy` | `{ message, policy }` |
 /// | [addOccurrence] | `POST /api/events/:id/occurrences` | `{ message, occurrence }` |
 /// | [updateOccurrence] | `PATCH /api/events/:id/occurrences/:oid` | `{ message, occurrence }` |
 /// | [confirmOccurrence] | `POST /api/events/:id/occurrences/:oid/confirm` | `{ message, occurrence }` |
@@ -242,6 +244,11 @@ typedef CreatedEvent = ({EventSnapshot snapshot, DateTime? deletedAt});
 /// as it stands (#502). Unlike a date write's retry, a status write that finds
 /// the event already where it asks to go answers 200 with the event as it is,
 /// so a retry whose first answer was lost reads as done.
+///
+/// The edits ([updateEvent], [updateEventPolicy]) share the classification
+/// too. Their enveloped 400 with one message is a judgement of the edit
+/// against the event as it stands, and [EventWriteConflictException.code]
+/// carries the server's code for it when there is one (#500).
 ///
 /// The date status routes ([confirmOccurrence], [declineOccurrence],
 /// [cancelOccurrence]) answer 201 (backend#620), and the event status writes
@@ -454,6 +461,33 @@ abstract class EventRemoteDataSource {
   /// An event that isn't archived is answered 200 as it stands, and the server
   /// never answers this route 400. Other errors read as for [cancelEvent].
   Future<Event> unarchiveEvent(String id);
+
+  /// `PATCH /api/events/:id`: changes the event's own fields as [update] says,
+  /// and returns it as the server holds it (#500).
+  ///
+  /// Only what [update] names is sent, and a cleared field goes as `null`. The
+  /// answer is `{ message, event }`, where the event carries every date and
+  /// its policy (`null` for a caller who can't read it), but no attendees and
+  /// no date's own rules, so it isn't the shape [fetchEvent] reads. Only the
+  /// event's own fields are read from it. Throws [ArgumentError] before the
+  /// request for an empty id or an [EventUpdate.isEmpty] one.
+  ///
+  /// A 403 is [EventWriteRefusedException], a 404 is
+  /// [EventRemoteNotFoundException], and a 400 carrying the envelope with one
+  /// message is [EventWriteConflictException]. Other errors read as for
+  /// [cancelEvent].
+  Future<Event> updateEvent(String id, EventUpdate update);
+
+  /// `PATCH /api/events/:id/policy`: changes the event's game and vote rules as
+  /// [update] says, and returns the policy as the server holds it (#500).
+  ///
+  /// Only what [update] names is sent, and a cleared voting window goes as
+  /// `null`. The answer is `{ message, policy }`. A `null` policy there is a
+  /// caller who may change the rules but not read them (backend#796): the
+  /// rules are saved, and null is returned, with nothing to cache. Throws
+  /// [ArgumentError] before the request for an empty id or an
+  /// [EventPolicyUpdate.isEmpty] one. Failures read as for [updateEvent].
+  Future<EventPolicy?> updateEventPolicy(String id, EventPolicyUpdate update);
 
   /// `POST /api/events/:eventId/occurrences`: adds [draft] as a date of the
   /// event, at position [sortOrder], and returns it as the server holds it.
@@ -864,6 +898,209 @@ abstract class EventRemoteDataSource {
   Future<AvailabilitySummary> fetchAvailabilitySummary(String eventId);
 }
 
+/// A change to an event's own fields, for [EventRemoteDataSource.updateEvent]
+/// (#500).
+///
+/// A field left out stays as it is. To clear [description], [location] or [url]
+/// set its `clear` flag instead of a value: the PATCH can't send both, so a
+/// value with its own flag throws [ArgumentError]. A blank text value throws
+/// too, because the server rejects it, and so does a [type] or [reach] that is
+/// `unknown`, which has nothing to send. The title can't be cleared.
+///
+/// Equal by its fields, as the bloc event carrying it is compared.
+@immutable
+final class EventUpdate {
+  EventUpdate({
+    String? title,
+    String? description,
+    this.clearDescription = false,
+    String? location,
+    this.clearLocation = false,
+    String? url,
+    this.clearUrl = false,
+    this.type,
+    this.reach,
+  }) : title = _trimmed(title, 'title', false),
+       description = _trimmed(description, 'description', clearDescription),
+       location = _trimmed(location, 'location', clearLocation),
+       url = _trimmed(url, 'url', clearUrl) {
+    if (type == EventType.unknown) {
+      throw ArgumentError.value(type, 'type', 'has no wire name');
+    }
+    if (reach == Reach.unknown) {
+      throw ArgumentError.value(reach, 'reach', 'has no wire name');
+    }
+  }
+
+  /// The new title, trimmed.
+  final String? title;
+
+  /// The new description, trimmed.
+  final String? description;
+  final bool clearDescription;
+
+  /// The new place, trimmed.
+  final String? location;
+  final bool clearLocation;
+
+  /// The new link, trimmed.
+  final String? url;
+  final bool clearUrl;
+  final EventType? type;
+  final Reach? reach;
+
+  @override
+  bool operator ==(Object other) =>
+      other is EventUpdate &&
+      other.title == title &&
+      other.description == description &&
+      other.clearDescription == clearDescription &&
+      other.location == location &&
+      other.clearLocation == clearLocation &&
+      other.url == url &&
+      other.clearUrl == clearUrl &&
+      other.type == type &&
+      other.reach == reach;
+
+  @override
+  int get hashCode => Object.hash(
+    title,
+    description,
+    clearDescription,
+    location,
+    clearLocation,
+    url,
+    clearUrl,
+    type,
+    reach,
+  );
+
+  /// Whether this changes nothing, which the remote refuses to send.
+  bool get isEmpty =>
+      title == null &&
+      description == null &&
+      !clearDescription &&
+      location == null &&
+      !clearLocation &&
+      url == null &&
+      !clearUrl &&
+      type == null &&
+      reach == null;
+
+  static String? _trimmed(String? value, String name, bool clear) {
+    if (value == null) return null;
+    if (clear) {
+      throw ArgumentError.value(value, name, 'cannot be given with its clear');
+    }
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) {
+      throw ArgumentError.value(value, name, 'must not be blank');
+    }
+    return trimmed;
+  }
+}
+
+/// A change to an event's game and vote rules, for
+/// [EventRemoteDataSource.updateEventPolicy] (#500).
+///
+/// A field left out stays as it is. To clear [votingWindowHours] set
+/// [clearVotingWindowHours] instead of a value: the PATCH can't send both, so
+/// a window with its flag throws [ArgumentError]. So does an enum that is
+/// `unknown`, which has nothing to send, and a number below 1, which the
+/// server rejects.
+///
+/// Equal by its fields, as the bloc event carrying it is compared.
+@immutable
+final class EventPolicyUpdate {
+  EventPolicyUpdate({
+    this.gameAdditionMode,
+    this.voteThresholdType,
+    this.voteThresholdValue,
+    this.voteQuorumType,
+    this.voteQuorumValue,
+    this.votingWindowHours,
+    this.clearVotingWindowHours = false,
+  }) {
+    if (gameAdditionMode == GameAdditionMode.unknown) {
+      throw ArgumentError.value(
+        gameAdditionMode,
+        'gameAdditionMode',
+        'has no wire name',
+      );
+    }
+    if (voteThresholdType == VoteThresholdType.unknown) {
+      throw ArgumentError.value(
+        voteThresholdType,
+        'voteThresholdType',
+        'has no wire name',
+      );
+    }
+    if (voteQuorumType == VoteQuorumType.unknown) {
+      throw ArgumentError.value(
+        voteQuorumType,
+        'voteQuorumType',
+        'has no wire name',
+      );
+    }
+    if (votingWindowHours != null && clearVotingWindowHours) {
+      throw ArgumentError.value(
+        votingWindowHours,
+        'votingWindowHours',
+        'cannot be given with clearVotingWindowHours',
+      );
+    }
+    _checkAtLeastOne(voteThresholdValue, 'voteThresholdValue');
+    _checkAtLeastOne(voteQuorumValue, 'voteQuorumValue');
+    _checkAtLeastOne(votingWindowHours, 'votingWindowHours');
+  }
+
+  final GameAdditionMode? gameAdditionMode;
+  final VoteThresholdType? voteThresholdType;
+  final int? voteThresholdValue;
+  final VoteQuorumType? voteQuorumType;
+  final int? voteQuorumValue;
+  final int? votingWindowHours;
+  final bool clearVotingWindowHours;
+
+  @override
+  bool operator ==(Object other) =>
+      other is EventPolicyUpdate &&
+      other.gameAdditionMode == gameAdditionMode &&
+      other.voteThresholdType == voteThresholdType &&
+      other.voteThresholdValue == voteThresholdValue &&
+      other.voteQuorumType == voteQuorumType &&
+      other.voteQuorumValue == voteQuorumValue &&
+      other.votingWindowHours == votingWindowHours &&
+      other.clearVotingWindowHours == clearVotingWindowHours;
+
+  @override
+  int get hashCode => Object.hash(
+    gameAdditionMode,
+    voteThresholdType,
+    voteThresholdValue,
+    voteQuorumType,
+    voteQuorumValue,
+    votingWindowHours,
+    clearVotingWindowHours,
+  );
+
+  /// Whether this changes nothing, which the remote refuses to send.
+  bool get isEmpty =>
+      gameAdditionMode == null &&
+      voteThresholdType == null &&
+      voteThresholdValue == null &&
+      voteQuorumType == null &&
+      voteQuorumValue == null &&
+      votingWindowHours == null &&
+      !clearVotingWindowHours;
+
+  static void _checkAtLeastOne(int? value, String name) {
+    if (value != null && value < 1) {
+      throw ArgumentError.value(value, name, 'must be at least 1');
+    }
+  }
+}
+
 /// A change to one date of an event, for
 /// [EventRemoteDataSource.updateOccurrence] (#506).
 ///
@@ -1050,7 +1287,14 @@ final class EventWriteConflictException extends EventRemoteException {
     super.statusCode,
     super.cause,
     this.apiMessage,
+    this.code,
   });
+
+  /// The [code] of the one coded refusal an edit of an event's rules can meet
+  /// (#500): a vote threshold or quorum the edit would leave without the
+  /// number its type needs. The policy's other codes are about fields that
+  /// edit never sends.
+  static const String policyInvalid = 'EVENT_POLICY_INVALID';
 
   /// The `message` of the API's error envelope, when it is a string, where
   /// [message] is this client's own.
@@ -1058,6 +1302,11 @@ final class EventWriteConflictException extends EventRemoteException {
   /// The server translates it into the request's locale, so it is for finding
   /// an id it names, never for showing.
   final String? apiMessage;
+
+  /// The `code` of the API's error envelope, when it carries one, which names
+  /// why the server refused a coded write such as an edit of an event's rules
+  /// (#500): see [policyInvalid]. Null for the plain conflicts that have none.
+  final String? code;
 }
 
 /// The server refused the request, and sending it again will not change that.

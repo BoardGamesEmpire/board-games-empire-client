@@ -2169,6 +2169,179 @@ void main() {
     });
   });
 
+  group('event edits (#500)', () {
+    String eventBody(String title) => jsonEncode({
+      'message': 'Done',
+      'event': _eventRow(id: 'e1', title: title)
+        ..remove('occurrences')
+        ..remove('policy'),
+    });
+
+    String policyBody() => jsonEncode({
+      'message': 'Done',
+      'policy': _policyRow({'voteThresholdValue': 75}),
+    });
+
+    test('updateEvent sends only the given fields', () async {
+      final remote = answering(eventBody('Game night'));
+
+      final event = await remote.updateEvent(
+        'e1',
+        EventUpdate(
+          title: ' Game night ',
+          clearDescription: true,
+          reach: Reach.public,
+        ),
+      );
+
+      expect(adapter.sent.single.method, 'PATCH');
+      expect(adapter.sent.single.path, '/api/events/e1');
+      expect(adapter.sent.single.body, {
+        'title': 'Game night',
+        'description': null,
+        'reach': 'Public',
+      });
+      expect(event.title, 'Game night');
+    });
+
+    test('updateEvent sends a cleared link and place as null', () async {
+      final remote = answering(eventBody('Game night'));
+
+      await remote.updateEvent(
+        'e1',
+        EventUpdate(clearUrl: true, clearLocation: true),
+      );
+
+      expect(adapter.sent.single.body, {'url': null, 'location': null});
+    });
+
+    test('updateEvent refuses an empty update before sending', () async {
+      final remote = answering(eventBody('Game night'));
+
+      await expectLater(
+        remote.updateEvent('e1', EventUpdate()),
+        throwsArgumentError,
+      );
+      expect(adapter.sent, isEmpty);
+    });
+
+    test('updateEvent: an enveloped 403 is EventWriteRefusedException; 404 is '
+        'EventRemoteNotFoundException', () async {
+      final refused = answering(
+        _envelope(403, 'Forbidden', 'You may not edit this event.'),
+        status: 403,
+      );
+      await expectLater(
+        refused.updateEvent('e1', EventUpdate(title: 'x')),
+        throwsA(isA<EventWriteRefusedException>()),
+      );
+
+      final gone = answering(
+        _envelope(404, 'Not Found', 'Event not found'),
+        status: 404,
+      );
+      await expectLater(
+        gone.updateEvent('e1', EventUpdate(title: 'x')),
+        throwsA(isA<EventRemoteNotFoundException>()),
+      );
+    });
+
+    test(
+      'updateEventPolicy sends the rule fields and a cleared window',
+      () async {
+        final remote = answering(policyBody());
+
+        final policy = await remote.updateEventPolicy(
+          'e1',
+          EventPolicyUpdate(
+            gameAdditionMode: GameAdditionMode.requiresVote,
+            voteThresholdType: VoteThresholdType.supermajority,
+            voteThresholdValue: 75,
+            clearVotingWindowHours: true,
+          ),
+        );
+
+        expect(adapter.sent.single.method, 'PATCH');
+        expect(adapter.sent.single.path, '/api/events/e1/policy');
+        expect(adapter.sent.single.body, {
+          'gameAdditionMode': 'RequiresVote',
+          'voteThresholdType': 'Supermajority',
+          'voteThresholdValue': 75,
+          'votingWindowHours': null,
+        });
+        expect(policy?.voteThresholdValue, 75);
+      },
+    );
+
+    test('updateEventPolicy: a coded 400 carries its code', () async {
+      final remote = answering(
+        jsonEncode({
+          'statusCode': 400,
+          'error': 'Bad Request',
+          'message': 'x',
+          'code': 'EVENT_POLICY_INVALID',
+        }),
+        status: 400,
+      );
+
+      await expectLater(
+        remote.updateEventPolicy('e1', EventPolicyUpdate(votingWindowHours: 2)),
+        throwsA(
+          isA<EventWriteConflictException>().having(
+            (e) => e.code,
+            'code',
+            'EVENT_POLICY_INVALID',
+          ),
+        ),
+      );
+    });
+
+    test('updateEventPolicy: a null policy in a 200 is null', () async {
+      // The caller may update the rules but not read them back.
+      final remote = answering(jsonEncode({'message': 'Done', 'policy': null}));
+
+      expect(
+        await remote.updateEventPolicy(
+          'e1',
+          EventPolicyUpdate(votingWindowHours: 2),
+        ),
+        isNull,
+      );
+    });
+
+    test(
+      'updateEventPolicy: a validation 400 (message list) is permanent',
+      () async {
+        final remote = answering(
+          jsonEncode({
+            'statusCode': 400,
+            'message': ['voteThresholdValue must not be less than 1'],
+            'error': 'Bad Request',
+          }),
+          status: 400,
+        );
+
+        await expectLater(
+          remote.updateEventPolicy(
+            'e1',
+            EventPolicyUpdate(votingWindowHours: 2),
+          ),
+          throwsA(isA<EventRemotePermanentException>()),
+        );
+      },
+    );
+
+    test('updateEventPolicy refuses an empty update before sending', () async {
+      final remote = answering(policyBody());
+
+      await expectLater(
+        remote.updateEventPolicy('e1', EventPolicyUpdate()),
+        throwsArgumentError,
+      );
+      expect(adapter.sent, isEmpty);
+    });
+  });
+
   group('occurrence writes (#506)', () {
     String occurrenceBody({
       String? cancelReason,

@@ -74,6 +74,14 @@ void main() {
     (type) => type != VoteQuorumType.unknown,
   );
 
+  test('the list of the rules names every control the rules are built '
+      'with, in their order', () {
+    expect(
+      buildEventRulesControls().keys,
+      orderedEquals(EventCreateControls.rules),
+    );
+  });
+
   group('policyOf', () {
     test('untouched rules send no policy', () {
       final form = buildEventCreateForm();
@@ -329,6 +337,7 @@ void main() {
 
     Widget host({
       bool readOnly = false,
+      String? note,
       TextScaler textScaler = TextScaler.noScaling,
       bool disableAnimations = false,
     }) => MaterialApp(
@@ -345,7 +354,7 @@ void main() {
       home: BgePage(
         child: ReactiveForm(
           formGroup: form,
-          child: EventRulesSection(readOnly: readOnly),
+          child: EventRulesSection(readOnly: readOnly, note: note),
         ),
       ),
     );
@@ -419,29 +428,33 @@ void main() {
       );
     });
 
-    testWidgets('the locked note shows while the rules are collapsed', (
+    testWidgets('a note shows under the title while the rules are collapsed', (
       tester,
     ) async {
       final semantics = tester.ensureSemantics();
-      const locked = "Rules can't be changed after the event is created.";
-      await tester.pumpWidget(host());
+      const note = 'Only the host or a co-host can change the rules.';
 
-      // Rules left untouched are as final as any, so it shows before they
-      // are opened.
+      // None unless given one.
+      await tester.pumpWidget(host());
+      expect(find.byKey(EventRulesSection.noteKey), findsNothing);
+
+      await tester.pumpWidget(host(note: note));
+
+      // It shows before the rules are opened.
       expect(find.byKey(EventRulesSection.gameAdditionKey), findsNothing);
       expect(
-        tester.widget<Text>(find.byKey(EventRulesSection.lockedKey)).data,
-        locked,
+        tester.widget<Text>(find.byKey(EventRulesSection.noteKey)).data,
+        note,
       );
       // Read with the title, as part of the form: not announced.
       expect(
-        tester.getSemantics(find.byKey(EventRulesSection.lockedKey)),
-        isSemantics(label: 'Advanced: rules\n$locked', isLiveRegion: false),
+        tester.getSemantics(find.byKey(EventRulesSection.noteKey)),
+        isSemantics(label: 'Advanced: rules\n$note', isLiveRegion: false),
       );
 
       // Open, it shows once still.
       await toggleRules(tester);
-      expect(find.text(locked), findsOneWidget);
+      expect(find.text(note), findsOneWidget);
       // With nothing above it, the first menu's label floats above the
       // menu, where the tile clips what it opens below the header.
       expect(
@@ -587,6 +600,24 @@ void main() {
       );
       await toggleRules(tester);
       expect(find.byKey(EventRulesSection.thresholdValueKey), findsNothing);
+    });
+
+    testWidgets('rules that start with an error start open', (tester) async {
+      // A share below the form's own range, typed before the section is
+      // built.
+      votingWith(form, threshold: VoteThresholdType.supermajority);
+      thresholdValueOf(form).value = '40';
+      await tester.pumpWidget(host());
+
+      expect(find.byKey(EventRulesSection.thresholdValueKey), findsOneWidget);
+      // Untouched, it doesn't say so yet: a refused submit does.
+      expect(find.text('Enter a whole number from 51 to 100.'), findsNothing);
+
+      form.rejectSubmit();
+      await tester.pumpAndSettle();
+
+      expect(thresholdValueOf(form).hasFocus, isTrue);
+      expect(find.text('Enter a whole number from 51 to 100.'), findsOneWidget);
     });
 
     testWidgets('a refused submit goes to a rule with an error', (

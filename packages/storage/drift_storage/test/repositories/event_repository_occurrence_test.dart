@@ -212,6 +212,69 @@ void main() {
     });
   });
 
+  group('cacheEventPolicy', () {
+    // The cached rules differ from the written ones in both fields the
+    // assertions read, so an unwritten policy can't pass.
+    final cached = testPolicy(eventId: 'e1').copyWith(votingWindowHours: 24);
+    final edited = cached.copyWith(
+      gameAdditionMode: GameAdditionMode.requiresVote,
+      votingWindowHours: 48,
+    );
+
+    test('writes the rules and watchEvent emits them', () async {
+      await cache(testSnapshot('e1', policy: cached));
+      final emitted = <EventPolicy?>[];
+      final sub = repo
+          .watchEvent('e1')
+          .listen((d) => emitted.add(d!.snapshot.policy));
+      addTearDown(sub.cancel);
+      await pumpEventQueue();
+      emitted.clear();
+      final before = await repo.lastWrite('e1');
+
+      expect(await repo.cacheEventPolicy(edited), isTrue);
+      await pumpEventQueue();
+
+      expect(emitted, isNotEmpty);
+      expect(
+        emitted.last?.gameAdditionMode,
+        GameAdditionMode.requiresVote,
+      );
+      expect(emitted.last?.votingWindowHours, 48);
+      expect(await repo.lastWrite('e1'), greaterThan(before!));
+    });
+
+    test("returns false for an event that isn't cached", () async {
+      expect(await repo.cacheEventPolicy(edited), isFalse);
+
+      expect(await db.select(db.eventPoliciesTable).get(), isEmpty);
+    });
+
+    test('returns false and keeps the rules of a local-only event', () async {
+      await cache(testSnapshot('e1', policy: cached));
+      await markLocalOnly('e1');
+
+      expect(await repo.cacheEventPolicy(edited), isFalse);
+
+      final policy = (await repo.getEvent('e1'))!.policy!;
+      expect(policy.gameAdditionMode, cached.gameAdditionMode);
+      expect(policy.votingWindowHours, 24);
+    });
+
+    test('returns false and keeps the rules of a dirty event', () async {
+      await cache(testSnapshot('e1', policy: cached));
+      await (db.update(db.eventsTable)..where((t) => t.id.equals('e1'))).write(
+        const EventsTableCompanion(isDirty: Value(true)),
+      );
+
+      expect(await repo.cacheEventPolicy(edited), isFalse);
+
+      final policy = (await repo.getEvent('e1'))!.policy!;
+      expect(policy.gameAdditionMode, cached.gameAdditionMode);
+      expect(policy.votingWindowHours, 24);
+    });
+  });
+
   group('removeCachedOccurrence', () {
     test('removes it and keeps the others', () async {
       await cache(

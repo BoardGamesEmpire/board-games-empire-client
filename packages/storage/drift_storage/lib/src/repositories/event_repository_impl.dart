@@ -1083,6 +1083,23 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
   }
 
   @override
+  Future<bool> cacheEventPolicy(EventPolicy policy) async {
+    checkNotDisposed();
+    final id = policy.eventId;
+    return _db.transaction(() async {
+      // Checked inside the transaction, which starts after the lock, so the
+      // guards hold for the write.
+      if (!await _isCachedAndServerOwned(id)) return false;
+
+      await _db
+          .into(_db.eventPoliciesTable)
+          .insertOnConflictUpdate(_policyToCompanion(policy));
+      await _db.batch((b) => _stampGeneration(b, [id]));
+      return true;
+    });
+  }
+
+  @override
   Future<bool> removeCachedOccurrence({
     required String eventId,
     required String occurrenceId,
