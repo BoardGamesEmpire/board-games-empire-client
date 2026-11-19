@@ -105,7 +105,7 @@ class EventRowTile extends StatelessWidget {
           ),
           if (separated)
             Divider(
-              color: Theme.of(context).colorScheme.error,
+              color: BgeLineColors.of(context).separator,
               indent: tokens.separatorInset,
               endIndent: tokens.separatorInset,
               thickness: tokens.separatorThickness,
