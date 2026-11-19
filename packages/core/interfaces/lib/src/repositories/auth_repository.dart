@@ -276,12 +276,18 @@ abstract class AuthRepository {
   /// that leaves never sees this call complete. One the user stops from
   /// leaving (Esc, or the browser's Stop) is still here a while later, and
   /// completes normally after the page-leave grace. A link moves no session.
+  /// A session change while the start request is out, a sign-in or a
+  /// sign-out here or in another tab, keeps the page where it is, and the
+  /// call throws [AuthSupersededException]: the link the server started
+  /// belongs to the session that asked for it.
   ///
   /// Throws [AuthProviderLinkException] when the server refuses, its reason
   /// mapped from the error code, never from text. Throws
   /// [AuthRateLimitedException] for a 429 and [AuthNetworkException] for
   /// connectivity failures. Throws [AuthServerException] for a non-2xx with
   /// no code.
+  /// Throws [AuthSupersededException] on web when the session changed while
+  /// the start request was out; the page stays.
   Future<void> linkProvider(
     OidcStrategy strategy, {
     required String returnPath,
@@ -623,7 +629,9 @@ final class AuthSessionNotGrantedException extends AuthException {
 /// that something newer overtook before its grant was adopted (#583): a newer
 /// attempt, a sign-out, a password sign-in or a sign-up, a disposal of its
 /// repository, or on web a session that landed while its start request was
-/// out. Nothing was stored for it.
+/// out. Nothing was stored for it. Thrown as well by
+/// [AuthRepository.linkProvider] on web when the session changed while its
+/// start request was out, before the page left (#582).
 ///
 /// The repository's state already reflects the newer intent, and that may be
 /// a session, not the unauthenticated surface: a password sign-in or another

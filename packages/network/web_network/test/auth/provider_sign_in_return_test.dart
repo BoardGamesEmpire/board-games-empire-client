@@ -142,11 +142,140 @@ void main() {
         expect(r.cleanedAddress, isNull, reason: '$marker');
       }
     });
+
+    test('a sign-in return names no linked provider', () {
+      final r = readProviderSignInReturn(
+        marker: _kId,
+        address: Uri.parse('https://bge.example.com/?$_kReturn&error=x'),
+      );
+      expect(r.startupReturn!.errorCode, 'x');
+      expect(r.startupReturn!.linkProviderId, isNull);
+    });
+  });
+
+  group('readProviderSignInReturn for a link (#582)', () {
+    const linkMarker = 'link:authentik:$_kId';
+    const page = 'https://bge.example.com/settings/sign-in-methods';
+
+    test('a link marker and its return id read as a link return, naming the '
+        'provider (#582)', () {
+      final r = readProviderSignInReturn(
+        marker: linkMarker,
+        address: Uri.parse('$page?$_kReturn'),
+      );
+      expect(r.startupReturn, isNotNull);
+      expect(r.startupReturn!.linkProviderId, 'authentik');
+      expect(r.startupReturn!.errorCode, isNull);
+      expect(r.cleanedAddress.toString(), page);
+    });
+
+    test('a link return with ?error= carries the code and strips error and '
+        'error_description', () {
+      final r = readProviderSignInReturn(
+        marker: linkMarker,
+        address: Uri.parse(
+          '$page?$_kReturn&error=account_already_linked_to_different_user'
+          '&error_description=Taken&keep=1',
+        ),
+      );
+      expect(r.startupReturn!.linkProviderId, 'authentik');
+      expect(
+        r.startupReturn!.errorCode,
+        'account_already_linked_to_different_user',
+      );
+      expect(r.cleanedAddress.toString(), '$page?keep=1');
+    });
+
+    test('a link return id with no marker is no return, and the id is '
+        'stripped', () {
+      final r = readProviderSignInReturn(
+        marker: null,
+        address: Uri.parse('$page?$_kReturn&error=access_denied'),
+      );
+      expect(r.startupReturn, isNull);
+      // Not this tab's to report: the `?error=` stays where it is.
+      expect(r.cleanedAddress.toString(), '$page?error=access_denied');
+    });
+
+    test('a link marker whose return id differs is no return', () {
+      final r = readProviderSignInReturn(
+        marker: linkMarker,
+        address: Uri.parse('$page?$providerSignInReturnKey=other&error=x'),
+      );
+      expect(r.startupReturn, isNull);
+      expect(r.cleanedAddress.toString(), '$page?error=x');
+    });
+
+    test('a malformed link: marker is no marker', () {
+      // Each address carries the id a lax reading of its marker would find,
+      // the whole marker read as a sign-in's bare id included.
+      for (final (marker, id) in [
+        ('link:', ''),
+        ('link:', 'link:'),
+        ('link:authentik', 'authentik'),
+        ('link:authentik', 'link:authentik'),
+        ('link::$_kId', _kId),
+        ('link:authentik:', ''),
+        ('link:authentik:', 'link:authentik:'),
+      ]) {
+        final r = readProviderSignInReturn(
+          marker: marker,
+          address: Uri.parse(
+            '$page?${Uri(queryParameters: {providerSignInReturnKey: id}).query}'
+            '&error=x',
+          ),
+        );
+        expect(r.startupReturn, isNull, reason: marker);
+        expect(r.cleanedAddress.toString(), '$page?error=x', reason: marker);
+      }
+    });
+
+    test('providerLinkMarker and providerLinkCallback make a link '
+        'return', () {
+      final r = readProviderSignInReturn(
+        marker: providerLinkMarker('authentik', _kId),
+        address: Uri.parse('https://bge.example.com').resolve(
+          providerLinkCallback('/settings/sign-in-methods', _kId),
+        ),
+      );
+      expect(r.startupReturn!.linkProviderId, 'authentik');
+      expect(r.startupReturn!.errorCode, isNull);
+    });
   });
 
   group('providerSignInCallback', () {
     test('is the app root carrying the return id', () {
       expect(providerSignInCallback(_kId), '/?$providerSignInReturnKey=$_kId');
+    });
+  });
+
+  group('providerLinkMarker', () {
+    test('records the purpose, the provider and the return id', () {
+      expect(providerLinkMarker('authentik', _kId), 'link:authentik:$_kId');
+    });
+  });
+
+  group('providerLinkCallback', () {
+    test('is the return path carrying the return id', () {
+      expect(
+        providerLinkCallback('/settings/sign-in-methods', _kId),
+        '/settings/sign-in-methods?$providerSignInReturnKey=$_kId',
+      );
+    });
+
+    test("survives the server's check of a relative callback address", () {
+      final relativeCallback = RegExp(
+        r'^\/(?!\/|\\|%2f|%5c)[\w\-.\+/@]*(?:\?[\w\-.\+/=&%@]*)?$',
+      );
+      for (var i = 0; i < 50; i++) {
+        expect(
+          providerLinkCallback(
+            '/settings/sign-in-methods',
+            newProviderSignInReturnId(),
+          ),
+          matches(relativeCallback),
+        );
+      }
     });
   });
 
