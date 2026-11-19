@@ -42,4 +42,5 @@ ServerIdentity testServerIdentity() => ServerIdentity(
   twoFactorSupported: false,
   anonymousAuthSupported: false,
   strategies: [testEmailAndPasswordStrategy()],
+  providerLinkingPolicy: ProviderLinkingPolicy.signedIn,
 );

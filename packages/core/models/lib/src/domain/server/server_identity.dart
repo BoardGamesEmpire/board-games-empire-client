@@ -1,6 +1,8 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
+import 'package:models/src/domain/server/provider_linking_policy_converter.dart';
 import 'package:models/src/domain/server/server_auth_strategy.dart';
+import 'package:models/src/domain/system_settings/system_settings.dart';
 
 part 'server_identity.freezed.dart';
 part 'server_identity.g.dart';
@@ -101,6 +103,18 @@ abstract class ServerIdentity with _$ServerIdentity {
     @ServerAuthStrategyListConverter()
     @Default([])
     List<ServerAuthStrategy> strategies,
+
+    /// When this server links a sign-in provider to an existing account (#791).
+    ///
+    /// Defaults to [ProviderLinkingPolicy.unknown] when the key is absent:
+    /// every saved server's discovery document is stored as JSON and re-parsed
+    /// on each read, so a required field would fail to load every server
+    /// saved before this field existed (#582). Copy treats `unknown` as
+    /// [ProviderLinkingPolicy.signedIn].
+    @JsonKey(name: 'bge_provider_linking_policy')
+    @ProviderLinkingPolicyConverter()
+    @Default(ProviderLinkingPolicy.unknown)
+    ProviderLinkingPolicy providerLinkingPolicy,
   }) = _ServerIdentity;
   const ServerIdentity._();
 
