@@ -147,7 +147,7 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
     final strategy = requireEmailPasswordStrategy(
       _identity,
       log: _log,
-      baseUrl: _dio.options.baseUrl,
+      dio: _dio,
     );
 
     final response = await postSignIn(
@@ -179,7 +179,7 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
     final strategy = requireEmailPasswordStrategy(
       _identity,
       log: _log,
-      baseUrl: _dio.options.baseUrl,
+      dio: _dio,
     );
 
     final response = await postSignUp(

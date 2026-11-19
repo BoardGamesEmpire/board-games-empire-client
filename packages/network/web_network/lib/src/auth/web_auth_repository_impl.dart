@@ -346,7 +346,7 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
   }) async {
     final response = await postSignIn(
       _dio,
-      requireEmailPasswordStrategy(_identity),
+      requireEmailPasswordStrategy(_identity, log: _log, dio: _dio),
       email: email,
       password: password,
     );
@@ -372,7 +372,7 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
   }) async {
     final response = await postSignUp(
       _dio,
-      requireEmailPasswordStrategy(_identity),
+      requireEmailPasswordStrategy(_identity, log: _log, dio: _dio),
       email: email,
       password: password,
       username: username,
