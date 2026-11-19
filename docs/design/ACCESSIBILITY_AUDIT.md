@@ -217,7 +217,7 @@ The same flows as the keyboard tests, plus the screens they don't reach:
    Import (#713, #824): check the status ("Sending the import to the
    server…") is read and focus lands on it, that by keyboard it is ringed
    and Tab goes on from it rather than stopping on it again, and that the
-   rows are read as one batch ("Importing 2 games"), each saying its game
+   rows are read as one batch ("2 games in this import"), each saying its game
    and its state. Make an import fail or finish in part (stop a DataGateway,
    say): check the outcome is read once, as one banner, and that focus is
    still on it. Then start another import and close the quick look before

@@ -9,15 +9,11 @@ import 'package:game_catalog/src/widgets/folded_description.dart';
 import 'package:models/domain.dart';
 
 import '../support/catalog_app.dart';
-import '../support/fake_games_remote.dart';
 
 /// The quick look a DataGateway search hit opens (#713): drawn from the hit
-/// alone, with nothing read.
+/// alone, with nothing read. The search screen's tests check that no read is
+/// sent, since only there is a remote within the quick look's reach.
 void main() {
-  late FakeGamesRemote remote;
-
-  setUp(() => remote = FakeGamesRemote());
-
   /// Many lines of one paragraph at any width these tests use.
   final long = List.filled(80, 'word').join(' ');
 
@@ -95,7 +91,6 @@ void main() {
     expect(find.text('Wingspan'), findsOneWidget);
     expect(find.text('Published 2019'), findsOneWidget);
     expect(find.byType(SearchHitQuickLook), findsOneWidget);
-    expect(remote.calls, isEmpty);
     // Nothing is there to read the game: no detail read, and no quick look
     // that makes one.
     expect(

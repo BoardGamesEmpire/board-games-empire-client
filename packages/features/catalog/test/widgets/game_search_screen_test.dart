@@ -390,6 +390,8 @@ void main() {
 
       expect(find.byType(SearchHitQuickLook), findsOneWidget);
       expect(remote.calls, isNot(contains(startsWith('startImport'))));
+      // Drawn from the hit alone: the game isn't read, only its expansions.
+      expect(remote.calls, isNot(contains(startsWith('fetchGame'))));
       // Import waits in the quick look, with the hit's expansions read from
       // the DataGateway it came from, which the checklist names.
       expect(importLabel(tester), 'Import');

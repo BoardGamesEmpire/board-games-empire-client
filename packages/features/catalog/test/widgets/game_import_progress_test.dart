@@ -167,7 +167,7 @@ void main() {
     await tester.pumpWidget(app());
 
     expect(find.byKey(GameImportProgress.jobKey('j1')), findsNothing);
-    expect(find.text('Importing 1 game'), findsNothing);
+    expect(find.bySemanticsLabel('1 game in this import'), findsNothing);
   });
 
   testWidgets('an added base game says why it is there', (tester) async {
@@ -230,7 +230,7 @@ void main() {
       tester.getSemantics(find.byKey(GameImportProgress.jobKey('j2'))),
       isSemantics(label: 'Jagged Earth\nImported'),
     );
-    expect(find.bySemanticsLabel('Importing 2 games'), findsOneWidget);
+    expect(find.bySemanticsLabel('2 games in this import'), findsOneWidget);
     handle.dispose();
   });
 
@@ -357,6 +357,22 @@ void main() {
       const GameImportCompleted(gameId: 'g1', jobs: [_requested]),
     );
 
+    expect(imported, ['g1']);
+  });
+
+  // As it can be when the app was in the background, with no frame drawn,
+  // while the import ran to its end.
+  testWidgets('an import that completed before the progress mounted calls '
+      'onImported once, after the frame', (tester) async {
+    startAt(const GameImportCompleted(gameId: 'g1', jobs: [_requested]));
+    await tester.pumpWidget(app());
+
+    expect(imported, ['g1']);
+
+    await move(
+      tester,
+      const GameImportCompleted(gameId: 'g1', jobs: [_requested]),
+    );
     expect(imported, ['g1']);
   });
 

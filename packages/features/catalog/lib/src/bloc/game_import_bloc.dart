@@ -53,7 +53,10 @@ import 'package:observability/observability.dart';
 ///   requested game's id.
 /// - **A poll that got no answer from the API keeps polling.** A 403 with
 ///   the API's envelope is [GameImportFailure.forbidden], and any other
-///   failure, an unknown batch included, is a server failure.
+///   failure, an unknown batch included, is a server failure. Once a poll
+///   has seen the requested game completed, though, either is
+///   [GameImportStillRunning] with its id: that game is on the server, and
+///   only the rest of the batch can't be followed.
 ///
 /// Every state after a poll carries that poll's jobs.
 ///
@@ -61,9 +64,10 @@ import 'package:observability/observability.dart';
 /// finish. A requested game whose own job has completed by then is on the
 /// server, so the state carries its id, and the game can be opened while the
 /// rest run on. [GameImportCheckAgainRequested] polls the same batch again,
-/// with a fresh count, and starts nothing. A requested game that has failed
-/// or been cancelled by then is [GameImportFailed] as above instead: its
-/// outcome is known, whatever the other jobs are still doing.
+/// with a fresh count, and starts nothing. A requested game that has failed,
+/// been cancelled, or completed without a game id by then is
+/// [GameImportFailed] as above instead: its outcome is known, whatever the
+/// other jobs are still doing.
 ///
 /// Trying again after that failure queues a new batch beside the one whose
 /// jobs still run, and both may import the same games. That does no harm:
@@ -225,18 +229,14 @@ class GameImportBloc extends Bloc<GameImportEvent, GameImportState> {
         // No answer from the API says nothing about the import.
         continue;
       } on GamesForbiddenException {
-        return emit(
-          GameImportFailed(failure: GameImportFailure.forbidden, jobs: _jobs),
-        );
+        return emit(_unfollowable(GameImportFailure.forbidden));
       } on Object catch (error, stackTrace) {
         _logger.warn(
           'Polling the import failed',
           error: error,
           stackTrace: stackTrace,
         );
-        return emit(
-          GameImportFailed(failure: GameImportFailure.server, jobs: _jobs),
-        );
+        return emit(_unfollowable(GameImportFailure.server));
       } finally {
         elapsed += request.elapsed;
       }
@@ -265,6 +265,17 @@ class GameImportBloc extends Bloc<GameImportEvent, GameImportState> {
           : GameImportFailed(failure: failure, jobs: _jobs),
     );
   }
+
+  /// Where the import stands after a poll that failed for [failure]: see
+  /// "Following". A requested game an earlier poll saw completed is on the
+  /// server whatever this poll says, so its id is kept, and the batch is
+  /// still running, to be checked again; before then, the import failed.
+  GameImportState _unfollowable(GameImportFailure failure) =>
+      switch (_requestedJob) {
+        ImportJob(status: ImportJobStatus.completed, :final gameId?) =>
+          GameImportStillRunning(gameId: gameId, jobs: _jobs),
+        _ => GameImportFailed(failure: failure, jobs: _jobs),
+      };
 
   /// Where the import stands, by the jobs of its batch: see "Following".
   static GameImportState _stateOf(ImportBatch batch) {
@@ -302,7 +313,8 @@ class GameImportBloc extends Bloc<GameImportEvent, GameImportState> {
   }
 
   /// Why the [requested] game's job ended without its game, or null while it
-  /// hasn't: see "Following".
+  /// hasn't: see "Following". A job completed without a game id is a server
+  /// failure here, so the deadline and the batch's end judge it alike.
   static GameImportFailure? _failureOf(ImportJob? requested) =>
       switch (requested?.status) {
         ImportJobStatus.failed => switch (requested?.errorCode) {
@@ -311,6 +323,8 @@ class GameImportBloc extends Bloc<GameImportEvent, GameImportState> {
           _ => GameImportFailure.server,
         },
         ImportJobStatus.cancelled => GameImportFailure.cancelled,
+        ImportJobStatus.completed when requested?.gameId == null =>
+          GameImportFailure.server,
         _ => null,
       };
 }

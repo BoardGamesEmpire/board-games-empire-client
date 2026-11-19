@@ -671,9 +671,9 @@
   "@catalogImportTryAgain": {
     "description": "Button in the import progress, after a failure, that starts the import again."
   },
-  "catalogImportBatchLabel": "{count, plural, =1{Importing 1 game} other{Importing {count} games}}",
+  "catalogImportBatchLabel": "{count, plural, =1{1 game in this import} other{{count} games in this import}}",
   "@catalogImportBatchLabel": {
-    "description": "The name of the list of games an import covers, read by a screen reader before the rows. The count is every game in the import: the one asked for, the expansions chosen with it, and any base game the server added.",
+    "description": "The name of the list of games an import covers, read by a screen reader before the rows. It says nothing of where the import stands, since it stays once the import has ended: each row says its own state. The count is every game in the import: the one asked for, the expansions chosen with it, and any base game the server added.",
     "placeholders": {
       "count": {
         "type": "int",

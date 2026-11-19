@@ -135,6 +135,15 @@ class _GameImportProgressState extends State<GameImportProgress> {
   @override
   void initState() {
     super.initState();
+    // The listener hears only what the bloc emits after this mounts. An
+    // import that completed before then, as one can while the app sits in
+    // the background with no frame drawn, is handed over once this frame is
+    // built, since no page can be opened during a build.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final state = context.read<GameImportBloc>().state;
+      if (state is GameImportCompleted) _onState(context, state);
+    });
     if (widget.autofocus) {
       // After the frame that removed the control that had focus: a request
       // made then wins over the page's focus history (see autofocus). This
