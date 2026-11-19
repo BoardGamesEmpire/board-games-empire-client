@@ -3425,11 +3425,19 @@
   },
   "eventEditFailedTitle": "Your changes weren't saved",
   "@eventEditFailedTitle": {
-    "description": "Heading of the error above the Save button of the Edit event page when nothing was saved. Names what failed, because the messages under it give only the reason, such as no connection. Also a brief message on its own, without the reason, over whatever page the user went to, when they left the Edit event page while the save was on its way and it failed (#464)."
+    "description": "Heading of the error above the Save button of the Edit event page when nothing was saved, and the server is known not to have it: it turned the change away, or it was never sent. Names what failed, because the messages under it give only the reason, such as no connection. Also a brief message on its own, without the reason, over whatever page the user went to, when they left the Edit event page while the save was on its way and it failed (#464)."
   },
   "eventEditRulesNotSavedTitle": "The details were saved, but the rules weren't",
   "@eventEditRulesNotSavedTitle": {
-    "description": "Heading of the error above the Save button of the Edit event page when the event's own details (its title, description and so on) were saved but its rules weren't. The message under it gives the reason. Also a brief message on its own, without the reason, over whatever page the user went to, when they left the Edit event page while the save was on its way (#464)."
+    "description": "Heading of the error above the Save button of the Edit event page when the event's own details (its title, description and so on) were saved but its rules weren't, and the server is known not to have them: it turned them away, or they were never sent. The message under it gives the reason. Also a brief message on its own, without the reason, over whatever page the user went to, when they left the Edit event page while the save was on its way (#464)."
+  },
+  "eventEditUnsettledTitle": "Your changes may not have been saved",
+  "@eventEditUnsettledTitle": {
+    "description": "Heading of the error above the Save button of the Edit event page when the save failed in a way that leaves it unknown whether the server has the changes: there was no answer, the server had a failure of its own, or it answered with something the app couldn't read. They may have gone through, so the copy must not say they didn't. Saving again is safe: it sends the same values. The message under it gives the reason. Also a brief message on its own, without the reason, over whatever page the user went to, when they left the Edit event page while the save was on its way (#464)."
+  },
+  "eventEditRulesUnsettledTitle": "The details were saved, but the rules may not have been",
+  "@eventEditRulesUnsettledTitle": {
+    "description": "Heading of the error above the Save button of the Edit event page when the event's own details (its title, description and so on) were saved, and the save of its rules failed in a way that leaves it unknown whether the server has them: there was no answer, the server had a failure of its own, or it answered with something the app couldn't read. They may have gone through, so the copy must not say they didn't. Saving again is safe: it sends the same values. The message under it gives the reason. Also a brief message on its own, without the reason, over whatever page the user went to, when they left the Edit event page while the save was on its way (#464)."
   },
   "eventEditOffline": "Couldn't reach the server. Check your connection and try again.",
   "@eventEditOffline": {

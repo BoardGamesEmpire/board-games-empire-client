@@ -299,6 +299,9 @@ EventUpdate eventUpdateOf(
 ///   where its type takes one ([thresholdNumberOf], [quorumNumberOf]). One
 ///   not carried is never sent, even in [resend]: the server keeps it,
 ///   unused.
+/// - A type that is sent takes its number with it, changed or not. The
+///   number is a share under one type and a count under another, and the
+///   server's may be another device's since the page opened.
 /// - The window, under a vote, is carried even when empty. An empty one
 ///   that is sent is its clear, so one the original had is cleared, and
 ///   one it never had is cleared only when resent.
@@ -313,8 +316,17 @@ EventPolicyUpdate policyUpdateOf(
 }) {
   T? sent<T>(EventEditField field, T? value, T? before) =>
       value != null && _sends(resend, field, value, before) ? value : null;
-  int? sentNumber(EventEditField field, int? value, int? before) =>
-      value != null && value >= 1 ? sent(field, value, before) : null;
+  // A type that is sent carries its number, changed or not.
+  int? sentNumber(
+    EventEditField field,
+    int? value,
+    int? before, {
+    required bool typeSent,
+  }) => value == null || value < 1
+      ? null
+      : typeSent
+      ? value
+      : sent(field, value, before);
 
   final mode = _known(rules.gameAdditionMode, GameAdditionMode.unknown);
   final voting = mode == GameAdditionMode.requiresVote;
@@ -335,35 +347,40 @@ EventPolicyUpdate policyUpdateOf(
         original.votingWindowHours,
       );
 
+  final thresholdType = sent(
+    EventEditField.voteThresholdType,
+    threshold,
+    original.voteThresholdType,
+  );
+  final quorumType = sent(
+    EventEditField.voteQuorumType,
+    quorum,
+    original.voteQuorumType,
+  );
+
   return EventPolicyUpdate(
     gameAdditionMode: sent(
       EventEditField.gameAdditionMode,
       mode,
       original.gameAdditionMode,
     ),
-    voteThresholdType: sent(
-      EventEditField.voteThresholdType,
-      threshold,
-      original.voteThresholdType,
-    ),
+    voteThresholdType: thresholdType,
     voteThresholdValue: thresholdNumberOf(threshold) == null
         ? null
         : sentNumber(
             EventEditField.voteThresholdValue,
             rules.voteThresholdValue,
             original.voteThresholdValue,
+            typeSent: thresholdType != null,
           ),
-    voteQuorumType: sent(
-      EventEditField.voteQuorumType,
-      quorum,
-      original.voteQuorumType,
-    ),
+    voteQuorumType: quorumType,
     voteQuorumValue: quorumNumberOf(quorum) == null
         ? null
         : sentNumber(
             EventEditField.voteQuorumValue,
             rules.voteQuorumValue,
             original.voteQuorumValue,
+            typeSent: quorumType != null,
           ),
     votingWindowHours: sendWindow ? window : null,
     clearVotingWindowHours: sendWindow && window == null,

@@ -21,7 +21,7 @@ import 'package:observability/observability.dart';
 /// is nothing to send. It says the event was updated only when an earlier
 /// round of this page saved the details. Otherwise the save is under way
 /// from the moment it is asked for, and `confirmSession` is asked before
-/// anything goes out, so a page left while the session is checked still
+/// each request goes out, so a page left while the session is checked still
 /// waits for the outcome (#464).
 ///
 /// The event goes first. If it fails, the rules are not sent. If it is saved
@@ -118,7 +118,12 @@ class EditEventBloc extends Bloc<EditEventEvent, EditEventState> {
     emit(const EditEventSaving());
 
     if (!await _confirmed()) {
-      emit(const EditEventFailed(EditEventFailure.unexpected));
+      emit(
+        EditEventFailed(
+          EditEventFailure.unexpected,
+          unsettled: _unsettled({...eventFields, ...rulesFields}),
+        ),
+      );
       return;
     }
 
@@ -135,6 +140,19 @@ class EditEventBloc extends Bloc<EditEventEvent, EditEventState> {
         _maybeSaved.removeAll(eventFields);
       }
       if (sendRules) {
+        // Asked again: the details' answer may land after a sign-in in
+        // another tab, and the rules would go out as that account (#432).
+        if (sendEvent && !await _confirmed()) {
+          if (isClosed) return;
+          emit(
+            EditEventFailed(
+              EditEventFailure.unexpected,
+              detailsSaved: _detailsSaved,
+              unsettled: _unsettled(rulesFields),
+            ),
+          );
+          return;
+        }
         out = _Request.rules;
         final answer = await _remote.updateEventPolicy(_event.id, policyUpdate);
         // Saved, and ending the edit, whether or not there is one to cache.
@@ -146,16 +164,18 @@ class EditEventBloc extends Bloc<EditEventEvent, EditEventState> {
         }
       }
     } on Object catch (error, stackTrace) {
-      // Classified, and so logged, even when the page has closed.
-      final failure = _failure(error, stackTrace, switch (out) {
+      final sent = switch (out) {
         _Request.event => eventFields,
         _Request.rules => rulesFields,
-      });
+      };
+      // Classified, and so logged, even when the page has closed.
+      final failure = _failure(error, stackTrace, sent);
       if (isClosed) return;
       emit(
         EditEventFailed(
           failure,
           detailsSaved: _detailsSaved && out == _Request.rules,
+          unsettled: _unsettled(sent),
         ),
       );
       return;
@@ -184,6 +204,11 @@ class EditEventBloc extends Bloc<EditEventEvent, EditEventState> {
         type: sent.contains(EventEditField.type) ? answer.type : base.type,
         reach: sent.contains(EventEditField.reach) ? answer.reach : base.reach,
       );
+
+  /// Whether any of [fields] may be on the server though no send of it
+  /// landed, so a failure can't say it wasn't saved.
+  bool _unsettled(Set<EventEditField> fields) =>
+      fields.any(_maybeSaved.contains);
 
   /// Whether the session is still the cache's user's. A throw is a no.
   Future<bool> _confirmed() async {

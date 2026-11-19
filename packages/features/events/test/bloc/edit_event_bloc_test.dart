@@ -291,7 +291,10 @@ void main() {
     // The title may have been written, so it is remembered.
     bloc.add(EditEventSubmitted(values));
     await pumpEventQueue();
-    expect(bloc.state, const EditEventFailed(EditEventFailure.offline));
+    expect(
+      bloc.state,
+      const EditEventFailed(EditEventFailure.offline, unsettled: true),
+    );
     expect(calls, ['event']);
 
     // The event lands and the rules are refused.
@@ -395,7 +398,10 @@ void main() {
 
       bloc.add(EditEventSubmitted(_values(title: 'Renamed')));
       await pumpEventQueue();
-      expect(bloc.state, const EditEventFailed(EditEventFailure.offline));
+      expect(
+        bloc.state,
+        const EditEventFailed(EditEventFailure.offline, unsettled: true),
+      );
 
       bloc.add(EditEventSubmitted(_values()));
       await pumpEventQueue();
@@ -435,9 +441,31 @@ void main() {
 
       bloc.add(EditEventSubmitted(_values(title: 'Renamed')));
       await pumpEventQueue();
+      expect(
+        bloc.state,
+        const EditEventFailed(EditEventFailure.offline, unsettled: true),
+      );
       bloc.add(EditEventSubmitted(_values()));
       await pumpEventQueue();
       expect(remote.eventEdits, hasLength(2));
+    });
+
+    test('a resend turned away is still unsettled', () async {
+      // The 503's title may be on the server; the 403 doesn't undo it.
+      var answer = const EventRemoteTransientException('down', statusCode: 503);
+      final remote = serving(event: (_) => throw answer);
+      final bloc = build(remote);
+      addTearDown(bloc.close);
+
+      bloc.add(EditEventSubmitted(_values(title: 'Renamed')));
+      await pumpEventQueue();
+      answer = const EventRemoteTransientException('slow', statusCode: 429);
+      bloc.add(EditEventSubmitted(_values(title: 'Renamed')));
+      await pumpEventQueue();
+      expect(
+        bloc.state,
+        const EditEventFailed(EditEventFailure.offline, unsettled: true),
+      );
     });
   });
 
@@ -455,13 +483,41 @@ void main() {
 
       bloc.add(EditEventSubmitted(_values(title: 'Renamed')));
       await pumpEventQueue();
-      expect(bloc.state, const EditEventFailed(EditEventFailure.unexpected));
+      expect(
+        bloc.state,
+        const EditEventFailed(EditEventFailure.unexpected, unsettled: true),
+      );
 
       bloc.add(EditEventSubmitted(_values()));
       await pumpEventQueue();
       expect(remote.eventEdits, hasLength(2));
     },
   );
+
+  test('rules answered 2xx unreadably after the details saved', () async {
+    final bloc = build(
+      serving(
+        policy: (_) => throw const EventRemotePermanentException(
+          'unreadable',
+          statusCode: 200,
+        ),
+      ),
+    );
+    addTearDown(bloc.close);
+
+    bloc.add(
+      EditEventSubmitted(_values(title: 'Renamed', rules: _directRules)),
+    );
+    await pumpEventQueue();
+    expect(
+      bloc.state,
+      const EditEventFailed(
+        EditEventFailure.unexpected,
+        detailsSaved: true,
+        unsettled: true,
+      ),
+    );
+  });
 
   group('each answer has its failure, and its fields are not remembered', () {
     const answers = <String, (EventRemoteException, EditEventFailure)>{
@@ -575,6 +631,47 @@ void main() {
       const EditEventFailed(EditEventFailure.unexpected),
     ],
     verify: (bloc) => expect(calls, isEmpty),
+  );
+
+  test('the session is asked again before the rules go out', () async {
+    // The details' answer can land after a sign-in in another tab, and the
+    // rules would then go out under that account's token (#432).
+    final answers = [true, false];
+    var asked = 0;
+    final bloc = build(
+      serving(),
+      confirmSession: () async => answers[asked++],
+    );
+    addTearDown(bloc.close);
+
+    bloc.add(
+      EditEventSubmitted(_values(title: 'Renamed', rules: _directRules)),
+    );
+    await pumpEventQueue();
+    expect(
+      bloc.state,
+      const EditEventFailed(EditEventFailure.unexpected, detailsSaved: true),
+    );
+    expect(calls, ['event']);
+    expect(asked, 2);
+  });
+
+  blocTest<EditEventBloc, EditEventState>(
+    'rules sent alone ask the session once',
+    build: () {
+      var asked = 0;
+      addTearDown(() => expect(asked, 1));
+      return build(
+        serving(),
+        confirmSession: () async {
+          asked++;
+          return true;
+        },
+      );
+    },
+    act: (bloc) => bloc.add(EditEventSubmitted(_values(rules: _directRules))),
+    expect: () => [const EditEventSaving(), const EditEventSaved()],
+    verify: (bloc) => expect(calls, ['policy']),
   );
 
   test('the save is under way while the session is checked', () async {

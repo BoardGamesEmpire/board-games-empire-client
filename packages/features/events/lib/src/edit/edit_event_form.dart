@@ -252,15 +252,19 @@ void _readOnlyRules(FormGroup form) {
 }
 
 /// The heading of [failed]: that nothing was saved, or, when the details
-/// were saved first, that the rules weren't. The form's banner shows it
-/// above Save, and the page says it alone of a save that failed once the
-/// user had left (#464).
+/// were saved first, that the rules weren't. Where the server may hold
+/// them all the same, it says they may not have been. The form's banner
+/// shows it above Save, and the page says it alone of a save that failed
+/// once the user had left (#464).
 String editEventFailureTitle(
   EventsLocalizations l10n,
   EditEventFailed failed,
-) => failed.detailsSaved
-    ? l10n.eventEditRulesNotSavedTitle
-    : l10n.eventEditFailedTitle;
+) => switch ((failed.detailsSaved, failed.unsettled)) {
+  (true, true) => l10n.eventEditRulesUnsettledTitle,
+  (true, false) => l10n.eventEditRulesNotSavedTitle,
+  (false, true) => l10n.eventEditUnsettledTitle,
+  (false, false) => l10n.eventEditFailedTitle,
+};
 
 /// What a failed save's banner says under its title: only why.
 String _failureMessage(EventsLocalizations l10n, EditEventFailure reason) =>

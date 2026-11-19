@@ -57,12 +57,21 @@ final class EditEventSaved extends EditEventState {
 /// With [detailsSaved], the event's own changes were saved and the rules'
 /// were not. The bloc then holds the saved event as its new starting point,
 /// so a later save does not send those changes again.
+///
+/// With [unsettled], what failed may be on the server all the same: a send
+/// of it, now or in an earlier round, had an answer that could not be read,
+/// a server failure, or none at all. Saving again sends the same values.
 final class EditEventFailed extends EditEventState {
-  const EditEventFailed(this.reason, {this.detailsSaved = false});
+  const EditEventFailed(
+    this.reason, {
+    this.detailsSaved = false,
+    this.unsettled = false,
+  });
 
   final EditEventFailure reason;
   final bool detailsSaved;
+  final bool unsettled;
 
   @override
-  List<Object?> get props => [reason, detailsSaved];
+  List<Object?> get props => [reason, detailsSaved, unsettled];
 }

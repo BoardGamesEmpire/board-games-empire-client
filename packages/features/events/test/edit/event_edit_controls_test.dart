@@ -204,7 +204,50 @@ void main() {
         rules,
         resend: {EventEditField.voteThresholdType},
       ),
-      EventPolicyUpdate(voteThresholdType: VoteThresholdType.supermajority),
+      // Its number goes with it.
+      EventPolicyUpdate(
+        voteThresholdType: VoteThresholdType.supermajority,
+        voteThresholdValue: 75,
+      ),
+    );
+  });
+
+  test('a changed vote type carries its number, though it is unchanged', () {
+    // 75 means a share under one type and a count under the other, and
+    // the server's number may be another device's since the page opened.
+    const rules = EventPolicyDraft(
+      gameAdditionMode: GameAdditionMode.requiresVote,
+      voteThresholdType: VoteThresholdType.fixedCount,
+      voteThresholdValue: 75,
+      voteQuorumType: VoteQuorumType.fixedCount,
+      voteQuorumValue: 40,
+      votingWindowHours: 48,
+    );
+
+    expect(
+      policyUpdateOf(_policy(), rules),
+      EventPolicyUpdate(
+        voteThresholdType: VoteThresholdType.fixedCount,
+        voteThresholdValue: 75,
+        voteQuorumType: VoteQuorumType.fixedCount,
+        voteQuorumValue: 40,
+      ),
+    );
+  });
+
+  test('a changed number alone is sent without its type', () {
+    const rules = EventPolicyDraft(
+      gameAdditionMode: GameAdditionMode.requiresVote,
+      voteThresholdType: VoteThresholdType.supermajority,
+      voteThresholdValue: 80,
+      voteQuorumType: VoteQuorumType.percentOfAttendees,
+      voteQuorumValue: 50,
+      votingWindowHours: 48,
+    );
+
+    expect(
+      policyUpdateOf(_policy(), rules),
+      EventPolicyUpdate(voteThresholdValue: 80, voteQuorumValue: 50),
     );
   });
 

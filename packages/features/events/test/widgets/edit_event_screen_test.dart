@@ -30,6 +30,9 @@ const _onlineOnlyCopy = "Available when you're online";
 const _savedCopy = 'Event saved.';
 const _failedTitle = "Your changes weren't saved";
 const _rulesNotSavedTitle = "The details were saved, but the rules weren't";
+const _unsettledTitle = 'Your changes may not have been saved';
+const _rulesUnsettledTitle =
+    'The details were saved, but the rules may not have been';
 const _offlineCopy =
     "Couldn't reach the server. Check your connection and try again.";
 const _refusedCopy =
@@ -914,13 +917,38 @@ void main() {
     ]);
     expect(leaves, 0);
     expect(find.byType(SnackBar), findsNothing);
-    expect(inFailure(_rulesNotSavedTitle), findsOneWidget);
+    // No answer: the rules may be on the server all the same.
+    expect(inFailure(_rulesUnsettledTitle), findsOneWidget);
     expect(inFailure(_offlineCopy), findsOneWidget);
     // The form stays as typed.
     expect(
       textField(tester, EventBasicsSection.titleKey).controller!.text,
       'Board night',
     );
+  });
+
+  testWidgets("rules turned away after the details saved say they weren't", (
+    tester,
+  ) async {
+    final remote = serving(
+      policy: (_) =>
+          throw const EventWriteRefusedException('no', statusCode: 403),
+    );
+    cache(_detail(policy: _policy()));
+    await open(tester, remote: remote);
+
+    await enterText(tester, EventBasicsSection.titleKey, 'Board night');
+    await toggleRules(tester);
+    await choose(
+      tester,
+      EventRulesSection.gameAdditionKey,
+      'Anyone attending adds them',
+    );
+    await save(tester);
+    await tester.pumpAndSettle();
+
+    expect(inFailure(_rulesNotSavedTitle), findsOneWidget);
+    expect(inFailure(_refusedCopy), findsOneWidget);
   });
 
   testWidgets('a 404 leaves the page', (tester) async {
@@ -999,7 +1027,7 @@ void main() {
       answer.completeError(const EventRemoteTransientException('offline'));
       await tester.pumpAndSettle();
 
-      expect(inSnackBar(_failedTitle), findsOneWidget);
+      expect(inSnackBar(_unsettledTitle), findsOneWidget);
       expect(leaves, 0);
       expect(await closed(tester), isTrue);
     });
@@ -1022,7 +1050,7 @@ void main() {
     // page had gone, and the page doesn't leave again (#464).
     for (final (name, fails, copy) in [
       ('lands', false, _savedCopy),
-      ('fails', true, _failedTitle),
+      ('fails', true, _unsettledTitle),
     ]) {
       testWidgets("a save that $name on the route's way out is said once, "
           'and goes nowhere', (tester) async {
