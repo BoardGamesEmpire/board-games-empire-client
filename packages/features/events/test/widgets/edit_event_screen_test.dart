@@ -639,7 +639,10 @@ void main() {
     expect(remote.eventEdits.single.call, 'policy');
     expect(
       remote.eventEdits.single.policy,
-      EventPolicyUpdate(voteThresholdValue: 60),
+      EventPolicyUpdate(
+        voteThresholdType: VoteThresholdType.supermajority,
+        voteThresholdValue: 60,
+      ),
     );
     expect(leaves, 1);
   });

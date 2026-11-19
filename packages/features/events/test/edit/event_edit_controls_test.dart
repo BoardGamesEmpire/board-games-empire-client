@@ -235,7 +235,9 @@ void main() {
     );
   });
 
-  test('a changed number alone is sent without its type', () {
+  test('a changed number carries its type, though it is unchanged', () {
+    // The server keeps a type left out, and it may be another device's
+    // since the page opened: 80 typed as a share would land as a count.
     const rules = EventPolicyDraft(
       gameAdditionMode: GameAdditionMode.requiresVote,
       voteThresholdType: VoteThresholdType.supermajority,
@@ -247,7 +249,29 @@ void main() {
 
     expect(
       policyUpdateOf(_policy(), rules),
-      EventPolicyUpdate(voteThresholdValue: 80, voteQuorumValue: 50),
+      EventPolicyUpdate(
+        voteThresholdType: VoteThresholdType.supermajority,
+        voteThresholdValue: 80,
+        voteQuorumType: VoteQuorumType.percentOfAttendees,
+        voteQuorumValue: 50,
+      ),
+    );
+  });
+
+  test('resend of a number alone carries its type', () {
+    final policy = _policy();
+    final rules = editValuesOf(buildEventEditForm(_event(), policy)).rules!;
+
+    expect(
+      policyUpdateOf(
+        policy,
+        rules,
+        resend: {EventEditField.voteQuorumValue},
+      ),
+      EventPolicyUpdate(
+        voteQuorumType: VoteQuorumType.percentOfAttendees,
+        voteQuorumValue: 40,
+      ),
     );
   });
 

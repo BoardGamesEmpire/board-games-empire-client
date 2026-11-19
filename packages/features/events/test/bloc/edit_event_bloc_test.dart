@@ -656,6 +656,73 @@ void main() {
     expect(asked, 2);
   });
 
+  test(
+    'a rules-only retry the session turns away keeps the details saved',
+    () async {
+      final answers = [true, true, false];
+      var asked = 0;
+      final bloc = build(
+        serving(policy: (_) => throw _refused),
+        confirmSession: () async => answers[asked++],
+      );
+      addTearDown(bloc.close);
+      final values = _values(title: 'Renamed', rules: _directRules);
+
+      bloc.add(EditEventSubmitted(values));
+      await pumpEventQueue();
+      calls.clear();
+      // Only the rules are left to send, and the session declines them.
+      bloc.add(EditEventSubmitted(values));
+      await pumpEventQueue();
+
+      expect(calls, isEmpty);
+      expect(asked, 3);
+      expect(
+        bloc.state,
+        const EditEventFailed(EditEventFailure.unexpected, detailsSaved: true),
+      );
+    },
+  );
+
+  test('an event turned away keeps earlier rules unsettled', () async {
+    // The 503's rules may be on the server; the event's 403 doesn't undo
+    // them.
+    var refuseEvent = false;
+    final bloc = build(
+      serving(
+        event: (_) => refuseEvent ? throw _refused : _event(title: 'Renamed'),
+        policy: (_) =>
+            throw const EventRemoteTransientException('down', statusCode: 503),
+      ),
+    );
+    addTearDown(bloc.close);
+
+    bloc.add(
+      EditEventSubmitted(_values(title: 'Renamed', rules: _directRules)),
+    );
+    await pumpEventQueue();
+    expect(
+      bloc.state,
+      const EditEventFailed(
+        EditEventFailure.offline,
+        detailsSaved: true,
+        unsettled: true,
+      ),
+    );
+
+    calls.clear();
+    refuseEvent = true;
+    bloc.add(
+      EditEventSubmitted(_values(title: 'Renamed again', rules: _directRules)),
+    );
+    await pumpEventQueue();
+    expect(calls, ['event']);
+    expect(
+      bloc.state,
+      const EditEventFailed(EditEventFailure.refused, unsettled: true),
+    );
+  });
+
   blocTest<EditEventBloc, EditEventState>(
     'rules sent alone ask the session once',
     build: () {

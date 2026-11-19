@@ -105,6 +105,9 @@ class EditEventBloc extends Bloc<EditEventEvent, EditEventState> {
     final rulesFields = sendRules
         ? rulesFieldsSentBy(policyUpdate)
         : const <EventEditField>{};
+    // Whatever stops this submit, an earlier round may have written any of
+    // these. A request turned away doesn't undo the other's.
+    final carried = {...eventFields, ...rulesFields};
 
     // The server answers a patch that names nothing with a 400, and there is
     // nothing to save. Details an earlier round saved are still news.
@@ -121,7 +124,10 @@ class EditEventBloc extends Bloc<EditEventEvent, EditEventState> {
       emit(
         EditEventFailed(
           EditEventFailure.unexpected,
-          unsettled: _unsettled({...eventFields, ...rulesFields}),
+          // A retry of the rules alone still has the details an earlier
+          // round saved.
+          detailsSaved: _detailsSaved && !sendEvent,
+          unsettled: _unsettled(carried),
         ),
       );
       return;
@@ -148,7 +154,7 @@ class EditEventBloc extends Bloc<EditEventEvent, EditEventState> {
             EditEventFailed(
               EditEventFailure.unexpected,
               detailsSaved: _detailsSaved,
-              unsettled: _unsettled(rulesFields),
+              unsettled: _unsettled(carried),
             ),
           );
           return;
@@ -175,7 +181,7 @@ class EditEventBloc extends Bloc<EditEventEvent, EditEventState> {
         EditEventFailed(
           failure,
           detailsSaved: _detailsSaved && out == _Request.rules,
-          unsettled: _unsettled(sent),
+          unsettled: _unsettled(carried),
         ),
       );
       return;
