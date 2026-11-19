@@ -73,13 +73,18 @@ void main() {
 
   tearDown(() => holder.dispose());
 
-  DeepLinkConsumer buildConsumer() {
+  DeepLinkConsumer buildConsumer({
+    void Function(DeepLinkFailure failure)? onFailure,
+    bool Function(String localId)? isSignedInOn,
+  }) {
     final consumer = DeepLinkConsumer(
       holder: holder,
       isReady: () => ready,
       lookup: () => lookup,
       orchestrator: () => boundOrchestrator,
       go: gone.add,
+      onFailure: onFailure,
+      isSignedInOn: isSignedInOn,
     );
     addTearDown(consumer.dispose);
     return consumer;
@@ -417,6 +422,86 @@ void main() {
       },
     );
 
+    // #985: a server switched back to before the auth scope rebuilt keeps
+    // its signed-in bloc, so no sign-in outcome will come to drain.
+    test(
+      'after a switch to a server already signed in, the link lands at once',
+      () async {
+        connectedInactiveServerSwitchCommits();
+        buildConsumer(isSignedInOn: (localId) => localId == 'local-1').start();
+        await pumpEventQueue();
+
+        holder.set(link);
+        await pumpEventQueue();
+
+        verify(() => orchestrator.switchActiveServer('local-1')).called(1);
+        expect(gone, [link.location]);
+        expect(holder.peek, isNull);
+      },
+    );
+
+    test(
+      'after a switch to a server not signed in, it waits as before',
+      () async {
+        connectedInactiveServerSwitchCommits();
+        // Signed in on the server being left, not the target.
+        final consumer = buildConsumer(
+          isSignedInOn: (localId) => localId == 'local-0',
+        )..start();
+        await pumpEventQueue();
+
+        holder.set(link);
+        await pumpEventQueue();
+
+        verify(() => orchestrator.switchActiveServer('local-1')).called(1);
+        expect(gone, isEmpty);
+        expect(holder.peek, link);
+
+        await consumer.drain();
+
+        expect(gone, [link.location]);
+        expect(holder.peek, isNull);
+      },
+    );
+
+    test(
+      'a newer link arriving during a switch back to a signed-in server '
+      'still lands',
+      () async {
+        const newer = NormalizedDeepLink(
+          serverId: 'bge-1',
+          location: '/server/bge-1/event/e2',
+        );
+        connectedInactiveServer();
+        var active = 'local-0';
+        when(() => orchestrator.activeServerId).thenAnswer((_) => active);
+        final switching = Completer<void>();
+        when(() => orchestrator.switchActiveServer(any())).thenAnswer((
+          invocation,
+        ) async {
+          active = invocation.positionalArguments.single as String;
+          await switching.future;
+        });
+        buildConsumer(isSignedInOn: (localId) => localId == 'local-1').start();
+        await pumpEventQueue();
+
+        holder.set(link);
+        await pumpEventQueue();
+        verify(() => orchestrator.switchActiveServer('local-1')).called(1);
+
+        holder.set(newer);
+        await pumpEventQueue();
+        switching.complete();
+        await pumpEventQueue();
+
+        // The older link's pass finds itself replaced, and the newer link's
+        // pass finds its server active: no wait is left behind for it.
+        expect(gone, [newer.location]);
+        expect(holder.peek, isNull);
+        verifyNever(() => orchestrator.switchActiveServer(any()));
+      },
+    );
+
     test('keeps the link through a switch that ends on the auth leg', () async {
       connectedInactiveServer();
       final consumer = buildConsumer();
@@ -500,6 +585,84 @@ void main() {
       verifyNever(() => orchestrator.switchActiveServer(any()));
     });
 
+    test('reports a failed lookup', () async {
+      lookup = _FakeLookup(
+        const {'bge-1': 'local-1'},
+        error: StateError('registry unreadable'),
+      );
+      final failures = <DeepLinkFailure>[];
+      final consumer = buildConsumer(onFailure: failures.add);
+      holder.set(link);
+
+      await consumer.drain();
+
+      expect(failures, [isA<DeepLinkLookupFailed>()]);
+      expect(holder.peek, isNull);
+    });
+
+    test('reports a failed switch with its error', () async {
+      connectedInactiveServer();
+      final thrown = StateError('local-1 is not connected');
+      when(
+        () => orchestrator.switchActiveServer(any()),
+      ).thenAnswer((_) async => throw thrown);
+      final failures = <DeepLinkFailure>[];
+      final consumer = buildConsumer(onFailure: failures.add);
+      holder.set(link);
+
+      await consumer.drain();
+
+      expect(failures, hasLength(1));
+      final failure = failures.single as DeepLinkActivationFailed;
+      expect(failure.error, same(thrown));
+    });
+
+    test('a failure report that throws does not stop the consumer', () async {
+      captureLogs();
+      lookup = _FakeLookup(
+        const {'bge-1': 'local-1'},
+        error: StateError('registry unreadable'),
+      );
+      final consumer = buildConsumer(
+        onFailure: (_) => throw StateError('no messenger'),
+      );
+      holder.set(link);
+
+      await consumer.drain();
+      expect(holder.peek, isNull);
+
+      lookup = _FakeLookup(const {'bge-1': 'local-1'});
+      holder.set(link);
+      await consumer.drain();
+
+      expect(gone, [link.location]);
+    });
+
+    test('a link dropped because its server is no longer active reports '
+        'nothing', () async {
+      connectedInactiveServer();
+      final failures = <DeepLinkFailure>[];
+      final consumer = buildConsumer(onFailure: failures.add);
+      holder.set(link);
+
+      await consumer.drain();
+      await consumer.drain();
+
+      expect(holder.peek, isNull);
+      expect(failures, isEmpty);
+    });
+
+    test('a link for an unknown server reports nothing', () async {
+      lookup = _FakeLookup(const {});
+      final failures = <DeepLinkFailure>[];
+      final consumer = buildConsumer(onFailure: failures.add);
+      holder.set(link);
+
+      await consumer.drain();
+
+      expect(failures, isEmpty);
+    });
+
     group('a newer link set during a switch', () {
       const older = link;
       const newer = NormalizedDeepLink(
@@ -513,6 +676,7 @@ void main() {
       Future<DeepLinkConsumer> setNewerDuringOlderSwitch(
         Completer<void> switching, {
         NormalizedDeepLink newerLink = newer,
+        void Function(DeepLinkFailure failure)? onFailure,
       }) async {
         connectedInactiveServer();
         var switches = 0;
@@ -520,7 +684,7 @@ void main() {
           switches++;
           return switches == 1 ? switching.future : Future<void>.value();
         });
-        final consumer = buildConsumer()..start();
+        final consumer = buildConsumer(onFailure: onFailure)..start();
         // Let start's own drain of the empty slot finish, so the older
         // link's arrival starts a pass of its own.
         await pumpEventQueue();
@@ -639,6 +803,92 @@ void main() {
         expect(gone, [newer.location]);
         expect(holder.peek, isNull);
       });
+
+      test('that fails reports nothing for the older link', () async {
+        final records = captureLogs();
+        final failures = <DeepLinkFailure>[];
+        final switching = Completer<void>();
+        final consumer = await setNewerDuringOlderSwitch(
+          switching,
+          onFailure: failures.add,
+        );
+
+        switching.completeError(StateError('local-1 is not connected'));
+        await pumpEventQueue();
+
+        // The newer link is the one the user is waiting on: an error for
+        // the older one would show over it as it lands. It is still logged.
+        expect(failures, isEmpty);
+        expect(
+          records.where((record) => record.level == Level.WARNING),
+          hasLength(1),
+        );
+
+        when(() => orchestrator.activeServerId).thenReturn('local-1');
+        await consumer.drain();
+
+        expect(gone, [newer.location]);
+        expect(failures, isEmpty);
+      });
+    });
+
+    test('a lookup that fails after a newer link replaced its link reports '
+        'nothing, and the newer link lands', () async {
+      final records = captureLogs();
+      const older = link;
+      const newer = NormalizedDeepLink(
+        serverId: 'bge-1',
+        location: '/server/bge-1/event/e2',
+      );
+      final gate = Completer<void>();
+      lookup = _FakeLookup(
+        const {'bge-1': 'local-1'},
+        error: StateError('registry unreadable'),
+        gate: gate,
+      );
+      final failures = <DeepLinkFailure>[];
+      buildConsumer(onFailure: failures.add).start();
+      // Let start's own drain of the empty slot finish, so the older link's
+      // arrival starts a pass of its own.
+      await pumpEventQueue();
+
+      holder.set(older);
+      await pumpEventQueue();
+      holder.set(newer);
+      // Only the older link's lookup fails.
+      lookup = _FakeLookup(const {'bge-1': 'local-1'});
+      gate.complete();
+      await pumpEventQueue();
+
+      expect(failures, isEmpty);
+      expect(gone, [newer.location]);
+      expect(holder.peek, isNull);
+      expect(
+        records.where((record) => record.level == Level.WARNING),
+        hasLength(1),
+        reason: 'the failed lookup is still logged',
+      );
+    });
+
+    test('a lookup that fails after dispose reports nothing', () async {
+      captureLogs();
+      final gate = Completer<void>();
+      lookup = _FakeLookup(
+        const {'bge-1': 'local-1'},
+        error: StateError('registry unreadable'),
+        gate: gate,
+      );
+      final failures = <DeepLinkFailure>[];
+      final consumer = buildConsumer(onFailure: failures.add);
+      holder.set(link);
+
+      final draining = consumer.drain();
+      await pumpEventQueue();
+      consumer.dispose();
+      gate.complete();
+      await draining;
+
+      expect(failures, isEmpty);
     });
 
     test('a newer link set during the lookup wins', () async {

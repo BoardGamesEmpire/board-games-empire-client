@@ -15,6 +15,8 @@ import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
 import 'package:server_onboarding/server_onboarding.dart';
 
+import '../support/no_later_recoveries.dart';
+
 /// Pins the `/server-add` composition guard (#189).
 ///
 /// The seam under test is the rendered route, not the private builder: a
@@ -24,6 +26,7 @@ import 'package:server_onboarding/server_onboarding.dart';
 /// which screen comes back. A partial composition must degrade to
 /// [ShellPlaceholderScreen] rather than throw at navigation time.
 class _MockAppBootstrapCubit extends MockCubit<AppBootstrapState>
+    with NoLaterRecoveries
     implements AppBootstrapCubit {}
 
 class _FakeServerOrchestrator extends Mock implements ServerOrchestrator {}

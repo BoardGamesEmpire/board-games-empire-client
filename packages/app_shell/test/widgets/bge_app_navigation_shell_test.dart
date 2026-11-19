@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:app_shell/app_shell.dart';
+import 'package:app_shell/src/servers/servers_screen.dart';
 import 'package:app_shell/src/widgets/offline_strip_host.dart';
 import 'package:auth/auth.dart';
 import 'package:bge_test_support/access.dart';
@@ -28,6 +29,7 @@ import '../support/active_server_fakes.dart';
 import '../support/fake_connectivity.dart';
 import '../support/fake_platform_bootstrap.dart';
 import '../support/navigation.dart';
+import '../support/server_list_fakes.dart';
 import '../support/settings_storage.dart';
 import '../support/stub_feedback_service.dart';
 
@@ -221,6 +223,8 @@ void main() {
     FeedbackUncaughtErrorReporter? feedbackReporter,
     Future<void> Function()? beforeBoot,
     DependencyContainer? rootContainer,
+    ServerOrchestrator? orchestrator,
+    RegisteredServers? registeredServers,
   }) async {
     final cubit = AppBootstrapCubit(
       platformBootstrap: FakePlatformBootstrap(
@@ -229,6 +233,8 @@ void main() {
             hasServer: true,
             activeServerScope: FakeActiveServerScope(active),
             recoveredServers: recoveredServers,
+            orchestrator: orchestrator,
+            registeredServers: registeredServers,
           ),
         ],
       ),
@@ -279,6 +285,139 @@ void main() {
     // The rail carries the menu: home's own app bar shows no button.
     expect(find.byKey(BgePage.menuButtonKey), findsNothing);
     expect(find.byIcon(Icons.menu), findsOneWidget);
+  });
+
+  // #134: on native the menu's header opens the server manager, a route
+  // beside the shell. Web has no orchestrator, and its header stays text.
+  group('the server manager (#134)', () {
+    final serverButton = find.descendant(
+      of: find.byType(MenuDrawer),
+      matching: find.byIcon(Icons.unfold_more),
+    );
+
+    testWidgets("with an orchestrator the menu's header opens the server "
+        'manager, and Back returns home', (tester) async {
+      final registered = FakeRegisteredServers([
+        testRegisteredServer('s1', 'Alpha'),
+      ]);
+      addTearDown(registered.close);
+      await pumpApp(
+        tester,
+        session(),
+        orchestrator: FakeServerOrchestrator(),
+        registeredServers: registered,
+      );
+      await openMenu(tester);
+
+      await tester.tap(serverButton);
+      await tester.pumpAndSettle();
+
+      expect(find.byType(ServersScreen), findsOneWidget);
+      expect(find.text('Alpha'), findsOneWidget);
+      expect(routerOf(tester).state.uri.path, AppRoutes.servers);
+      expect(rail, findsNothing);
+
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+
+      expect(find.byType(HomeScreen), findsOneWidget);
+      expect(find.byType(ServersScreen), findsNothing);
+      expect(find.byKey(MenuDrawer.drawerKey), findsNothing);
+    });
+
+    testWidgets("with no orchestrator, as on the web, the menu's header is "
+        'plain text', (tester) async {
+      await pumpApp(tester, session());
+      await openMenu(tester);
+
+      expect(
+        tester.widget<MenuDrawer>(find.byType(MenuDrawer)).onServers,
+        isNull,
+      );
+      expect(serverButton, findsNothing);
+    });
+
+    // The manager is outside any session, so a session can end or start
+    // beneath it. go_router runs a bootstrap change's redirect for the
+    // location beneath the pushed manager, not for the manager's, so the
+    // change replaces the whole stack: nothing of an ended session stays
+    // mounted, and no sign-in screen is left beneath (#134). These pin it.
+    testWidgets('a session that ends under the open manager lands on sign-in '
+        'with no stale page beneath', (tester) async {
+      final repo = FakeAuthRepository(initialSession: testAuthResponse());
+      final registered = FakeRegisteredServers([
+        testRegisteredServer('s1', 'Alpha'),
+      ]);
+      addTearDown(registered.close);
+      final cubit = await pumpApp(
+        tester,
+        session(auth: repo),
+        orchestrator: FakeServerOrchestrator(),
+        registeredServers: registered,
+      );
+      await goToDestination(tester, 'collection');
+      expect(find.byType(GameCollectionListScreen), findsOneWidget);
+      await openMenu(tester);
+      await tester.tap(serverButton);
+      await tester.pumpAndSettle();
+      expect(find.byType(ServersScreen), findsOneWidget);
+
+      repo.emitAuthState(const AuthStateUnauthenticated());
+      await tester.pumpAndSettle();
+
+      expect(cubit.state, isA<AppBootstrapNeedsAuth>());
+      expect(routerOf(tester).state.uri.path, AppRoutes.auth);
+      expect(find.byType(AuthScreen), findsOneWidget);
+      expect(find.byType(ServersScreen), findsNothing);
+      // The ended session's pages are gone, not offstage beneath.
+      expect(find.byType(NavigationShell, skipOffstage: false), findsNothing);
+      expect(
+        find.byType(GameCollectionListScreen, skipOffstage: false),
+        findsNothing,
+      );
+
+      // Back from sign-in reaches none of them.
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(routerOf(tester).state.uri.path, AppRoutes.auth);
+      expect(find.byType(NavigationShell, skipOffstage: false), findsNothing);
+      expect(find.byType(GameCollectionListScreen), findsNothing);
+    });
+
+    testWidgets('a session that starts under the open manager lands on home, '
+        'not back on sign-in', (tester) async {
+      final repo = FakeAuthRepository();
+      final registered = FakeRegisteredServers([
+        testRegisteredServer('s1', 'Alpha'),
+      ]);
+      addTearDown(registered.close);
+      final cubit = await pumpApp(
+        tester,
+        session(auth: repo),
+        orchestrator: FakeServerOrchestrator(),
+        registeredServers: registered,
+      );
+      expect(cubit.state, isA<AppBootstrapNeedsAuth>());
+      expect(routerOf(tester).state.uri.path, AppRoutes.auth);
+      unawaited(routerOf(tester).push<void>(AppRoutes.servers));
+      await tester.pumpAndSettle();
+      expect(find.byType(ServersScreen), findsOneWidget);
+
+      repo.emitAuthState(AuthStateAuthenticated(session: testAuthResponse()));
+      await tester.pumpAndSettle();
+
+      expect(cubit.state, isA<AppBootstrapReady>());
+      expect(routerOf(tester).state.uri.path, AppRoutes.home);
+      expect(find.byType(HomeScreen), findsOneWidget);
+      expect(find.byType(ServersScreen), findsNothing);
+      expect(find.byType(AuthScreen, skipOffstage: false), findsNothing);
+
+      // Back from home doesn't return to sign-in.
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(routerOf(tester).state.uri.path, AppRoutes.home);
+      expect(find.byType(AuthScreen), findsNothing);
+    });
   });
 
   testWidgets('a session without the games remote shows no Games '

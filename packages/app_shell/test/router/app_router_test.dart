@@ -8,6 +8,8 @@ import 'package:go_router/go_router.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:ui/ui.dart';
 
+import '../support/server_list_fakes.dart';
+
 class _MockAppBootstrapCubit extends MockCubit<AppBootstrapState>
     implements AppBootstrapCubit {}
 
@@ -43,6 +45,7 @@ void main() {
     NavigationShellBuilder? navigationShellBuilder,
     PendingDeepLinkHolder? pendingDeepLinkHolder,
     String? coldLoad,
+    ServersScreenBuilder? serversBuilder,
   }) async {
     whenListen(
       cubit,
@@ -68,6 +71,7 @@ void main() {
       homeBuilder: (_) => const Scaffold(body: Center(child: Text('Home'))),
       authScopeBuilder: authScopeBuilder,
       navigationShellBuilder: navigationShellBuilder,
+      serversBuilder: serversBuilder,
     );
     // go_router does not own the listenable; dispose the router first (it
     // removes its listener during dispose) then the listenable.
@@ -915,6 +919,171 @@ void main() {
       await Future<void>.delayed(Duration.zero);
 
       expect(listenable.dispose, returnsNormally);
+    });
+  });
+
+  // #134: the server manager belongs to the device, not to a server's
+  // session, so on native it opens while signed out. Web has no
+  // orchestrator, and its redirect is unchanged.
+  group('buildAppRouter — the server manager (#134)', () {
+    testWidgets('the manager opens while signed out on native', (
+      tester,
+    ) async {
+      when(() => cubit.orchestrator).thenReturn(FakeServerOrchestrator());
+      final router = await pumpRouter(
+        tester,
+        initialState: const AppBootstrapNeedsAuth(),
+      );
+      expect(find.text('Sign in'), findsOneWidget);
+
+      // Pushed over sign-in, as its link will push it, and then the add
+      // route beneath it. Neither builder is given: each falls back to the
+      // not-found page.
+      unawaited(router.push<void>(AppRoutes.servers));
+      await tester.pumpAndSettle();
+      expect(router.state.uri.path, AppRoutes.servers);
+      expect(find.byType(RouteNotFoundScreen), findsOneWidget);
+
+      unawaited(router.push<void>(AppRoutes.serversAdd));
+      await tester.pumpAndSettle();
+      expect(router.state.uri.path, AppRoutes.serversAdd);
+      expect(find.byType(RouteNotFoundScreen), findsOneWidget);
+
+      // Back returns through the manager to sign-in.
+      router.pop();
+      await tester.pumpAndSettle();
+      expect(router.state.uri.path, AppRoutes.servers);
+      router.pop();
+      await tester.pumpAndSettle();
+      expect(router.state.uri.path, AppRoutes.auth);
+      expect(find.text('Sign in'), findsOneWidget);
+    });
+
+    testWidgets('on web the signed-out redirect still sends /servers to '
+        '/auth', (tester) async {
+      when(() => cubit.orchestrator).thenReturn(null);
+      final router = await pumpRouter(
+        tester,
+        initialState: const AppBootstrapNeedsAuth(),
+      );
+
+      for (final location in const [AppRoutes.servers, AppRoutes.serversAdd]) {
+        router.go(location);
+        await tester.pumpAndSettle();
+
+        expect(router.state.uri.path, AppRoutes.auth, reason: location);
+        expect(find.text('Sign in'), findsOneWidget, reason: location);
+      }
+    });
+
+    // Web has no manager, so its location is unknown there, as it was
+    // before the route existed: the not-found page and its way home.
+    testWidgets('on web a signed-in visitor at /servers gets the not-found '
+        'screen', (tester) async {
+      when(() => cubit.orchestrator).thenReturn(null);
+      final router = await pumpRouter(
+        tester,
+        initialState: const AppBootstrapReady(),
+        // BgeApp's builder, without an orchestrator.
+        serversBuilder: (_) => null,
+      );
+
+      for (final location in const [AppRoutes.servers, AppRoutes.serversAdd]) {
+        router.go(location);
+        await tester.pumpAndSettle();
+
+        expect(router.state.uri.path, location, reason: location);
+        expect(find.byType(RouteNotFoundScreen), findsOneWidget);
+        expect(find.byType(NotYetAvailableScreen), findsNothing);
+
+        await tester.tap(
+          find.descendant(
+            of: find.byType(RouteNotFoundScreen),
+            matching: find.byType(FilledButton),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(router.state.uri.path, AppRoutes.home, reason: location);
+        expect(find.text('Home'), findsOneWidget, reason: location);
+      }
+    });
+
+    testWidgets('a ready app stays on /servers', (tester) async {
+      when(() => cubit.orchestrator).thenReturn(FakeServerOrchestrator());
+      const scopeKey = Key('auth-scope');
+      const shellKey = Key('nav-shell');
+      final router = await pumpRouter(
+        tester,
+        initialState: const AppBootstrapReady(),
+        authScopeBuilder: (context, child) =>
+            KeyedSubtree(key: scopeKey, child: child),
+        navigationShellBuilder: (context, location, child) =>
+            KeyedSubtree(key: shellKey, child: child),
+        serversBuilder: (_) => const Scaffold(body: Text('Servers')),
+      );
+
+      unawaited(router.push<void>(AppRoutes.servers));
+      await tester.pumpAndSettle();
+
+      expect(router.state.uri.path, AppRoutes.servers);
+      expect(find.text('Servers'), findsOneWidget);
+      // Outside both shells: it needs no server's session.
+      for (final shell in [scopeKey, shellKey]) {
+        expect(
+          find.ancestor(of: find.text('Servers'), matching: find.byKey(shell)),
+          findsNothing,
+          reason: '$shell',
+        );
+      }
+
+      // Back returns to home, beneath it.
+      router.pop();
+      await tester.pumpAndSettle();
+      expect(router.state.uri.path, AppRoutes.home);
+      expect(find.text('Home'), findsOneWidget);
+    });
+
+    testWidgets('with no server registered /servers goes to /server-add', (
+      tester,
+    ) async {
+      when(() => cubit.orchestrator).thenReturn(FakeServerOrchestrator());
+      final router = await pumpRouter(
+        tester,
+        initialState: const AppBootstrapNeedsServer(),
+      );
+
+      for (final location in const [AppRoutes.servers, AppRoutes.serversAdd]) {
+        router.go(location);
+        await tester.pumpAndSettle();
+
+        expect(router.state.uri.path, AppRoutes.serverAdd, reason: location);
+        expect(find.text('Add a server'), findsOneWidget, reason: location);
+      }
+    });
+  });
+
+  group('AppRoutes.isServerManager', () {
+    test('is the manager and everything under it', () {
+      expect(AppRoutes.serversAdd, '${AppRoutes.servers}/add');
+      for (final location in [
+        AppRoutes.servers,
+        AppRoutes.serversAdd,
+        '${AppRoutes.servers}?from=drawer',
+      ]) {
+        expect(AppRoutes.isServerManager(location), isTrue, reason: location);
+      }
+    });
+
+    test('is not a sibling that shares its prefix, or anywhere else', () {
+      for (final location in [
+        '/serversx',
+        AppRoutes.serverAdd,
+        AppRoutes.home,
+        AppRoutes.splash,
+      ]) {
+        expect(AppRoutes.isServerManager(location), isFalse, reason: location);
+      }
     });
   });
 }

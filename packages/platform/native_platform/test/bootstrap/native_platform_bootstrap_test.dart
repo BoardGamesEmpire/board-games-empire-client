@@ -241,6 +241,23 @@ void main() {
         },
       );
 
+      test(
+        'a successful initialize publishes ServerRepositoryRegisteredServers',
+        () async {
+          when(() => serverRepository.getAllServers())
+              .thenAnswer((_) async => const []);
+          final bootstrap = buildBootstrap();
+
+          final result = await bootstrap.initialize();
+
+          expect(
+            result.registeredServers,
+            isA<ServerRepositoryRegisteredServers>(),
+          );
+          await bootstrap.dispose();
+        },
+      );
+
       test('reports a server when the registry is non-empty', () async {
         when(() => serverRepository.getAllServers())
             .thenAnswer((_) async => [_serverConfig()]);
@@ -453,7 +470,8 @@ void main() {
       });
 
       test(
-        'once a boot has succeeded is logged, and no later attempt returns it',
+        'a rebuild once a boot has succeeded is reported on laterRecoveries '
+        'and not returned by a later attempt',
         () async {
           final records = <LogRecord>[];
           final previousLevel = Logger.root.level;
@@ -463,6 +481,9 @@ void main() {
             await subscription.cancel();
             Logger.root.level = previousLevel;
           });
+          when(
+            () => serverRepository.getServerByBgeId(server.bgeServerId),
+          ).thenAnswer((_) async => server);
           late ServerContext Function(ServerConfig config) bootContextFactory;
           final bootstrap = buildBootstrap(
             orchestratorFactory:
@@ -476,7 +497,10 @@ void main() {
                 },
           );
           addTearDown(bootstrap.dispose);
-          await bootstrap.initialize();
+          final first = await bootstrap.initialize();
+          final later = <List<ServerConfig>>[];
+          final laterSubscription = first.laterRecoveries!.listen(later.add);
+          addTearDown(laterSubscription.cancel);
 
           // A server database opened after boot, through the factory the
           // boot composed, as reactivating a known server would (#134).
@@ -484,8 +508,12 @@ void main() {
           final onboarded = bootContextFactory(server);
           await onboarded.activate();
           await onboarded.dispose();
+          await Future<void>.delayed(Duration.zero);
           final again = await bootstrap.initialize();
 
+          expect(later, [
+            [server],
+          ]);
           expect(
             records.where(
               (r) =>

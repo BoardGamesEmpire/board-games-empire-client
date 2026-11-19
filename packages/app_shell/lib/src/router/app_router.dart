@@ -368,6 +368,23 @@ abstract final class AppRoutes {
 
   static const error = '/error';
 
+  /// The server manager (#134): every server added on this device, and the
+  /// one in use. It belongs to the device, not to a server's session, so it
+  /// sits outside both shells.
+  static const servers = '/servers';
+
+  /// Adding a server from the manager (#134), beneath it so Back returns
+  /// there. Not [serverAdd], which is the first-run screen.
+  static const serversAdd = '$servers/$_serversAddSegment';
+
+  static const _serversAddSegment = 'add';
+
+  /// Whether [location] is the server manager or one of its children (#134).
+  static bool isServerManager(String location) {
+    final path = Uri.tryParse(location)?.path ?? location;
+    return path == servers || path.startsWith('$servers/');
+  }
+
   /// Where a deep link for a server this device hasn't added lands (#82).
   /// Not in [bootstrapLocations]: it is reachable only once the app is
   /// ready, and a ready app is not bounced off it.
@@ -436,16 +453,35 @@ const publicDeepLinkPathPatterns = <String>{
 /// null by design.
 typedef ServerAddScreenBuilder = Widget? Function(BuildContext context);
 
+/// Builds the server manager (#134) for the [AppRoutes.servers] route.
+/// Always supplied by `BgeApp`; returns null at navigation time when there
+/// is no orchestrator or no registry of the device's servers, in which case
+/// the route shows [RouteNotFoundScreen].
+///
+/// The manager belongs to the device, not to a server's session, so its
+/// route sits outside both shells and opens while signed out on native.
+/// Web has no orchestrator, and so no manager: signed out, the redirect
+/// sends its location to sign-in, and signed in it reads as unknown.
+typedef ServersScreenBuilder = Widget? Function(BuildContext context);
+
+/// Builds the add-server screen the manager opens (#134), for the
+/// [AppRoutes.serversAdd] route. Always supplied by `BgeApp`; returns null
+/// at navigation time when the composition cannot back the flow, as
+/// [ServerAddScreenBuilder] does, in which case the route shows
+/// [RouteNotFoundScreen], as the manager's does: web has no orchestrator.
+typedef ManagerServerAddScreenBuilder = Widget? Function(BuildContext context);
+
 /// Builds the real auth screen subtree (#37) for the [AppRoutes.auth]
 /// route — the `AuthGate` rendered against the active server's bloc.
 /// Always supplied by `BgeApp`; returns null at navigation time when no
 /// active server is resolvable, in which case the route falls back to the
 /// placeholder.
 ///
-/// That fallback is a dead end, not a transient state: the redirect pins
-/// [AppBootstrapNeedsAuth] to this route. Native bootstrap fails as a
-/// retryable error rather than reach it (#217), and the builder logs an
-/// error naming the cause if it ever is reached.
+/// That fallback is a dead end, not a transient state: under
+/// [AppBootstrapNeedsAuth] the redirect sends every location here but a
+/// public link and, on native, the server manager (#134). Native bootstrap
+/// fails as a retryable error rather than reach it (#217), and the builder
+/// logs an error naming the cause if it ever is reached.
 typedef AuthScreenBuilder = Widget? Function(BuildContext context);
 
 /// Builds the user-initiated feedback flow (#107) for the
@@ -890,6 +926,8 @@ GoRouter buildAppRouter({
   required AppBootstrapCubit bootstrapCubit,
   required BootstrapStreamListenable refreshListenable,
   ServerAddScreenBuilder? serverAddBuilder,
+  ServersScreenBuilder? serversBuilder,
+  ManagerServerAddScreenBuilder? managerServerAddBuilder,
   AuthScreenBuilder? authBuilder,
   HomeScreenBuilder? homeBuilder,
   AuthScopeBuilder? authScopeBuilder,
@@ -970,8 +1008,15 @@ GoRouter buildAppRouter({
           location == AppRoutes.error ? null : AppRoutes.error,
         AppBootstrapNeedsServer() =>
           location == AppRoutes.serverAdd ? null : AppRoutes.serverAdd,
+        // #134: the server manager needs no session either. Native only:
+        // web has no orchestrator, and no manager.
         AppBootstrapNeedsAuth() =>
-          location == AppRoutes.auth || public ? null : AppRoutes.auth,
+          location == AppRoutes.auth ||
+                  public ||
+                  (AppRoutes.isServerManager(location) &&
+                      bootstrapCubit.orchestrator != null)
+              ? null
+              : AppRoutes.auth,
         AppBootstrapReady() =>
           AppRoutes.bootstrapLocations.contains(location)
               ? AppRoutes.home
@@ -1002,8 +1047,9 @@ GoRouter buildAppRouter({
       }
       return target;
     },
-    // An unknown location, reachable only once ready: before that the
-    // redirect above pins every location to a bootstrap screen.
+    // An unknown location. Before Ready the redirect above sends one to a
+    // bootstrap screen, except one under the server manager's path, which
+    // native lets through while signed out (#134) and lands here.
     errorPageBuilder: (context, state) =>
         _materialPage(state, const RouteNotFoundScreen()),
     // Every route builds its page explicitly; see [_materialPage] for why,
@@ -1030,6 +1076,32 @@ GoRouter buildAppRouter({
                 kind: ShellPlaceholderKind.serverAdd,
               ),
         ),
+      ),
+      // #134: the server manager. It belongs to the device, not to a
+      // server's session, so it sits outside both shells and needs no
+      // AuthBloc. It is pushed over whatever shows, and Back returns there,
+      // so it is no section's top and isn't wrapped in [BgeTopLevelRoute].
+      //
+      // Without a builder's screen, both routes show the not-found page, as
+      // an unknown location does: on web the manager doesn't exist, so a
+      // typed `/servers` is unknown there, and the page offers a way home.
+      // Not [NotYetAvailableScreen], which promises what web never gets.
+      GoRoute(
+        path: AppRoutes.servers,
+        pageBuilder: (context, state) => _materialPage(
+          state,
+          serversBuilder?.call(context) ?? const RouteNotFoundScreen(),
+        ),
+        routes: [
+          GoRoute(
+            path: AppRoutes._serversAddSegment,
+            pageBuilder: (context, state) => _materialPage(
+              state,
+              managerServerAddBuilder?.call(context) ??
+                  const RouteNotFoundScreen(),
+            ),
+          ),
+        ],
       ),
       // #37: the auth route and the navigation shell (#414) share ONE AuthBloc,
       // provided by [authScopeBuilder] inside the router subtree — go_router

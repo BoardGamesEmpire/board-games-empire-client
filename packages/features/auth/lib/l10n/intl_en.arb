@@ -234,6 +234,10 @@
   "@authServerLabel": {
     "description": "Label showing which server the user is signing into"
   },
+  "authManageServers": "Manage servers",
+  "@authManageServers": {
+    "description": "Link that opens the list of servers added on this device, where another server can be picked or added (#134). It ends the sign-in screen, and follows Try Again when a saved session could not be checked. Shown on every platform but the web, with one server added or more, so someone who added a wrong server, or whose server cannot be reached, can leave it."
+  },
   "authRegistrationDisabled": "Registration is currently disabled on this server.",
   "@authRegistrationDisabled": {
     "description": "Error when server disables sign-up"

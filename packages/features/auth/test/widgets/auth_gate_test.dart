@@ -8,8 +8,10 @@ import 'package:auth/src/screens/auth_gate.dart';
 import 'package:auth/src/screens/auth_screen.dart';
 import 'package:auth/src/widgets/login_form.dart';
 import 'package:bge_test_support/domain.dart';
+import 'package:bge_test_support/widgets.dart';
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
@@ -18,19 +20,23 @@ import '../support/auth_test_fixtures.dart';
 
 const _kSplashKey = Key('test_splash');
 
-Widget _wrap(MockAuthBloc bloc, {String serverDisplayName = 'My Server'}) =>
-    MaterialApp(
-      localizationsDelegates: AuthLocalizations.localizationsDelegates,
-      supportedLocales: AuthLocalizations.supportedLocales,
-      home: BlocProvider<AuthBloc>.value(
-        value: bloc,
-        child: AuthGate(
-          identity: testServerIdentity(),
-          serverDisplayName: serverDisplayName,
-          splash: const SizedBox(key: _kSplashKey),
-        ),
-      ),
-    );
+Widget _wrap(
+  MockAuthBloc bloc, {
+  String serverDisplayName = 'My Server',
+  VoidCallback? onManageServers,
+}) => MaterialApp(
+  localizationsDelegates: AuthLocalizations.localizationsDelegates,
+  supportedLocales: AuthLocalizations.supportedLocales,
+  home: BlocProvider<AuthBloc>.value(
+    value: bloc,
+    child: AuthGate(
+      identity: testServerIdentity(),
+      serverDisplayName: serverDisplayName,
+      splash: const SizedBox(key: _kSplashKey),
+      onManageServers: onManageServers,
+    ),
+  ),
+);
 
 const _kUnreachable = AuthSessionCheckFailed(
   kind: SessionCheckFailureKind.unreachable,
@@ -296,6 +302,81 @@ void main() {
         await tester.pumpAndSettle();
 
         expect(find.text(registerSwitch), findsOneWidget);
+      });
+    });
+
+    // #134: a stored session on a server that can't be reached is as much a
+    // trap as a wrong server's sign-in screen, and this view is all the
+    // person sees.
+    group('Manage servers on the failed session check', () {
+      final manageServers = find.widgetWithText(TextButton, 'Manage servers');
+
+      testWidgets('the failed session check offers Manage servers only when '
+          'given a callback', (tester) async {
+        when(() => mockBloc.state).thenReturn(_kUnreachable);
+
+        await tester.pumpWidget(_wrap(mockBloc));
+        expect(find.byType(SessionCheckFailedView), findsOneWidget);
+        expect(find.text('Manage servers'), findsNothing);
+
+        await tester.pumpWidget(_wrap(mockBloc, onManageServers: () {}));
+        expect(manageServers, findsOneWidget);
+        // A secondary action: below Try Again.
+        expect(
+          tester.getTopLeft(manageServers).dy,
+          greaterThan(
+            tester
+                .getBottomLeft(find.widgetWithText(FilledButton, 'Try Again'))
+                .dy,
+          ),
+        );
+      });
+
+      testWidgets('tapping Manage servers on the failed session check calls '
+          'back', (tester) async {
+        when(() => mockBloc.state).thenReturn(_kUnreachable);
+        var calls = 0;
+        await tester.pumpWidget(
+          _wrap(mockBloc, onManageServers: () => calls++),
+        );
+
+        await tester.tap(manageServers);
+        await tester.pump();
+
+        expect(calls, 1);
+        verifyNever(() => mockBloc.add(const AuthSessionCheckRequested()));
+      });
+
+      testWidgets('Manage servers follows Try Again in the focus order and '
+          'holds at 320dp and 2.0', (tester) async {
+        useViewSize(tester, const Size(320, 800));
+        tester.platformDispatcher.textScaleFactorTestValue = 2;
+        addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+        when(() => mockBloc.state).thenReturn(_kUnreachable);
+        var calls = 0;
+        await tester.pumpWidget(
+          _wrap(mockBloc, onManageServers: () => calls++),
+        );
+        await tester.pumpAndSettle();
+
+        expect(tester.takeException(), isNull);
+        // Retry is autofocused; Tab moves on to Manage servers.
+        expect(
+          Focus.of(tester.element(find.text('Try Again'))).hasPrimaryFocus,
+          isTrue,
+        );
+        await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+        await tester.pump();
+        expect(
+          Focus.of(tester.element(find.text('Manage servers'))).hasPrimaryFocus,
+          isTrue,
+        );
+
+        await tester.ensureVisible(manageServers);
+        await tester.pumpAndSettle();
+        await tester.tap(manageServers);
+        await tester.pump();
+        expect(calls, 1);
       });
     });
 

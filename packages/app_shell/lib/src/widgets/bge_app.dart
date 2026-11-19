@@ -6,6 +6,7 @@ import 'package:app_shell/src/bootstrap/app_bootstrap_cubit.dart';
 import 'package:app_shell/src/bootstrap/app_bootstrap_state.dart';
 import 'package:app_shell/src/data_export/export_label_resolvers.dart';
 import 'package:app_shell/src/deep_links/deep_link_consumer.dart';
+import 'package:app_shell/src/deep_links/deep_link_failure.dart';
 import 'package:app_shell/src/deep_links/deep_link_handler.dart';
 import 'package:app_shell/src/deep_links/pending_deep_link_holder.dart';
 import 'package:app_shell/src/i18n/active_locale.dart';
@@ -20,10 +21,14 @@ import 'package:app_shell/src/screens/home_menu_entry.dart';
 import 'package:app_shell/src/screens/home_screen.dart';
 import 'package:app_shell/src/screens/settings_screen.dart';
 import 'package:app_shell/src/screens/splash_screen.dart';
+import 'package:app_shell/src/servers/server_activation.dart';
+import 'package:app_shell/src/servers/server_list_cubit.dart';
+import 'package:app_shell/src/servers/servers_screen.dart';
 import 'package:app_shell/src/settings/entries/data_export_settings_entry.dart';
 import 'package:app_shell/src/settings/locale_cubit.dart';
 import 'package:app_shell/src/settings/settings_sections_builder.dart';
 import 'package:app_shell/src/settings/theme_mode_cubit.dart';
+import 'package:app_shell/src/widgets/auth_route_host.dart';
 import 'package:app_shell/src/widgets/crash_report_prompt.dart';
 import 'package:app_shell/src/widgets/database_recovery_notice.dart';
 import 'package:app_shell/src/widgets/detached_rehydrate.dart';
@@ -311,6 +316,11 @@ class _BgeAppState extends State<BgeApp> {
   late final BootstrapStreamListenable _refreshListenable;
   late final GoRouter _router;
 
+  /// The app-level messenger, so a message that belongs to no screen (a deep
+  /// link that couldn't be opened) has somewhere to show (#984).
+  final GlobalKey<ScaffoldMessengerState> _rootMessenger =
+      GlobalKey<ScaffoldMessengerState>();
+
   /// Diagnostics for route builders that degrade to a placeholder because
   /// the composition cannot back them (#189).
   static final BgeLogger _log = BgeLogger('bge.shell.router');
@@ -395,19 +405,23 @@ class _BgeAppState extends State<BgeApp> {
   final StreamController<String> _gamesFoundGone =
       StreamController<String>.broadcast();
 
-  /// Whose session home is built for, set by [_AuthScope] (#432).
+  /// Whose session home is built for, and on which server, set by
+  /// [_AuthScope] (#432, #134).
   ///
   /// Home rebuilds on it. A user switched in place — another tab's sign-in
   /// moving the shared cookie — never leaves home, so nothing else would
   /// rebuild it, and it would go on holding the departed user's services.
+  /// Nor does a server picked while home is showing: going home from there
+  /// builds no new page.
   ///
-  /// While a switch is under way home is the splash instead. The departing
-  /// user's scope is being torn down and the arriving user's is not live
-  /// yet, and home's entries open screens over those services.
+  /// While either switch is under way home is the splash instead. The
+  /// departing session's scope is being torn down and the arriving one's is
+  /// not live yet, and home's entries open screens over those services.
   ///
   /// Never cleared on sign-out: home unmounts then anyway, and a rebuild
   /// in that frame would only resolve services on their way out.
   final ValueNotifier<_HomeSession> _homeSession = ValueNotifier((
+    serverId: null,
     userId: null,
     switching: false,
   ));
@@ -422,6 +436,14 @@ class _BgeAppState extends State<BgeApp> {
   /// arrives, and on the shell's authenticated signal ([_onAuthenticated]).
   /// Null when there is no holder.
   DeepLinkConsumer? _deepLinkConsumer;
+
+  /// The server [_AuthScope]'s mounted bloc is signed in on, or null (#985).
+  /// [_deepLinkConsumer] reads it after a server switch.
+  ///
+  /// A plain field: nothing rebuilds on it, and it must not, because the
+  /// scope clears it from the bloc provider's `create`, which runs during
+  /// build.
+  String? _signedInServerId;
 
   @override
   void initState() {
@@ -447,6 +469,8 @@ class _BgeAppState extends State<BgeApp> {
       // container; a platform with no orchestrator), the builders fall
       // back to the placeholders, matching the pre-#37 behavior.
       serverAddBuilder: _buildServerAddRoute,
+      serversBuilder: _buildServersRoute,
+      managerServerAddBuilder: _buildManagerServerAddRoute,
       authBuilder: _buildAuthRoute,
       homeBuilder: _buildHomeRoute,
       authScopeBuilder: _buildAuthScope,
@@ -497,6 +521,8 @@ class _BgeAppState extends State<BgeApp> {
         lookup: () => widget.bootstrapCubit.knownServerLookup,
         orchestrator: () => widget.bootstrapCubit.orchestrator,
         go: _landDeepLink,
+        onFailure: _onDeepLinkFailure,
+        isSignedInOn: (localId) => localId == _signedInServerId,
       )..start();
     }
     // #76/#105: keep the review slot honest whenever the crash draft
@@ -667,6 +693,7 @@ class _BgeAppState extends State<BgeApp> {
     scope: widget.bootstrapCubit.activeServerScope,
     onAuthenticated: _onAuthenticated,
     onSignedOut: widget.bootstrapCubit.onSignedOut,
+    onSignedInServer: (serverId) => _signedInServerId = serverId,
     connectivity: _rootConnectivity(),
     unsentChanges: _unsentChanges,
     homeSession: _homeSession,
@@ -693,6 +720,28 @@ class _BgeAppState extends State<BgeApp> {
   /// landed screen must leave the app, not walk back through them.
   void _landDeepLink(String location) =>
       replacingHistoryEntry(_router, () => _router.go(location));
+
+  /// Says why a held link couldn't be opened (#984). The failure is already
+  /// logged, so with no messenger mounted there is nothing more to do.
+  ///
+  /// The navigation shell wraps its body in a messenger of its own (#414),
+  /// so this bar shows in the shell's outer Scaffold rather than a page's
+  /// own. Until that is resolved (#912) it can sit in a different place from
+  /// the bars screens show.
+  void _onDeepLinkFailure(DeepLinkFailure failure) {
+    final messenger = _rootMessenger.currentState;
+    final context = _rootMessenger.currentContext;
+    if (messenger == null || context == null) return;
+    final l10n = ShellLocalizations.of(context);
+    messenger.replaceSnackBar(switch (failure) {
+      DeepLinkLookupFailed() => l10n.shellDeepLinkOpenFailed,
+      DeepLinkActivationFailed(:final error) => serverActivationFailureText(
+        l10n,
+        error,
+        fallback: l10n.shellDeepLinkOpenFailed,
+      ),
+    });
+  }
 
   /// Resolves an **optional** device-global service from
   /// [BgeApp.rootContainer], or null when there is no container, [T] is not
@@ -723,7 +772,8 @@ class _BgeAppState extends State<BgeApp> {
   ConnectivityService? _rootConnectivity() =>
       _rootService<ConnectivityService>();
 
-  /// Renders the auth route at navigation time. Falls back to the router's
+  /// Renders the auth route at navigation time, for whichever server is
+  /// active from then on ([AuthRouteHost], #134). Falls back to the router's
   /// placeholder when no active server is resolvable: bootstrap published
   /// no scope, or the scope has no active server.
   ///
@@ -743,11 +793,14 @@ class _BgeAppState extends State<BgeApp> {
       _logAuthUnavailable('noActiveServer');
       return null;
     }
-    return AuthGate(
-      identity: active.identity,
-      serverDisplayName: active.displayName,
+    return AuthRouteHost(
+      scope: scope,
       splash: const SplashScreen(),
-      unsentChangesCount: _unsentChanges.countOf(active),
+      unsentChangesCountOf: _unsentChanges.countOf,
+      // #134: web has no orchestrator, and so no server manager.
+      onManageServers: widget.bootstrapCubit.orchestrator == null
+          ? null
+          : () => unawaited(GoRouter.of(context).push<void>(AppRoutes.servers)),
     );
   }
 
@@ -757,18 +810,27 @@ class _BgeAppState extends State<BgeApp> {
   /// navigation shell holds it, around every signed-in page
   /// ([_buildNavigationShell], #414).
   ///
-  /// Rebuilt whenever the session's user changes (#432), so a user switched
-  /// in place gets a home built from their own services, and the splash
-  /// until then. See [_homeSession].
+  /// Rebuilt whenever the session changes (#432, #134), so a user switched
+  /// in place, or a server switched to, gets a home built from its own
+  /// session's services, and the splash until that session is live. See
+  /// [_homeSession].
+  ///
+  /// The active server is read in that rebuild, not when the route was
+  /// built: a server picked while home is already showing goes to the same
+  /// location, which builds no new page, and its session going live is
+  /// what has to bring that server's home (#134).
   Widget? _buildHomeRoute(BuildContext context) {
-    final active = widget.bootstrapCubit.activeServerScope?.active;
-    if (active == null) return null;
+    final built = widget.bootstrapCubit.activeServerScope?.active;
+    if (built == null) return null;
 
     return ValueListenableBuilder<_HomeSession>(
       valueListenable: _homeSession,
-      builder: (context, session, _) => session.switching
-          ? const SplashScreen()
-          : _buildHome(context, active),
+      builder: (context, session, _) {
+        if (session.switching) return const SplashScreen();
+        // With no server active at all, home stays the one it was.
+        final active = widget.bootstrapCubit.activeServerScope?.active ?? built;
+        return _buildHome(context, active);
+      },
     );
   }
 
@@ -778,12 +840,12 @@ class _BgeAppState extends State<BgeApp> {
   /// pages' navigator.
   ///
   /// The pages go bare where no active server is resolvable, and while a
-  /// user is switched in place (#432): the departing user's scope is being
-  /// torn down, and the shell's destinations and entries open screens over
-  /// its services. Rebuilt on [_homeSession], so the shell comes back, built
-  /// from the arriving user's services, once their session is live. The
-  /// pages keep their state across that: go_router keys their navigator
-  /// globally.
+  /// user is switched in place (#432) or a server is switched to (#134):
+  /// the departing session's scope is being torn down, and the shell's
+  /// destinations and entries open screens over its services. Rebuilt on
+  /// [_homeSession], so the shell comes back, built from the arriving
+  /// session's services, once it is live. The pages keep their state across
+  /// that: go_router keys their navigator globally.
   Widget _buildNavigationShell(
     BuildContext context,
     String location,
@@ -900,6 +962,10 @@ class _BgeAppState extends State<BgeApp> {
             deferBack: _backHeldAbove,
             browserOwnsBack: widget.browserOwnsBack,
             drawerStatus: drawerStatus,
+            // #134: web has no orchestrator, and so no server manager.
+            serversLocation: widget.bootstrapCubit.orchestrator == null
+                ? null
+                : AppRoutes.servers,
             child: pages,
           );
         },
@@ -2882,11 +2948,45 @@ class _BgeAppState extends State<BgeApp> {
   /// with the set in hand. Null (→ the server-add `ShellPlaceholderScreen`)
   /// is the backstop: no container at all (tests), a bundle that cannot
   /// resolve on a cubit built without the check, or no orchestrator.
-  Widget? _buildServerAddRoute(BuildContext context) {
+  Widget? _buildServerAddRoute(BuildContext context) => _serverAddFlow(
+    onUnavailable: _logServerAddUnavailable,
+    onSucceeded: (_) => widget.bootstrapCubit.onServerRegistered(),
+  );
+
+  /// The #36 flow as the server manager opens it (#134), over the manager
+  /// and with an app bar, signed in or not. Null (→ the router's not-found
+  /// page) on the same terms as [_buildServerAddRoute], unlogged: on the web
+  /// there is no orchestrator, and the location reads as unknown, as the
+  /// manager's does.
+  ///
+  /// A success goes home, and the redirect takes the app to the new
+  /// server's sign-in screen: the server is active, and signed out.
+  /// [AppBootstrapCubit.onServerRegistered] would do nothing here, since a
+  /// server already exists. When the switch has already changed the
+  /// bootstrap state, the redirect has taken the route away, and it goes
+  /// nowhere.
+  Widget? _buildManagerServerAddRoute(BuildContext context) => _serverAddFlow(
+    title: Text(ServerOnboardingLocalizations.of(context).serverAddTitle),
+    onSucceeded: (context) {
+      if (!(ModalRoute.isActiveOf(context) ?? false)) return;
+      GoRouter.of(context).go(AppRoutes.home);
+    },
+  );
+
+  /// The #36 add-server screen over its bloc, built from the root-scope
+  /// [ServerOnboardingDeps] and the late-bound orchestrator, with
+  /// [onSucceeded] run, in the screen's context, once the server is added
+  /// and active. Null, after [onUnavailable] names what is missing, when
+  /// either is absent.
+  Widget? _serverAddFlow({
+    required void Function(BuildContext context) onSucceeded,
+    void Function(List<String> missing)? onUnavailable,
+    Widget? title,
+  }) {
     final deps = _rootService<ServerOnboardingDeps>();
     final orchestrator = widget.bootstrapCubit.orchestrator;
     if (deps == null || orchestrator == null) {
-      _logServerAddUnavailable([
+      onUnavailable?.call([
         if (deps == null) 'ServerOnboardingDeps',
         if (orchestrator == null) 'ServerOrchestrator',
       ]);
@@ -2902,8 +3002,27 @@ class _BgeAppState extends State<BgeApp> {
       ),
       child: BlocListener<ServerOnboardingBloc, ServerOnboardingState>(
         listenWhen: (_, current) => current is ServerOnboardingSucceeded,
-        listener: (_, _) => widget.bootstrapCubit.onServerRegistered(),
-        child: const ServerAddScreen(),
+        listener: (context, _) => onSucceeded(context),
+        child: ServerAddScreen(title: title),
+      ),
+    );
+  }
+
+  /// Builds the server manager (#134) for [AppRoutes.servers], or null (→
+  /// the router's not-found page) without an orchestrator or a registry of
+  /// the device's servers: on the web, and before bootstrap has succeeded.
+  ///
+  /// Both are read here, at navigation time, as [_buildServerAddRoute] reads
+  /// its own: the router is built before bootstrap publishes them. The
+  /// screen makes its list's cubit and closes it.
+  Widget? _buildServersRoute(BuildContext context) {
+    final orchestrator = widget.bootstrapCubit.orchestrator;
+    final registered = widget.bootstrapCubit.registeredServers;
+    if (orchestrator == null || registered == null) return null;
+    return ServersScreen(
+      create: () => ServerListCubit(
+        registered: registered,
+        orchestrator: orchestrator,
       ),
     );
   }
@@ -3243,6 +3362,7 @@ class _BgeAppState extends State<BgeApp> {
       themeMode: themeMode,
       locale: locale,
       routerConfig: _router,
+      scaffoldMessengerKey: _rootMessenger,
       builder: (context, child) {
         // #49: the offline strip, and the connectivity scope every screen's
         // controls read. Above the Navigator, so both reach every route,
@@ -3405,9 +3525,10 @@ class _BgeAppState extends State<BgeApp> {
                   );
                 },
               );
-        // #428: the notice of a server database rebuilt during boot. Above
-        // the router, so the redirects of the first screens cannot remove
-        // it, and unconditional, so the tree shape never changes.
+        // #428: the notice of a server database rebuilt, during boot or
+        // when a known server is reconnected later (#134). Above the
+        // router, so a redirect cannot remove it, and unconditional, so the
+        // tree shape never changes.
         body = DatabaseRecoveryNotice(
           bootstrapCubit: widget.bootstrapCubit,
           backButtonDispatcher: _router.backButtonDispatcher,
@@ -3513,11 +3634,24 @@ class _BgeAppState extends State<BgeApp> {
 /// cookie. The first user's session ends — not deliberately, and without
 /// routing to the sign-in screen — and the second's starts, with a
 /// one-time notice once it is live.
+///
+/// ## A server switched to (#134)
+///
+/// A switch ends the session on the server it leaves: the orchestrator
+/// backgrounds that server, which tears its user scope down. Nothing of
+/// that reaches the departed bloc's listener, which unmounts with its
+/// provider, so the scope watches the active server itself and puts home
+/// behind the splash until the new server's bloc has an outcome
+/// ([_AuthScopeState._onActiveServer]). Each outcome ends the splash:
+/// signed in rebuilds home for that session, signed out routes to the
+/// sign-in screen, and a session check that failed routes there too, for
+/// its retry view.
 class _AuthScope extends StatefulWidget {
   const _AuthScope({
     required this.scope,
     required this.onAuthenticated,
     required this.onSignedOut,
+    required this.onSignedInServer,
     required this.unsentChanges,
     required this.homeSession,
     required this.child,
@@ -3528,6 +3662,12 @@ class _AuthScope extends StatefulWidget {
   final VoidCallback onAuthenticated;
   final VoidCallback onSignedOut;
 
+  /// Told the server the mounted bloc is signed in on, just before
+  /// [onAuthenticated], and null when that bloc is replaced, signs out, or
+  /// goes with no server left active (#985). Called during build, so the
+  /// receiver must not rebuild on it.
+  final ValueChanged<String?> onSignedInServer;
+
   /// Device-global connectivity from the root container (#98); null on
   /// compositions without it. Handed to the [AuthBloc], which owns every
   /// decision made on it.
@@ -3536,8 +3676,8 @@ class _AuthScope extends StatefulWidget {
   /// Told when a session starts and ends (#142).
   final _UnsentChanges unsentChanges;
 
-  /// Told when a user switch begins and when a session goes live (#432);
-  /// see `_BgeAppState._homeSession`.
+  /// Told when a user or a server switch begins and when a session goes
+  /// live (#432, #134); see `_BgeAppState._homeSession`.
   final ValueNotifier<_HomeSession> homeSession;
 
   final Widget child;
@@ -3546,8 +3686,9 @@ class _AuthScope extends StatefulWidget {
   State<_AuthScope> createState() => _AuthScopeState();
 }
 
-/// Stateful only to hold [_authEpoch] (#383) and the listener's record of
-/// sessions (#432); nothing here affects build.
+/// Stateful only to hold [_authEpoch] (#383), the listener's record of
+/// sessions (#432) and the watch on the active server (#134); nothing here
+/// affects build.
 class _AuthScopeState extends State<_AuthScope> {
   static final BgeLogger _log = BgeLogger('bge.shell.auth_scope');
 
@@ -3594,6 +3735,84 @@ class _AuthScopeState extends State<_AuthScope> {
   /// `listenWhen` answers true, for the same transition.
   AuthBlocState? _arrivedFrom;
 
+  /// The home session a server switch ended, while the bloc it was live
+  /// under is still the one mounted (#134).
+  ///
+  /// Two switches can land before a frame builds: away, and back. The
+  /// provider is keyed by server and builds once, for the server it started
+  /// on, so that server's bloc stays and no sign-in outcome is coming to
+  /// take home off the splash. Home's session is put back instead. Cleared
+  /// once another bloc is created, after which every outcome is a new one.
+  _HomeSession? _leftSession;
+
+  StreamSubscription<ActiveServer?>? _activeSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+    _watchActive();
+  }
+
+  @override
+  void didUpdateWidget(_AuthScope oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.scope != widget.scope) _watchActive();
+  }
+
+  @override
+  void dispose() {
+    unawaited(_activeSubscription?.cancel());
+    super.dispose();
+  }
+
+  void _watchActive() {
+    unawaited(_activeSubscription?.cancel());
+    _activeSubscription = widget.scope?.watchActive().listen(
+      _onActiveServer,
+      onError: (Object error, StackTrace stackTrace) => _log.warn(
+        'The active-server stream failed; home keeps the session it has',
+        error: error,
+        stackTrace: stackTrace,
+      ),
+    );
+  }
+
+  /// Puts home behind the splash when the server its session is live on
+  /// stops being the active one (#134).
+  ///
+  /// That session is over: the switch backgrounded its server, which ends
+  /// the user session there. Home would otherwise go on showing it, built
+  /// from services already torn down, until the new server's session went
+  /// live, and the shell around it would offer the new server's screens
+  /// with no session to read. [_handleAuthenticated] brings home back, for
+  /// the new session.
+  ///
+  /// Runs on the stream's event, never during build: home rebuilds on the
+  /// notifier.
+  void _onActiveServer(ActiveServer? active) {
+    // With no server active at all, home stays as it was.
+    if (active == null) return;
+    final session = widget.homeSession.value;
+    final left = _leftSession;
+    if (left != null && left.serverId == active.serverId) {
+      // Back before a frame built: see [_leftSession].
+      _leftSession = null;
+      widget.homeSession.value = left;
+      return;
+    }
+    // No session to leave, or still on its server. The stream replays the
+    // active server to each listener, and may repeat it.
+    if (session.serverId == null || session.serverId == active.serverId) {
+      return;
+    }
+    _leftSession = session;
+    widget.homeSession.value = (serverId: null, userId: null, switching: true);
+    // A pop-up over home reads through the session that just ended, and
+    // home's page stays, so nothing else takes it down: a deep link's
+    // switch navigates nowhere until it lands.
+    _closePopUps(context);
+  }
+
   @override
   Widget build(BuildContext context) {
     final scope = widget.scope;
@@ -3604,7 +3823,12 @@ class _AuthScopeState extends State<_AuthScope> {
       initialData: scope.active,
       builder: (context, snapshot) {
         final active = snapshot.data;
-        if (active == null) return widget.child;
+        if (active == null) {
+          // The last active server went and none replaced it: no bloc is
+          // mounted to be signed in, and the one that was is gone (#985).
+          widget.onSignedInServer(null);
+          return widget.child;
+        }
 
         return BlocProvider<AuthBloc>(
           // Keyed on serverId: a switch unmounts the old bloc (closing it
@@ -3616,17 +3840,30 @@ class _AuthScopeState extends State<_AuthScope> {
           // session check is dispatched on creation so every freshly-keyed
           // bloc restores its own server's session.
           key: ValueKey('auth_bloc_${active.serverId}'),
-          create: (_) => AuthBloc(
-            // Required, so unguarded: every active server has one, and both
-            // compositions register it unconditionally (native through its
-            // network scope installer, web in registerServerNetworkWeb), as
-            // network_scope_installer_test and
-            // bootstrap_web_server_scope_test pin.
-            // A throw here is the first visible symptom of #174's race, and
-            // degrading it to a placeholder would hide that (#219).
-            authRepository: active.container.get<AuthRepository>(),
-            connectivity: widget.connectivity,
-          )..add(const AuthSessionCheckRequested()),
+          create: (_) {
+            // A fresh bloc has signed in nowhere yet (#985). The listener
+            // below reads the bloc in this same build, so this runs on
+            // every key change, during build.
+            widget.onSignedInServer(null);
+            // And whatever session a switch ended can't come back under
+            // it (#134).
+            _leftSession = null;
+            return AuthBloc(
+              // Required, so unguarded: every active server has one, and
+              // both compositions register it unconditionally (native
+              // through its network scope installer, web in
+              // registerServerNetworkWeb), as network_scope_installer_test
+              // and bootstrap_web_server_scope_test pin.
+              // A throw here means the active server's network scope is
+              // gone: a composition that never installed it, or a context
+              // torn down while still active. The orchestrator's command
+              // queue keeps a backgrounding timer's suspend off an active
+              // server (#174), so either is a bug, and degrading it to a
+              // placeholder would hide it (#219).
+              authRepository: active.container.get<AuthRepository>(),
+              connectivity: widget.connectivity,
+            )..add(const AuthSessionCheckRequested());
+          },
           child: BlocListener<AuthBloc, AuthBlocState>(
             // Entry/exit transitions only. `current is AuthAuthenticated`
             // alone was sufficient while equal Authenticated states never
@@ -3655,12 +3892,17 @@ class _AuthScopeState extends State<_AuthScope> {
             // AuthAuthenticated` (#208): a sign-out passes through
             // `AuthLoading` first, so the narrower test would miss every
             // ordinary one.
+            //
+            // And a session check that failed (#134), for a server
+            // switched to while the app is past the auth leg.
             listenWhen: (previous, current) {
               final acts =
                   (current is AuthAuthenticated &&
                       previous is! AuthAuthenticated) ||
                   (current is AuthUnauthenticated &&
                       previous is! AuthUnauthenticated) ||
+                  (current is AuthSessionCheckFailed &&
+                      previous is! AuthSessionCheckFailed) ||
                   (current is AuthAuthenticated &&
                       previous is AuthAuthenticated &&
                       current.session.user.id != previous.session.user.id);
@@ -3727,6 +3969,8 @@ class _AuthScopeState extends State<_AuthScope> {
                 );
               } else if (state is AuthUnauthenticated) {
                 _openSession = null;
+                // So it never names a server that is signed out (#985).
+                widget.onSignedInServer(null);
                 widget.unsentChanges.sessionEnded(
                   active,
                   deliberately: state.cause == SignOutCause.user,
@@ -3739,6 +3983,15 @@ class _AuthScopeState extends State<_AuthScope> {
                 _closePopUps(context);
                 widget.onSignedOut();
                 unawaited(_deactivateSessionScope(active));
+              } else if (state is AuthSessionCheckFailed) {
+                // Only a bloc's first check, or a retry of it, fails this
+                // way, so no session is open here to end. At startup the
+                // gate is already on the auth leg and this does nothing.
+                // After a switch from a signed-in server it is still past
+                // it, with home behind the splash (#134): going back to the
+                // auth leg is what shows this server's retry view, and its
+                // way to the server manager.
+                widget.onSignedOut();
               }
             },
             // #141: app resume, the third revalidation trigger. A dispatch
@@ -3913,11 +4166,27 @@ class _AuthScopeState extends State<_AuthScope> {
       return;
     }
     // Ahead of the gate callback, so a home it routes to is built for this
-    // user. A user switched in place is already on home, and this is what
-    // rebuilds it (#432). Not once this scope has unmounted: the app may be
+    // session. A user switched in place is already on home, and so may be a
+    // server switched to, and this is what rebuilds it (#432, #134). The
+    // server is part of the value because two servers can sign in users
+    // with the same id. Not once this scope has unmounted: the app may be
     // gone, and the notifier with it, while a route builds home afresh
     // anyway.
-    if (mounted) widget.homeSession.value = (userId: userId, switching: false);
+    if (mounted) {
+      _leftSession = null;
+      widget.homeSession.value = (
+        serverId: active.serverId,
+        userId: userId,
+        switching: false,
+      );
+    }
+    // After the checks above, so this publishes only while the server is
+    // still active, its bloc still signed in as this user and that user's
+    // scope live, and only while this scope is mounted. The epoch isn't
+    // checked: a handler a same-user sign-in superseded publishes the same
+    // server, which is still true. Ahead of the gate callback, whose drain
+    // may read it (#985).
+    if (mounted) widget.onSignedInServer(active.serverId);
     try {
       widget.onAuthenticated();
     } on Object catch (error, stackTrace) {
@@ -3951,7 +4220,11 @@ class _AuthScopeState extends State<_AuthScope> {
   /// rebuilt for them then (see `_BgeAppState._homeSession`).
   void _endSessionInPlace(BuildContext context, ActiveServer active) {
     widget.unsentChanges.sessionEnded(active, deliberately: false);
-    widget.homeSession.value = (userId: null, switching: true);
+    widget.homeSession.value = (
+      serverId: active.serverId,
+      userId: null,
+      switching: true,
+    );
     _closePopUps(context);
     GoRouter.maybeOf(context)?.go(AppRoutes.home);
     unawaited(_deactivateSessionScope(active));
@@ -4031,9 +4304,9 @@ final class _NoSessionLease implements SessionLease {
   bool get isLive => false;
 }
 
-/// Whose session home is built for, and whether a switch to another user is
-/// under way (#432).
-typedef _HomeSession = ({String? userId, bool switching});
+/// Whose session home is built for and on which server, and whether a
+/// switch to another user (#432) or another server (#134) is under way.
+typedef _HomeSession = ({String? serverId, String? userId, bool switching});
 
 /// Resolves an **optional** service from [active]'s per-server container,
 /// or null where the composition registers none or its factory throws. A

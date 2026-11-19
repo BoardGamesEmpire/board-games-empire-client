@@ -438,5 +438,74 @@
         "example": "alex"
       }
     }
+  },
+  "shellServerCapacityReached": "This device connects up to {max} servers at once.",
+  "@shellServerCapacityReached": {
+    "description": "Shown when making a server active fails because this device already connects the most servers it can at once (#134). States the limit so the person knows to disconnect one first. Must not read as an error on their part.",
+    "placeholders": {
+      "max": {
+        "type": "int",
+        "description": "The most servers this device connects at once"
+      }
+    }
+  },
+  "shellServerSwitchFailed": "Couldn't switch servers. Try again.",
+  "@shellServerSwitchFailed": {
+    "description": "Shown when making a server active fails for a reason other than the device being at its server limit (#134). Says to try again; the cause isn't something the person can act on."
+  },
+  "shellDeepLinkOpenFailed": "Couldn't open that link.",
+  "@shellDeepLinkOpenFailed": {
+    "description": "Shown when a link to a server on this device can't be opened (#82, #984): looking up the link's server failed, or that server couldn't be made active. The link is dropped, so this doesn't suggest trying it again."
+  },
+  "shellServersTitle": "Servers",
+  "@shellServersTitle": {
+    "description": "Title of the server manager (#134): every Board Games Empire server added on this device, where the person picks the one to use and adds another."
+  },
+  "shellServersAdd": "Add server",
+  "@shellServersAdd": {
+    "description": "Button on the server manager that opens the form for adding another server to this device (#134)."
+  },
+  "shellServersOpenLabel": "Server: {name}. Manage servers",
+  "@shellServersOpenLabel": {
+    "description": "What a screen reader says for the menu's header, which names the server in use and opens the server manager (#134). Names the server first, then what the button does.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "description": "The display name of the server in use",
+        "example": "Game Night Club"
+      }
+    }
+  },
+  "shellServerStateInUse": "In use",
+  "@shellServerStateInUse": {
+    "description": "A server's state in the server manager (#134): it is the server the app is showing now."
+  },
+  "shellServerStateDormant": "Dormant",
+  "@shellServerStateDormant": {
+    "description": "A server's state in the server manager (#134): still connected in the background, but not the one in use. Picking it makes it the one in use quickly."
+  },
+  "shellServerStateNotConnected": "Not connected",
+  "@shellServerStateNotConnected": {
+    "description": "A server's state in the server manager (#134): added on this device but not connected. Picking it connects it and makes it the one in use. Not an error."
+  },
+  "shellServerSwitching": "Switching…",
+  "@shellServerSwitching": {
+    "description": "Read by a screen reader after a server's name and state in the server manager while the app switches to that server (#134). The row shows a spinner meanwhile."
+  },
+  "shellServersLoading": "Loading your servers…",
+  "@shellServersLoading": {
+    "description": "Read by a screen reader while the server manager reads the servers added on this device (#134)."
+  },
+  "shellServersFailedTitle": "Couldn't list your servers",
+  "@shellServersFailedTitle": {
+    "description": "Title shown in place of the server manager's list when the servers added on this device couldn't be read (#134)."
+  },
+  "shellServersFailedBody": "The servers added on this device couldn't be read. Your servers and their data haven't been changed.",
+  "@shellServersFailedBody": {
+    "description": "Body under shellServersFailedTitle (#134). Reassures that nothing was lost; a Try again button follows it."
+  },
+  "shellServersRetry": "Try again",
+  "@shellServersRetry": {
+    "description": "Button under shellServersFailedBody that reads the servers added on this device again (#134)."
   }
 }

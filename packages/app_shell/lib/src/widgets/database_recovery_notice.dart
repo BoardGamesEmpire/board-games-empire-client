@@ -7,9 +7,13 @@ import 'package:app_shell/src/widgets/router_back_interceptor.dart';
 import 'package:flutter/material.dart';
 import 'package:models/domain.dart';
 
-/// Tells the user, once per boot, that the data saved on this device for a
-/// server could not be opened and was rebuilt empty, so changes made on
-/// this device that the server never received are gone (#428).
+/// Tells the user that the data saved on this device for a server could not
+/// be opened and was rebuilt empty, so changes made on this device that the
+/// server never received are gone (#428). A rebuild during boot arrives with
+/// the successful bootstrap, and one after it, from reconnecting a known
+/// server (#134), on [AppBootstrapCubit.laterRecoveries]. A later one joins
+/// the servers shown while the notice is up, and brings it up again for
+/// that server once it has been acknowledged.
 ///
 /// It sits above the router's Navigator, as the crash prompt in `BgeApp`
 /// does, rather than pushing a dialog route. The first screens after boot
@@ -50,7 +54,8 @@ class DatabaseRecoveryNotice extends StatefulWidget {
   );
 
   /// Source of the servers to name: the [AppBootstrapNeedsAuth] a
-  /// successful bootstrap emits carries them.
+  /// successful bootstrap emits carries those rebuilt during boot, and
+  /// [AppBootstrapCubit.laterRecoveries] those rebuilt after it.
   final AppBootstrapCubit bootstrapCubit;
 
   /// The router's dispatcher, so system back reaches the notice first.
@@ -76,6 +81,7 @@ class DatabaseRecoveryNotice extends StatefulWidget {
 class _DatabaseRecoveryNoticeState extends State<DatabaseRecoveryNotice> {
   List<ServerConfig> _servers = const [];
   StreamSubscription<AppBootstrapState>? _subscription;
+  StreamSubscription<List<ServerConfig>>? _laterSubscription;
 
   final _acknowledgeFocus = FocusNode(
     debugLabel: 'DatabaseRecoveryNotice acknowledge',
@@ -90,12 +96,26 @@ class _DatabaseRecoveryNoticeState extends State<DatabaseRecoveryNotice> {
     _servers = _recoveredServersOf(widget.bootstrapCubit.state);
     if (_servers.isNotEmpty) _show();
     _subscription = widget.bootstrapCubit.stream.listen((state) {
-      final servers = _recoveredServersOf(state);
-      if (servers.isEmpty || !mounted) return;
-      final wasHidden = _servers.isEmpty;
-      setState(() => _servers = [..._servers, ...servers]);
-      if (wasHidden) _show();
+      _add(_recoveredServersOf(state));
     });
+    _laterSubscription = widget.bootstrapCubit.laterRecoveries.listen(_add);
+  }
+
+  /// Adds [servers] to those shown, bringing the notice up if it is not.
+  ///
+  /// A server already shown is not named again: one rebuilt a second time
+  /// while the notice is up is still one server whose changes were lost.
+  void _add(List<ServerConfig> servers) {
+    if (!mounted) return;
+    final shown = {for (final server in _servers) server.id};
+    final added = [
+      for (final server in servers)
+        if (shown.add(server.id)) server,
+    ];
+    if (added.isEmpty) return;
+    final wasHidden = _servers.isEmpty;
+    setState(() => _servers = [..._servers, ...added]);
+    if (wasHidden) _show();
   }
 
   void _show() {
@@ -109,6 +129,7 @@ class _DatabaseRecoveryNoticeState extends State<DatabaseRecoveryNotice> {
   @override
   void dispose() {
     unawaited(_subscription?.cancel());
+    unawaited(_laterSubscription?.cancel());
     _acknowledgeFocus.dispose();
     super.dispose();
   }

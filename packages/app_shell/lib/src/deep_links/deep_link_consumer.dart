@@ -1,9 +1,11 @@
 import 'dart:async';
 
+import 'package:app_shell/src/deep_links/deep_link_failure.dart';
 import 'package:app_shell/src/deep_links/deep_link_normalizer.dart';
 import 'package:app_shell/src/deep_links/known_server_lookup.dart';
 import 'package:app_shell/src/deep_links/pending_deep_link_holder.dart';
 import 'package:app_shell/src/router/app_router.dart';
+import 'package:app_shell/src/servers/server_activation.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:observability/observability.dart';
 
@@ -32,7 +34,10 @@ import 'package:observability/observability.dart';
 /// switch's own pass, leaves the link held. The outcome is [drain]: the
 /// shell's authenticated signal. A server that needs sign-in leaves Ready
 /// instead, and its sign-in drains later (#82). Links for other servers are
-/// acted on at once, so the newest link still wins.
+/// acted on at once, so the newest link still wins. There is no wait when
+/// the switch lands back on the server the auth scope is still signed in on,
+/// before the scope rebuilt for another: its bloc never left, so no outcome
+/// would come, and the link lands at once (#985).
 ///
 /// A switch happens once per link delivery. If a later pass finds that
 /// link's server no longer active, the app has moved elsewhere since the
@@ -52,8 +57,13 @@ class DeepLinkConsumer {
     required this._lookup,
     required this._orchestrator,
     required this._go,
+    this._onFailure,
+    bool Function(String localId)? isSignedInOn,
     BgeLogger? logger,
-  }) : _logger = logger ?? BgeLogger('bge.shell.deep_links');
+  }) : _isSignedInOn = isSignedInOn ?? _signedInNowhere,
+       _logger = logger ?? BgeLogger('bge.shell.deep_links');
+
+  static bool _signedInNowhere(String _) => false;
 
   final PendingDeepLinkHolder _holder;
 
@@ -68,6 +78,17 @@ class DeepLinkConsumer {
   final ServerOrchestrator? Function() _orchestrator;
 
   final void Function(String location) _go;
+
+  /// Told when a link is given up on because its lookup or switch failed,
+  /// so the shell can say so (#984). Not called for the deliberate drop,
+  /// for a server not added here, for a link a newer one replaced while it
+  /// waited, or after [dispose].
+  final void Function(DeepLinkFailure failure)? _onFailure;
+
+  /// Whether the auth scope's mounted bloc is signed in on the server with
+  /// this local id (#985). Asked only after a switch, which web never makes,
+  /// so web passes none and it answers false.
+  final bool Function(String localId) _isSignedInOn;
   final BgeLogger _logger;
 
   bool _disposed = false;
@@ -80,9 +101,12 @@ class DeepLinkConsumer {
   /// off it since. A link arriving clears it.
   NormalizedDeepLink? _switchRequestedFor;
 
-  /// The local id of the server this consumer last made active, until that
-  /// server's sign-in outcome arrives ([drain]). While it is the active
-  /// server, nothing lands.
+  /// The local id of a server this consumer switched to that the auth
+  /// scope wasn't signed in on, until a sign-in outcome arrives ([drain]).
+  /// While it is the active server, nothing lands. A switch back to the
+  /// server the scope is still signed in on never sets it (#985), so after
+  /// a round trip it can name a server the app has since left; it holds
+  /// links only for the active server, and the next outcome clears it.
   String? _awaitingSignInOn;
 
   /// Listens to the holder and drains once, for a link held before start.
@@ -158,7 +182,13 @@ class DeepLinkConsumer {
     try {
       localId = await lookup.localServerIdFor(link.serverId);
     } on Object catch (error, stackTrace) {
-      _drop(link, 'looking up its server', error, stackTrace);
+      _drop(
+        link,
+        'looking up its server',
+        const DeepLinkLookupFailed(),
+        error,
+        stackTrace,
+      );
       return;
     }
     if (!_stillCurrent(link)) return;
@@ -195,13 +225,27 @@ class DeepLinkConsumer {
 
     _switchRequestedFor = link;
     try {
-      if (orchestrator.getContext(localId) != null) {
-        await orchestrator.switchActiveServer(localId);
-      } else {
-        await orchestrator.connectServer(localId, makeActive: true);
-      }
+      await activateServer(orchestrator, localId);
     } on Object catch (error, stackTrace) {
-      _drop(link, 'making its server active', error, stackTrace);
+      _drop(
+        link,
+        'making its server active',
+        DeepLinkActivationFailed(error),
+        error,
+        stackTrace,
+      );
+      return;
+    }
+    // Switched back to the server the auth scope is still signed in on,
+    // before the scope rebuilt for the one in between: its bloc stays
+    // mounted, so no sign-in outcome is coming, and a wait set here would
+    // hold every later link for that server (#985). If this link is no
+    // longer the one to act on, the newer link's arrival has already queued
+    // a pass of its own, and a Ready regained drains.
+    if (_isSignedInOn(localId)) {
+      if (!_stillCurrent(link)) return;
+      _switchRequestedFor = null;
+      _land(link, link.location);
       return;
     }
     // The app is still Ready from the old server, and the new server's
@@ -223,9 +267,14 @@ class DeepLinkConsumer {
   void _drop(
     NormalizedDeepLink link,
     String step,
+    DeepLinkFailure failure,
     Object error,
     StackTrace stackTrace,
   ) {
+    // A newer link replaced this one during the await, so the user is
+    // waiting on that one, and an error for this one would show over it as
+    // it lands. After dispose, nothing is reported either.
+    final superseded = _disposed || _holder.peek != link;
     _holder.takeIf(link);
     _switchRequestedFor = null;
     _logger.warn(
@@ -233,5 +282,17 @@ class DeepLinkConsumer {
       error: error,
       stackTrace: stackTrace,
     );
+    if (superseded) return;
+    // Reporting is best effort: a report that can't be shown was logged
+    // above, and must not end the pass loop for the links behind this one.
+    try {
+      _onFailure?.call(failure);
+    } on Object catch (reportError, reportStackTrace) {
+      _logger.warn(
+        'Deep link failure could not be reported: $link',
+        error: reportError,
+        stackTrace: reportStackTrace,
+      );
+    }
   }
 }

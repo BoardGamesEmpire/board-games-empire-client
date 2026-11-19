@@ -5,9 +5,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../support/fake_platform_bootstrap.dart';
+import '../support/no_later_recoveries.dart';
 import '../support/spy_root_container.dart';
 
 class _MockAppBootstrapCubit extends MockCubit<AppBootstrapState>
+    with NoLaterRecoveries
     implements AppBootstrapCubit {}
 
 class _ProbeLocalizations {}

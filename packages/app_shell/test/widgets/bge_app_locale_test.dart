@@ -4,8 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../support/fake_platform_bootstrap.dart';
+import '../support/no_later_recoveries.dart';
 
 class _MockAppBootstrapCubit extends MockCubit<AppBootstrapState>
+    with NoLaterRecoveries
     implements AppBootstrapCubit {}
 
 /// Pins the #33 capture + fallback behaviour at the widget layer:

@@ -45,6 +45,30 @@ void main() {
     ),
   );
 
+  /// The screen as the server manager opens it (#134): titled the way the
+  /// shell titles it, and pushed over another page, so its app bar has
+  /// somewhere to go Back to.
+  Widget managerHarness({ThemeData? theme}) => MaterialApp(
+    theme: theme ?? BgeTheme.light(),
+    localizationsDelegates:
+        ServerOnboardingLocalizations.localizationsDelegates,
+    supportedLocales: ServerOnboardingLocalizations.supportedLocales,
+    onGenerateRoute: (_) => null,
+    onGenerateInitialRoutes: (_) => [
+      MaterialPageRoute<void>(builder: (_) => const SizedBox.shrink()),
+      MaterialPageRoute<void>(
+        builder: (context) => BlocProvider<ServerOnboardingBloc>.value(
+          value: bloc,
+          child: ServerAddScreen(
+            title: Text(
+              ServerOnboardingLocalizations.of(context).serverAddTitle,
+            ),
+          ),
+        ),
+      ),
+    ],
+  );
+
   group('ServerAddScreen', () {
     testWidgets('presents the title as a semantic header', (tester) async {
       // The binding reports semantics already enabled without this, so the
@@ -62,6 +86,50 @@ void main() {
         tester.getSemantics(find.text('Add a Server')),
         isSemantics(isHeader: true),
       );
+
+      handle.dispose();
+    });
+
+    testWidgets('with a title it shows an app bar and no second heading', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+
+      await tester.pumpWidget(managerHarness());
+      await tester.pumpAndSettle();
+
+      final appBar = find.byType(AppBar);
+      expect(appBar, findsOneWidget);
+      expect(
+        find.descendant(of: appBar, matching: find.byType(BackButton)),
+        findsOneWidget,
+      );
+      // Named once, by the app bar: the in-body heading would say it again.
+      expect(find.text('Add a Server'), findsOneWidget);
+      expect(
+        find.descendant(of: appBar, matching: find.text('Add a Server')),
+        findsOneWidget,
+      );
+      // The app bar's title is the page's one heading.
+      expect(
+        tester.getSemantics(find.text('Add a Server')),
+        isSemantics(isHeader: true),
+      );
+      expect(
+        find.semantics.byPredicate(
+          (node) => node.getSemanticsData().flagsCollection.isHeader,
+        ),
+        findsOne,
+      );
+      // The rest of the screen is unchanged.
+      expect(
+        find.text(
+          'Enter the address of your Board Games Empire server to get '
+          'started.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.byType(ServerAddForm), findsOneWidget);
 
       handle.dispose();
     });
@@ -281,6 +349,14 @@ void main() {
       auditScreen(
         'failure',
         build: screenIn(const ServerOnboardingNotBgeServer()),
+      );
+
+      auditScreen(
+        'from the manager, with an app bar',
+        build: (theme) {
+          stubState(bloc, const ServerOnboardingIdle());
+          return managerHarness(theme: theme);
+        },
       );
     });
   });

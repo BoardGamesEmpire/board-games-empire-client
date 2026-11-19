@@ -10,6 +10,7 @@ import 'package:mocktail/mocktail.dart';
 import 'package:observability/observability.dart';
 
 import '../support/active_server_fakes.dart';
+import '../support/no_later_recoveries.dart';
 
 /// Pins the `/auth` fallback's diagnostic (#217).
 ///
@@ -18,6 +19,7 @@ import '../support/active_server_fakes.dart';
 /// fails instead of reporting a server it couldn't restore; the error
 /// record is what's left if the fallback is ever reached again.
 class _MockAppBootstrapCubit extends MockCubit<AppBootstrapState>
+    with NoLaterRecoveries
     implements AppBootstrapCubit {}
 
 /// A scope whose active server is gone, as after a failed promotion.

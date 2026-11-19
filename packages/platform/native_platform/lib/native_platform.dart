@@ -19,3 +19,4 @@ export 'src/feedback/file_feedback_sink.dart';
 export 'src/logging/rotating_file_log_sink.dart';
 export 'src/native_platform_bootstrap.dart';
 export 'src/native_root_module.dart';
+export 'src/servers/server_repository_registered_servers.dart';

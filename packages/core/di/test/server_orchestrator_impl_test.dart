@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:di/di.dart';
+import 'package:fake_async/fake_async.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/orchestration.dart';
@@ -560,6 +563,47 @@ void main() {
           () => orchestrator.switchActiveServer('not-connected'),
           throwsStateError,
         );
+      });
+    });
+
+    // #583: a provider sign-in left open on the server switched away from
+    // finishes against that server's context, so a switch must keep it until
+    // the backgrounding timeout rather than suspending or disposing it.
+    test('a switch backgrounds the previous server and keeps its context, so '
+        'an open provider sign-in finishes there', () {
+      fakeAsync((async) {
+        final (:repo, prefsRepo: _, orchestrator: subject) =
+            stubbedOrchestrator();
+        for (final id in ['server-a', 'server-b']) {
+          when(
+            () => repo.getServer(id),
+          ).thenAnswer((_) async => testServerConfig(id: id));
+        }
+        void settle(Future<void> future) {
+          var done = false;
+          unawaited(future.then((_) => done = true));
+          async.flushMicrotasks();
+          expect(done, isTrue, reason: 'still pending');
+        }
+
+        settle(subject.initialize());
+        settle(subject.connectServer('server-a'));
+        settle(subject.connectServer('server-b'));
+        final previous = subject.getContext('server-a')! as MockServerContext;
+
+        settle(subject.switchActiveServer('server-b'));
+        async.elapse(
+          Duration(
+            seconds: _kPrefs.backgroundingTimeoutSeconds(isDesktop: true) - 1,
+          ),
+        );
+
+        verify(previous.background).called(1);
+        verifyNever(previous.suspend);
+        verifyNever(previous.dispose);
+        expect(subject.getContext('server-a'), same(previous));
+
+        settle(subject.dispose());
       });
     });
 

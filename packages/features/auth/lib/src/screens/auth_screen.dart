@@ -3,6 +3,7 @@ import 'package:auth/src/bloc/auth_bloc.dart';
 import 'package:auth/src/bloc/auth_bloc_state.dart';
 import 'package:auth/src/bloc/auth_event.dart';
 import 'package:auth/src/widgets/login_form.dart';
+import 'package:auth/src/widgets/manage_servers_button.dart';
 import 'package:auth/src/widgets/oidc_strategy_button.dart';
 import 'package:auth/src/widgets/register_form.dart';
 import 'package:flutter/material.dart';
@@ -42,6 +43,8 @@ import 'package:ui_tokens/ui_tokens.dart';
 ///   the user is authenticating against
 /// - The unsent-changes notice (#142) sits above the forms in reading order
 ///   and announces itself once when it appears, without taking focus.
+/// - Where a list of servers can be opened, a link to it ends the page
+///   (#134), after every way in.
 ///
 /// i18n (#37): all copy comes from [AuthLocalizations]; the bloc emits
 /// semantic failure kinds ([AuthOperationFailure]) which
@@ -57,6 +60,7 @@ class AuthScreen extends StatefulWidget {
     super.key,
     this.unsentChangesCount,
     this.splash,
+    this.onManageServers,
   });
 
   /// Key on the operation-failure banner, for tests.
@@ -94,6 +98,12 @@ class AuthScreen extends StatefulWidget {
   /// continuous splash. The caller bounds the read; this screen waits for
   /// it.
   final Widget? splash;
+
+  /// Opens the device's list of servers (#134). Given, the page ends with a
+  /// **Manage servers** link to it, so someone on the sign-in screen of a
+  /// wrong server has a way off it. Null where there is no such list: the
+  /// web, which has one server.
+  final VoidCallback? onManageServers;
 
   @override
   State<AuthScreen> createState() => _AuthScreenState();
@@ -246,6 +256,14 @@ class _AuthScreenState extends State<AuthScreen> {
               if (state case final AuthFailureProviderSignIn failure)
                 ..._buildProviderFailure(context, failure),
               _buildNoStrategiesMessage(context),
+            ],
+            // Last on the page, and so last in the focus order: it leaves
+            // the server, so every way in comes first. Enabled while a
+            // sign-in runs or has failed: that may be how someone finds out
+            // this is the wrong server (#134).
+            if (widget.onManageServers case final onManageServers?) ...[
+              const BgeGap.lg(),
+              ManageServersButton(onPressed: onManageServers),
             ],
           ],
         ),
