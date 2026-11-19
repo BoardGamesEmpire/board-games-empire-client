@@ -25,6 +25,7 @@ import 'package:app_shell/src/servers/server_activation.dart';
 import 'package:app_shell/src/servers/server_list_cubit.dart';
 import 'package:app_shell/src/servers/servers_screen.dart';
 import 'package:app_shell/src/settings/entries/data_export_settings_entry.dart';
+import 'package:app_shell/src/settings/entries/sign_in_methods_settings_entry.dart';
 import 'package:app_shell/src/settings/locale_cubit.dart';
 import 'package:app_shell/src/settings/settings_sections_builder.dart';
 import 'package:app_shell/src/settings/theme_mode_cubit.dart';
@@ -478,6 +479,7 @@ class _BgeAppState extends State<BgeApp> {
       feedbackBuilder: _buildFeedbackRoute,
       settingsBuilder: _buildSettingsRoute,
       dataExportBuilder: _buildDataExportRoute,
+      signInMethodsBuilder: _buildSignInMethodsRoute,
       householdListBuilder: _buildHouseholdListRoute,
       householdDetailBuilder: _buildHouseholdDetailRoute,
       householdInvitesBuilder: _buildHouseholdInvitesRoute,
@@ -3127,12 +3129,15 @@ class _BgeAppState extends State<BgeApp> {
   /// controllers exist. Composes the app-level section (theme; language
   /// only when >1 supported locale) and passes the active server's alias
   /// so the per-server section is shown/omitted correctly. The per-server
-  /// section holds the export entry (#93) while [_dataExportDeps] answers,
-  /// and is otherwise empty and omitted by [SettingsScreen].
+  /// section holds the sign-in methods entry (#582) while
+  /// [_signInMethodsDeps] answers and the export entry (#93) while
+  /// [_dataExportDeps] does, and is otherwise empty and omitted by
+  /// [SettingsScreen].
   Widget? _buildSettingsRoute(BuildContext context) {
     final themeModeCubit = _themeModeCubit;
     final localeCubit = _localeCubit;
     if (themeModeCubit == null || localeCubit == null) return null;
+    final signInMethods = _signInMethodsDeps();
     final export = _dataExportDeps();
     return SettingsScreen(
       sections: buildSettingsSections(
@@ -3140,6 +3145,10 @@ class _BgeAppState extends State<BgeApp> {
         localeCubit: localeCubit,
         supportedLocales: ShellLocalizations.supportedLocales,
         perServerEntries: [
+          if (signInMethods != null)
+            SignInMethodsSettingsEntry(
+              serverName: signInMethods.active.identity.name,
+            ),
           if (export != null)
             DataExportSettingsEntry(serverName: export.active.identity.name),
         ],
@@ -3191,6 +3200,35 @@ class _BgeAppState extends State<BgeApp> {
       assemble: deps.bundler.assemble,
       sink: deps.sink,
       labelResolvers: bgeExportCategoryLabelResolvers,
+    );
+  }
+
+  /// What the sign-in methods screen (#582) needs, or null when it cannot be
+  /// offered: no active server, or its container lacks the [AuthRepository].
+  /// One check for the Settings entry and the route, so the entry is never
+  /// offered for a route that would fall back.
+  ({ActiveServer active, AuthRepository auth})? _signInMethodsDeps() {
+    final active = widget.bootstrapCubit.activeServerScope?.active;
+    if (active == null) return null;
+    final container = active.container;
+    if (!container.isRegistered<AuthRepository>()) return null;
+    return (active: active, auth: container.get<AuthRepository>());
+  }
+
+  /// The sign-in methods screen (#582), keyed by the server and the user
+  /// session's lease ([_sessionLease]) for [_buildDataExportRoute]'s reasons:
+  /// each session on each server starts a fresh screen and bloc, holding
+  /// nothing the last one read or started.
+  Widget? _buildSignInMethodsRoute(BuildContext context) {
+    final deps = _signInMethodsDeps();
+    if (deps == null) return null;
+    return SignInMethodsScreen(
+      key: ValueKey((deps.active, _sessionLease(deps.active.container))),
+      repository: deps.auth,
+      strategies: deps.active.identity.oidcStrategies,
+      passwordSignInOffered:
+          deps.active.identity.emailAndPasswordStrategy != null,
+      returnPath: AppRoutes.settingsSignInMethods,
     );
   }
 

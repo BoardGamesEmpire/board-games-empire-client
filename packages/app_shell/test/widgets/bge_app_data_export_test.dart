@@ -152,6 +152,17 @@ void main() {
       );
     });
 
+    testWidgets('the export row follows the Sign-in methods row (#582)', (
+      tester,
+    ) async {
+      await pumpSettings(tester);
+
+      expect(
+        tester.getTopLeft(find.text('Export your data')).dy,
+        greaterThan(tester.getTopLeft(find.text('Sign-in methods')).dy),
+      );
+    });
+
     testWidgets('activating the row opens the export screen', (tester) async {
       await pumpSettings(tester);
 

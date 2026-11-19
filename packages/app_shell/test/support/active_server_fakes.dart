@@ -100,8 +100,15 @@ class FakeAuthRepository implements AuthRepository {
   @override
   AuthProviderSignInException? takeProviderSignInReturn() => null;
 
+  /// The password row alone, as an account made with an email and a
+  /// password has (#582).
   @override
-  Future<List<SignInMethod>> listSignInMethods() => throw UnimplementedError();
+  Future<List<SignInMethod>> listSignInMethods() async => const [
+    SignInMethod(
+      id: 'row-password',
+      providerId: SignInMethod.passwordProviderId,
+    ),
+  ];
 
   @override
   bool get providerLinkSupported => false;
