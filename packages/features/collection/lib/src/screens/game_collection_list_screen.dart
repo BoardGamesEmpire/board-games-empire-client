@@ -329,18 +329,21 @@ class _GameCollectionListPageState extends State<_GameCollectionListPage> {
     // more than once is one stack (#709). The list draws a row for each
     // nested expansion too (#711), so it counts the rows; the grid draws the
     // top-level covers, as a strip's are a row of their own, so it counts
-    // those. Under a filter, the rows it shows (#715).
+    // those. Under a filter, the rows it shows (#715). While the session's
+    // first pass runs, an expansion whose base game has not landed is held,
+    // and not counted (#810). With every game held, no row is drawn and the
+    // loading state stands in, as for an empty list.
     final list = thumbnails == false;
-    final rowCount = context.select<GameCollectionListBloc, int?>(
-      (bloc) => switch (bloc.state) {
-        GameCollectionListReady(:final items, :final all)
-            when items.isNotEmpty =>
+    final rowCount = context.select<GameCollectionListBloc, int?>((bloc) {
+      final count = switch (bloc.state) {
+        GameCollectionListReady(:final items, :final all, :final complete) =>
           list
-              ? collectionRows(items, all: all).length
-              : placeCollection(items, all: all).length,
-        _ => null,
-      },
-    );
+              ? collectionRows(items, all: all, complete: complete).length
+              : placeCollection(items, all: all, complete: complete).length,
+        _ => 0,
+      };
+      return count == 0 ? null : count;
+    });
 
     return BgePage.slivers(
       title: Text(l10n.collectionListTitle),
@@ -465,74 +468,127 @@ class GameCollectionListSliver extends StatelessWidget {
               _EmptySliver(onBrowse: onBrowse),
             GameCollectionListReady(:final items) when items.isEmpty =>
               _NoMatchesSliver(onCleared: onFiltersCleared),
+            // Every game that fits is an expansion held for its base game
+            // while the first sync runs (#810): the list is still filling.
+            GameCollectionListReady(:final items, :final all, complete: false)
+                when placeCollection(
+                  items,
+                  all: all,
+                  complete: false,
+                ).isEmpty =>
+              loading,
             _ when thumbnails == null => loading,
-            // One scope for the list and the grid, so a game's focus follows
-            // it as its item changes form: one entry or a stack, top level or
-            // under its base game (#769, #711).
-            // What the filter left, placed against the whole collection,
-            // which decides which expansions are missing their base game
-            // (#715).
-            GameCollectionListReady(:final items, :final all) =>
-              BgeFocusHandoffScope(
-                child: SliverMainAxisGroup(
-                  slivers: [
-                    if (thumbnails)
-                      _CollectionCovers(
-                        placed: placeCollection(items, all: all),
-                        onOpen: onOpen,
-                      )
-                    else
-                      BgeKeyedSliverList<CollectionRow>(
-                        items: collectionRows(
-                          items,
-                          all: all,
-                          titleOf: (item) => _title(l10n, item),
-                        ),
-                        keyOf: (row) => switch ((row.group, row.parentGameId)) {
-                          ([final item], null) =>
-                            GameCollectionListScreen.rowKey(
-                              item.entry.id,
-                            ),
-                          (_, null) => GameCollectionListScreen.stackKey(
-                            row.group.first.gameId,
-                          ),
-                          ([final item], final parent?) =>
-                            GameCollectionListScreen.nestedRowKey(
-                              parent,
-                              item.entry.id,
-                            ),
-                          (_, final parent?) =>
-                            GameCollectionListScreen.nestedStackKey(
-                              parent,
-                              row.group.first.gameId,
-                            ),
-                        },
-                        itemBuilder: (context, row) => BgeFocusHandoff(
-                          identity: row.group.first.gameId,
-                          place: row.parentGameId,
-                          child: switch (row.group) {
-                            [final item] => _CollectionRow(
-                              item: item,
-                              onOpen: onOpen,
-                              expansionOf: row.parentTitle,
-                              missingBase: row.missingBase,
-                            ),
-                            final group => _StackRow(
-                              items: group,
-                              onOpen: onOpen,
-                              expansionOf: row.parentTitle,
-                              missingBase: row.missingBase,
-                            ),
-                          },
-                        ),
-                      ),
-                  ],
-                ),
+            GameCollectionListReady(
+              :final items,
+              :final all,
+              :final complete,
+            ) =>
+              _PlacedCollection(
+                thumbnails: thumbnails,
+                items: items,
+                all: all,
+                complete: complete,
+                onOpen: onOpen,
               ),
           },
         ],
       ),
     );
+  }
+}
+
+/// The games placed (#711), as covers or as rows, in one scope for the list
+/// and the grid, so a game's focus follows it as its item changes form: one
+/// entry or a stack, top level or under its base game (#769).
+///
+/// What the filter left, [items], is placed against the whole collection,
+/// [all], which decides which expansions are missing their base game
+/// (#715). It is placed once a build, for the sliver to draw and for the
+/// scope to ask whether a game is still in its place: a focused item that
+/// left with no item built in its place, its game still there, scrolled out
+/// of the lazy list, and hands its focus to no other copy of the game
+/// (#819). The scope asks only once a focused item has left, so the lookup
+/// builds its set then.
+class _PlacedCollection extends StatelessWidget {
+  const _PlacedCollection({
+    required this.thumbnails,
+    required this.items,
+    required this.all,
+    required this.complete,
+    this.onOpen,
+  });
+
+  final bool thumbnails;
+  final List<GameCollectionListItem> items;
+  final List<GameCollectionListItem> all;
+  final bool complete;
+  final void Function(BuildContext context, String entryId)? onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = GameCollectionLocalizations.of(context);
+    final onOpen = this.onOpen;
+    // Whether a game is shown at the place its BgeFocusHandoff names.
+    final bool Function(Object identity, Object? place) isShown;
+    final Widget sliver;
+    if (thumbnails) {
+      final placed = placeCollection(items, all: all, complete: complete);
+      isShown = BgeUnfoldingCovers.isShownIn(
+        placed,
+        idOf: (top) => top.item.first.gameId,
+        stripIdsOf: (top) => [
+          for (final group in top.expansions) group.first.gameId,
+        ],
+      );
+      sliver = _CollectionCovers(placed: placed, onOpen: onOpen);
+    } else {
+      final rows = collectionRows(
+        items,
+        all: all,
+        complete: complete,
+        titleOf: (item) => _title(l10n, item),
+      );
+      Set<(Object, Object?)>? shown;
+      isShown = (identity, place) => (shown ??= {
+        for (final row in rows) (row.group.first.gameId, row.parentGameId),
+      }).contains((identity, place));
+      sliver = BgeKeyedSliverList<CollectionRow>(
+        items: rows,
+        keyOf: (row) => switch ((row.group, row.parentGameId)) {
+          ([final item], null) => GameCollectionListScreen.rowKey(
+            item.entry.id,
+          ),
+          (_, null) => GameCollectionListScreen.stackKey(
+            row.group.first.gameId,
+          ),
+          ([final item], final parent?) =>
+            GameCollectionListScreen.nestedRowKey(parent, item.entry.id),
+          (_, final parent?) => GameCollectionListScreen.nestedStackKey(
+            parent,
+            row.group.first.gameId,
+          ),
+        },
+        itemBuilder: (context, row) => BgeFocusHandoff(
+          identity: row.group.first.gameId,
+          place: row.parentGameId,
+          child: switch (row.group) {
+            [final item] => _CollectionRow(
+              item: item,
+              onOpen: onOpen,
+              expansionOf: row.parentTitle,
+              missingBase: row.missingBase,
+            ),
+            final group => _StackRow(
+              items: group,
+              onOpen: onOpen,
+              expansionOf: row.parentTitle,
+              missingBase: row.missingBase,
+            ),
+          },
+        ),
+      );
+    }
+    return BgeFocusHandoffScope(isShown: isShown, child: sliver);
   }
 }
 
@@ -575,10 +631,6 @@ class _CollectionRow extends StatelessWidget {
       child: _Nested(
         nested: expansionOf != null,
         child: _RingedListTile(
-          // Without an onTap the tile's InkWell has no handler, so it is
-          // disabled: no tap action, and not a focus stop under ordinary
-          // keyboard navigation. That is the inert row #44 wants.
-          focusOnTap: false,
           onTap: open == null ? null : () => open(context, entry.id),
           leading: BgeThumbnail(
             key: GameCollectionListScreen.thumbnailKey(entry.id),
@@ -800,6 +852,15 @@ class _CollectionCovers extends StatelessWidget {
               );
         return BgeFocusHandoff(
           identity: gameId,
+          // A folded strip's games are under the badge, so a focused game
+          // that moves in there, or whose open strip folds, is handed to it
+          // (#813).
+          folded: {
+            if (!unfolded)
+              for (final expansion in placed.expansions) expansion.first.gameId,
+          },
+          foldedPlace: BgeUnfoldingCovers.stripPlace(gameId),
+          foldedControl: BgeCoverTile.expansionsControl,
           child: switch (group) {
             [final item] => _CollectionTile(
               item: item,
@@ -862,7 +923,7 @@ class _CollectionStrip extends StatelessWidget {
               ),
             },
             identity: group.first.gameId,
-            place: 'strip:${parent.gameId}',
+            place: BgeUnfoldingCovers.stripPlace(parent.gameId),
             child: switch (group) {
               [final item] => _CollectionTile(
                 item: item,
@@ -997,7 +1058,6 @@ class _StackRow extends StatelessWidget {
       child: _Nested(
         nested: expansionOf != null,
         child: _RingedListTile(
-          focusOnTap: true,
           onTap: open == null
               ? null
               : () => unawaited(
@@ -1060,12 +1120,13 @@ class _StackRow extends StatelessWidget {
 /// press shows it at once, without focus moving. The tint is hidden the same
 /// way and is no longer the only cue.
 ///
-/// With [focusOnTap] a tap gives the row focus before its [onTap] runs, so a
-/// picker or page it opens hands focus back to it when it closes, as it does
-/// after a keyboard activation. A list tile's ink takes no focus from a tap
-/// of its own, and focus would land back on the page instead. Inside a
-/// `BgeFocusHandoff` the pointer's focus goes with the game's item when it
-/// changes form (#769).
+/// A tap gives the row focus before its [onTap] runs, so a picker or page it
+/// opens hands focus back to it when it closes, as it does after a keyboard
+/// activation. A list tile's ink takes no focus from a tap of its own, and
+/// focus would land back on the page instead. Inside a `BgeFocusHandoff` the
+/// pointer's focus goes with the game's item when it changes form (#769). An
+/// entry's row and a stack's take it alike (#811). An inert row, with no
+/// [onTap], is no tap target and no focus stop (#44).
 class _RingedListTile extends StatefulWidget {
   const _RingedListTile({
     required this.leading,
@@ -1073,7 +1134,6 @@ class _RingedListTile extends StatefulWidget {
     required this.subtitle,
     required this.trailing,
     required this.onTap,
-    required this.focusOnTap,
   });
 
   final Widget leading;
@@ -1084,9 +1144,6 @@ class _RingedListTile extends StatefulWidget {
   /// What a tap does, or null for an inert row, which has no tap action and
   /// isn't a focus stop.
   final VoidCallback? onTap;
-
-  /// Whether a tap gives the row focus before [onTap] runs.
-  final bool focusOnTap;
 
   @override
   State<_RingedListTile> createState() => _RingedListTileState();
@@ -1125,7 +1182,7 @@ class _RingedListTileState extends State<_RingedListTile>
           onTap: onTap == null
               ? null
               : () {
-                  if (widget.focusOnTap) _focusNode.requestFocus();
+                  _focusNode.requestFocus();
                   onTap();
                 },
           leading: widget.leading,

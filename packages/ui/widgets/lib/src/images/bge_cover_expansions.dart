@@ -50,10 +50,13 @@ final class BgeCoverExpansions {
 ///
 /// Not exported: the tile places it, at the bottom end of the picture.
 ///
-/// A tonal button, in the tertiary container colours, with a puzzle piece and
-/// the count. It is unlike `BgeStackMarker`'s badge on purpose, which sits at
-/// the top end, in the secondary colours, with a number alone: the two can be
-/// on one cover, and they count different things.
+/// A quiet button, in the `surfaceContainerHighest` colour with an `outline`
+/// border and its content in `onSurface`, with a puzzle piece and the count.
+/// Ember, the tertiary colour, is left to the cover's missing-base mark: most
+/// base games with expansions carry this badge, and §1 of the style guide
+/// keeps ember rare (#817). It is unlike `BgeStackMarker`'s badge on purpose,
+/// which sits at the top end, in the secondary colours, with a number alone:
+/// the two can be on one cover, and they count different things.
 ///
 /// ## Size
 ///
@@ -62,10 +65,11 @@ final class BgeCoverExpansions {
 /// presses aimed at the cover beside it. The whole of its box takes them,
 /// rounded corners included: the fill is painted as ink on a `Material` with
 /// no shape, because a shaped one hit-tests against its shape and would send
-/// a press near a corner to the cover underneath, opening the game. The count
-/// grows with the text, and the icon, which the count and the name already
-/// say, doesn't, so that a two-digit count still leaves most of a phone's
-/// cover.
+/// a press near a corner to the cover underneath, opening the game. The
+/// border is drawn over the fill, inside the same box, so it adds no size
+/// and takes presses as the rest of the badge does. The count grows with the
+/// text, and the icon, which the count and the name already say, doesn't, so
+/// that a two-digit count still leaves most of a phone's cover.
 ///
 /// ## Focus
 ///
@@ -133,49 +137,58 @@ class _BgeCoverExpansionsBadgeState extends State<BgeCoverExpansionsBadge>
               type: MaterialType.transparency,
               child: Ink(
                 decoration: BoxDecoration(
-                  color: scheme.tertiaryContainer,
+                  color: scheme.surfaceContainerHighest,
                   borderRadius: radius,
                 ),
-                child: InkWell(
-                  focusNode: focusNode,
-                  onTapDown: (details) => notePointerPress(details.kind),
-                  onTap: () {
-                    focusNode.requestFocus();
-                    expansions.onToggle();
-                  },
-                  onFocusChange: onFocusChange,
-                  // The theme's tint, with no strength while the focus is a
-                  // pointer's.
-                  focusColor: pointerFocusColor,
-                  borderRadius: radius,
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(
-                      minWidth: tokens.minTapTarget,
-                      minHeight: tokens.minTapTarget,
-                    ),
-                    child: Padding(
-                      padding: EdgeInsets.symmetric(
-                        horizontal: tokens.spaceSm,
-                        vertical: tokens.spaceXs,
+                // The border is drawn over the fill, inside the target, so it
+                // takes presses with the rest of the badge.
+                child: DecoratedBox(
+                  position: DecorationPosition.foreground,
+                  decoration: BoxDecoration(
+                    border: Border.all(color: scheme.outline),
+                    borderRadius: radius,
+                  ),
+                  child: InkWell(
+                    focusNode: focusNode,
+                    onTapDown: (details) => notePointerPress(details.kind),
+                    onTap: () {
+                      focusNode.requestFocus();
+                      expansions.onToggle();
+                    },
+                    onFocusChange: onFocusChange,
+                    // The theme's tint, with no strength while the focus is a
+                    // pointer's.
+                    focusColor: pointerFocusColor,
+                    borderRadius: radius,
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        minWidth: tokens.minTapTarget,
+                        minHeight: tokens.minTapTarget,
                       ),
-                      child: ExcludeSemantics(
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          spacing: tokens.spaceXs,
-                          children: [
-                            Icon(
-                              Icons.extension,
-                              size: tokens.spaceMd,
-                              color: scheme.onTertiaryContainer,
-                            ),
-                            Text(
-                              '${expansions.count}',
-                              style: theme.textTheme.labelLarge?.copyWith(
-                                color: scheme.onTertiaryContainer,
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: tokens.spaceSm,
+                          vertical: tokens.spaceXs,
+                        ),
+                        child: ExcludeSemantics(
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            spacing: tokens.spaceXs,
+                            children: [
+                              Icon(
+                                Icons.extension,
+                                size: tokens.spaceMd,
+                                color: scheme.onSurface,
                               ),
-                            ),
-                          ],
+                              Text(
+                                '${expansions.count}',
+                                style: theme.textTheme.labelLarge?.copyWith(
+                                  color: scheme.onSurface,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ),

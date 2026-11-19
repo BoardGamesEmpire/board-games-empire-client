@@ -20,7 +20,8 @@ import 'package:observability/observability.dart';
 /// | nothing yet | any | loading |
 /// | empty | running, and no pass has ever completed | loading |
 /// | empty | anything else | ready, no rows |
-/// | rows | any | ready: a populated cache is never hidden |
+/// | rows | running, and no pass has ever ended | ready, not `complete` |
+/// | rows | anything else | ready: a populated cache is never hidden |
 /// | error | any | error, until the cache emits rows again |
 /// | ended, nothing read | any | error: nothing answered, and nothing will |
 /// | ended, rows read | any | those rows, frozen |
@@ -45,6 +46,24 @@ import 'package:observability/observability.dart';
 /// ([Hydration]). The list is often opened while a pass is
 /// already running, and a bloc that remembered only what it saw would treat
 /// that pass as the first.
+///
+/// ## Rows not yet `complete`
+///
+/// Rows are not `complete` while the session's first pass runs, before any
+/// pass has ended in this session (#810). A pass writes the cache a page at
+/// a time, so a base game may not have landed yet, and the screen holds
+/// back an expansion that is missing its base game rather than show it
+/// marked. A pass that fails or ends makes the rows `complete`, which
+/// releases what was held.
+///
+/// Unlike the spinner's, this test counts a failed pass: the rows it left
+/// are shown, marked, and a retry over them holds nothing again, as that
+/// would take the marked rows away under the user until the retry ends.
+///
+/// "Ever" in the table above is the session's: [Hydration] is kept in
+/// memory and starts each session with no pass ended. So on a device that
+/// synced before, an expansion whose base game isn't owned is held while
+/// that session's first pass runs, then shown marked.
 ///
 /// ## The warning outlasts the next pass
 ///
@@ -263,11 +282,14 @@ class GameCollectionListBloc
 
     // Outranks [_retrying]: a retry over an unconfirmed empty list returns
     // to the spinner rather than annotating an emptiness no pass confirmed.
-    final filling =
-        items.isEmpty &&
-        _hydration.state == HydrationState.running &&
-        !_hydration.everRefreshed;
-    if (filling) return emit(const GameCollectionListLoading());
+    final firstFill =
+        _hydration.state == HydrationState.running && !_hydration.everRefreshed;
+    if (items.isEmpty && firstFill) {
+      return emit(const GameCollectionListLoading());
+    }
+    // Every pass that ends either lands rows or fails, so this is "no pass
+    // has ended in this session".
+    final firstPass = firstFill && !_hydration.lastPassFailed;
 
     emit(
       GameCollectionListReady(
@@ -280,6 +302,9 @@ class GameCollectionListBloc
         sort: _sort,
         refreshFailed: _hydration.lastPassFailed,
         refreshing: _retrying,
+        // A pass writes a page at a time: until one ends in this session, a
+        // base game may yet land (#810).
+        complete: !firstPass,
       ),
     );
   }

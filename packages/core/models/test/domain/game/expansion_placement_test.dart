@@ -98,6 +98,27 @@ void main() {
       expect(_place([exp]), [PlacedGame(exp, missingBase: true)]);
     });
 
+    test('while incomplete, a base game owned but not shown holds nothing', () {
+      final exp = _g(
+        'exp',
+        links: [_link('base')],
+        type: ContentType.expansion,
+      );
+      expect(_place([exp], complete: false, owned: {'exp', 'base'}), [
+        PlacedGame(exp),
+      ]);
+    });
+
+    test('while incomplete, a base game neither shown nor owned still '
+        'holds', () {
+      final exp = _g(
+        'exp',
+        links: [_link('base')],
+        type: ContentType.expansion,
+      );
+      expect(_place([exp], complete: false, owned: {'exp'}), isEmpty);
+    });
+
     test('a standalone expansion with no base shown is top level, unmarked, '
         'even while incomplete', () {
       final exp = _g('exp', links: [_link('gone', standalone: true)]);
@@ -396,8 +417,12 @@ void main() {
         expect(_place([exp]), _place([exp], owned: {'exp'}));
       });
 
-      test('it changes nothing while the list is incomplete', () {
-        expect(_place([exp], complete: false, owned: {'base', 'exp'}), isEmpty);
+      test('while the list is incomplete, a base game it holds back is not '
+          'waited for', () {
+        expect(_place([exp], complete: false, owned: {'base', 'exp'}), [
+          PlacedGame(exp),
+        ]);
+        expect(_place([exp], complete: false, owned: {'exp'}), isEmpty);
       });
     });
   });

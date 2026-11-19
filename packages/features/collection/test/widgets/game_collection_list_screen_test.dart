@@ -1936,6 +1936,171 @@ void main() {
     });
   });
 
+  group('during a first sync, an expansion before its base game (#810)', () {
+    final thumbs = _FakeLayouts()..stored = ListLayout.thumbnails;
+    const link = [ExpansionLink(gameId: 'g-base', isStandalone: false)];
+    final base = listItem('b-1', gameId: 'g-base', title: 'Wingspan');
+    final expansion = listItem(
+      'x-1',
+      gameId: 'g-exp',
+      title: 'European Expansion',
+      contentType: ContentType.expansion,
+      baseGames: link,
+    );
+    final other = listItem('o-1', gameId: 'g-other', title: 'Azul');
+    const marker = 'Base game not in your collection';
+
+    final views = <(String, Key Function(String), ListLayoutRepository?)>[
+      ('the list', GameCollectionListScreen.rowKey, null),
+      ('thumbnails', GameCollectionListScreen.tileKey, thumbs),
+    ];
+
+    for (final (view, topKey, layouts) in views) {
+      testWidgets('is held, then appears under its base game, in $view', (
+        tester,
+      ) async {
+        // Covers that open carry a badge; inert ones don't.
+        await tester.pumpWidget(harness(layouts: layouts, onOpen: (_, _) {}));
+        status.started();
+        items.add([expansion, other]);
+        await tester.pump();
+        await tester.pump();
+
+        expect(find.byKey(topKey('x-1')), findsNothing);
+        expect(find.byKey(topKey('o-1')), findsOneWidget);
+        expect(find.textContaining(marker), findsNothing);
+
+        // The base game's page lands.
+        items.add([expansion, other, base]);
+        await tester.pump();
+        expect(find.byKey(topKey('x-1')), findsNothing);
+        await tester.pump();
+        expect(find.byKey(topKey('x-1')), findsNothing);
+        expect(find.byKey(topKey('b-1')), findsOneWidget);
+        if (layouts == null) {
+          expect(
+            find.byKey(GameCollectionListScreen.nestedRowKey('g-base', 'x-1')),
+            findsOneWidget,
+          );
+        } else {
+          // Under its base game: the badge counts it, and its strip holds
+          // its cover.
+          final badge = find.descendant(
+            of: find.byKey(topKey('b-1')),
+            matching: find.byKey(BgeCoverTile.expansionsBadgeKey),
+          );
+          expect(
+            find.descendant(of: badge, matching: find.text('1')),
+            findsOneWidget,
+          );
+          await tester.tap(badge);
+          await tester.pumpAndSettle();
+          expect(
+            find.byKey(GameCollectionListScreen.nestedTileKey('g-base', 'x-1')),
+            findsOneWidget,
+          );
+        }
+
+        status.finished(CollectionHydrateOutcome.complete);
+        await tester.pumpAndSettle();
+        expect(find.byKey(topKey('x-1')), findsNothing);
+        expect(find.textContaining(marker), findsNothing);
+      });
+
+      testWidgets('is released, marked, by a first sync that fails, in '
+          '$view', (tester) async {
+        await tester.pumpWidget(harness(layouts: layouts));
+        status.started();
+        items.add([expansion, other]);
+        await tester.pump();
+        await tester.pump();
+        expect(find.byKey(topKey('x-1')), findsNothing);
+
+        status.finished(CollectionHydrateOutcome.failed);
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(topKey('x-1')), findsOneWidget);
+        if (layouts == null) {
+          expect(find.textContaining(marker), findsOneWidget);
+        } else {
+          // A cover says it in its label, not in text.
+          final handle = tester.ensureSemantics();
+          expect(
+            tester.getSemantics(find.byKey(topKey('x-1'))).label,
+            contains(marker),
+          );
+          handle.dispose();
+        }
+      });
+    }
+
+    for (final (view, topKey, layouts) in views) {
+      testWidgets('with every game held, the loading state stands in for '
+          'the list, in $view', (tester) async {
+        await tester.pumpWidget(harness(layouts: layouts));
+        status.started();
+        items.add([expansion]);
+        await tester.pump();
+        await tester.pump();
+
+        expect(
+          find.byKey(GameCollectionListScreen.loadingKey),
+          findsOneWidget,
+        );
+        expect(find.byKey(topKey('x-1')), findsNothing);
+        // No row is drawn, so the page counts none.
+        expect(
+          tester
+              .widget<CustomScrollView>(find.byType(CustomScrollView))
+              .semanticChildCount,
+          isNull,
+        );
+
+        status.finished(CollectionHydrateOutcome.failed);
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(GameCollectionListScreen.loadingKey), findsNothing);
+        expect(find.byKey(topKey('x-1')), findsOneWidget);
+      });
+    }
+
+    testWidgets("the page's semanticChildCount counts the rows drawn, in the "
+        'list', (tester) async {
+      await tester.pumpWidget(harness());
+      status.started();
+      items.add([expansion, other]);
+      await tester.pump();
+      await tester.pump();
+
+      int count() => tester
+          .widget<CustomScrollView>(find.byType(CustomScrollView))
+          .semanticChildCount!;
+      expect(count(), 1);
+
+      status.finished(CollectionHydrateOutcome.failed);
+      await tester.pumpAndSettle();
+      expect(count(), 2);
+    });
+
+    testWidgets("the page's semanticChildCount counts the covers drawn, in "
+        'thumbnails', (tester) async {
+      await tester.pumpWidget(harness(layouts: thumbs));
+      status.started();
+      items.add([expansion, other]);
+      await tester.pump();
+      await tester.pump();
+
+      int count() => tester
+          .widget<CustomScrollView>(find.byType(CustomScrollView))
+          .semanticChildCount!;
+      expect(count(), 1);
+
+      status.finished(CollectionHydrateOutcome.failed);
+      await tester.pumpAndSettle();
+      expect(count(), 2);
+    });
+  });
+
   group('a game owned more than once (#709)', () {
     final thumbs = _FakeLayouts()..stored = ListLayout.thumbnails;
 
@@ -3114,14 +3279,15 @@ void main() {
           ),
         );
 
-    /// Shows [rows] in thumbnails, two columns wide and tall enough for
-    /// every cover and the strip.
+    /// Shows [rows] in thumbnails, two columns wide and, unless [size] says
+    /// otherwise, tall enough for every cover and the strip.
     Future<void> showThumbnails(
       WidgetTester tester,
       List<GameCollectionListItem> rows, {
       void Function(BuildContext context, String entryId)? onOpen,
+      Size size = const Size(400, 1600),
     }) async {
-      useViewSize(tester, const Size(400, 1600));
+      useViewSize(tester, size);
       await show(
         tester,
         rows,
@@ -3324,6 +3490,48 @@ void main() {
       handle.dispose();
     });
 
+    testWidgets("opening a second strip keeps the tapped badge's semantics "
+        'node (#820)', (tester) async {
+      final handle = tester.ensureSemantics();
+      await showThumbnails(tester, [
+        base,
+        expansion,
+        other,
+        listItem('carcassonne-1', gameId: 'g-carc', title: 'Carcassonne'),
+        // Catan, by default.
+        listItem('catan-1', gameId: 'g-catan'),
+        listItem(
+          'seafarers-1',
+          gameId: 'g-seafarers',
+          title: 'Seafarers',
+          contentType: ContentType.expansion,
+          baseGames: const [
+            ExpansionLink(gameId: 'g-catan', isStandalone: false),
+          ],
+        ),
+      ]);
+      await tester.tap(badgeOf(tile('base-1')));
+      await tester.pumpAndSettle();
+      // At two columns Catan is in the row after Wingspan's strip, and
+      // moves to the rows before its own strip.
+      final catan = tile('catan-1');
+      final badge = tester.getSemantics(badgeOf(catan)).id;
+      final cover = coverNode(tester, catan).id;
+
+      await tester.tap(badgeOf(catan));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(
+          GameCollectionListScreen.nestedTileKey('g-catan', 'seafarers-1'),
+        ),
+        findsOneWidget,
+      );
+      expect(tester.getSemantics(badgeOf(catan)).id, badge);
+      expect(coverNode(tester, catan).id, cover);
+      handle.dispose();
+    });
+
     testWidgets("a marked cover's label says the base game isn't in the "
         'collection', (tester) async {
       await showThumbnails(tester, [
@@ -3425,6 +3633,154 @@ void main() {
       });
     }
 
+    testWidgets('a focused marked expansion whose base game syncs in hands '
+        "focus to the base game's badge (#813)", (tester) async {
+      // Covers after the first row, so the page scrolls, and it is scrolled
+      // a little, with the expansion's row still built.
+      final after = [
+        for (var i = 0; i < 8; i++)
+          listItem('zoo-$i', gameId: 'g-zoo$i', title: 'Zoo $i'),
+      ];
+      await showThumbnails(tester, size: const Size(400, 700), [
+        expansion,
+        other,
+        ...after,
+      ]);
+      final page =
+          tester
+              .state<ScrollableState>(
+                find.byWidgetPredicate(
+                  (widget) =>
+                      widget is Scrollable &&
+                      widget.axisDirection == AxisDirection.down,
+                ),
+              )
+              .position
+            ..jumpTo(120);
+      await tester.pump();
+      expect(coverOf(tester, tile('exp-1')).marked, isTrue);
+      // Azul's cover, then the expansion's: each ink's own node.
+      for (final id in ['azul-1', 'exp-1']) {
+        Focus.of(
+          tester.element(
+            find
+                .descendant(
+                  of: find.descendant(
+                    of: tile(id),
+                    matching: find.byType(InkWell),
+                  ),
+                  matching: find.byType(MouseRegion),
+                )
+                .first,
+          ),
+        ).requestFocus();
+        await tester.pump();
+      }
+      expect(_focusIsWithin(tester, tile('exp-1')), isTrue);
+
+      // A sync brings its base game, and the expansion moves into the base
+      // game's strip, which stays folded.
+      items.add([base, expansion, other, ...after]);
+      await tester.pumpAndSettle();
+
+      expect(tile('exp-1'), findsNothing);
+      expect(strip, findsNothing);
+      expect(_focusIsWithin(tester, badgeOf(tile('base-1'))), isTrue);
+      // The page doesn't move.
+      expect(page.pixels, 120);
+    });
+
+    testWidgets('a focused strip cover whose strip a screen reader folds hands '
+        "focus to the base game's badge (#813)", (tester) async {
+      final handle = tester.ensureSemantics();
+      await showThumbnails(tester, [base, expansion, other]);
+      // A screen reader opens the strip from the cover, which moves no
+      // focus, and the user goes on from Azul's cover into the strip.
+      performCustomAction(coverNode(tester, tile('base-1')), 'Show expansions');
+      await tester.pumpAndSettle();
+      final nested = find.byKey(
+        GameCollectionListScreen.nestedTileKey('g-base', 'exp-1'),
+      );
+      for (final cover in [tile('azul-1'), nested]) {
+        Focus.of(
+          tester.element(
+            find
+                .descendant(
+                  of: find.descendant(
+                    of: cover,
+                    matching: find.byType(InkWell),
+                  ),
+                  matching: find.byType(MouseRegion),
+                )
+                .first,
+          ),
+        ).requestFocus();
+        await tester.pump();
+      }
+      expect(_focusIsWithin(tester, nested), isTrue);
+
+      performCustomAction(coverNode(tester, tile('base-1')), 'Hide expansions');
+      await tester.pumpAndSettle();
+
+      expect(strip, findsNothing);
+      expect(_focusIsWithin(tester, badgeOf(tile('base-1'))), isTrue);
+      handle.dispose();
+    });
+
+    testWidgets("a focused cover scrolled out of the grid doesn't move focus "
+        "to its game's copy in an open strip (#819)", (tester) async {
+      // A standalone expansion has a cover of its own and one in its base
+      // game's strip: Animals' own cover at the top, Wingspan and its open
+      // strip at the end, more than a screen and the grid's cache apart.
+      final own = find.byKey(
+        GameCollectionListScreen.tileKey('animals-1'),
+        skipOffstage: false,
+      );
+      final inStrip = find.byKey(
+        GameCollectionListScreen.nestedTileKey('g-wingspan', 'animals-1'),
+        skipOffstage: false,
+      );
+      await showThumbnails(tester, size: const Size(400, 800), [
+        listItem(
+          'animals-1',
+          gameId: 'g-animals',
+          title: 'Animals',
+          contentType: ContentType.standaloneExpansion,
+          baseGames: const [
+            ExpansionLink(gameId: 'g-wingspan', isStandalone: true),
+          ],
+        ),
+        for (var i = 0; i < 20; i++)
+          listItem('f-$i', gameId: 'g-f$i', title: 'Filler $i'),
+        listItem('wingspan-1', gameId: 'g-wingspan', title: 'Wingspan'),
+      ]);
+      await scrollListToEnd(tester, tile('wingspan-1'));
+      await tester.tap(badgeOf(tile('wingspan-1')));
+      await tester.pumpAndSettle();
+      // A strip isn't built lazily, so its covers stay built at the top.
+      await scrollPageToTop(tester);
+      expect(own, findsOneWidget);
+      expect(inStrip, findsOneWidget);
+      Focus.of(
+        tester.element(
+          find
+              .descendant(
+                of: find.descendant(of: own, matching: find.byType(InkWell)),
+                matching: find.byType(MouseRegion),
+              )
+              .first,
+        ),
+      ).requestFocus();
+      await tester.pump();
+      expect(_focusIsWithin(tester, own), isTrue);
+
+      await scrollListToEnd(tester, tile('wingspan-1'));
+
+      expect(own, findsNothing);
+      expect(inStrip, findsOneWidget);
+      expect(_focusIsWithin(tester, inStrip), isFalse);
+    });
+
     testWidgets('the strip folds when its game goes', (tester) async {
       await showThumbnails(tester, [base, expansion, other]);
       await tester.tap(badgeOf(tile('base-1')));
@@ -3473,6 +3829,53 @@ void main() {
       expect(strip, findsNothing);
       expect(grids, findsOneWidget);
     });
+
+    // The page's app bar is the Scaffold's, above the scroll view and not
+    // over it, so a reveal measured in the scroll view's own space leaves
+    // both the strip's bottom and the tapped row's top clear of it (#818).
+    for (final (why, height, before, fits) in [
+      ('the strip fits under its row', 700.0, 2, true),
+      ("the row and its strip don't fit", 400.0, 0, false),
+    ]) {
+      testWidgets('opening a strip on the last row scrolls it into view below '
+          'the app bar: $why', (tester) async {
+        await showThumbnails(tester, size: Size(400, height), [
+          for (var i = 0; i < before; i++)
+            listItem('a$i', gameId: 'g-a$i', title: 'Before $i'),
+          base,
+          expansion,
+          for (var i = 0; i < 6; i++)
+            listItem('z$i', gameId: 'g-z$i', title: 'After $i'),
+        ]);
+        final appBar = tester.getRect(find.byType(AppBar));
+        final page = find.byWidgetPredicate(
+          (widget) =>
+              widget is Scrollable &&
+              widget.axisDirection == AxisDirection.down,
+        );
+        final view = tester.getRect(page);
+        expect(view.top, appBar.bottom);
+        // The base game's row is the last one wholly in view.
+        final below = tester.getRect(tile('base-1')).bottom - view.bottom;
+        if (below > 0) {
+          final position = tester.state<ScrollableState>(page).position;
+          position.jumpTo(position.pixels + below);
+          await tester.pump();
+        }
+
+        await tester.tap(badgeOf(tile('base-1')));
+        await tester.pumpAndSettle();
+
+        final row = tester.getRect(tile('base-1'));
+        if (fits) {
+          expect(tester.getRect(strip).bottom, moreOrLessEquals(view.bottom));
+          expect(row.top, greaterThan(appBar.bottom));
+        } else {
+          expect(row.top, moreOrLessEquals(appBar.bottom));
+          expect(tester.getRect(strip).top, lessThan(view.bottom));
+        }
+      });
+    }
   });
 
   group('focus across forms (#769)', () {
@@ -3616,6 +4019,44 @@ void main() {
         expect(_focusIsWithin(tester, entry), isTrue);
       });
     }
+
+    testWidgets("a focused nested row scrolled out of the list doesn't move "
+        "focus to its game's other copy (#819)", (tester) async {
+      const bothBases = [
+        ExpansionLink(gameId: 'g-wingspan', isStandalone: false),
+        ExpansionLink(gameId: 'g-azul', isStandalone: false),
+      ];
+      // Wingspan at the top and Azul at the end, with the expansion under
+      // each: more than a screen and the list's cache apart.
+      await show(tester, [
+        catan,
+        wingspan('e-1', 'Tabletop'),
+        for (var i = 0; i < 30; i++) listItem('f-$i', title: 'Filler $i'),
+        listItem('azul-1', gameId: 'g-azul', title: 'Azul'),
+        listItem(
+          'x-1',
+          gameId: 'g-exp',
+          title: 'European Expansion',
+          contentType: ContentType.expansion,
+          baseGames: bothBases,
+        ),
+      ], onOpen: (_, _) {});
+      final near = find.byKey(
+        GameCollectionListScreen.nestedRowKey('g-wingspan', 'x-1'),
+        skipOffstage: false,
+      );
+      final far = find.byKey(
+        GameCollectionListScreen.nestedRowKey('g-azul', 'x-1'),
+        skipOffstage: false,
+      );
+      expect(far, findsNothing);
+      await focus(tester, near);
+
+      await scrollListToEnd(tester, far);
+
+      expect(near, findsNothing);
+      expect(_focusIsWithin(tester, far), isFalse);
+    });
 
     testWidgets('a mouse-clicked stack reduced to one entry leaves the tile '
         'focused without a ring or a tint', (tester) async {
@@ -3829,6 +4270,62 @@ void main() {
         expect(ringShown(tester, row), isTrue);
       }
     }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
+
+    void openPage(BuildContext context, String id) =>
+        Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => Scaffold(appBar: AppBar(), body: Text('entry $id')),
+          ),
+        );
+
+    testWidgets('a clicked entry row is focused when its page opens and '
+        'closes, with no ring', (tester) async {
+      await show(tester, once, onOpen: openPage);
+      final entry = find.byKey(GameCollectionListScreen.rowKey('e-1'));
+      final click = await mouseClicker(tester);
+
+      await click(tester.getCenter(entry));
+      expect(find.text('entry e-1'), findsOneWidget);
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+
+      expect(find.text('entry e-1'), findsNothing);
+      expect(_focusIsWithin(tester, entry), isTrue);
+      expect(ringShown(tester, entry), isFalse);
+    }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
+
+    for (final (view, entryKey, stackKey, layouts) in [
+      (
+        'the list',
+        GameCollectionListScreen.rowKey,
+        GameCollectionListScreen.stackKey,
+        null,
+      ),
+      (
+        'thumbnails',
+        GameCollectionListScreen.tileKey,
+        GameCollectionListScreen.stackTileKey,
+        _FakeLayouts()..stored = ListLayout.thumbnails,
+      ),
+    ]) {
+      testWidgets('a clicked entry that becomes a stack while its page is '
+          'open hands focus to the stack, in $view', (tester) async {
+        await show(tester, once, layouts: layouts, onOpen: openPage);
+        final click = await mouseClicker(tester);
+
+        await click(tester.getCenter(find.byKey(entryKey('e-1'))));
+        expect(find.text('entry e-1'), findsOneWidget);
+        items.add(twice);
+        await tester.pumpAndSettle();
+        await tester.pageBack();
+        await tester.pumpAndSettle();
+
+        final stack = find.byKey(stackKey('g-wingspan'));
+        expect(stack, findsOneWidget);
+        expect(_focusIsWithin(tester, stack), isTrue);
+        expect(ringShown(tester, stack), isFalse);
+      }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
+    }
 
     testWidgets('a mouse-clicked stack row reduced to one entry leaves the '
         'entry row focused without a ring', (tester) async {

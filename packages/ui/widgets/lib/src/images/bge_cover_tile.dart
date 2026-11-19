@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
+import 'package:ui/src/focus/bge_focus_handoff.dart';
 import 'package:ui/src/focus/bge_focus_ring.dart';
 import 'package:ui/src/focus/bge_pointer_focus.dart';
 import 'package:ui/src/images/bge_cover_expansions.dart';
@@ -70,6 +71,12 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// the cover until the next key press, and focus the keyboard gave it stays
 /// drawn.
 ///
+/// A badge can also go while a route covers the page, and the page's focus
+/// history remembers it, as the control the pop gives focus back to. In a
+/// game's [BgeFocusHandoff], the pop then gives the focus to the cover, not
+/// to the control focused before the badge (#813). Outside one, as on a
+/// shelf, it goes to that control.
+///
 /// ## A missing part
 ///
 /// [marked] outlines the picture in the tertiary colour and puts a broken
@@ -103,6 +110,13 @@ class BgeCoverTile extends StatefulWidget {
 
   /// Finds the expansions badge.
   static const Key expansionsBadgeKey = Key('bge_cover_tile.expansions');
+
+  /// The expansions badge's place among the tile's controls, as a
+  /// [BgeFocusHandoff] counts them: the cover first, at 0, and the badge
+  /// after it. A base game's tile passes it as its
+  /// [BgeFocusHandoff.foldedControl], so that a game folded into its strip
+  /// gives its focus to the badge that shows it again (#813).
+  static const int expansionsControl = 1;
 
   /// Finds the missing-part mark: the outline and its icon.
   static const Key markKey = Key('bge_cover_tile.mark');
@@ -169,20 +183,30 @@ class _BgeCoverTileState extends State<BgeCoverTile>
   );
 
   /// The expansions badge's focus, held here so that the tile can tell when
-  /// the badge goes while it holds focus (#711).
+  /// the badge goes while it holds focus (#711), or while the page's focus
+  /// history remembers it under a covering route (#813).
   final _badgeFocusNode = FocusNode(debugLabel: 'BgeCoverExpansionsBadge');
 
   @override
   void didUpdateWidget(BgeCoverTile oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // A badge that goes while it holds focus gives it to the cover, so the
-    // user keeps their place on the game, rather than focus going wherever it
-    // was before the badge (#711). Requested before the badge's own node is
-    // detached in this frame, which then hands its focus on to this request.
-    if (oldWidget.expansions != null &&
-        widget.expansions == null &&
-        _badgeFocusNode.hasFocus) {
+    if (oldWidget.expansions == null || widget.expansions != null) return;
+    if (_badgeFocusNode.hasFocus) {
+      // A badge that goes while it holds focus gives it to the cover, so the
+      // user keeps their place on the game, rather than focus going wherever
+      // it was before the badge (#711). Requested before the badge's own
+      // node is detached in this frame, which then hands its focus on to
+      // this request.
       _focusNode.requestFocus();
+    } else {
+      // Under a covering route the page's focus history can remember the
+      // badge, and the pop would give focus to the control before it. The
+      // game's hand-off gives the pop to the cover instead (#813).
+      BgeFocusHandoff.controlLeaving(
+        context,
+        leaving: _badgeFocusNode,
+        to: _focusNode,
+      );
     }
   }
 
