@@ -98,6 +98,10 @@ void main() {
         'Color.fromRGBO(1, 2, 3, 1)': 'color',
         'Color.from(alpha: 1, red: 1, green: 0, blue: 0)': 'color',
         'CupertinoColors.systemRed': 'color',
+        // Transparent is "no tint" only as a surface tint; as a fill it is
+        // a literal like any other.
+        'color: Colors.transparent': 'color',
+        'backgroundColor: Colors.transparent': 'color',
         // type — both shapes, including the one that never says TextStyle
         "TextStyle(fontFamily: 'monospace', fontSize: 12)": 'type',
         'textTheme.bodySmall?.copyWith(fontSize: 12)': 'type',
@@ -135,6 +139,8 @@ void main() {
         'OverflowBar(spacing: BgeTokens.of(context).spaceSm)',
         'color: Theme.of(context).colorScheme.primary',
         'Color.lerp(synced, other.synced, t)',
+        // "No colour", not a palette value: see the `color` rule.
+        'surfaceTintColor: Colors.transparent',
         'BorderRadius.circular(tokens.radiusMd)',
         'BoxConstraints(maxWidth: tokens.contentMaxWidth)',
         // Non-dimensional arguments are none of this rule's business. Reading
@@ -286,9 +292,15 @@ final List<_Rule> _rules = [
     // `Color.fromARGB`/`fromRGBO`/`from` factories are raw channel values.
     // All bypass the scheme, so none responds to theme, high contrast, or a
     // palette swap. `Color.lerp` is deliberately NOT here — it interpolates
-    // colours it was given rather than inventing one.
+    // colours it was given rather than inventing one. `Colors.transparent` is
+    // allowed as a `surfaceTintColor` and nowhere else: there it means "no
+    // tint", not a colour. Material turns a surface's tint off only for
+    // exactly `Colors.transparent` (`ElevationOverlay.applySurfaceTint`);
+    // any other colour, even one with alpha 0, is re-tinted, so no scheme
+    // role can say it (#802). As a fill, it hides a surface the scheme
+    // should be drawing, so it is flagged like any other literal.
     RegExp(
-      r'\bColors\.\w+|\bCupertinoColors\.\w+|\bColor\(0x|\bColor\.from\w*\(',
+      r'\bColors\.(?!transparent\b)\w+|(?<!surfaceTintColor:\s*)\bColors\.transparent\b|\bCupertinoColors\.\w+|\bColor\(0x|\bColor\.from\w*\(',
     ),
     'literal color',
   ),

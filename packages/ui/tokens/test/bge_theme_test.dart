@@ -78,6 +78,18 @@ void main() {
         expect(theme.inputDecorationTheme.helperMaxLines, 6);
         expect(theme.inputDecorationTheme.errorMaxLines, 6);
       });
+
+      test('${entry.key}: primary text on a scrolled-under app bar holds '
+          '4.5:1 (#802)', () {
+        // The bar rests on surfaceContainer once content scrolls under it,
+        // and Material lays surfaceTint over that unless the theme says
+        // otherwise.
+        expect(theme.appBarTheme.surfaceTintColor, Colors.transparent);
+        expect(
+          Wcag.contrastRatio(scheme.primary, scheme.surfaceContainer),
+          greaterThanOrEqualTo(4.5),
+        );
+      });
     }
   });
 

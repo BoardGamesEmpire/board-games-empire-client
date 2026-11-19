@@ -98,6 +98,9 @@ ButtonStyle _buttonStyle(BgeButtonFocusRingPlacement placement) => ButtonStyle(
 /// - **Line colors** — [BgeLineColors], the separator and the row outline,
 ///   derived from each theme's own scheme and installed on every theme
 ///   (#659).
+/// - **No tint on a scrolled-under app bar** — an authored `appBarTheme`
+///   with a transparent `surfaceTintColor`. Material's default tint took
+///   `primary` text on the bar below 4.5:1 in light (#802).
 ///
 /// The high-contrast factories are wired by the shell to
 /// `MaterialApp.highContrastTheme` / `highContrastDarkTheme`, so the OS
@@ -227,6 +230,11 @@ abstract final class BgeTheme {
           size: 24,
         ),
       ),
+      // #802: content scrolled under an app bar raises it to
+      // `surfaceContainer`, and Material lays `surfaceTint` (`primary`) over
+      // that at 8%. In light that took `primary` text on the bar to 4.39:1.
+      // With no tint the bar stays `surfaceContainer`, 4.88:1.
+      appBarTheme: const AppBarThemeData(surfaceTintColor: Colors.transparent),
       extensions: [
         tokens,
         BgeStatusColors.forScheme(scheme),

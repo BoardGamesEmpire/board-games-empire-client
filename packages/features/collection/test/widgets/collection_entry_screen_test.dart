@@ -1397,8 +1397,7 @@ void main() {
     );
 
     // At 320dp × 2.0 the page runs 436dp past its view. Audited in a view
-    // tall enough to hold it: scrolled to the end, the app bar fails
-    // #802 (below).
+    // tall enough to hold it. The scrolled-under bar is audited below.
     auditScreen(
       'ready, every field empty, whole page',
       pump: pushed(item: bareRow(), gameDetails: true),
@@ -1419,12 +1418,11 @@ void main() {
       },
     );
 
-    // Content scrolled under the app bar tints it, and in the light theme
-    // Edit and Remove fall below 4.5:1 on the tint.
+    // Content scrolled under the app bar raises it to surfaceContainer and
+    // the bar keeps no tint (#802), so Edit and Remove hold 4.5:1 on it.
     auditScreen(
       'ready, scrolled to the end',
       pump: pushed(gameDetails: true),
-      skip: 'see #802',
       arrange: (tester) async {
         expectEveryFieldSet();
         await scrollPageToEnd(tester);
@@ -1432,8 +1430,8 @@ void main() {
       },
     );
 
-    // Until then what runs below the fold at 320dp × 2.0 (689dp) is audited
-    // in a view tall enough to hold it, with nothing under the app bar.
+    // What runs below the fold at 320dp × 2.0 (689dp) is audited in a view
+    // tall enough to hold it, with nothing scrolled under the app bar.
     auditScreen(
       'ready, every field set, whole page',
       pump: pushed(gameDetails: true),
