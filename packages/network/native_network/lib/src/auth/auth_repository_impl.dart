@@ -861,24 +861,49 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
   @override
   AuthProviderSignInException? takeProviderSignInReturn() => null;
 
-  // Temporary: a later task replaces these bodies.
   @override
-  Future<List<SignInMethod>> listSignInMethods() => throw UnimplementedError();
+  Future<List<SignInMethod>> listSignInMethods() async {
+    final response = await sendSignInMethodsRequest(
+      (options) => _dio.get<String>(
+        listSignInMethodsPath(_identity),
+        options: options,
+      ),
+      options: _plainBody,
+      context: 'listing sign-in methods',
+    );
+    return readSignInMethods(response, decode: _decodeJson);
+  }
 
+  /// Linking from the apps waits on #1029.
   @override
-  bool get providerLinkSupported => throw UnimplementedError();
+  bool get providerLinkSupported => false;
 
+  /// Async, so the [UnsupportedError] arrives through the returned future,
+  /// as every other failure here does, rather than at the call.
   @override
   Future<void> linkProvider(
     OidcStrategy strategy, {
     required String returnPath,
-  }) => throw UnimplementedError();
+  }) async => throw UnsupportedError(
+    'Linking a sign-in provider is not available in the apps yet (#1029).',
+  );
 
   @override
-  Future<void> unlinkSignInMethod(String id) => throw UnimplementedError();
+  Future<void> unlinkSignInMethod(String id) async {
+    await sendSignInMethodsRequest(
+      (options) => _dio.post<String>(
+        unlinkSignInMethodPath(_identity),
+        data: {'accountId': id},
+        options: options,
+      ),
+      options: _plainBody,
+      context: 'unlinking a sign-in method',
+    );
+  }
 
+  /// Always null: a native link never leaves the app.
   @override
-  ProviderLinkReturn? takeProviderLinkReturn() => throw UnimplementedError();
+  ProviderLinkReturn? takeProviderLinkReturn() => null;
 
   @override
   Stream<AuthState> watchAuthState() {
