@@ -3245,6 +3245,12 @@ class _BgeAppState extends State<BgeApp> {
   /// [_selectable] — this is not a readiness nicety, it is a crash fix.
   bool _selectionRegionReady = false;
 
+  /// Carries the router across [_selectable]'s frame-two wrap. See
+  /// "Keeping the router" there.
+  final GlobalKey _routerSlotKey = GlobalKey(
+    debugLabel: 'BgeApp router slot',
+  );
+
   /// The app-wide text-selection region (#322), on the platforms that get one.
   ///
   /// Wraps the router's content — so every route, dialog and SnackBar inside
@@ -3291,33 +3297,51 @@ class _BgeAppState extends State<BgeApp> {
   /// Unlike the rest of this builder, the tree shape here does depend on a
   /// condition — and the gate reads the *resolved* theme, which `MaterialApp`
   /// swaps on a brightness or high-contrast change. Four themes that
-  /// disagreed on `platform` would therefore flip this mid-session and
-  /// remount the whole router subtree, discarding Navigator stack, form input
-  /// and scroll positions on an OS appearance change.
+  /// disagreed on `platform` would therefore add or drop the region
+  /// mid-session, on an OS appearance change. The router keeps its State
+  /// through that (see "Keeping the router"), but text selection would come
+  /// and go with the OS appearance, a selection in progress would be lost,
+  /// and the app's root overlay would move (see [BgeSelectionRegion]), with
+  /// everything below the router reparented and rebuilt.
   ///
   /// [_debugThemePlatformsAgree] rules that out rather than trusting it: all
   /// four are built by `BgeTheme` from one `_build` and agree by
   /// construction, and an embedder that hand-rolls them and gets it wrong
-  /// fails loudly in debug instead of shipping an intermittent remount.
+  /// fails loudly in debug instead of shipping a region that comes and goes.
   ///
   /// The gate is checked here as well as in [BgeSelectionRegion], and before
   /// the readiness check, so a platform without a region never changes this
   /// slot's tree shape on frame two. A region mounted then only to decline
-  /// would still change the widget type in the slot, and so remount the
-  /// `Router` beneath it, on every touch platform.
-  /// `bge_app_selection_gate_test.dart` pins that.
+  /// would still change the widget type in the slot. On every touch platform
+  /// the router would then be reparented under a region that does nothing,
+  /// and everything below it rebuilt, for no gain.
+  /// `bge_app_selection_gate_test.dart` pins that frame two leaves those
+  /// platforms alone.
+  ///
+  /// ## Keeping the router
+  ///
+  /// Where the region does mount, frame two puts it above the router. The
+  /// router's slot carries a GlobalKey, so the router moves under the region
+  /// with its State. Without the key the `Router` got a new State, which
+  /// restores the location the old one last reported. When bootstrap moved
+  /// in that same frame, the old State's redirect was lost and the new one
+  /// never applied its own, so the app stayed on the splash screen. The
+  /// gate test pins that the State survives and that the app follows a
+  /// bootstrap change made in that frame.
   Widget _selectable(BuildContext context, Widget content) {
-    if (!BgeSelection.isEnabledOn(Theme.of(context).platform)) return content;
-    if (!_selectionRegionReady) return content;
-    return BgeSelectionRegion(child: content);
+    final router = KeyedSubtree(key: _routerSlotKey, child: content);
+    if (!BgeSelection.isEnabledOn(Theme.of(context).platform)) return router;
+    if (!_selectionRegionReady) return router;
+    return BgeSelectionRegion(child: router);
   }
 
   /// Whether every theme this app can resolve reports the same `platform`.
   ///
   /// Debug-only, and it exists for [_selectable]: that gate reads the
   /// resolved theme, so a disagreement here is not a cosmetic inconsistency
-  /// but a mid-session remount of everything below the router. Cheap to
-  /// assert, effectively impossible to notice otherwise.
+  /// but text selection appearing or vanishing mid-session, with everything
+  /// below the router reparented and rebuilt. Cheap to assert, effectively
+  /// impossible to notice otherwise.
   bool _debugThemePlatformsAgree() {
     final platforms = <TargetPlatform>{
       (widget.theme ?? BgeTheme.light()).platform,
@@ -3333,9 +3357,9 @@ class _BgeAppState extends State<BgeApp> {
       _debugThemePlatformsAgree(),
       'BgeApp was given themes that disagree on ThemeData.platform. The '
       'text-selection region (#322) is gated on the resolved theme, so the '
-      'app would gain or lose it — remounting the entire router subtree — '
-      'the moment the OS switched appearance. Override all four themes or '
-      'none.',
+      'app would gain or lose text selection the moment the OS switched '
+      'appearance, dropping any selection and moving the root overlay. '
+      'Override all four themes or none.',
     );
     return MaterialApp.router(
       onGenerateTitle: (context) =>
