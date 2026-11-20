@@ -58,99 +58,104 @@ class HouseholdInviteTile extends StatelessWidget {
     final expiry = inviteExpiryLine(l10n, invite);
     final offline = BgeConnectivityScope.offlineOf(context);
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        ListTile(
-          title: Text(invite.inviteeLabel ?? l10n.householdInviteToAccount),
-          subtitle: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (role != null) Text(householdRoleLabel(l10n, role)),
-              if (awaiting) const HouseholdInviteAwaitingBadge(),
-              Text(l10n.householdInviteFrom(invite.inviter.label)),
-              if (expiry != null) Text(expiry),
-            ],
-          ),
-          trailing: busy ? const HouseholdInviteBusyIndicator() : null,
-        ),
-        if (actions.isNotEmpty)
-          Padding(
-            padding: EdgeInsetsDirectional.only(
-              start: tokens.spaceMd,
-              end: tokens.spaceMd,
-              bottom: tokens.spaceSm,
-            ),
-            child: Column(
+    return BgeOutlinedRow(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ListTile(
+            title: Text(invite.inviteeLabel ?? l10n.householdInviteToAccount),
+            subtitle: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              spacing: tokens.spaceXs,
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Wrap(
-                  spacing: tokens.spaceSm,
-                  runSpacing: tokens.spaceSm,
-                  children: [
-                    // Each is a direct write, so each waits for a
-                    // connection (#49). Each carries the reason; the row
-                    // shows it once.
-                    //
-                    // Approve first: on a row awaiting approval it is the
-                    // answer most likely wanted.
-                    if (actions.contains(HouseholdInviteRowAction.approve))
-                      BgeOnlineOnly(
-                        showNote: false,
-                        child: FilledButton.tonal(
-                          key: actionKey(
-                            HouseholdInviteRowAction.approve,
-                            invite.id,
-                          ),
-                          onPressed: busy || offline
-                              ? null
-                              : () =>
-                                    onAction(HouseholdInviteRowAction.approve),
-                          child: Text(l10n.householdInviteApprove),
-                        ),
-                      ),
-                    if (actions.contains(HouseholdInviteRowAction.revoke))
-                      BgeOnlineOnly(
-                        showNote: false,
-                        child: TextButton(
-                          key: actionKey(
-                            HouseholdInviteRowAction.revoke,
-                            invite.id,
-                          ),
-                          style: TextButton.styleFrom(
-                            foregroundColor: theme.colorScheme.error,
-                          ),
-                          onPressed: busy || offline
-                              ? null
-                              : () => onAction(HouseholdInviteRowAction.revoke),
-                          child: Text(revokeLabel(l10n, invite)),
-                        ),
-                      ),
-                    if (actions.contains(HouseholdInviteRowAction.withdraw))
-                      BgeOnlineOnly(
-                        showNote: false,
-                        child: OutlinedButton(
-                          key: actionKey(
-                            HouseholdInviteRowAction.withdraw,
-                            invite.id,
-                          ),
-                          onPressed: busy || offline
-                              ? null
-                              : () =>
-                                    onAction(HouseholdInviteRowAction.withdraw),
-                          child: Text(l10n.householdInviteWithdraw),
-                        ),
-                      ),
-                  ],
-                ),
-                // Only offline: online it would still take the Column's gap.
-                if (offline) const BgeOnlineOnlyNote(),
+                if (role != null) Text(householdRoleLabel(l10n, role)),
+                if (awaiting) const HouseholdInviteAwaitingBadge(),
+                Text(l10n.householdInviteFrom(invite.inviter.label)),
+                if (expiry != null) Text(expiry),
               ],
             ),
+            trailing: busy ? const HouseholdInviteBusyIndicator() : null,
           ),
-      ],
+          if (actions.isNotEmpty)
+            Padding(
+              padding: EdgeInsetsDirectional.only(
+                start: tokens.spaceMd,
+                end: tokens.spaceMd,
+                bottom: tokens.spaceSm,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                spacing: tokens.spaceXs,
+                children: [
+                  Wrap(
+                    spacing: tokens.spaceSm,
+                    runSpacing: tokens.spaceSm,
+                    children: [
+                      // Each is a direct write, so each waits for a
+                      // connection (#49). Each carries the reason; the row
+                      // shows it once.
+                      //
+                      // Approve first: on a row awaiting approval it is the
+                      // answer most likely wanted.
+                      if (actions.contains(HouseholdInviteRowAction.approve))
+                        BgeOnlineOnly(
+                          showNote: false,
+                          child: FilledButton.tonal(
+                            key: actionKey(
+                              HouseholdInviteRowAction.approve,
+                              invite.id,
+                            ),
+                            onPressed: busy || offline
+                                ? null
+                                : () => onAction(
+                                    HouseholdInviteRowAction.approve,
+                                  ),
+                            child: Text(l10n.householdInviteApprove),
+                          ),
+                        ),
+                      if (actions.contains(HouseholdInviteRowAction.revoke))
+                        BgeOnlineOnly(
+                          showNote: false,
+                          child: TextButton(
+                            key: actionKey(
+                              HouseholdInviteRowAction.revoke,
+                              invite.id,
+                            ),
+                            style: TextButton.styleFrom(
+                              foregroundColor: theme.colorScheme.error,
+                            ),
+                            onPressed: busy || offline
+                                ? null
+                                : () =>
+                                      onAction(HouseholdInviteRowAction.revoke),
+                            child: Text(revokeLabel(l10n, invite)),
+                          ),
+                        ),
+                      if (actions.contains(HouseholdInviteRowAction.withdraw))
+                        BgeOnlineOnly(
+                          showNote: false,
+                          child: OutlinedButton(
+                            key: actionKey(
+                              HouseholdInviteRowAction.withdraw,
+                              invite.id,
+                            ),
+                            onPressed: busy || offline
+                                ? null
+                                : () => onAction(
+                                    HouseholdInviteRowAction.withdraw,
+                                  ),
+                            child: Text(l10n.householdInviteWithdraw),
+                          ),
+                        ),
+                    ],
+                  ),
+                  // Only offline: online it would still take the Column's gap.
+                  if (offline) const BgeOnlineOnlyNote(),
+                ],
+              ),
+            ),
+        ],
+      ),
     );
   }
 }

@@ -791,7 +791,6 @@ can express what the finding wants, that check is in the suite, skipped with
 | #763 | Drawer entries read "Tab n of m" though the drawer is a launcher | `packages/app_shell/test/screens/home_screen_test.dart` |
 | #764 | `TextButton()`, `OutlinedButton()` and `ElevatedButton()` clip their content to their shape once the ring's builder is set, so a label that wraps at 2.0 text loses glyph pixels at the curved ends | `packages/ui/tokens/test/accessibility/bge_button_focus_ring_test.dart` |
 | #765 | Shift+Tab from the top of a lazily built list wraps to the last child still built, not the list's end: focus can't reach a child the list hasn't built | `packages/ui/widgets/test/layout/bge_page_test.dart` |
-| #802 | The app bar's Edit and Remove on `CollectionEntryScreen`, `primary` text on the app bar's scrolled-under tint: 4.39:1 against 4.5 (light, once content scrolls under the bar) | `packages/features/collection/test/widgets/collection_entry_screen_test.dart`, `ready, scrolled to the end` |
 
 Fixed in this run, each with a regression test in the PR:
 
@@ -828,6 +827,15 @@ Fixed in this run, each with a regression test in the PR:
   found it, and no suite runs one. The five extended buttons' labels are now
   `BgeFabLabel`, which scales a label down to the room the window leaves
   (`bge_fab_label_test.dart`).
+
+Fixed after the run, so no longer in the findings table:
+
+- #802, fixed 2026-11-19: `CollectionEntryScreen`'s
+  Edit and Remove, `primary` text on the app bar's scrolled-under tint,
+  measured 4.39:1 in light. The scrolled-under app bar no longer tints, so
+  `primary` on it holds 4.88:1. A token test asserts it in all four themes
+  (`bge_theme_test.dart`), and the audit call on `ready, scrolled to the end`
+  in `collection_entry_screen_test.dart` is no longer skipped.
 
 Two failures the guidelines report are not defects, and §3 describes both: a
 disabled control's dimmed label, and a control clipped by the viewport's top

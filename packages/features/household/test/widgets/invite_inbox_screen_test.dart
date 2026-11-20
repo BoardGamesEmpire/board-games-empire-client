@@ -71,6 +71,40 @@ void main() {
     ),
   );
 
+  testWidgets('every row is outlined (#647)', (tester) async {
+    remote.onFetchInbox = (_, _) async =>
+        pageOf([_received('i_1'), _received('i_2')]);
+
+    await tester.pumpWidget(harness());
+    await tester.pumpAndSettle();
+
+    expect(find.byType(BgeOutlinedRow), findsNWidgets(2));
+  });
+
+  testWidgets("a row's buttons lie inside its outline (#647)", (tester) async {
+    remote.onFetchInbox = (_, _) async => pageOf([_received('i_1')]);
+
+    await tester.pumpWidget(harness());
+    await tester.pumpAndSettle();
+
+    final outline = tester.getRect(
+      find
+          .descendant(
+            of: find.byType(BgeOutlinedRow),
+            matching: find.byType(DecoratedBox),
+          )
+          .first,
+    );
+    for (final key in [
+      InviteInboxScreen.acceptKey('i_1'),
+      InviteInboxScreen.declineKey('i_1'),
+    ]) {
+      final button = tester.getRect(find.byKey(key));
+      expect(outline.contains(button.topLeft), isTrue);
+      expect(outline.contains(button.bottomRight), isTrue);
+    }
+  });
+
   testWidgets('a row names the household and who sent it', (tester) async {
     remote.onFetchInbox = (_, _) async => pageOf([_received('i_1')]);
 

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:ui_tokens/src/accessibility/bge_button_focus_ring.dart';
 import 'package:ui_tokens/src/accessibility/bge_navigation_focus.dart';
 import 'package:ui_tokens/src/accessibility/bge_selection.dart';
+import 'package:ui_tokens/src/bge_line_colors.dart';
 import 'package:ui_tokens/src/bge_palette.dart';
 import 'package:ui_tokens/src/bge_status_colors.dart';
 import 'package:ui_tokens/src/bge_tokens.dart';
@@ -94,6 +95,16 @@ ButtonStyle _buttonStyle(BgeButtonFocusRingPlacement placement) => ButtonStyle(
 ///   short messages at 2.0 text on a narrow phone (#499).
 /// - **Dimensional tokens** — [BgeTokens.standard] and [BgeStatusColors] are
 ///   installed as `ThemeExtension`s on every theme.
+/// - **Line colors** — [BgeLineColors], the separator and the row outline,
+///   derived from each theme's own scheme and installed on every theme
+///   (#659).
+/// - **No tint on a scrolled-under app bar** — an authored `appBarTheme`
+///   with a transparent `surfaceTintColor`. Material's default tint took
+///   `primary` text on the bar below 4.5:1 in light (#802).
+/// - **List rows line up with their title** — `ListTileTitleAlignment
+///   .titleHeight`, so a tall row's icon, switch or chevron sits beside its
+///   title rather than centred (#647). Rows that lead with a thumbnail set
+///   their own alignment through `BgeThumbnail.titleAlignmentOf`.
 ///
 /// The high-contrast factories are wired by the shell to
 /// `MaterialApp.highContrastTheme` / `highContrastDarkTheme`, so the OS
@@ -131,13 +142,13 @@ abstract final class BgeTheme {
   /// palette will arrive from persisted state that already has a natural home
   /// to hold the built themes.
   static BgeThemeSet from(BgePalette palette) => BgeThemeSet._(
-    light: _build(palette.light),
-    dark: _build(palette.dark),
-    highContrastLight: _build(palette.highContrastLight),
-    highContrastDark: _build(palette.highContrastDark),
+    light: _build(palette.light, highContrast: false),
+    dark: _build(palette.dark, highContrast: false),
+    highContrastLight: _build(palette.highContrastLight, highContrast: true),
+    highContrastDark: _build(palette.highContrastDark, highContrast: true),
   );
 
-  static ThemeData _build(ColorScheme scheme) {
+  static ThemeData _build(ColorScheme scheme, {required bool highContrast}) {
     const tokens = BgeTokens.standard;
     return ThemeData(
       useMaterial3: true,
@@ -223,7 +234,25 @@ abstract final class BgeTheme {
           size: 24,
         ),
       ),
-      extensions: [tokens, BgeStatusColors.forScheme(scheme)],
+      // #802: content scrolled under an app bar raises it to
+      // `surfaceContainer`, and Material lays `surfaceTint` (`primary`) over
+      // that at 8%. In light that took `primary` text on the bar to 4.39:1.
+      // With no tint the bar stays `surfaceContainer`, 4.88:1.
+      appBarTheme: const AppBarThemeData(surfaceTintColor: Colors.transparent),
+      // #647: with Material's default alignment a tall row's leading and
+      // trailing are centred, so beside the subtitle and away from the
+      // title. `titleHeight` puts them at the title's first line when the
+      // row is tall, and centres them when it is not. Rows that lead with a
+      // thumbnail set their own alignment (`BgeThumbnail.titleAlignmentOf`);
+      // this governs every other row: icons, switches, chevrons.
+      listTileTheme: const ListTileThemeData(
+        titleAlignment: ListTileTitleAlignment.titleHeight,
+      ),
+      extensions: [
+        tokens,
+        BgeStatusColors.forScheme(scheme),
+        BgeLineColors.forScheme(scheme, highContrast: highContrast),
+      ],
     );
   }
 }

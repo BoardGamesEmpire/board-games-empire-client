@@ -19,9 +19,11 @@ Dark, warm, and electric. The surfaces are walnut in shadow — the table the
 games sit on. The accents are the storm above it: an electric blue strike, a
 violet cast, and a rare ember.
 
-**Dark is the reference.** The palette was authored dark-first and light is
-derived to match it. This is the opposite of the placeholder palette it
-replaced, and it is why dark mode is the mode the app looks best in.
+**Neither mode is the reference.** Light and dark are held to the same bar:
+the same contrast, the same separation between surfaces, and the same
+rendered review (#940). The palette was authored dark-first and light is
+derived to match it, the opposite of the placeholder palette it replaced;
+that is how it was made, not a rank.
 
 ### Roles and their discipline
 
@@ -249,6 +251,7 @@ Use these. They exist because the hand-rolled versions drifted.
 | `BgeStackMarker` | a cover or row per entry for a game owned more than once (#709) | Two cards offset behind the child toward the top and the end, on the left in a right-to-left language, and a count badge in the secondary colours, never the error ones; nothing reaches outside the child plus `reachOf` each way, the badge scaling down at large text instead; it adds nothing to the semantics tree, so the host's label carries the count |
 | `BgePointerFocus` | the `:focus-visible` handling copied into each control that takes focus from a tap, the cover tile's and the collection list's stack rows (#707, #709) | A mouse's or a trackpad's press hides the control's ring (`BgeFocusRing.suppressed`) and its ink's focus tint (`pointerFocusColor`) until the next key press, so the focus a pop-up or a page it opened hands back isn't drawn for a user who never touched the keyboard; a touch or a stylus sets nothing, as the highlight mode hides feedback already. One known limit: an ink highlight keeps the alpha it was first drawn with, so the tint stays hidden until the control's next focus while the ring comes back at once — the ring is the reliable cue |
 | `BgeFocusHandoffScope` (with a `BgeFocusHandoff` around each item) | nothing: when a game's item changed form — one entry to a stack, top level to under its base game — its focus went with the old widget, and a pop's restore had nowhere to land (#769, #711) | For a keyed list or grid whose items change form, or show one thing in more than one place: one scope around the item slivers, and each item names what it shows. Focus on an item that leaves goes to its replacement at the end of the frame that replaced it, a frame later for focus a click gave (below), and a pop's restore goes there too once the route above has gone, a page or a pop-up, unless the user has moved focus since: counted from the control noted for the pop, or, when that went meanwhile, such as a refresh banner's retry, from where the pop put focus as it began, or, when it went during a page's exit while it held that focus, from where the framework put it (#813), so focus the route's caller moves as it closes stays; the replacement in the same place wins, else a built item that has folded that place away, with the game in it (`foldedPlace`, as a base game's cover names its strip, and `folded`), on its `foldedControl`, as when a screen reader's Hide expansions folds a strip under a focused cover in it; else, once the game has left its place, the one built first, else the first item that folds the game away (`folded`, such as a base game's cover with its strip folded), on its `foldedControl`, the badge (`BgeCoverTile.expansionsControl`), with nothing unfolded and no scroll (#813); within a replacement, the control in the place of the one that had focus, in widget order, such as a cover's expansions badge, else its first; focus a click gave stays undrawn in the new form, ring and tint (`BgePointerFocus`), with focus waiting a frame on the page while a replacement built for the other kind of focus rebuilds, and going on to the newest replacement if the game changes form again meanwhile. A screen passes `isShown` over what it placed, its rows, or its covers and every strip's, folded or open (`BgeUnfoldingCovers.isShownIn`, with `BgeUnfoldingCovers.stripPlace` the place a strip's covers and its base game's `foldedPlace` name), so that a focused item scrolled out of a lazy list's cache or out of an open strip, its game still in its place, hands nothing on, not even to an item that folds it, as an open strip's base game folds nothing: focus is left to the framework, which lands on the control the page focused most recently that is still built, else on the page (#819). A control that goes while its item stays calls `BgeFocusHandoff.controlLeaving`, so that a pop the page's focus history would have given to it goes to the control it names, as a cover tile's badge gives it to the cover (#813). No semantics node, no Tab stop, no render object of its own. A scope without `isShown` can't tell a scroll-out from a replacement: a focused item scrolled out hands focus to a copy of the same game built elsewhere, else to an item that folds it away, if there is one |
+| `BgeOutlinedRow` | a `ListTile` or a tile with its actions beneath it, left borderless on a list of records, so neighbouring rows blended together (#647) | One outline for the whole row, `radiusMd` in `BgeLineColors.rowOutline`, with `spaceSm` after it; a record's actions under its tile sit inside the outline. It paints behind its child, so a `BgeFocusRing` draws over it, and a tile inside takes `tileShapeOf`, the same corners without the border, so its ink rounds with the outline. A nested row's caller indents outside it, so the outline starts at the indent. Its `MergeSemantics` goes inside it, so a screen reader's highlight is the outlined area, not the gap below |
 | `BgeLayoutToggle` (with `BgeRememberedLayout`) | a per-screen list/thumbnail switch and the preference behind it | One control for the choice, with its selected state announced; the choice is remembered per user, and the builder gets `null` until it has been read, so a screen holds its rows back until then rather than flash the other layout (#710) |
 | `showBgePopup` | `showModalBottomSheet` at every width, a wide strip along the bottom edge from 840dp up | A bottom sheet in the `compact` window class, a dialog from `medium` up, on the root navigator, so its barrier covers the navigation bar or rail; a page opened from it removes it once the page has arrived, so back lands where the pop-up was opened from. A page pushed inside the navigation shell arrives beneath the pop-up, which hears of it through the shell navigator's `BgePopupCoverObserver`; the pop-up goes once the page has arrived (#707, #414) |
 | `BgeWindowClass` | a `MediaQuery` width compared to `breakpointMedium` or `breakpointExpanded` at each call site, or read from a `LayoutBuilder`, which sees the width under the page's padding (#414) | `compact`, `medium` or `expanded` for the window the layout is in, each threshold belonging to the wider class; resolved against the theme's `BgeTokens`; rebuilds only when the width changes |
@@ -320,6 +323,27 @@ the page one real viewport, so a `SliverList` keeps both.
 **`slivers:` takes any sliver.** It is a `List<Widget>` and a sliver is a
 widget, so a paginated list goes straight through — including the shape a
 search screen actually has, with a query field above the results.
+
+**A row that stands for one record on a list screen is outlined, through
+`BgeOutlinedRow`** (#647). The starting set: catalog search and browse,
+which share `CatalogGameRow`, the collection list's rows in the list layout
+(the cover grid has none), offer games, the household list and its admin
+twin, the invite inbox, sent invites and the household invite list, the data
+gateway list and the language-link worklist.
+These stay plain: settings and drawer rows, a detail page's action and
+navigation rows, read-only fact rows, switch rows, rows in sheets and dialogs,
+and user search results, which are a picker inside a form. Event rows are
+separated by a divider instead, in the `separator` role, which is neutral and
+never `error` (#659). A row whose tile had no horizontal padding takes
+`spaceSm` once outlined, so its content clears the border. Outlining caps
+nothing: a row's facts wrap at 200% and its title is never limited to a line
+count, so a row may reach about 286dp tall and a screen show two. The theme
+aligns a tile's leading and trailing widgets to the title's first line, not the
+centre, so in a row taller than one line they sit beside the title (#647). A
+row that leads with a thumbnail takes `BgeThumbnail.titleAlignmentOf` instead:
+below 1.3× text it sets every row's thumbnail at the same height, at the top,
+and from 1.3× it takes the theme's alignment, which by then sets each one level
+with the title's first line (#647).
 
 **A list whose rows can leave or move while the user is on it** — rows from a
 cache, a purge, a discard — uses **`BgeKeyedSliverList`**, with the row's id as
@@ -813,6 +837,14 @@ The caching distinction is load-bearing: the shell resolves
 `widget.theme ?? BgeTheme.light()` on every `BgeApp` rebuild, and a fresh
 `ThemeData` per build would hand `MaterialApp` a new theme identity each time
 and repropagate `Theme` to the whole subtree.
+
+`BgeLineColors` sits beside `BgeStatusColors` as a role set derived from the
+scheme, so any palette inherits it and needs nothing more (#659). `separator`
+is `outline`, for a divider such as the events overview's, and never `error`.
+`rowOutline` is `outlineVariant`, or `outline` in high contrast, for
+`BgeOutlinedRow`. `outlineVariant` is 1.70:1 against `surface` in light and
+1.72:1 in dark, below 3:1; that is accepted because the gap and each row's own
+text separate rows too (#647).
 
 Any new palette must clear the same bar the default does — AA/AAA contrast on
 authored pairs, `Oklch.minAccentSeparation` between tertiary and error, and

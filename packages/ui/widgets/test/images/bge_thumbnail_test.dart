@@ -242,4 +242,125 @@ void main() {
       handle.dispose();
     });
   });
+
+  group('BgeThumbnail.titleAlignmentOf', () {
+    Future<ListTileTitleAlignment> alignmentAt(
+      WidgetTester tester,
+      double scale,
+    ) async {
+      late ListTileTitleAlignment result;
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: BgeTheme.light(),
+          builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(context).copyWith(
+              textScaler: TextScaler.linear(scale),
+            ),
+            child: child!,
+          ),
+          home: Builder(
+            builder: (context) {
+              result = BgeThumbnail.titleAlignmentOf(context);
+              return const SizedBox();
+            },
+          ),
+        ),
+      );
+      return result;
+    }
+
+    testWidgets('is top at the default text size', (tester) async {
+      expect(await alignmentAt(tester, 1), ListTileTitleAlignment.top);
+    });
+
+    testWidgets('is top just below the threshold', (tester) async {
+      expect(
+        await alignmentAt(tester, BgeThumbnail.titleHeightTextScale - 0.05),
+        ListTileTitleAlignment.top,
+      );
+    });
+
+    testWidgets('is titleHeight at the threshold', (tester) async {
+      expect(
+        await alignmentAt(tester, BgeThumbnail.titleHeightTextScale),
+        ListTileTitleAlignment.titleHeight,
+      );
+    });
+
+    testWidgets('is titleHeight at 200%', (tester) async {
+      expect(await alignmentAt(tester, 2), ListTileTitleAlignment.titleHeight);
+    });
+
+    testWidgets('a short row is over 72dp tall from the threshold', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(390, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        _scaledList(BgeThumbnail.titleHeightTextScale, [_shortTile]),
+      );
+
+      final height = tester.getSize(find.byType(ListTile)).height;
+      expect(height, greaterThan(72));
+    });
+
+    for (final (scale, width, expected) in [
+      (1.0, 390.0, 8.0),
+      (BgeThumbnail.titleHeightTextScale, 390.0, 16.0),
+      (2.0, 320.0, 16.0),
+    ]) {
+      testWidgets('short and long rows share a thumbnail top of $expected at '
+          '$scale', (tester) async {
+        tester.view.physicalSize = Size(width, 1600);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.reset);
+        await tester.pumpWidget(_scaledList(scale, [_shortTile, _longTile]));
+
+        final tops = <double>[];
+        for (final tile in find.byType(ListTile).evaluate()) {
+          final tileTop = tester.getTopLeft(find.byWidget(tile.widget)).dy;
+          final thumb = find.descendant(
+            of: find.byWidget(tile.widget),
+            matching: find.byType(BgeThumbnail),
+          );
+          tops.add(tester.getTopLeft(thumb).dy - tileTop);
+        }
+        expect(tops, [expected, expected]);
+      });
+    }
+  });
 }
+
+Widget _scaledList(double scale, List<Widget Function(BuildContext)> tiles) =>
+    MaterialApp(
+      theme: BgeTheme.light(),
+      builder: (context, child) => MediaQuery(
+        data: MediaQuery.of(
+          context,
+        ).copyWith(textScaler: TextScaler.linear(scale)),
+        child: child!,
+      ),
+      home: Scaffold(
+        body: ListView(
+          children: [for (final tile in tiles) Builder(builder: tile)],
+        ),
+      ),
+    );
+
+Widget _shortTile(BuildContext context) => ListTile(
+  titleAlignment: BgeThumbnail.titleAlignmentOf(context),
+  leading: const BgeThumbnail(),
+  title: const Text('Wingspan'),
+  subtitle: const Text('1-5 players'),
+);
+
+Widget _longTile(BuildContext context) => ListTile(
+  titleAlignment: BgeThumbnail.titleAlignmentOf(context),
+  leading: const BgeThumbnail(),
+  title: const Text(
+    'Twilight Imperium Fourth Edition Prophecy of Kings Expanded Saga '
+    'Of Many Words',
+  ),
+  subtitle: const Text('3-6 players'),
+);

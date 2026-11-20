@@ -304,28 +304,35 @@ void main() {
       }
     });
 
-    testWidgets('and rows within a group by a red separator', (tester) async {
-      await tester.pumpWidget(harness());
-      items.add([
-        item('e-1', occurrences: [confirmed('a', day(25))]),
-        item('e-2', occurrences: [confirmed('b', day(26))]),
-        item('e-3', occurrences: [confirmed('c', day(27))]),
-        item('e-plan'),
-      ]);
-      await tester.pump();
+    testWidgets(
+      'and rows within a group by a separator in its own colour (#659)',
+      (
+        tester,
+      ) async {
+        await tester.pumpWidget(harness());
+        items.add([
+          item('e-1', occurrences: [confirmed('a', day(25))]),
+          item('e-2', occurrences: [confirmed('b', day(26))]),
+          item('e-3', occurrences: [confirmed('c', day(27))]),
+          item('e-plan'),
+        ]);
+        await tester.pump();
 
-      // Between the three upcoming rows, not after the last of them, and none
-      // for a group of one.
-      final dividers = tester.widgetList<Divider>(find.byType(Divider));
-      expect(dividers, hasLength(2));
-      final context = tester.element(find.text('Upcoming'));
-      for (final divider in dividers) {
-        expect(divider.color, Theme.of(context).colorScheme.error);
-        expect(divider.thickness, BgeTokens.standard.separatorThickness);
-        expect(divider.indent, BgeTokens.standard.separatorInset);
-        expect(divider.endIndent, BgeTokens.standard.separatorInset);
-      }
-    });
+        // Between the three upcoming rows, not after the last of them, and none
+        // for a group of one.
+        final dividers = tester.widgetList<Divider>(find.byType(Divider));
+        expect(dividers, hasLength(2));
+        final context = tester.element(find.text('Upcoming'));
+        final colorScheme = Theme.of(context).colorScheme;
+        for (final divider in dividers) {
+          expect(divider.color, BgeLineColors.of(context).separator);
+          expect(divider.color, isNot(colorScheme.error));
+          expect(divider.thickness, BgeTokens.standard.separatorThickness);
+          expect(divider.indent, BgeTokens.standard.separatorInset);
+          expect(divider.endIndent, BgeTokens.standard.separatorInset);
+        }
+      },
+    );
 
     testWidgets('by a bar of its own colour', (tester) async {
       await showAll(tester);

@@ -1,6 +1,7 @@
 import 'package:bge_test_support/widgets.dart';
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:game_collection/game_collection.dart';
 import 'package:game_collection/l10n/game_collection_localizations.dart';
@@ -91,10 +92,21 @@ void main() {
   Finder within(Key key, Finder matching) =>
       find.descendant(of: find.byKey(key), matching: matching);
 
+  /// The merged node of the row [row] finds: the `MergeSemantics` sits inside
+  /// the row's outline (#647), below the key. A cover has none, so its own
+  /// node answers.
+  SemanticsNode mergedNode(WidgetTester tester, Finder row) {
+    final merged = find.descendant(
+      of: row,
+      matching: find.byType(MergeSemantics),
+    );
+    return tester.getSemantics(merged.evaluate().isEmpty ? row : merged.first);
+  }
+
   /// [key]'s merged semantics label: a row's, with its badge's words, or a
   /// cover's.
   String labelOf(WidgetTester tester, Key key) =>
-      tester.getSemantics(find.byKey(key)).label;
+      mergedNode(tester, find.byKey(key)).label;
 
   /// One copy of Wingspan, which a second copy makes a stack.
   GameCollectionListItem wingspan(
@@ -190,7 +202,8 @@ void main() {
     testWidgets('the badge is read with the row', (tester) async {
       await show(tester, [listItem('e-1', isDirty: true, favorite: true)]);
 
-      final row = tester.getSemantics(
+      final row = mergedNode(
+        tester,
         find.byKey(GameCollectionListScreen.rowKey('e-1')),
       );
       expect(row.label, contains('Catan'));
@@ -214,7 +227,7 @@ void main() {
       expect(within(stack, find.text(_notSyncedCopy)), findsNothing);
       expect(within(stack, find.byType(BgeSyncBadge)), findsOneWidget);
       expect(
-        tester.getSemantics(find.byKey(stack)).label,
+        mergedNode(tester, find.byKey(stack)).label,
         contains(_couldNotSyncCopy),
       );
     });
@@ -291,7 +304,7 @@ void main() {
       expect(within(base, find.text(_couldNotSyncCopy)), findsNothing);
       expect(within(nested, find.text(_couldNotSyncCopy)), findsOneWidget);
       expect(
-        tester.getSemantics(find.byKey(nested)).label,
+        mergedNode(tester, find.byKey(nested)).label,
         contains(_couldNotSyncCopy),
       );
       expect(find.byKey(synced), findsOneWidget);

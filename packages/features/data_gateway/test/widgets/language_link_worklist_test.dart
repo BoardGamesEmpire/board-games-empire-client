@@ -411,6 +411,38 @@ void main() {
   });
 
   group('a row', () {
+    testWidgets('every row is outlined (#647)', (tester) async {
+      listing({
+        waiting: [
+          languageLink('a', value: 'en'),
+          languageLink('b', value: 'fr'),
+        ],
+      });
+      await pumpScreen(tester);
+
+      expect(find.byType(BgeOutlinedRow), findsNWidgets(2));
+    });
+
+    testWidgets("a row's words and menu sit inside its outline, inset from "
+        'its edges (#647)', (tester) async {
+      listing({
+        waiting: [languageLink('a', value: 'en')],
+      });
+      await pumpScreen(tester);
+
+      final outlined = tester.getRect(
+        find.descendant(of: row('a'), matching: find.byType(ListTile)),
+      );
+      final inset = BgeTokens.of(tester.element(row('a'))).spaceSm;
+      final words = tester.getRect(
+        find.descendant(of: row('a'), matching: find.text('en')),
+      );
+      final menuRect = tester.getRect(menu('a'));
+
+      expect(words.left - outlined.left, greaterThanOrEqualTo(inset));
+      expect(outlined.right - menuRect.right, greaterThanOrEqualTo(inset));
+    });
+
     testWidgets('two rows for one value in different formats say which is '
         'which, to the eye and to a screen reader', (tester) async {
       final handle = tester.ensureSemantics();

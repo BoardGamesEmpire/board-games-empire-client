@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
@@ -15,6 +16,16 @@ void main() {
       BgeColorSchemes.highContrastDark,
     ),
   };
+
+  /// The surfaces a control or a row sits on.
+  List<(String, Color)> surfaces(ColorScheme s) => [
+    ('surface', s.surface),
+    ('surfaceContainerLowest', s.surfaceContainerLowest),
+    ('surfaceContainerLow', s.surfaceContainerLow),
+    ('surfaceContainer', s.surfaceContainer),
+    ('surfaceContainerHigh', s.surfaceContainerHigh),
+    ('surfaceContainerHighest', s.surfaceContainerHighest),
+  ];
 
   group('BgeTheme accessibility baseline (all four themes)', () {
     for (final entry in themes.entries) {
@@ -45,6 +56,14 @@ void main() {
         expect(status.offline, scheme.onSurfaceVariant);
       });
 
+      test('${entry.key}: list rows align leading and trailing with the '
+          'title (#647)', () {
+        expect(
+          theme.listTileTheme.titleAlignment,
+          ListTileTitleAlignment.titleHeight,
+        );
+      });
+
       test('${entry.key}: uses the authored color scheme', () {
         expect(theme.colorScheme.primary, scheme.primary);
         expect(theme.colorScheme.surface, scheme.surface);
@@ -68,20 +87,50 @@ void main() {
         expect(theme.inputDecorationTheme.helperMaxLines, 6);
         expect(theme.inputDecorationTheme.errorMaxLines, 6);
       });
+
+      test('${entry.key}: primary text on a scrolled-under app bar holds '
+          '4.5:1 (#802)', () {
+        // The bar rests on surfaceContainer once content scrolls under it,
+        // and Material lays surfaceTint over that unless the theme says
+        // otherwise.
+        expect(theme.appBarTheme.surfaceTintColor, Colors.transparent);
+        expect(
+          Wcag.contrastRatio(scheme.primary, scheme.surfaceContainer),
+          greaterThanOrEqualTo(4.5),
+        );
+      });
+    }
+  });
+
+  group('BgeTheme line colours (all four themes, #659)', () {
+    for (final entry in themes.entries) {
+      final (theme, scheme) = entry.value;
+      final highContrast = entry.key.startsWith('highContrast');
+
+      test('${entry.key}: installs BgeLineColors derived from its own '
+          'scheme', () {
+        final lines = theme.extension<BgeLineColors>()!;
+        expect(lines.separator, scheme.outline);
+        expect(
+          lines.rowOutline,
+          highContrast ? scheme.outline : scheme.outlineVariant,
+        );
+      });
+
+      test('${entry.key}: the separator holds 3:1 against every surface', () {
+        final separator = theme.extension<BgeLineColors>()!.separator;
+        for (final (role, color) in surfaces(scheme)) {
+          expect(
+            Wcag.contrastRatio(separator, color),
+            greaterThanOrEqualTo(3.0),
+            reason: 'separator against $role',
+          );
+        }
+      });
     }
   });
 
   group('BgeTheme button focus ring (all four themes, #644)', () {
-    /// The surfaces a button sits on, and so the ones its ring touches.
-    List<(String, Color)> surfaces(ColorScheme s) => [
-      ('surface', s.surface),
-      ('surfaceContainerLowest', s.surfaceContainerLowest),
-      ('surfaceContainerLow', s.surfaceContainerLow),
-      ('surfaceContainer', s.surfaceContainer),
-      ('surfaceContainerHigh', s.surfaceContainerHigh),
-      ('surfaceContainerHighest', s.surfaceContainerHighest),
-    ];
-
     for (final entry in themes.entries) {
       final (theme, scheme) = entry.value;
       final ring = BgeButtonFocusRing.colorOf(scheme);
@@ -452,5 +501,90 @@ void main() {
         expect(tester.getSize(dialogSurface(AlertDialog)).width, 280);
       });
     }
+  });
+
+  group('BgeTheme list rows (#647)', () {
+    Future<void> pumpRow(
+      WidgetTester tester, {
+      required double width,
+      required double scale,
+      required String title,
+    }) async {
+      tester.view.physicalSize = Size(width, 2000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: BgeTheme.light(),
+          builder: (context, app) => MediaQuery(
+            data: MediaQuery.of(
+              context,
+            ).copyWith(textScaler: TextScaler.linear(scale)),
+            child: app!,
+          ),
+          home: Scaffold(
+            body: Align(
+              alignment: Alignment.topLeft,
+              child: ListTile(
+                key: const Key('tile'),
+                leading: const Icon(Icons.casino, key: Key('leading')),
+                title: Text(title),
+                subtitle: const Text('Subtitle'),
+                trailing: Switch(
+                  key: const Key('trailing'),
+                  value: true,
+                  onChanged: (_) {},
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    Rect rectOf(WidgetTester tester, String key) =>
+        tester.getRect(find.byKey(Key(key)));
+
+    testWidgets('at 320dp and 2.0x text, a tall row hangs its leading and '
+        'trailing from the title, not the middle', (tester) async {
+      const title = 'Twilight Imperium Fourth Edition Rules';
+      await pumpRow(tester, width: 320, scale: 2, title: title);
+
+      final paragraph = tester.renderObject<RenderParagraph>(find.text(title));
+      final lines =
+          paragraph.size.height /
+          paragraph.getFullHeightForCaret(
+            const TextPosition(offset: 0),
+          );
+      expect(lines, greaterThanOrEqualTo(3));
+
+      final tile = rectOf(tester, 'tile');
+      for (final key in ['leading', 'trailing']) {
+        final child = rectOf(tester, key);
+        final centred = (tile.height - child.height) / 2;
+        // Measured: a 484dp tile, its icon and switch 16dp down.
+        expect(child.top - tile.top, 16, reason: key);
+        expect(child.top - tile.top, lessThan(centred - 100), reason: key);
+      }
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('at 390dp and 1.0x text, a two-line row sets its leading '
+        'by titleHeight: 16dp down, and a taller trailing centred', (
+      tester,
+    ) async {
+      await pumpRow(tester, width: 390, scale: 1, title: 'Wingspan');
+
+      final tile = rectOf(tester, 'tile');
+      final leading = rectOf(tester, 'leading');
+      final trailing = rectOf(tester, 'trailing');
+      // Measured: a 72dp tile. `titleHeight` takes the lesser of 16dp and the
+      // centred offset, so the 24dp icon is 16dp down and the 48dp switch,
+      // centred at 12dp, is 12dp down.
+      expect(tile.height, 72);
+      expect(leading.top - tile.top, 16);
+      expect(trailing.top - tile.top, 12);
+      expect(tester.takeException(), isNull);
+    });
   });
 }

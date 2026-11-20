@@ -170,6 +170,51 @@ void main() {
                   ),
                 ),
               ),
+              GoldenTestScenario(
+                // A one-line title and the longest title, outlined (#647): at
+                // 2.0 the thumbnail sits beside the title, not centred in the
+                // tall row.
+                name: 'outlined rows · one-line and long title · ${scale}x',
+                child: _Host(
+                  theme: theme,
+                  scale: scale,
+                  child: Builder(
+                    builder: (context) => Column(
+                      children: [
+                        BgeOutlinedRow(
+                          child: ListTile(
+                            titleAlignment: BgeThumbnail.titleAlignmentOf(
+                              context,
+                            ),
+                            minTileHeight: BgeThumbnail.minTileHeightOf(
+                              context,
+                            ),
+                            leading: const BgeThumbnail(url: _portraitUrl),
+                            title: const Text('Wingspan'),
+                          ),
+                        ),
+                        BgeOutlinedRow(
+                          child: ListTile(
+                            titleAlignment: BgeThumbnail.titleAlignmentOf(
+                              context,
+                            ),
+                            minTileHeight: BgeThumbnail.minTileHeightOf(
+                              context,
+                            ),
+                            leading: const BgeThumbnail(url: _portraitUrl),
+                            title: const Text(
+                              'Twilight Imperium: Fourth Edition',
+                            ),
+                            subtitle: const Text(
+                              '2017 · 3–6 players · 240–480 min',
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
             ],
           ],
         ),

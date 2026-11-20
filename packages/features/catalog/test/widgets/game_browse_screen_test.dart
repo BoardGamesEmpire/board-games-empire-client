@@ -12,6 +12,7 @@ import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:ui/ui.dart';
+import 'package:ui_tokens/ui_tokens.dart';
 
 import '../support/catalog_app.dart';
 import '../support/fake_games_remote.dart';
@@ -95,6 +96,50 @@ void main() {
     expect(find.text('Expansion'), findsOneWidget);
   });
 
+  testWidgets('every game row is outlined (#647)', (tester) async {
+    remote.onFetchPage = (_, _) async => pageOf([azul, seafarers]);
+
+    await show(tester);
+
+    expect(find.byType(BgeOutlinedRow), findsNWidgets(2));
+    for (final id in ['g_azul', 'g_seafarers']) {
+      expect(
+        find.descendant(
+          of: find.byKey(GameBrowseScreen.rowKey(id)),
+          matching: find.byType(BgeOutlinedRow),
+        ),
+        findsOneWidget,
+      );
+    }
+  });
+
+  testWidgets('a row sets its thumbnail by text scale (#647)', (tester) async {
+    remote.onFetchPage = (_, _) async => pageOf([azul]);
+
+    Future<ListTileTitleAlignment?> alignmentAt(double scale) async {
+      await show(
+        tester,
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(
+            context,
+          ).copyWith(textScaler: TextScaler.linear(scale)),
+          child: child!,
+        ),
+      );
+      return tester
+          .widget<ListTile>(
+            find.descendant(
+              of: find.byKey(GameBrowseScreen.rowKey('g_azul')),
+              matching: find.byType(ListTile),
+            ),
+          )
+          .titleAlignment;
+    }
+
+    expect(await alignmentAt(1), ListTileTitleAlignment.top);
+    expect(await alignmentAt(2), ListTileTitleAlignment.titleHeight);
+  });
+
   testWidgets('reads a row the way it is meant to be heard', (tester) async {
     final handle = tester.ensureSemantics();
     remote.onFetchPage = (_, _) async => pageOf([azul]);
@@ -102,7 +147,12 @@ void main() {
     await show(tester);
 
     expect(
-      tester.getSemantics(find.byKey(GameBrowseScreen.rowKey('g_azul'))),
+      tester.getSemantics(
+        find.descendant(
+          of: find.byKey(GameBrowseScreen.rowKey('g_azul')),
+          matching: find.byType(MergeSemantics),
+        ),
+      ),
       isSemantics(label: 'Azul\n2017, 2 to 4 players'),
     );
     handle.dispose();
@@ -312,6 +362,26 @@ void main() {
       expect(start(nested('B', 'E')), greaterThan(start(row('B'))));
     });
 
+    testWidgets("a nested expansion row's outline starts at the indent "
+        '(#647)', (tester) async {
+      remote.onFetchPage = (_, _) async => pageOf([
+        base,
+        expansion('E', [under('B')]),
+      ]);
+
+      await show(tester);
+
+      double outlineStart(Finder row) => tester
+          .getTopLeft(
+            find.descendant(of: row, matching: find.byType(BgeOutlinedRow)),
+          )
+          .dx;
+      expect(
+        outlineStart(nested('B', 'E')),
+        outlineStart(row('B')) + BgeTokens.standard.spaceLg,
+      );
+    });
+
     testWidgets('a nested row is spoken as an expansion of its base game', (
       tester,
     ) async {
@@ -435,7 +505,14 @@ void main() {
           findsOneWidget,
         );
         expect(
-          tester.getSemantics(row('E')).label,
+          tester
+              .getSemantics(
+                find.descendant(
+                  of: row('E'),
+                  matching: find.byType(MergeSemantics),
+                ),
+              )
+              .label,
           contains('Base game not on this server'),
         );
         handle.dispose();
@@ -556,7 +633,14 @@ void main() {
         );
 
         expect(
-          tester.getSemantics(row('E')).label,
+          tester
+              .getSemantics(
+                find.descendant(
+                  of: row('E'),
+                  matching: find.byType(MergeSemantics),
+                ),
+              )
+              .label,
           contains('Base game not saved on this device'),
         );
         expect(

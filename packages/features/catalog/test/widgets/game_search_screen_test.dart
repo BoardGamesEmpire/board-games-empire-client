@@ -213,6 +213,30 @@ void main() {
     expect(find.text('3 results'), findsOneWidget);
   });
 
+  testWidgets('every game row is outlined (#647)', (tester) async {
+    remote.onSearch = (_, _, _) async => results;
+
+    await show(tester);
+    await search(tester, 'catan');
+
+    // One server row and two data-source rows: the third hit is the server's
+    // game again, listed once above.
+    expect(find.byType(BgeOutlinedRow), findsNWidgets(3));
+    for (final row in [
+      GameSearchScreen.serverRowKey('g_catan'),
+      GameSearchScreen.sourceRowKey('dg_bgg', '926'),
+      GameSearchScreen.sourceRowKey('dg_bgg', '1'),
+    ]) {
+      expect(
+        find.descendant(
+          of: find.byKey(row),
+          matching: find.byType(BgeOutlinedRow),
+        ),
+        findsOneWidget,
+      );
+    }
+  });
+
   testWidgets('a DataGateway row shows its summary as plain text', (
     tester,
   ) async {
@@ -366,7 +390,12 @@ void main() {
 
       expect(imported, isEmpty);
       expect(
-        tester.getSemantics(importRow),
+        tester.getSemantics(
+          find.descendant(
+            of: importRow,
+            matching: find.byType(MergeSemantics),
+          ),
+        ),
         matchesSemantics(
           label:
               'Catan: Seafarers\n$onlineOnlyCopy\n'
@@ -2186,6 +2215,11 @@ void main() {
 
     testWidgets('a source that sends a result twice still shows every row '
         'as rows arrive above it', (tester) async {
+      // Each row now has the outline's gap below it (#647): a taller surface
+      // keeps all five in the viewport, as the default one did before.
+      tester.view.physicalSize = const Size(800, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
       final search = await startSearch(tester);
       final repeating = local.copyWith(
         byDataGateway: {

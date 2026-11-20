@@ -496,71 +496,78 @@ class _LinkRow extends StatelessWidget {
 
     // Content, not a control: with no onTap the tile is no focus stop, and its
     // words read as one node. The menu in `trailing` is a control of its own.
-    return ListTile(
-      contentPadding: EdgeInsets.zero,
-      title: Text(link.value),
-      subtitle: format == null && supplied.isEmpty && status == null
-          ? null
-          : Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (format != null) Text(format),
-                if (supplied.isNotEmpty) Text(supplied),
-                if ((format != null || supplied.isNotEmpty) && status != null)
-                  const BgeGap.xs(),
-                if (status != null)
-                  DataGatewayIconAndWords(
-                    icon: status.icon,
-                    color: status.color,
-                    words: status.words,
-                  ),
-              ],
-            ),
-      trailing: busy
-          // A node of its own in the menu's place, not more words in the row's.
-          // In a slot the size of the menu's button, so the row's words keep
-          // their room, wrap the same, and move nothing under a pointer.
-          ? Semantics(
-              container: true,
-              label: l10n.dataGatewayBusy(name),
-              child: ExcludeSemantics(
-                child: SizedBox.square(
-                  dimension: kMinInteractiveDimension,
-                  child: Center(
-                    child: SizedBox.square(
-                      // The size of the menu button's icon it stands in for.
-                      dimension: tokens.spaceLg,
-                      child: const CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                  ),
-                ),
-              ),
-            )
-          : menuFocus != null
-          ? Focus(
-              focusNode: menuFocus,
-              child: PopupMenuButton<LanguageLinkAction>(
-                key: LanguageLinkWorklist.menuKey(link.id),
-                tooltip: l10n.dataGatewayLanguageLinkActions(name),
-                onSelected: (action) {
-                  // A menu opened online can outlast the connection (#49).
-                  if (BgeConnectivityScope.offlineOf(context)) return;
-                  onAction(action);
-                },
-                // Every action here is a write (#49). The items follow the
-                // connection while the menu is open.
-                itemBuilder: (_) => [
-                  for (final action in languageLinkActions(link.status))
-                    BgeOnlineOnlyPopupMenuItem(
-                      key: _actionKey(action),
-                      value: action,
-                      label: _actionLabel(l10n, action),
+    // The outline (#647) draws at the tile's edge, so the words and the menu
+    // are inset from it rather than flush against the border.
+    return BgeOutlinedRow(
+      child: ListTile(
+        contentPadding: EdgeInsetsDirectional.symmetric(
+          horizontal: tokens.spaceSm,
+        ),
+        title: Text(link.value),
+        subtitle: format == null && supplied.isEmpty && status == null
+            ? null
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (format != null) Text(format),
+                  if (supplied.isNotEmpty) Text(supplied),
+                  if ((format != null || supplied.isNotEmpty) && status != null)
+                    const BgeGap.xs(),
+                  if (status != null)
+                    DataGatewayIconAndWords(
+                      icon: status.icon,
+                      color: status.color,
+                      words: status.words,
                     ),
                 ],
               ),
-            )
-          : null,
+        trailing: busy
+            // A node of its own in the menu's place, not more words in the
+            // row's. In a slot the size of the menu's button, so the row's
+            // words keep their room, wrap the same, and move nothing under a
+            // pointer.
+            ? Semantics(
+                container: true,
+                label: l10n.dataGatewayBusy(name),
+                child: ExcludeSemantics(
+                  child: SizedBox.square(
+                    dimension: kMinInteractiveDimension,
+                    child: Center(
+                      child: SizedBox.square(
+                        // The size of the menu button's icon it stands in for.
+                        dimension: tokens.spaceLg,
+                        child: const CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    ),
+                  ),
+                ),
+              )
+            : menuFocus != null
+            ? Focus(
+                focusNode: menuFocus,
+                child: PopupMenuButton<LanguageLinkAction>(
+                  key: LanguageLinkWorklist.menuKey(link.id),
+                  tooltip: l10n.dataGatewayLanguageLinkActions(name),
+                  onSelected: (action) {
+                    // A menu opened online can outlast the connection (#49).
+                    if (BgeConnectivityScope.offlineOf(context)) return;
+                    onAction(action);
+                  },
+                  // Every action here is a write (#49). The items follow the
+                  // connection while the menu is open.
+                  itemBuilder: (_) => [
+                    for (final action in languageLinkActions(link.status))
+                      BgeOnlineOnlyPopupMenuItem(
+                        key: _actionKey(action),
+                        value: action,
+                        label: _actionLabel(l10n, action),
+                      ),
+                  ],
+                ),
+              )
+            : null,
+      ),
     );
   }
 }

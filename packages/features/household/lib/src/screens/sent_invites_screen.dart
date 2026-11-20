@@ -256,58 +256,62 @@ class _SentRow extends StatelessWidget {
     final mayWithdraw = sentInviteRowActions(invite)
         .contains(HouseholdInviteRowAction.withdraw);
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        ListTile(
-          title: Text(invite.householdName ?? l10n.inviteInboxUnknownHousehold),
-          subtitle: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                invitee == null
-                    ? l10n.sentInviteForAccount
-                    : l10n.sentInviteFor(invitee),
-              ),
-              if (role != null) Text(householdRoleLabel(l10n, role)),
-              if (invite.status == HouseholdInviteStatus.awaitingApproval)
-                const HouseholdInviteAwaitingBadge(),
-              if (statusLine != null) Text(statusLine),
-              if (message != null) ...[
-                const BgeGap.xs(),
+    return BgeOutlinedRow(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ListTile(
+            title: Text(
+              invite.householdName ?? l10n.inviteInboxUnknownHousehold,
+            ),
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
                 Text(
-                  message,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    fontStyle: FontStyle.italic,
-                  ),
+                  invitee == null
+                      ? l10n.sentInviteForAccount
+                      : l10n.sentInviteFor(invitee),
                 ),
+                if (role != null) Text(householdRoleLabel(l10n, role)),
+                if (invite.status == HouseholdInviteStatus.awaitingApproval)
+                  const HouseholdInviteAwaitingBadge(),
+                if (statusLine != null) Text(statusLine),
+                if (message != null) ...[
+                  const BgeGap.xs(),
+                  Text(
+                    message,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                ],
               ],
-            ],
-          ),
-          trailing: busy ? const HouseholdInviteBusyIndicator() : null,
-        ),
-        if (mayWithdraw)
-          Padding(
-            padding: EdgeInsetsDirectional.only(
-              start: tokens.spaceMd,
-              end: tokens.spaceMd,
-              bottom: tokens.spaceSm,
             ),
-            // A direct write, so it waits for a connection (#49).
-            child: BgeOnlineOnly(
-              child: OutlinedButton(
-                key: SentInvitesScreen.withdrawKey(invite.id),
-                onPressed: busy || BgeConnectivityScope.offlineOf(context)
-                    ? null
-                    : () => context.read<SentInvitesBloc>().add(
-                        SentInvitesWithdrawRequested(invite.id),
-                      ),
-                child: Text(l10n.householdInviteWithdraw),
+            trailing: busy ? const HouseholdInviteBusyIndicator() : null,
+          ),
+          if (mayWithdraw)
+            Padding(
+              padding: EdgeInsetsDirectional.only(
+                start: tokens.spaceMd,
+                end: tokens.spaceMd,
+                bottom: tokens.spaceSm,
+              ),
+              // A direct write, so it waits for a connection (#49).
+              child: BgeOnlineOnly(
+                child: OutlinedButton(
+                  key: SentInvitesScreen.withdrawKey(invite.id),
+                  onPressed: busy || BgeConnectivityScope.offlineOf(context)
+                      ? null
+                      : () => context.read<SentInvitesBloc>().add(
+                          SentInvitesWithdrawRequested(invite.id),
+                        ),
+                  child: Text(l10n.householdInviteWithdraw),
+                ),
               ),
             ),
-          ),
-      ],
+        ],
+      ),
     );
   }
 }

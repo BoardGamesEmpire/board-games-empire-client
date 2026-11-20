@@ -129,13 +129,24 @@ void main() {
     OfferGamesArgs args = _args,
     ThemeData? theme,
     Set<String> stuck = const {},
+    double? textScale,
   }) => MaterialApp(
     theme: theme ?? BgeTheme.light(),
-    builder: (context, child) => BgeSyncStatusScope(
-      stuck: stuck.length,
-      stuckRecordIds: stuck,
-      child: child!,
-    ),
+    builder: (context, child) {
+      final scoped = BgeSyncStatusScope(
+        stuck: stuck.length,
+        stuckRecordIds: stuck,
+        child: child!,
+      );
+      return textScale == null
+          ? scoped
+          : MediaQuery(
+              data: MediaQuery.of(
+                context,
+              ).copyWith(textScaler: TextScaler.linear(textScale)),
+              child: scoped,
+            );
+    },
     localizationsDelegates: const [
       ...EventsLocalizations.localizationsDelegates,
       GameFiltersLocalizations.delegate,
@@ -185,8 +196,9 @@ void main() {
     WidgetTester tester, {
     List<GameCollectionListItem>? items,
     OfferGamesArgs args = _args,
+    double? textScale,
   }) async {
-    await tester.pumpWidget(harness(args: args));
+    await tester.pumpWidget(harness(args: args, textScale: textScale));
     await reach(tester, items: items ?? _five);
   }
 
@@ -267,6 +279,93 @@ void main() {
 
   FocusNode searchFocus(WidgetTester tester) =>
       tester.widget<TextField>(search()).focusNode!;
+
+  testWidgets('every game row is outlined (#647)', (tester) async {
+    await open(tester);
+
+    final shown = rowsShown(tester);
+    expect(shown, isNotEmpty);
+    expect(
+      find.byType(BgeOutlinedRow, skipOffstage: false),
+      findsNWidgets(shown.length),
+    );
+    for (final id in shown) {
+      expect(
+        find.descendant(
+          of: row(id),
+          matching: find.byType(BgeOutlinedRow, skipOffstage: false),
+          skipOffstage: false,
+        ),
+        findsOneWidget,
+      );
+    }
+  });
+
+  testWidgets('a row sets its thumbnail at the top at 100% text (#647)', (
+    tester,
+  ) async {
+    await open(tester);
+
+    expect(
+      tile(tester, rowsShown(tester).first).titleAlignment,
+      ListTileTitleAlignment.top,
+    );
+  });
+
+  testWidgets('a row sets its thumbnail by title height at 200% text (#647)', (
+    tester,
+  ) async {
+    await open(tester, textScale: 2);
+
+    expect(
+      tile(tester, rowsShown(tester).first).titleAlignment,
+      ListTileTitleAlignment.titleHeight,
+    );
+  });
+
+  testWidgets('the thumbnail and the checkbox sit inside the outline, inset '
+      'from its edges (#647)', (tester) async {
+    await open(tester);
+
+    final id = rowsShown(tester).first;
+    await reveal(tester, row(id));
+    // The painted outline, not the row's whole box, which also holds the gap
+    // beneath it.
+    final outline = tester.getRect(
+      find
+          .descendant(
+            of: find.descendant(
+              of: row(id),
+              matching: find.byType(BgeOutlinedRow),
+            ),
+            matching: find.byType(DecoratedBox),
+          )
+          .first,
+    );
+    final thumbnail = tester.getRect(
+      find.descendant(of: row(id), matching: find.byType(BgeThumbnail)),
+    );
+    final checkbox = tester.getRect(
+      find.descendant(of: row(id), matching: find.byType(Checkbox)),
+    );
+
+    final inset = BgeTokens.standard.spaceSm;
+    expect(thumbnail.left - outline.left, greaterThanOrEqualTo(inset));
+    // The box drawn, centred in the checkbox's wider area: that area's slack
+    // is the inset at the end, where the row adds no padding.
+    final drawn = Rect.fromCenter(
+      center: checkbox.center,
+      width: Checkbox.width,
+      height: Checkbox.width,
+    );
+    expect(outline.right - drawn.right, greaterThanOrEqualTo(inset));
+    for (final (name, box) in [('thumbnail', thumbnail), ('checkbox', drawn)]) {
+      expect(box.left, greaterThanOrEqualTo(outline.left), reason: name);
+      expect(box.top, greaterThanOrEqualTo(outline.top), reason: name);
+      expect(box.right, lessThanOrEqualTo(outline.right), reason: name);
+      expect(box.bottom, lessThanOrEqualTo(outline.bottom), reason: name);
+    }
+  });
 
   testWidgets('the rows are the collection, flat, in title order', (
     tester,
@@ -1164,6 +1263,12 @@ void main() {
         );
         expect(box.right, lessThanOrEqualTo(320), reason: id);
         expect(box.left, greaterThanOrEqualTo(0), reason: id);
+        // The checkbox's own slack is its inset from the outline, so the row
+        // pads only its start: what the end doesn't take is the title's.
+        final outline = tester.getRect(
+          find.descendant(of: row(id), matching: find.byType(BgeOutlinedRow)),
+        );
+        expect(box.right, outline.right, reason: id);
       }
     });
 
