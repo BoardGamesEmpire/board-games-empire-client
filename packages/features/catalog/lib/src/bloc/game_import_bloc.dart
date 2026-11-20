@@ -56,7 +56,9 @@ import 'package:observability/observability.dart';
 ///   failure, an unknown batch included, is a server failure. Once a poll
 ///   has seen the requested game completed, though, either is
 ///   [GameImportStillRunning] with its id: that game is on the server, and
-///   only the rest of the batch can't be followed.
+///   only the rest of the batch can't be followed. Once one has seen it
+///   fail or be cancelled, either is [GameImportFailed] for that, since the
+///   game's own outcome is known.
 ///
 /// Every state after a poll carries that poll's jobs.
 ///
@@ -269,12 +271,17 @@ class GameImportBloc extends Bloc<GameImportEvent, GameImportState> {
   /// Where the import stands after a poll that failed for [failure]: see
   /// "Following". A requested game an earlier poll saw completed is on the
   /// server whatever this poll says, so its id is kept, and the batch is
-  /// still running, to be checked again; before then, the import failed.
+  /// still running, to be checked again. One an earlier poll saw end
+  /// without its game failed for that reason, not this poll's. Otherwise,
+  /// the import failed for [failure].
   GameImportState _unfollowable(GameImportFailure failure) =>
       switch (_requestedJob) {
         ImportJob(status: ImportJobStatus.completed, :final gameId?) =>
           GameImportStillRunning(gameId: gameId, jobs: _jobs),
-        _ => GameImportFailed(failure: failure, jobs: _jobs),
+        final requested => GameImportFailed(
+          failure: _failureOf(requested) ?? failure,
+          jobs: _jobs,
+        ),
       };
 
   /// Where the import stands, by the jobs of its batch: see "Following".

@@ -206,6 +206,10 @@ void main() {
 
     expect(find.byType(BgeEmptyState), findsNothing);
     expect(find.text("Couldn't load expansions"), findsOneWidget);
+    expect(
+      find.text("The data source didn't answer. Try again."),
+      findsOneWidget,
+    );
     expect(remote.expansionTargets, hasLength(1));
 
     remote.onFetchExpansions = (_) async => _bgg(1);
@@ -224,6 +228,8 @@ void main() {
     await cubit.load();
     await tester.pumpAndSettle();
 
+    // The read never reached a data source, so none is blamed.
+    expect(find.text('Check your connection and try again.'), findsOneWidget);
     expect(find.byKey(ExpansionChecklist.retryKey), findsOneWidget);
   });
 

@@ -220,8 +220,10 @@ The same flows as the keyboard tests, plus the screens they don't reach:
    rows are read as one batch ("2 games in this import"), each saying its game
    and its state. Make an import fail or finish in part (stop a DataGateway,
    say): check the outcome is read once, as one banner, and that focus is
-   still on it. Then start another import and close the quick look before
-   it ends: check that no game page opens once it would have ended.
+   still on it. Then close that quick look, restart the DataGateway if you
+   stopped it, open the quick look of another result this server doesn't
+   hold, press Import, and close the quick look before the import ends:
+   check that no game page opens once it would have ended.
 5. Settings, and the feedback flow with its review screen.
 6. The bootstrap error screen (stop the server, open the app).
 7. Event detail from Events: an answer, with its note and not-going dialogs,

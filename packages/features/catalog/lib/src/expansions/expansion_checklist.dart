@@ -55,7 +55,11 @@ class ExpansionChecklist extends StatelessWidget {
                 ExpansionChecklistLoading() => Center(
                   child: BgeLoadingState(label: l10n.catalogExpansionsLoading),
                 ),
-                ExpansionChecklistFailed() => _failed(l10n, cubit),
+                ExpansionChecklistFailed() => _failed(
+                  l10n,
+                  cubit,
+                  l10n.catalogExpansionsFailedBody,
+                ),
                 ExpansionChecklistReady() => _ready(
                   context,
                   l10n,
@@ -71,13 +75,16 @@ class ExpansionChecklist extends StatelessWidget {
     );
   }
 
+  /// The failure, with [body] saying why: the read failed, or a source
+  /// did not answer.
   Widget _failed(
     GameCatalogLocalizations l10n,
     ExpansionChecklistCubit cubit,
+    String body,
   ) => BgeErrorState(
     icon: Icons.cloud_off_outlined,
     title: l10n.catalogExpansionsFailedTitle,
-    body: l10n.catalogExpansionsFailedBody,
+    body: body,
     retryLabel: l10n.catalogRetry,
     retryKey: retryKey,
     onRetry: cubit.load,
@@ -103,7 +110,9 @@ class ExpansionChecklist extends StatelessWidget {
 
     // Nothing found and some source could not say: that is a failure to
     // read, not an empty answer (#713).
-    if (groups.isEmpty && missing.isNotEmpty) return _failed(l10n, cubit);
+    if (groups.isEmpty && missing.isNotEmpty) {
+      return _failed(l10n, cubit, l10n.catalogExpansionsUnansweredBody);
+    }
     if (groups.isEmpty) {
       return BgeEmptyState(title: l10n.catalogExpansionsEmpty);
     }

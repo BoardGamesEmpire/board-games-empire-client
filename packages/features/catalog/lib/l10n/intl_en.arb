@@ -681,9 +681,9 @@
       }
     }
   },
-  "catalogImportJobAddedBaseGame": "Also importing {title}, the base game {neededBy} needs",
+  "catalogImportJobAddedBaseGame": "{title}, the base game {neededBy} needs",
   "@catalogImportJobAddedBaseGame": {
-    "description": "A row of the import's list for a base game the server added because an expansion needs it. {title} is the base game's title, once the server knows it. {neededBy} is the title of the game in the same import that needs this base game, such as the expansion asked for.",
+    "description": "A row of the import's list for a base game the server added because an expansion needs it. It says why the game is there, not where its import stands: the row's status line under it says that. {title} is the base game's title, once the server knows it. {neededBy} is the title of the game in the same import that needs this base game, such as the expansion asked for.",
     "placeholders": {
       "title": {
         "type": "String",
@@ -695,7 +695,7 @@
       }
     }
   },
-  "catalogImportJobAddedBaseGameUntitled": "Also importing the base game {neededBy} needs",
+  "catalogImportJobAddedBaseGameUntitled": "The base game {neededBy} needs",
   "@catalogImportJobAddedBaseGameUntitled": {
     "description": "catalogImportJobAddedBaseGame before the server knows the base game's title. {neededBy} is the title of the game in the same import that needs this base game, such as the expansion asked for.",
     "placeholders": {
@@ -799,11 +799,15 @@
   },
   "catalogExpansionsFailedTitle": "Couldn't load expansions",
   "@catalogExpansionsFailedTitle": {
-    "description": "Title of the expansions checklist's failure, shown when the read failed or when no data source answered. Followed by catalogExpansionsFailedBody and a catalogRetry button."
+    "description": "Title of the expansions checklist's failure, shown when the read failed or when no data source answered. Followed by catalogExpansionsFailedBody when the read failed, or catalogExpansionsUnansweredBody when no data source answered, and a catalogRetry button."
   },
-  "catalogExpansionsFailedBody": "The data source didn't answer. Try again.",
+  "catalogExpansionsFailedBody": "Check your connection and try again.",
   "@catalogExpansionsFailedBody": {
-    "description": "Body under catalogExpansionsFailedTitle."
+    "description": "Body under catalogExpansionsFailedTitle when the read itself failed: the server could not be reached, or did not answer in a way the app can read."
+  },
+  "catalogExpansionsUnansweredBody": "The data source didn't answer. Try again.",
+  "@catalogExpansionsUnansweredBody": {
+    "description": "Body under catalogExpansionsFailedTitle when the server answered but found no expansions because a data source failed, was rate limited or could not be reached."
   },
   "catalogExpansionsMissing": "{source} didn't answer, so some expansions may be missing.",
   "@catalogExpansionsMissing": {

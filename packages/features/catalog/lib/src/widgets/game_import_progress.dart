@@ -34,7 +34,9 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// Check again and Try again stay where they are through the poll or the
 /// start they began, enabled and inert, so the focus on them stays (#607,
 /// STYLE_GUIDE §5). When the import then lands where the button no longer
-/// applies, focus on it goes to the status.
+/// applies, focus on it goes to the status. Open, offered beside Check
+/// again, stays live through its poll: that game is on the server whatever
+/// the poll finds.
 ///
 /// ## Ending
 ///
@@ -128,6 +130,10 @@ class _GameImportProgressState extends State<GameImportProgress> {
   /// the import lands.
   _Retry? _pressed;
 
+  /// The game Open offered when Check again was pressed, which it goes on
+  /// offering while that poll runs.
+  String? _openedBeforeCheck;
+
   /// Whether the connection is lost, which disables Try again unless its
   /// own start runs.
   bool _offline = false;
@@ -171,7 +177,10 @@ class _GameImportProgressState extends State<GameImportProgress> {
   }
 
   void _press(GameImportBloc bloc, _Retry retry) {
-    setState(() => _pressed = retry);
+    setState(() {
+      _pressed = retry;
+      _openedBeforeCheck = _openable(bloc.state);
+    });
     bloc.add(switch (retry) {
       _Retry.checkAgain => const GameImportCheckAgainRequested(),
       _Retry.tryAgain => const GameImportRequested(),
@@ -294,7 +303,7 @@ class _GameImportProgressState extends State<GameImportProgress> {
                 ),
               ),
             ],
-            if (_openable(state) case final gameId?) ...[
+            if (_opens(state) case final gameId?) ...[
               const BgeGap.md(),
               FilledButton(
                 key: GameImportProgress.openKey,
@@ -315,6 +324,14 @@ class _GameImportProgressState extends State<GameImportProgress> {
     GameImportStillRunning(:final gameId) => gameId,
     _ => null,
   };
+
+  /// The game Open is drawn for in [state]: the one [state] offers, or,
+  /// while a press of Check again polls, the one offered before it.
+  String? _opens(GameImportState state) =>
+      _openable(state) ??
+      (_pressed == _Retry.checkAgain && _runs(state)
+          ? _openedBeforeCheck
+          : null);
 
   /// [button], keyed by [retry] and inside its area.
   Widget _area(_Retry retry, Widget button) => Focus(

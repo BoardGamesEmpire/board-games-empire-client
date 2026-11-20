@@ -177,9 +177,7 @@ void main() {
     await tester.pumpWidget(app());
 
     expect(
-      find.text(
-        'Also importing the base game Spirit Island: Jagged Earth needs',
-      ),
+      find.text('The base game Spirit Island: Jagged Earth needs'),
       findsOneWidget,
     );
 
@@ -200,8 +198,7 @@ void main() {
     );
     expect(
       find.text(
-        'Also importing Spirit Island, the base game Spirit Island: Jagged '
-        'Earth needs',
+        'Spirit Island, the base game Spirit Island: Jagged Earth needs',
       ),
       findsOneWidget,
     );
@@ -300,8 +297,7 @@ void main() {
       find.descendant(
         of: find.byKey(GameImportProgress.jobKey('jb')),
         matching: find.text(
-          'Also importing the base game Jagged Earth, as the server has it '
-          'needs',
+          'The base game Jagged Earth, as the server has it needs',
         ),
       ),
       findsOneWidget,
@@ -311,7 +307,7 @@ void main() {
       find.descendant(
         of: find.byKey(GameImportProgress.jobKey('jc')),
         matching: find.text(
-          'Also importing the base game Spirit Island: Jagged Earth needs',
+          'The base game Spirit Island: Jagged Earth needs',
         ),
       ),
       findsOneWidget,
@@ -445,6 +441,48 @@ void main() {
 
     expect(checkAgain, findsOneWidget);
     expect(find.byKey(GameImportProgress.openKey), findsNothing);
+  });
+
+  group('Open through a press of Check again', () {
+    final open = find.byKey(GameImportProgress.openKey);
+    final done = _requested.copyWith(
+      status: ImportJobStatus.completed,
+      gameId: 'g1',
+    );
+
+    // The game is on the server, whatever the poll finds.
+    testWidgets('stays, live, while the poll runs', (tester) async {
+      startAt(GameImportStillRunning(gameId: 'g1', jobs: [done, _job('j2')]));
+      await tester.pumpWidget(app());
+
+      await tester.tap(checkAgain);
+      await tester.pump();
+      await move(
+        tester,
+        GameImportInProgress(running: true, jobs: [done, _job('j2')]),
+      );
+
+      expect(open, findsOneWidget);
+      await tester.tap(open);
+      await tester.pump();
+      expect(imported, ['g1']);
+    });
+
+    testWidgets('is not offered by the poll when none was before', (
+      tester,
+    ) async {
+      startAt(const GameImportStillRunning(jobs: [_requested]));
+      await tester.pumpWidget(app());
+
+      await tester.tap(checkAgain);
+      await tester.pump();
+      await move(
+        tester,
+        GameImportInProgress(running: true, jobs: [done, _job('j2')]),
+      );
+
+      expect(open, findsNothing);
+    });
   });
 
   testWidgets('partly completed says what failed and opens on press', (

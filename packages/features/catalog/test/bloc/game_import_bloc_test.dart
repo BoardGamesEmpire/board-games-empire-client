@@ -875,6 +875,42 @@ void main() {
     }
   });
 
+  // The requested game's outcome is known, so the failed poll can't hide
+  // it: a server failure would offer Try again for a game the DataGateway
+  // no longer has.
+  group('a failed poll after the requested game failed', () {
+    final running = [
+      _req(ImportJobStatus.failed, errorCode: ImportErrorCode.notFound),
+      _other(ImportJobStatus.running),
+    ];
+
+    for (final failure in [
+      const GamesForbiddenException('403'),
+      const GamesRemotePermanentException('500'),
+      const GameImportNotFoundException('404'),
+    ]) {
+      blocTest<GameImportBloc, GameImportState>(
+        "${failure.runtimeType} keeps the game's own failure",
+        setUp: () {
+          queues();
+          polls([_batchOf(running), failure]);
+        },
+        build: build,
+        act: (bloc) => bloc.add(const GameImportRequested()),
+        expect: () => [
+          const GameImportStarting(),
+          const GameImportInProgress(running: false),
+          GameImportInProgress(running: true, jobs: running),
+          GameImportFailed(
+            failure: GameImportFailure.notOnDataGateway,
+            jobs: running,
+          ),
+        ],
+        verify: (_) => expect(remote.calls, [started, polled, polled]),
+      );
+    }
+  });
+
   blocTest<GameImportBloc, GameImportState>(
     'checking again polls the same batch and sends no new import',
     setUp: () {
