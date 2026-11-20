@@ -154,6 +154,42 @@ class _Route implements HttpClientAdapter {
   void close({bool force = false}) {}
 }
 
+/// Answers the link start with [link], once [linkGate] completes, and each
+/// session read with the next of [sessions], all 200.
+class _ByPath implements HttpClientAdapter {
+  _ByPath({required this.link, required this.sessions, this.linkGate});
+
+  final String link;
+  final List<String> sessions;
+  final Future<void>? linkGate;
+  var _nextSession = 0;
+
+  @override
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<Uint8List>? requestStream,
+    Future<void>? cancelFuture,
+  ) async {
+    final String body;
+    if (options.path.endsWith('/link-social')) {
+      await linkGate;
+      body = link;
+    } else {
+      body = sessions[_nextSession++];
+    }
+    return ResponseBody.fromString(
+      body,
+      200,
+      headers: {
+        Headers.contentTypeHeader: [Headers.jsonContentType],
+      },
+    );
+  }
+
+  @override
+  void close({bool force = false}) {}
+}
+
 /// `WebDioFactory`'s shape: the page origin as the base URL, and every status
 /// resolved as a response. [permissiveStatus] false is Dio's default, under
 /// which a non-2xx throws with the response attached: an injected Dio can
@@ -310,6 +346,46 @@ void main() {
         await changed;
         expect(left, isEmpty);
       });
+    }
+
+    // A session read moves neither counter, so the user the tab shows is
+    // checked too: a session the server ended, or another tab's sign-in read
+    // here before that tab announced it.
+    for (final (label, reread, supersedes) in <(String, String, bool)>[
+      ('a session read as a different user', _sessionAs('user-2'), true),
+      ('a session read that finds none', 'null', true),
+      ('a session read as the same user', _sessionAs('user-1'), false),
+    ]) {
+      test(
+        '$label while the link start is out '
+        '${supersedes ? 'supersedes it and does not leave' : 'leaves'}',
+        () async {
+          final gate = Completer<void>();
+          final route = _ByPath(
+            link: _answer(_kProviderUrl),
+            sessions: [_sessionAs('user-1'), reread],
+            linkGate: gate.future,
+          );
+          final repo = repoWith(_dio(route), providerSignIn: bindings());
+          expect(await repo.getSession(), isNotNull);
+
+          final outcome = repo.linkProvider(
+            _kStrategy,
+            returnPath: _kReturnPath,
+          );
+          await pumpEventQueue();
+          await repo.rereadSession();
+          gate.complete();
+
+          if (supersedes) {
+            await expectLater(outcome, throwsA(isA<AuthSupersededException>()));
+            expect(left, isEmpty);
+          } else {
+            await outcome;
+            expect(left, hasLength(1));
+          }
+        },
+      );
     }
 
     // A link moves no session, so nothing is announced to the other tabs.

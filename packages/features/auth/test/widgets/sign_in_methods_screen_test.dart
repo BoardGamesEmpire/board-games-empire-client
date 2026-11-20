@@ -559,6 +559,44 @@ void main() {
         expect(_row('row-a'), findsNothing);
       });
 
+      testWidgets('a long provider name scrolls in the confirm at 320dp and '
+          '2.0 text, and confirming still unlinks', (tester) async {
+        tester.view
+          ..physicalSize = const Size(320, 480)
+          ..devicePixelRatio = 1;
+        tester.platformDispatcher.textScaleFactorTestValue = 2;
+        addTearDown(tester.view.reset);
+        addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+        // Discovery puts no limit on a provider's display name.
+        final longName = _strategy(
+          'authentik',
+          'Authentik Single Sign-On for the Riverside Board Game Society',
+        );
+        await pumpScreen(tester, strategies: [longName, _google]);
+
+        await openConfirm(tester, 'row-a');
+        expect(tester.takeException(), isNull);
+        // Scrolled to its end, the body's last line is in view.
+        final scroller = find
+            .descendant(
+              of: find.byType(AlertDialog),
+              matching: find.byType(Scrollable),
+            )
+            .first;
+        final position = tester.state<ScrollableState>(scroller).position;
+        position.jumpTo(position.maxScrollExtent);
+        await tester.pumpAndSettle();
+        expect(
+          tester.getRect(find.textContaining('until you link it again')).bottom,
+          lessThanOrEqualTo(tester.getRect(scroller).bottom),
+        );
+
+        stubMethods([_password]);
+        await tester.tap(find.byKey(SignInMethodsScreen.confirmUnlinkKey));
+        await tester.pumpAndSettle();
+        verify(() => repo.unlinkSignInMethod('row-a')).called(1);
+      });
+
       testWidgets('Cancel unlinks nothing', (tester) async {
         await pumpScreen(tester);
 

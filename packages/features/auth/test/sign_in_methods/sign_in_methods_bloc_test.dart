@@ -187,6 +187,26 @@ void main() {
       ],
     );
 
+    blocTest<SignInMethodsBloc, SignInMethodsState>(
+      'a request added while a read is out is dropped',
+      setUp: () {
+        final gate = Completer<List<SignInMethod>>();
+        when(() => repo.listSignInMethods()).thenAnswer((_) => gate.future);
+        addTearDown(() {
+          if (!gate.isCompleted) gate.complete([_password]);
+        });
+      },
+      build: build,
+      act: (b) async {
+        b
+          ..add(const SignInMethodsRequested())
+          ..add(const SignInMethodsRequested());
+        await Future<void>.delayed(Duration.zero);
+      },
+      expect: () => [loading],
+      verify: (_) => verify(() => repo.listSignInMethods()).called(1),
+    );
+
     group('link', () {
       blocTest<SignInMethodsBloc, SignInMethodsState>(
         'sets and clears linkingProviderId, with no outcome when the page '

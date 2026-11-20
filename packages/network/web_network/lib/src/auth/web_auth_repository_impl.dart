@@ -1294,9 +1294,10 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
   ///
   /// The link the server starts belongs to the session that asked for it. A
   /// session change while the start request is out, a sign-in or a sign-out
-  /// here or in another tab, is the newer intent: the page stays, and the
-  /// call throws [AuthSupersededException], so the provider is never linked
-  /// to an account this tab no longer shows. Unlike [signInWithProvider], a
+  /// here or in another tab, or a session read that finds another user or
+  /// none, is the newer intent: the page stays, and the call throws
+  /// [AuthSupersededException], so the provider is never linked to an
+  /// account this tab no longer shows. Unlike [signInWithProvider], a
   /// sign-out counts, because it ends the session the link was for.
   ///
   /// A page that leaves never sees this call complete. One that is still
@@ -1330,6 +1331,11 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
     // [_sessionEpoch].
     final grantsAtStart = _credentialGrants;
     final epochAtStart = _sessionEpoch;
+    // Neither counter moves for a session read that finds another user, or
+    // none, without a broadcast: a session the server ended, or another
+    // tab's sign-in read here before that tab announced it. The user this
+    // tab shows is the third check.
+    final userAtStart = _shownUserId;
 
     // Relative, as the sign-in's start is: this Dio's base URL is the page
     // origin, which is also why the server's origin check accepts a relative
@@ -1361,7 +1367,9 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
     }
 
     // Nothing suspends between this check and the navigation.
-    if (_credentialGrants != grantsAtStart || _sessionEpoch != epochAtStart) {
+    if (_credentialGrants != grantsAtStart ||
+        _sessionEpoch != epochAtStart ||
+        _shownUserId != userAtStart) {
       _log.info(
         'The session changed while the provider link was starting; the page '
         'stays',
@@ -1385,6 +1393,12 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
     await Future<void>.delayed(_pageLeaveGrace);
     _log.info('The page did not leave to link a sign-in provider');
   }
+
+  /// The user this tab shows as signed in, or null when it shows none.
+  String? get _shownUserId => switch (_currentState) {
+    AuthStateAuthenticated(:final session) => session.user.id,
+    _ => null,
+  };
 
   /// `unlink-account` with the row's id, which the cookie authenticates
   /// (#582).

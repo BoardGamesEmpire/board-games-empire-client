@@ -213,6 +213,9 @@ class _SignInMethodsScreenState extends State<SignInMethodsScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
+        // A provider's name has no length limit, and is in both the title
+        // and the body.
+        scrollable: true,
         title: Text(
           removed
               ? l10n.signInMethodsUnlinkRemovedConfirmTitle

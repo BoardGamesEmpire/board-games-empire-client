@@ -21,7 +21,10 @@ class SignInMethodsBloc extends Bloc<SignInMethodsEvent, SignInMethodsState> {
            linkSupported: repository.providerLinkSupported,
          ),
        ) {
-    on<SignInMethodsRequested>(_onRequested);
+    // One read at a time: a second retry added before the screen rebuilds
+    // would otherwise race the first, and could land after an unlink with
+    // the list from before it.
+    on<SignInMethodsRequested>(_onRequested, transformer: droppable());
     // One handler for both writes, so droppable gates them together: a link
     // and an unlink added before the screen rebuilds can't both go out.
     on<SignInMethodWriteRequested>(
@@ -125,6 +128,13 @@ class SignInMethodsBloc extends Bloc<SignInMethodsEvent, SignInMethodsState> {
       await _repository.unlinkSignInMethod(row.method.id);
     } on Exception catch (e) {
       if (emit.isDone) return;
+      // The rows stay as they were. If the server removed the method and
+      // only its answer was lost (a network failure), the list still shows
+      // it until the screen loads again. The server refuses removing the
+      // last way in, so a stale row can only lead to a refused Unlink. If it
+      // comes up, reload after a network failure only: a reload after a
+      // rate limit spends another request, and one that fails mustn't turn
+      // this into a load failure.
       final (reason, retryAfter) = _reasonOf(e);
       emit(
         state.copyWith(
