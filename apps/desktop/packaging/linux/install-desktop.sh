@@ -46,6 +46,15 @@ else
   exec_path="$(printf '%s' "$bundle" | sed -e 's/%/%%/g')/board_games_empire"
 fi
 
+# GLib (2.80) checks that the program named first in Exec exists before it
+# expands %%, so it rejects a program path that holds one and gio-based
+# launchers never offer the entry. With env as the program, the bundle path
+# is an argument and is expanded first. xdg-utils 1.1.3's generic mode never
+# expands %% at all, so a path with % fails there whatever the form.
+case $bundle in
+  *%*) exec_path="env $exec_path" ;;
+esac
+
 mkdir -p "$apps_dir" "$icon_dir"
 
 tmp=$entry.tmp.$$
@@ -62,6 +71,7 @@ cp "$bundle/share/icons/hicolor/256x256/apps/$app_id.png" "$icon_dir/$app_id.png
 echo "Wrote $icon_dir/$app_id.png"
 
 missing=
+override=
 if command -v update-desktop-database >/dev/null 2>&1; then
   # The refreshes are best effort: one that fails must not stop the bge
   # default from being set, so each reports and the script goes on.
@@ -75,7 +85,17 @@ else
 fi
 if command -v xdg-mime >/dev/null 2>&1; then
   xdg-mime default "$app_id.desktop" x-scheme-handler/bge
-  echo "Set $app_id.desktop as the default for bge://"
+  # xdg-mime writes mimeapps.list, but a desktop's own list (such as
+  # gnome-mimeapps.list) outranks it, so ask which handler is in effect. An
+  # empty answer means xdg-mime can't tell; only a different app is an
+  # override.
+  effective=$(xdg-mime query default x-scheme-handler/bge 2>/dev/null) ||
+    effective=
+  if [ -n "$effective" ] && [ "$effective" != "$app_id.desktop" ]; then
+    override=$effective
+  else
+    echo "Set $app_id.desktop as the default for bge://"
+  fi
 else
   missing="$missing xdg-mime"
 fi
@@ -92,4 +112,14 @@ fi
 if [ -n "$missing" ]; then
   echo "Not found, so skipped:$missing"
   echo "bge:// links may not open the app until the desktop refreshes its caches."
+fi
+
+if [ -n "$override" ]; then
+  config_home=${XDG_CONFIG_HOME:-$HOME/.config}
+  echo "bge:// links still open $override: a desktop-specific list such as" \
+    "$config_home/gnome-mimeapps.list names it, and it outranks the default" \
+    "this script set. Remove its x-scheme-handler/bge line, or pick Board" \
+    "Games Empire in your desktop's default-apps settings, then run" \
+    "./install-desktop.sh again." >&2
+  exit 1
 fi

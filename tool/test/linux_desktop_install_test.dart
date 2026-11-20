@@ -18,6 +18,16 @@ void main() {
   late Directory root;
   late Directory coreutils;
 
+  /// Makes the xdg-mime stub log every call and answer
+  /// `query default x-scheme-handler/bge` with [handler].
+  void answerQuery(String handler) {
+    File('${stubs.path}/xdg-mime').writeAsStringSync(
+      '#!/bin/sh\n'
+      'echo "xdg-mime \$*" >> "${log.path}"\n'
+      'if [ "\$1" = query ]; then echo "$handler"; fi\n',
+    );
+  }
+
   setUpAll(() {
     root = workspaceRoot(from: Directory.current);
     // The externals the two scripts run, linked into one directory so a run
@@ -55,6 +65,7 @@ void main() {
         ..writeAsStringSync('#!/bin/sh\necho "$tool \$*" >> "${log.path}"\n');
       Process.runSync('chmod', ['+x', stub.path]);
     }
+    answerQuery('$_appId.desktop');
   });
   tearDown(() => tmp.deleteSync(recursive: true));
 
@@ -104,11 +115,13 @@ void main() {
       entry().readAsLinesSync().singleWhere((l) => l.startsWith('Exec='));
 
   /// The `Exec=` line the key-file layer holds for a bundle at [path]: bare
-  /// unless the path holds a character the spec reserves.
+  /// unless the path holds a character the spec reserves, and run through
+  /// `env` when it holds a `%`.
   String expectedExec(String path) {
     final percent = path.replaceAll('%', '%%');
+    final launcher = path.contains('%') ? 'env ' : '';
     if (!RegExp('[ \t\n"\'\\\\><~|&;\$*?#()`]').hasMatch(path)) {
-      return 'Exec=$percent/board_games_empire %u';
+      return 'Exec=$launcher$percent/board_games_empire %u';
     }
     final escaped = path
         .replaceAll(r'\', r'\\\\')
@@ -116,7 +129,7 @@ void main() {
         .replaceAll('`', r'\\`')
         .replaceAll(r'$', r'\\$')
         .replaceAll('%', '%%');
-    return 'Exec="$escaped/board_games_empire" %u';
+    return 'Exec=$launcher"$escaped/board_games_empire" %u';
   }
 
   test('installs the entry with an absolute Exec and the bge handler', () {
@@ -140,6 +153,33 @@ void main() {
     expect(calls, contains('gtk-update-icon-cache -f -t'));
   });
 
+  test('fails and names the handler when another app stays in effect', () {
+    // A desktop's own list (gnome-mimeapps.list) outranks the mimeapps.list
+    // xdg-mime default writes.
+    final bundle = makeBundle('bundle');
+    answerQuery('other.desktop');
+
+    final result = run(bundle, 'install-desktop.sh');
+
+    expect(result.exitCode, isNot(0));
+    expect(result.stderr, contains('bge:// links still open other.desktop'));
+    expect(result.stderr, contains('${home.path}/config/gnome-mimeapps.list'));
+    expect(result.stdout, isNot(contains('as the default for bge://')));
+    final calls = log.readAsStringSync();
+    expect(calls, contains('xdg-mime query default x-scheme-handler/bge'));
+    expect(calls, contains('gtk-update-icon-cache -f -t'));
+  });
+
+  test('succeeds when xdg-mime cannot name the handler in effect', () {
+    final bundle = makeBundle('bundle');
+    answerQuery('');
+
+    final result = run(bundle, 'install-desktop.sh');
+
+    expect(result.exitCode, 0, reason: '${result.stderr}');
+    expect(result.stdout, contains('Set $_appId.desktop as the default'));
+  });
+
   test('quotes a bundle path with a space', () {
     final bundle = makeBundle('my apps/bge');
 
@@ -150,14 +190,28 @@ void main() {
     expect(execLine(), expectedExec(bundle.path));
   });
 
-  test('writes a path whose only special character is % bare, doubled', () {
+  test('runs a path holding % through env, bare and doubled', () {
+    // GLib checks that Exec's program exists before it expands %%, so the
+    // bundle path can't be the program.
     final bundle = makeBundle('100%_bge');
 
     final result = run(bundle, 'install-desktop.sh');
 
     expect(result.exitCode, 0, reason: '${result.stderr}');
+    expect(execLine(), startsWith('Exec=env /'));
     expect(execLine(), contains('/100%%_bge/board_games_empire %u'));
     expect(execLine(), isNot(contains('"')));
+    expect(execLine(), expectedExec(bundle.path));
+  });
+
+  test('runs a quoted path holding % through env', () {
+    final bundle = makeBundle('my 100%');
+
+    final result = run(bundle, 'install-desktop.sh');
+
+    expect(result.exitCode, 0, reason: '${result.stderr}');
+    expect(execLine(), startsWith('Exec=env "'));
+    expect(execLine(), contains('/my 100%%/board_games_empire" %u'));
     expect(execLine(), expectedExec(bundle.path));
   });
 

@@ -50,10 +50,16 @@ xdg-open 'bge://settings'
 If the app is already running, a second `xdg-open` reaches that instance
 instead of starting another.
 
-When the bundle's path contains a space or another special character, some
-systems' `xdg-open` can't start the app from a link (xdg-utils 1.1.3 when no
-desktop environment is detected). Extract the bundle to a path without one and
-run `./install-desktop.sh` again.
+If the script exits with an error naming another app, your desktop's own
+default-apps list (for example `~/.config/gnome-mimeapps.list`) gives `bge://`
+to that app, and it outranks the default the script sets. Remove that list's
+`x-scheme-handler/bge` line, or choose Board Games Empire in your desktop's
+default-apps settings, and run the script again.
+
+When the bundle's path contains a space, a `%` or another special character,
+some systems' `xdg-open` can't start the app from a link (xdg-utils 1.1.3 when
+no desktop environment is detected). Extract the bundle to a path without one
+and run `./install-desktop.sh` again.
 
 `./uninstall-desktop.sh` removes the entry, the icon and the `bge://` default.
 
