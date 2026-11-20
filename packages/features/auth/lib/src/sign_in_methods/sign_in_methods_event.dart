@@ -15,8 +15,15 @@ final class SignInMethodsRequested extends SignInMethodsEvent {
   const SignInMethodsRequested();
 }
 
+/// A write to the server: a link or an unlink. One is out at a time (#582),
+/// so the bloc handles them as one stream and drops any that arrive while
+/// another is out.
+sealed class SignInMethodWriteRequested extends SignInMethodsEvent {
+  const SignInMethodWriteRequested();
+}
+
 /// Starts linking the provider [strategy] names (#582).
-final class SignInMethodLinkRequested extends SignInMethodsEvent {
+final class SignInMethodLinkRequested extends SignInMethodWriteRequested {
   const SignInMethodLinkRequested(this.strategy);
 
   final OidcStrategy strategy;
@@ -26,7 +33,7 @@ final class SignInMethodLinkRequested extends SignInMethodsEvent {
 }
 
 /// Unlinks [row] (#582).
-final class SignInMethodUnlinkRequested extends SignInMethodsEvent {
+final class SignInMethodUnlinkRequested extends SignInMethodWriteRequested {
   const SignInMethodUnlinkRequested(this.row);
 
   final SignInMethodRow row;

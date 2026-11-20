@@ -490,6 +490,61 @@ void main() {
       );
     });
 
+    group('one write at a time', () {
+      final row = describeSignInMethods(
+        [_password, _authentik],
+        _strategies,
+        passwordSignInOffered: true,
+      ).rows[1];
+
+      setUp(() {
+        final gate = Completer<void>();
+        when(
+          () => repo.linkProvider(any(), returnPath: any(named: 'returnPath')),
+        ).thenAnswer((_) => gate.future);
+        when(() => repo.unlinkSignInMethod(any())).thenAnswer(
+          (_) => gate.future,
+        );
+        addTearDown(() {
+          if (!gate.isCompleted) gate.complete();
+        });
+      });
+
+      blocTest<SignInMethodsBloc, SignInMethodsState>(
+        'an unlink added while a link is starting is dropped',
+        build: build,
+        seed: () => loaded([_password, _authentik]),
+        act: (b) async {
+          b
+            ..add(SignInMethodLinkRequested(_strategies[1]))
+            ..add(SignInMethodUnlinkRequested(row));
+          await Future<void>.delayed(Duration.zero);
+        },
+        expect: () => [
+          loaded([_password, _authentik], linkingProviderId: 'google'),
+        ],
+        verify: (_) => verifyNever(() => repo.unlinkSignInMethod(any())),
+      );
+
+      blocTest<SignInMethodsBloc, SignInMethodsState>(
+        'a link added while an unlink is out is dropped',
+        build: build,
+        seed: () => loaded([_password, _authentik]),
+        act: (b) async {
+          b
+            ..add(SignInMethodUnlinkRequested(row))
+            ..add(SignInMethodLinkRequested(_strategies[1]));
+          await Future<void>.delayed(Duration.zero);
+        },
+        expect: () => [
+          loaded([_password, _authentik], unlinkingId: 'row-a'),
+        ],
+        verify: (_) => verifyNever(
+          () => repo.linkProvider(any(), returnPath: any(named: 'returnPath')),
+        ),
+      );
+    });
+
     blocTest<SignInMethodsBloc, SignInMethodsState>(
       'SignInMethodsOutcomeCleared retires the outcome',
       build: build,

@@ -22,8 +22,15 @@ class SignInMethodsBloc extends Bloc<SignInMethodsEvent, SignInMethodsState> {
          ),
        ) {
     on<SignInMethodsRequested>(_onRequested);
-    on<SignInMethodLinkRequested>(_onLink, transformer: droppable());
-    on<SignInMethodUnlinkRequested>(_onUnlink, transformer: droppable());
+    // One handler for both writes, so droppable gates them together: a link
+    // and an unlink added before the screen rebuilds can't both go out.
+    on<SignInMethodWriteRequested>(
+      (event, emit) => switch (event) {
+        SignInMethodLinkRequested() => _onLink(event, emit),
+        SignInMethodUnlinkRequested() => _onUnlink(event, emit),
+      },
+      transformer: droppable(),
+    );
     on<SignInMethodsOutcomeCleared>(
       (_, emit) => emit(state.copyWith(outcome: () => null)),
     );
