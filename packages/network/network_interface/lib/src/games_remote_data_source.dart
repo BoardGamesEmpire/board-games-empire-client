@@ -1,5 +1,6 @@
 import 'package:models/domain.dart';
 
+import 'package:network_interface/src/game_expansions_target.dart';
 import 'package:network_interface/src/paginated_result.dart';
 
 /// One game read by id, with the platform games the server sent beside it
@@ -41,6 +42,7 @@ typedef GameWithPlatformGames = ({Game game, List<PlatformGame> platformGames});
 /// | `HouseholdRemoteDataSource.fetchGamePoolSample` | `GET /api/households/game-pool/random` | `{ games: [...], gameCount }` |
 /// | [fetchGame] | `GET /api/games/:id` | `{ game }` |
 /// | [search] | `GET /api/games/search` | `{ correlationId, resultsBySource, errors?, rateLimitedSources?, unavailableSources?, unfilterableSources? }` |
+/// | [fetchExpansions] | `GET /api/games/search/expansions` | the [search] body, without `correlationId` |
 /// | [startImport] | `POST /api/games/import` | `{ message, batchId, baseJobId, expansionJobIds, correlationId }` |
 /// | [fetchImport] | `GET /api/games/import/:batchId` | `{ batchId, correlationId, status, jobs: [...] }` |
 ///
@@ -93,7 +95,8 @@ typedef GameWithPlatformGames = ({Game game, List<PlatformGame> platformGames});
 ///   game that exists and the caller may not read is a 403, not a 404, at
 ///   `GET /games/:id`. The list reads answer a 403 to an actor with no games
 ///   of its own.
-/// - [GameNotFoundException]: a 404 carrying the envelope from [fetchGame].
+/// - [GameNotFoundException]: a 404 carrying the envelope from [fetchGame],
+///   or from [fetchExpansions] for a game target.
 /// - [GameImportNotFoundException]: a 404 carrying the envelope from
 ///   [fetchImport].
 /// - [GamesRemotePermanentException]: any other 4xx the transient rule below
@@ -207,9 +210,20 @@ abstract class GamesRemoteDataSource {
     bool includeExternal = true,
   });
 
+  /// The expansions of [target], as a [GameSearchResults] (#713): the
+  /// DataGateways' own, each marked with the game id where the server already
+  /// holds it. A DataGateway that could not answer is named in the results'
+  /// failure sets.
+  ///
+  /// Waits as long as a [search] does, since the server asks every
+  /// DataGateway. Throws [GameNotFoundException] for a [target] game the
+  /// server does not hold.
+  Future<GameSearchResults> fetchExpansions(GameExpansionsTarget target);
+
   /// Starts importing the game [externalId] from the DataGateway [gatewayId],
-  /// with no expansions and no locale (#43), and answers once the server has
-  /// queued it. The import runs on the server: follow it with [fetchImport].
+  /// with the expansions [expansionExternalIds] chosen with it, if any, and no
+  /// locale (#43, #713), and answers once the server has queued it. The
+  /// import runs on the server: follow it with [fetchImport].
   ///
   /// [correlationId] must be a UUID, which is all the server accepts. Send the
   /// same one again only for a start whose answer never came: the server may
@@ -218,6 +232,7 @@ abstract class GamesRemoteDataSource {
     required String gatewayId,
     required String externalId,
     required String correlationId,
+    List<String> expansionExternalIds = const [],
   });
 
   /// The import batch [batchId], as it stands now (#43).

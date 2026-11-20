@@ -2,6 +2,7 @@ export 'src/admin_household_remote_data_source.dart';
 export 'src/data_gateway_remote_data_source.dart';
 export 'src/event_remote_data_source.dart';
 export 'src/game_collection_remote_data_source.dart';
+export 'src/game_expansions_target.dart';
 export 'src/game_search_stream.dart';
 export 'src/games_remote_data_source.dart';
 export 'src/household_invite_remote_data_source.dart';

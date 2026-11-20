@@ -1222,6 +1222,119 @@ void main() {
     });
   });
 
+  group('fetchExpansions', () {
+    test('sends gatewayId and externalId for a DataGateway result', () async {
+      final remote = answering(
+        jsonEncode({
+          'resultsBySource': {
+            'bgg': [_gatewayHit(inSystem: true, gameId: 'g1')],
+          },
+          'unavailableSources': ['igdb'],
+        }),
+      );
+
+      final results = await remote.fetchExpansions(
+        const GameExpansionsTarget.dataGateway(
+          gatewayId: 'bgg',
+          externalId: '13',
+        ),
+      );
+
+      final sent = adapter.sent.single;
+      expect(sent.method, 'GET');
+      expect(sent.path, '/api/games/search/expansions');
+      expect(sent.query, {'gatewayId': 'bgg', 'externalId': '13'});
+      expect(results.byDataGateway['bgg']!.single.gameId, 'g1');
+      expect(results.unavailableDataGateways, {'igdb'});
+    });
+
+    test('sends gameId for a game on the server', () async {
+      final remote = answering(
+        jsonEncode({'resultsBySource': <String, Object>{}}),
+      );
+
+      final results = await remote.fetchExpansions(
+        const GameExpansionsTarget.game('g1'),
+      );
+
+      expect(adapter.sent.single.query, {'gameId': 'g1'});
+      expect(results.byDataGateway, isEmpty);
+    });
+
+    test('maps a 403 to GamesForbiddenException', () {
+      final remote = answering(_envelope(403, 'Forbidden'), status: 403);
+
+      expect(
+        remote.fetchExpansions(const GameExpansionsTarget.game('g1')),
+        throwsA(isA<GamesForbiddenException>()),
+      );
+    });
+
+    test('maps a 404 for a game to GameNotFoundException', () {
+      final remote = answering(_envelope(404, 'Not Found'), status: 404);
+
+      expect(
+        remote.fetchExpansions(const GameExpansionsTarget.game('g_gone')),
+        throwsA(isA<GameNotFoundException>()),
+      );
+    });
+
+    test('waits as long as a search', () async {
+      final remote = answering(
+        jsonEncode({'resultsBySource': <String, Object>{}}),
+      );
+
+      await remote.fetchExpansions(const GameExpansionsTarget.game('g1'));
+
+      expect(
+        adapter.sent.single.receiveTimeout,
+        GamesRemoteDataSourceImpl.searchReceiveTimeout,
+      );
+    });
+
+    test('refuses a malformed game id before the request', () {
+      final remote = answering(
+        jsonEncode({'resultsBySource': <String, Object>{}}),
+      );
+
+      expect(
+        () => remote.fetchExpansions(const GameExpansionsTarget.game('a/b')),
+        throwsArgumentError,
+      );
+      expect(
+        () => remote.fetchExpansions(const GameExpansionsTarget.game('')),
+        throwsArgumentError,
+      );
+      expect(adapter.sent, isEmpty);
+    });
+
+    test('refuses an empty gateway or external id before the request', () {
+      final remote = answering(
+        jsonEncode({'resultsBySource': <String, Object>{}}),
+      );
+
+      expect(
+        () => remote.fetchExpansions(
+          const GameExpansionsTarget.dataGateway(
+            gatewayId: '',
+            externalId: '13',
+          ),
+        ),
+        throwsArgumentError,
+      );
+      expect(
+        () => remote.fetchExpansions(
+          const GameExpansionsTarget.dataGateway(
+            gatewayId: 'bgg',
+            externalId: '',
+          ),
+        ),
+        throwsArgumentError,
+      );
+      expect(adapter.sent, isEmpty);
+    });
+  });
+
   group('import', () {
     Future<GameImportReceipt> start(GamesRemoteDataSource remote) =>
         remote.startImport(
@@ -1251,6 +1364,59 @@ void main() {
           correlationId: _corr,
         ),
       );
+    });
+
+    test(
+      'startImport sends expansionExternalIds when there are some',
+      () async {
+        final remote = answering(_receiptBody(), status: 201);
+
+        await remote.startImport(
+          gatewayId: 'dg_bgg',
+          externalId: '926',
+          correlationId: _corr,
+          expansionExternalIds: const ['21', '22'],
+        );
+
+        expect(
+          (adapter.sent.single.data!
+              as Map<String, dynamic>)['expansionExternalIds'],
+          [
+            '21',
+            '22',
+          ],
+        );
+      },
+    );
+
+    test('startImport leaves expansionExternalIds out when there are '
+        'none', () async {
+      final remote = answering(_receiptBody(), status: 201);
+
+      await start(remote);
+
+      expect(
+        (adapter.sent.single.data! as Map<String, dynamic>).containsKey(
+          'expansionExternalIds',
+        ),
+        isFalse,
+      );
+    });
+
+    test('the poll reads parentJobId', () async {
+      final remote = answering(
+        _batchBody(
+          jobs: [
+            _jobRow(),
+            _jobRow(status: 'Pending', origin: 'ChosenExpansion'),
+          ],
+        ),
+      );
+
+      final jobs = (await remote.fetchImport(_batch)).jobs;
+
+      expect(jobs[0].parentJobId, isNull);
+      expect(jobs[1].parentJobId, 'job_base');
     });
 
     test('startImport refuses a correlation id that is not a UUID, before '

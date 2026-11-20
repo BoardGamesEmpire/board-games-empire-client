@@ -5,6 +5,7 @@
 /// added once the server knows it.
 enum ResourceType {
   dataGateway('DataGateway'),
+  game('Game'),
   household('Household'),
   systemSetting('SystemSetting');
 

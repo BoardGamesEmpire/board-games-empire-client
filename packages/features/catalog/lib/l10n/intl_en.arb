@@ -601,7 +601,7 @@
   },
   "catalogImportStarting": "Sending the import to the server…",
   "@catalogImportStarting": {
-    "description": "Shown and announced in the import dialog while the request to import a game from a data source is on its way to the server. The dialog's title is the game's name."
+    "description": "Shown and announced in the import progress while the request to import a game from a data source is on its way to the server."
   },
   "catalogImportQueued": "Waiting for the server to start the import…",
   "@catalogImportQueued": {
@@ -613,7 +613,31 @@
   },
   "catalogImportStillRunning": "This is taking longer than usual. The server is still importing it, so you can check again, or close this and search for it later.",
   "@catalogImportStillRunning": {
-    "description": "Shown when an import has run for 90 seconds without finishing. Not a failure: the server keeps importing the game. Followed by the catalogImportCheckAgain and catalogImportClose buttons."
+    "description": "Shown when an import has run past its deadline without finishing: 90 seconds for one game, and longer for each further game in the import. Not a failure: the server keeps importing the game. Followed by the catalogImportCheckAgain button."
+  },
+  "catalogImportStillRunningImported": "{title} was imported. The server is still importing the other games, so you can open it now, check again, or close this and search for them later.",
+  "@catalogImportStillRunningImported": {
+    "description": "Shown when an import has run past its deadline after the game asked for was imported but while other games in the same import (its expansions, or a base game it needs) are still importing. Followed by the catalogImportCheckAgain button and a button that opens the game.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Spirit Island"
+      }
+    }
+  },
+  "catalogImportCompleted": "{title} was imported.",
+  "@catalogImportCompleted": {
+    "description": "Shown and announced when the game asked for and every other game in the same import were imported. Usually the game's page opens at once over it.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Spirit Island"
+      }
+    }
+  },
+  "catalogImportFailedTitle": "Import failed",
+  "@catalogImportFailedTitle": {
+    "description": "Title of the banner in the import progress when the game asked for wasn't imported. Some of the messages under it (catalogImportFailedNotOnDataGateway, catalogImportFailedDataGateway, catalogImportFailedUnreachable) state only a cause, so this says what failed."
   },
   "catalogImportFailedNotOnDataGateway": "The data source no longer has this game.",
   "@catalogImportFailedNotOnDataGateway": {
@@ -645,11 +669,163 @@
   },
   "catalogImportTryAgain": "Try again",
   "@catalogImportTryAgain": {
-    "description": "Button in the import dialog, after a failure, that starts the import again."
+    "description": "Button in the import progress, after a failure, that starts the import again."
   },
-  "catalogImportClose": "Close",
-  "@catalogImportClose": {
-    "description": "Button that closes the import dialog. The server still finishes an import it has started."
+  "catalogImportBatchLabel": "{count, plural, =1{1 game in this import} other{{count} games in this import}}",
+  "@catalogImportBatchLabel": {
+    "description": "The name of the list of games an import covers, read by a screen reader before the rows. It says nothing of where the import stands, since it stays once the import has ended: each row says its own state. The count is every game in the import: the one asked for, the expansions chosen with it, and any base game the server added.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "3"
+      }
+    }
+  },
+  "catalogImportJobAddedBaseGame": "{title}, the base game {neededBy} needs",
+  "@catalogImportJobAddedBaseGame": {
+    "description": "A row of the import's list for a base game the server added because an expansion needs it. It says why the game is there, not where its import stands: the row's status line under it says that. {title} is the base game's title, once the server knows it. {neededBy} is the title of the game in the same import that needs this base game, such as the expansion asked for.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Spirit Island"
+      },
+      "neededBy": {
+        "type": "String",
+        "example": "Spirit Island: Jagged Earth"
+      }
+    }
+  },
+  "catalogImportJobAddedBaseGameUntitled": "The base game {neededBy} needs",
+  "@catalogImportJobAddedBaseGameUntitled": {
+    "description": "catalogImportJobAddedBaseGame before the server knows the base game's title. {neededBy} is the title of the game in the same import that needs this base game, such as the expansion asked for.",
+    "placeholders": {
+      "neededBy": {
+        "type": "String",
+        "example": "Spirit Island: Jagged Earth"
+      }
+    }
+  },
+  "catalogImportJobUntitled": "Another game",
+  "@catalogImportJobUntitled": {
+    "description": "A row of the import's list for a game whose title is not known yet and is not the one asked for."
+  },
+  "catalogImportJobWaiting": "Waiting",
+  "@catalogImportJobWaiting": {
+    "description": "The state word on a row of the import's list for a game the server has queued and not started."
+  },
+  "catalogImportJobImporting": "Importing",
+  "@catalogImportJobImporting": {
+    "description": "The state word on a row of the import's list for a game the server is importing now."
+  },
+  "catalogImportJobImported": "Imported",
+  "@catalogImportJobImported": {
+    "description": "The state word on a row of the import's list for a game the server imported."
+  },
+  "catalogImportJobFailed": "Failed",
+  "@catalogImportJobFailed": {
+    "description": "The state word on a row of the import's list for a game the server could not import."
+  },
+  "catalogImportJobCancelled": "Cancelled",
+  "@catalogImportJobCancelled": {
+    "description": "The state word on a row of the import's list for a game whose import was cancelled."
+  },
+  "catalogImportJobSkipped": "Skipped: the game it goes with wasn't imported",
+  "@catalogImportJobSkipped": {
+    "description": "The state word on a row of the import's list for an expansion that was not imported because the base game it needs failed to import."
+  },
+  "catalogImportPartlyCompleted": "{title} was imported, but {count, plural, =1{1 other game wasn't} other{{count} other games weren't}}.",
+  "@catalogImportPartlyCompleted": {
+    "description": "Shown and announced when the game asked for was imported but one or more of the others in the same import were not. Followed by a button that opens the game.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Spirit Island"
+      },
+      "count": {
+        "type": "int",
+        "example": "2"
+      }
+    }
+  },
+  "catalogImportOpenGame": "Open {title}",
+  "@catalogImportOpenGame": {
+    "description": "Button that opens the game an import brought to the server, when some of the other games in the import were not imported or are still importing.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Spirit Island"
+      }
+    }
+  },
+  "catalogImportAction": "Import",
+  "@catalogImportAction": {
+    "description": "Button in a search result's quick look that imports the game from its data source into this server, with no expansions ticked."
+  },
+  "catalogReimportAction": "Re-import",
+  "@catalogReimportAction": {
+    "description": "catalogImportAction for a game the server already holds: importing it again updates it from the data source."
+  },
+  "catalogImportWithExpansions": "{count, plural, =1{Import with 1 expansion} other{Import with {count} expansions}}",
+  "@catalogImportWithExpansions": {
+    "description": "catalogImportAction once expansions are ticked in the checklist above it: the game is imported together with them.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "2"
+      }
+    }
+  },
+  "catalogReimportWithExpansions": "{count, plural, =1{Re-import with 1 expansion} other{Re-import with {count} expansions}}",
+  "@catalogReimportWithExpansions": {
+    "description": "catalogReimportAction once expansions are ticked in the checklist above it: the game is imported again together with them.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "2"
+      }
+    }
+  },
+  "catalogExpansionsHeading": "Expansions",
+  "@catalogExpansionsHeading": {
+    "description": "Heading over the checklist of a game's expansions, in the quick look's import panel and on the game page."
+  },
+  "catalogExpansionsLoading": "Looking for expansions…",
+  "@catalogExpansionsLoading": {
+    "description": "Announced, not drawn, while the checklist of a game's expansions loads."
+  },
+  "catalogExpansionsEmpty": "No expansions found.",
+  "@catalogExpansionsEmpty": {
+    "description": "Shown in the expansions checklist when every data source answered and none of them knows an expansion of the game."
+  },
+  "catalogExpansionsFailedTitle": "Couldn't load expansions",
+  "@catalogExpansionsFailedTitle": {
+    "description": "Title of the expansions checklist's failure, shown when the read failed or when no data source answered. Followed by catalogExpansionsFailedBody when the read failed, or catalogExpansionsUnansweredBody when no data source answered, and a catalogRetry button."
+  },
+  "catalogExpansionsFailedBody": "Check your connection and try again.",
+  "@catalogExpansionsFailedBody": {
+    "description": "Body under catalogExpansionsFailedTitle when the read itself failed: the server could not be reached, or did not answer in a way the app can read."
+  },
+  "catalogExpansionsUnansweredBody": "The data source didn't answer. Try again.",
+  "@catalogExpansionsUnansweredBody": {
+    "description": "Body under catalogExpansionsFailedTitle when the server answered but found no expansions because a data source failed, was rate limited or could not be reached."
+  },
+  "catalogExpansionsMissing": "{source} didn't answer, so some expansions may be missing.",
+  "@catalogExpansionsMissing": {
+    "description": "Note under the expansions that were found, naming a data source that failed, was rate limited or could not be reached, so the list may be short.",
+    "placeholders": {
+      "source": {
+        "type": "String",
+        "example": "BoardGameGeek"
+      }
+    }
+  },
+  "catalogExpansionsSelectAll": "Select all",
+  "@catalogExpansionsSelectAll": {
+    "description": "Checkbox that ticks every expansion of a data source that can be ticked, or clears them. Mixed while only some are ticked."
+  },
+  "catalogExpansionOnServer": "On this server",
+  "@catalogExpansionOnServer": {
+    "description": "Said on an expansion's row when the server already holds the game. When the game asked for is imported for the first time, such a row can't be ticked; when it is imported again (Re-import), it can be, and importing it again updates it."
   },
   "catalogImageAlt": "Image: {alt}",
   "@catalogImageAlt": {

@@ -28,6 +28,16 @@ class FakeGamesRemote implements GamesRemoteDataSource {
   onStartImport;
   Future<ImportBatch> Function(String batchId)? onFetchImport;
 
+  /// Answers [fetchExpansions]; unscripted, it answers no expansions.
+  Future<GameSearchResults> Function(GameExpansionsTarget target)?
+  onFetchExpansions;
+
+  /// The targets every [fetchExpansions] asked for, in order.
+  final List<GameExpansionsTarget> expansionTargets = [];
+
+  /// The expansions every [startImport] was asked to import with, in order.
+  final List<List<String>> importedExpansions = [];
+
   @override
   Future<PaginatedResult<Game>> fetchPage({
     int page = 1,
@@ -75,11 +85,21 @@ class FakeGamesRemote implements GamesRemoteDataSource {
   }
 
   @override
+  Future<GameSearchResults> fetchExpansions(GameExpansionsTarget target) {
+    expansionTargets.add(target);
+    calls.add('fetchExpansions($target)');
+    return onFetchExpansions?.call(target) ??
+        Future.value(const GameSearchResults());
+  }
+
+  @override
   Future<GameImportReceipt> startImport({
     required String gatewayId,
     required String externalId,
     required String correlationId,
+    List<String> expansionExternalIds = const [],
   }) {
+    importedExpansions.add(expansionExternalIds);
     calls.add('startImport($gatewayId/$externalId $correlationId)');
     return _run(onStartImport, 'startImport')(
       gatewayId,

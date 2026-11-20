@@ -11,7 +11,7 @@ import 'package:drift_storage/drift_storage.dart';
 import 'package:drift_storage/drift_storage_native.dart';
 import 'package:events/events.dart';
 import 'package:game_catalog/game_catalog.dart'
-    show DataGatewaySearchGrantInstaller;
+    show DataGatewaySearchGrantInstaller, catalogResourceTypes;
 import 'package:game_collection/game_collection.dart';
 import 'package:household/household.dart';
 import 'package:hydrated_bloc/hydrated_bloc.dart';
@@ -147,6 +147,7 @@ List<UserScopeInstaller> buildNativeUserScopeInstallers() => const [
   EventHydrateInstaller(),
   CallerAccessInstaller(
     resourceTypes: {
+      ...catalogResourceTypes,
       ...dataGatewayResourceTypes,
       ...householdAdminResourceTypes,
       ...serverSettingsResourceTypes,

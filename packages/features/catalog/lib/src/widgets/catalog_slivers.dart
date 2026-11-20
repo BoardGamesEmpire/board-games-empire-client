@@ -5,15 +5,23 @@ import 'package:ui_tokens/ui_tokens.dart';
 
 /// A section heading in a list, announced as a heading.
 class CatalogSectionHeading extends StatelessWidget {
-  const CatalogSectionHeading(this.text, {super.key});
+  const CatalogSectionHeading(this.text, {this.spaceAbove = true, super.key});
 
   final String text;
+
+  /// Whether it keeps a step of room above itself, from what precedes it.
+  /// False for a heading at the top of a block its host already spaces, as
+  /// a quick look spaces its sections.
+  final bool spaceAbove;
 
   @override
   Widget build(BuildContext context) {
     final tokens = BgeTokens.of(context);
     return Padding(
-      padding: EdgeInsets.only(top: tokens.spaceMd, bottom: tokens.spaceSm),
+      padding: EdgeInsets.only(
+        top: spaceAbove ? tokens.spaceMd : 0,
+        bottom: tokens.spaceSm,
+      ),
       child: Semantics(
         header: true,
         child: Text(text, style: Theme.of(context).textTheme.titleSmall),

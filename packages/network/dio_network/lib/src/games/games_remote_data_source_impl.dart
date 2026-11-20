@@ -199,10 +199,53 @@ class GamesRemoteDataSourceImpl implements GamesRemoteDataSource {
   }
 
   @override
+  Future<GameSearchResults> fetchExpansions(GameExpansionsTarget target) async {
+    switch (target) {
+      case DataGatewayExpansionsTarget(:final gatewayId, :final externalId):
+        if (gatewayId.isEmpty) {
+          throw ArgumentError.value(gatewayId, 'gatewayId', 'is empty');
+        }
+        if (externalId.isEmpty) {
+          throw ArgumentError.value(externalId, 'externalId', 'is empty');
+        }
+      case ServerGameExpansionsTarget(:final gameId):
+        _checkGameId(gameId);
+    }
+
+    const action = 'Game expansions fetch';
+    final failures = _GamesFailures(
+      row: target is ServerGameExpansionsTarget ? _Row.game : null,
+    );
+    final response = await sendForJson(
+      () => _dio.get<String>(
+        '$_basePath/search/expansions',
+        options: _plainBody.copyWith(receiveTimeout: searchReceiveTimeout),
+        queryParameters: switch (target) {
+          DataGatewayExpansionsTarget(:final gatewayId, :final externalId) => {
+            'gatewayId': gatewayId,
+            'externalId': externalId,
+          },
+          ServerGameExpansionsTarget(:final gameId) => {'gameId': gameId},
+        },
+      ),
+      action: action,
+      family: failures,
+    );
+
+    return parseRemote(
+      failures,
+      () => _mapSearchResults(response.body),
+      action: action,
+      status: response.status,
+    );
+  }
+
+  @override
   Future<GameImportReceipt> startImport({
     required String gatewayId,
     required String externalId,
     required String correlationId,
+    List<String> expansionExternalIds = const [],
   }) async {
     if (gatewayId.isEmpty) {
       throw ArgumentError.value(gatewayId, 'gatewayId', 'is empty');
@@ -218,13 +261,15 @@ class GamesRemoteDataSourceImpl implements GamesRemoteDataSource {
       () => _dio.post<String>(
         '$_basePath/import',
         options: _plainBody,
-        // No `expansionExternalIds` and no `locale`: both are optional on the
-        // server, and the base game alone, with no locale, is what #43
-        // imports.
+        // No `locale`: it is optional on the server, and none is what #43
+        // imports with. `expansionExternalIds` is left out when empty, so
+        // the request is the base game's alone (#713).
         data: {
           'gatewayId': gatewayId,
           'externalId': externalId,
           'correlationId': correlationId,
+          if (expansionExternalIds.isNotEmpty)
+            'expansionExternalIds': expansionExternalIds,
         },
       ),
       action: action,
@@ -424,13 +469,13 @@ class GamesRemoteDataSourceImpl implements GamesRemoteDataSource {
   /// Maps one job, as `toJobDto` builds it. A field the server leaves out
   /// until the job has a result reads as absent.
   ///
-  /// Not read: `parentJobId` and `requestedExpansions`, which only matter to
-  /// drawing the batch's graph (#824), and the `thumbnail`, `error` message
+  /// Not read: `requestedExpansions`, and the `thumbnail`, `error` message
   /// and times, which nothing shows.
   static ImportJob _mapImportJob(Map<String, dynamic> json) => ImportJob(
     jobId: json['jobId'] as String,
     status: ImportJobStatus.fromWire(json['status'] as String),
     origin: _origin(json['origin']),
+    parentJobId: json['parentJobId'] as String?,
     externalId: json['externalId'] as String,
     gameId: json['gameId'] as String?,
     gameTitle: json['gameTitle'] as String?,

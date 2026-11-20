@@ -183,7 +183,8 @@ _MockGameCollectionRepository _collection({
 }
 
 /// One game in the catalog, found by every search with one DataGateway
-/// result, which imports as `g_seafarers`.
+/// result, which imports as `g_seafarers`, with any of [expansions] chosen
+/// for it.
 class _GamesRemote implements GamesRemoteDataSource {
   /// Games whose detail answers 404, as one deleted since the list loaded.
   final Set<String> gone = {};
@@ -271,35 +272,85 @@ class _GamesRemote implements GamesRemoteDataSource {
     },
   );
 
+  /// The targets every expansions read asked for.
+  final List<GameExpansionsTarget> expansionTargets = [];
+
+  /// What every expansions read answers: none, unless a test sets some.
+  GameSearchResults expansions = const GameSearchResults();
+
+  @override
+  Future<GameSearchResults> fetchExpansions(GameExpansionsTarget target) async {
+    expansionTargets.add(target);
+    return expansions;
+  }
+
+  /// The expansions every import was started with, in order.
+  final List<List<String>> importedExpansions = [];
+
+  /// How many times the import was polled.
+  int polls = 0;
+
   @override
   Future<GameImportReceipt> startImport({
     required String gatewayId,
     required String externalId,
     required String correlationId,
-  }) async => GameImportReceipt(
-    batchId: '0b7c2f9e-3a41-4c8e-9d2a-5f6b7c8d9e0f',
-    baseJobId: 'job_base',
-    correlationId: correlationId,
-  );
+    List<String> expansionExternalIds = const [],
+  }) async {
+    importedExpansions.add(expansionExternalIds);
+    return GameImportReceipt(
+      batchId: '0b7c2f9e-3a41-4c8e-9d2a-5f6b7c8d9e0f',
+      baseJobId: 'job_base',
+      correlationId: correlationId,
+    );
+  }
 
+  /// The requested game's job at [importStatus], then one job for each
+  /// expansion chosen with it, which ends as the requested game does.
   @override
-  Future<ImportBatch> fetchImport(String batchId) async => ImportBatch(
-    batchId: batchId,
-    correlationId: '5a1e4b3c-2d6f-4a8b-9c0d-1e2f3a4b5c6d',
-    status: ImportBatchStatus.running,
-    jobs: [
-      ImportJob(
-        jobId: 'job_base',
-        status: importStatus,
-        origin: ImportJobOrigin.requested,
-        externalId: '926',
-        gameId: importStatus == ImportJobStatus.completed
-            ? 'g_seafarers'
-            : null,
+  Future<ImportBatch> fetchImport(String batchId) async {
+    polls++;
+    final completed = importStatus == ImportJobStatus.completed;
+    return ImportBatch(
+      batchId: batchId,
+      correlationId: '5a1e4b3c-2d6f-4a8b-9c0d-1e2f3a4b5c6d',
+      status: ImportBatchStatus.running,
+      jobs: [
+        ImportJob(
+          jobId: 'job_base',
+          status: importStatus,
+          origin: ImportJobOrigin.requested,
+          externalId: '926',
+          gameId: completed ? 'g_seafarers' : null,
+        ),
+        for (final externalId
+            in importedExpansions.lastOrNull ?? const <String>[])
+          ImportJob(
+            jobId: 'job_$externalId',
+            status: importStatus,
+            origin: ImportJobOrigin.chosenExpansion,
+            parentJobId: 'job_base',
+            externalId: externalId,
+            gameId: completed ? 'g_$externalId' : null,
+          ),
+      ],
+    );
+  }
+}
+
+/// Seafarers' one expansion at its DataGateway, which the server doesn't
+/// hold.
+const _seafarersExpansions = GameSearchResults(
+  byDataGateway: {
+    'dg_bgg': [
+      GameSearchHit(
+        externalId: '927',
+        title: 'Seafarers Scenario Pack',
+        contentType: ContentType.expansion,
       ),
     ],
-  );
-}
+  },
+);
 
 /// Lists one DataGateway, named.
 class _DataGatewayRemote implements DataGatewayRemoteDataSource {
@@ -348,6 +399,25 @@ const _oneDataGateway = PaginatedResult<DataGateway>(
 final CallerAccess _mayRead = FakeCallerAccessRepository.dataGateway(
   read: AccessExtent.all,
 );
+
+/// The answer of a caller who may read DataGateways and import games:
+/// `create` on `Game` (#713).
+const CallerAccess _mayImport = CallerAccess.known({
+  ResourceType.dataGateway: ResourceAccess(
+    create: AccessExtent.none,
+    read: AccessExtent.all,
+    update: AccessExtent.none,
+    delete: AccessExtent.none,
+    manage: AccessExtent.none,
+  ),
+  ResourceType.game: ResourceAccess(
+    create: AccessExtent.all,
+    read: AccessExtent.all,
+    update: AccessExtent.none,
+    delete: AccessExtent.none,
+    manage: AccessExtent.none,
+  ),
+});
 
 /// The Games destination (#414) and the screens behind it (#42).
 void main() {
@@ -624,8 +694,8 @@ void main() {
     expect(find.byKey(GameBrowseScreen.rowKey('g_catan')), findsNothing);
   });
 
-  testWidgets('a game found gone from a search is gone from the list beneath '
-      'it, too', (tester) async {
+  testWidgets("a game a search's quick look finds gone is gone from the "
+      'search and the list beneath it, too', (tester) async {
     games.gone.add('g_catan');
     await pumpHome(tester);
     await openGames(tester);
@@ -633,10 +703,13 @@ void main() {
 
     await tester.tap(find.byKey(GameSearchScreen.serverRowKey('g_catan')));
     await tester.pumpAndSettle();
-    expect(find.byKey(GameDetailScreen.unavailableKey), findsOneWidget);
+    expect(find.byKey(GameQuickLook.unavailableKey), findsOneWidget);
+    // Taken down from the search beneath the quick look.
+    expect(find.byKey(GameSearchScreen.serverRowKey('g_catan')), findsNothing);
 
-    await tester.tap(find.byType(BackButton));
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
+    expect(find.byType(GameQuickLook), findsNothing);
     expect(find.byKey(GameSearchScreen.serverRowKey('g_catan')), findsNothing);
 
     await tester.tap(find.byType(BackButton));
@@ -807,42 +880,125 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('a DataGateway result imports and opens the game', (
-    tester,
-  ) async {
-    access.current = _mayRead;
-    await pumpHome(tester);
-    await openGames(tester);
-    await searchFor(tester, 'catan');
-
-    await tester.tap(
-      find.byKey(GameSearchScreen.sourceRowKey('dg_bgg', '926')),
+  group("a search result's quick look imports it (#713)", () {
+    final seafarers = find.byKey(
+      GameSearchScreen.sourceRowKey('dg_bgg', '926'),
     );
-    await tester.pump(const Duration(seconds: 2));
-    await tester.pumpAndSettle();
+    final importButton = find.byKey(GameImportPanel.importKey);
 
-    expect(find.byType(GameImportDialog), findsNothing);
-    expect(find.byType(GameDetailScreen), findsOneWidget);
-    expect(games.fetched, contains('g_seafarers'));
-  });
+    /// Searches for Catan and opens Seafarers' quick look, a DataGateway
+    /// result the server doesn't hold.
+    Future<void> openSeafarers(WidgetTester tester) async {
+      await pumpHome(tester);
+      await openGames(tester);
+      await searchFor(tester, 'catan');
+      await tester.tap(seafarers);
+      await tester.pumpAndSettle();
+      expect(find.byType(SearchHitQuickLook), findsOneWidget);
+    }
 
-  testWidgets('closing the import opens nothing', (tester) async {
-    games.importStatus = ImportJobStatus.running;
-    access.current = _mayRead;
-    await pumpHome(tester);
-    await openGames(tester);
-    await searchFor(tester, 'catan');
+    /// Presses Import, and lets the start reach the server. The progress's
+    /// spinner never settles, so this pumps.
+    Future<void> pressImport(WidgetTester tester) async {
+      await tester.ensureVisible(importButton);
+      await tester.pumpAndSettle();
+      await tester.tap(importButton);
+      await tester.pump();
+      await tester.pump();
+    }
 
-    await tester.tap(
-      find.byKey(GameSearchScreen.sourceRowKey('dg_bgg', '926')),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 150));
-    await tester.tap(find.byKey(GameImportDialog.closeKey));
-    await tester.pump(const Duration(seconds: 4));
+    /// Opens Seafarers' quick look, ticks its expansion, presses Import, and
+    /// waits for the import to end and the game's page to arrive.
+    Future<void> importWithExpansion(WidgetTester tester) async {
+      access.current = _mayImport;
+      games.expansions = _seafarersExpansions;
+      await openSeafarers(tester);
 
-    expect(find.byType(GameDetailScreen), findsNothing);
-    expect(find.byType(GameSearchScreen), findsOneWidget);
+      final expansion = find.text('Seafarers Scenario Pack');
+      await tester.ensureVisible(expansion);
+      await tester.pumpAndSettle();
+      await tester.tap(expansion);
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(
+          of: importButton,
+          matching: find.text('Import with 1 expansion'),
+        ),
+        findsOneWidget,
+      );
+
+      await pressImport(tester);
+      // The first poll waits its interval, and finds every job completed.
+      await tester.pump(const Duration(seconds: 2));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets("search → quick look → Import with an expansion → the game's "
+        'page opens', (tester) async {
+      await importWithExpansion(tester);
+
+      expect(games.expansionTargets, [
+        const GameExpansionsTarget.dataGateway(
+          gatewayId: 'dg_bgg',
+          externalId: '926',
+        ),
+      ]);
+      expect(games.importedExpansions, [
+        ['927'],
+      ]);
+      expect(find.byType(GameDetailScreen), findsOneWidget);
+      expect(games.fetched, contains('g_seafarers'));
+      // Gone once the page has arrived, not just hidden under it.
+      expect(
+        find.byType(SearchHitQuickLook, skipOffstage: false),
+        findsNothing,
+      );
+    });
+
+    testWidgets('back from the imported game lands on search', (tester) async {
+      await importWithExpansion(tester);
+      expect(find.byType(GameDetailScreen), findsOneWidget);
+
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+
+      expect(find.byType(GameDetailScreen), findsNothing);
+      expect(find.byType(GameQuickLook, skipOffstage: false), findsNothing);
+      expect(
+        find.byType(SearchHitQuickLook, skipOffstage: false),
+        findsNothing,
+      );
+      expect(find.byKey(GameSearchScreen.fieldKey), findsOneWidget);
+    });
+
+    testWidgets('closing the quick look mid-import opens nothing', (
+      tester,
+    ) async {
+      access.current = _mayImport;
+      games.importStatus = ImportJobStatus.running;
+      await openSeafarers(tester);
+
+      await pressImport(tester);
+      expect(games.importedExpansions, [<String>[]]);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pump(const Duration(seconds: 4));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(SearchHitQuickLook), findsNothing);
+      expect(games.polls, 0);
+      expect(find.byType(GameDetailScreen), findsNothing);
+      expect(find.byType(GameSearchScreen), findsOneWidget);
+    });
+
+    testWidgets('without create on Game, the quick look offers no Import', (
+      tester,
+    ) async {
+      access.current = _mayRead;
+      await openSeafarers(tester);
+
+      expect(importButton, findsNothing);
+      expect(games.expansionTargets, isEmpty);
+    });
   });
 
   group("the detail page's collection (#45, #708)", () {
