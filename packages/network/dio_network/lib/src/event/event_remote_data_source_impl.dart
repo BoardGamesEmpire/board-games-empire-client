@@ -602,57 +602,84 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
       if (attendeeIds.isEmpty) return const [];
     }
 
-    const action = 'Offered games';
-    const failures = _EventFailures(_Route.row);
     // One token for the whole read. However `cancelled` completes, the read
-    // stops: Dio fails the request that is out, and the check below sends no
-    // later page.
+    // stops: Dio fails the request that is out, and no later page is sent.
     final token = CancelToken();
     cancelled?.whenComplete(token.cancel).ignore();
 
-    // By id, in the order first read. A game offered mid-read before a page
-    // boundary pushes a row already read onto the next page, which repeats
-    // it: the first is kept, and the list's keys stay unique. One taken back
-    // before a boundary pulls a row onto a page already read, so a row still
-    // on offer can be skipped until the next read.
-    final all = <String, OfferedGame>{};
+    // A game offered mid-read before a page boundary pushes a row already
+    // read onto the next page, which repeats it: the first is kept. One taken
+    // back before a boundary pulls a row onto a page already read, so a row
+    // still on offer can be skipped until the next read.
+    //
+    // The path names one event, so an application 404 is the service saying
+    // it is gone. Naming an attendee who is not on it narrows to no rows,
+    // not a 404.
+    return _readAllPages(
+      _poolPath(eventId),
+      action: 'Offered games',
+      key: 'offeredGames',
+      noun: 'game',
+      item: _mapOfferedGame,
+      idOf: (game) => game.id,
+      query: {
+        if (attendeeIds != null) 'attendeeIds': attendeeIds.join(','),
+      },
+      cancel: token,
+    );
+  }
+
+  /// Reads [path] from page 1 to the last, [EventRemoteDataSource.maxPageSize]
+  /// a page, each row of the envelope's [key] through [item], kept once by
+  /// [idOf] in the order first read. [query] goes on every page's request.
+  ///
+  /// More past the last page the server itself counted, or a page that adds
+  /// nothing new, is an envelope that contradicts itself, and nothing else
+  /// would stop the read until the server refused a page past its offset
+  /// ceiling: either throws [EventRemotePermanentException], naming
+  /// [action] and a [noun] for one row.
+  ///
+  /// [cancel] stops the read: Dio fails the request that is out, and a
+  /// cancel that lands as a page is answered sends no later page.
+  Future<List<T>> _readAllPages<T>(
+    String path, {
+    required String action,
+    required String key,
+    required String noun,
+    required T Function(Map<String, dynamic> json) item,
+    required String Function(T row) idOf,
+    Map<String, Object> query = const {},
+    CancelToken? cancel,
+  }) async {
+    const failures = _EventFailures(_Route.row);
+    final all = <String, T>{};
     for (var page = 1; ; page++) {
       final response = await sendForJson(
         () => _dio.get<String>(
-          _poolPath(eventId),
+          path,
           options: _plainBody,
           queryParameters: {
             'page': page,
             'limit': EventRemoteDataSource.maxPageSize,
-            if (attendeeIds != null) 'attendeeIds': attendeeIds.join(','),
+            ...query,
           },
-          cancelToken: token,
+          cancelToken: cancel,
         ),
         action: action,
-        // The path names one event, so an application 404 is the service
-        // saying it is gone. Naming an attendee who is not on it narrows to
-        // no rows, not a 404.
         family: failures,
       );
       final result = parseRemote(
         failures,
-        () => PaginatedResult.fromEnvelope(
-          response.body,
-          key: 'offeredGames',
-          item: _mapOfferedGame,
-        ),
+        () => PaginatedResult.fromEnvelope(response.body, key: key, item: item),
         action: action,
         status: response.status,
       );
       final before = all.length;
-      for (final game in result.items) {
-        all.putIfAbsent(game.id, () => game);
+      for (final row in result.items) {
+        all.putIfAbsent(idOf(row), () => row);
       }
       if (!result.meta.hasMore) return all.values.toList();
 
-      // As in fetchNominations: more past the last page the server itself
-      // counted, or a page that adds nothing new, is an envelope that
-      // contradicts itself.
       if (page >= result.meta.totalPages) {
         throw EventRemotePermanentException(
           '$action page $page reports another page past its own last page, '
@@ -662,7 +689,7 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
       }
       if (all.length == before) {
         throw EventRemotePermanentException(
-          '$action page $page reports another page but adds no game not '
+          '$action page $page reports another page but adds no $noun not '
           'already read',
           statusCode: response.status,
         );
@@ -670,8 +697,8 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
 
       // A cancel that landed after this page was answered: what Dio would
       // throw for the next page, without sending it.
-      if (token.cancelError case final cancel?) {
-        throw failureForDioException(failures, cancel, action: action);
+      if (cancel?.cancelError case final cancelled?) {
+        throw failureForDioException(failures, cancelled, action: action);
       }
     }
   }
@@ -758,63 +785,18 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
   Future<List<EventNomination>> fetchNominations(String eventId) async {
     _checkId(eventId, name: 'eventId');
 
-    const action = 'Nominations';
-    const failures = _EventFailures(_Route.row);
-    // By id, in the order first read: a nomination created mid-read shifts
-    // the offsets of a newest-first list, so a later page can repeat a row
-    // an earlier one held. The first is kept, and the list's keys stay
-    // unique.
-    final all = <String, EventNomination>{};
-    for (var page = 1; ; page++) {
-      final response = await sendForJson(
-        () => _dio.get<String>(
-          _nominationsPath(eventId),
-          options: _plainBody,
-          queryParameters: {
-            'page': page,
-            'limit': EventRemoteDataSource.maxPageSize,
-          },
-        ),
-        action: action,
-        // The path names one event, so an application 404 is the service
-        // saying it is gone.
-        family: failures,
-      );
-      final result = parseRemote(
-        failures,
-        () => PaginatedResult.fromEnvelope(
-          response.body,
-          key: 'nominations',
-          item: _mapNomination,
-        ),
-        action: action,
-        status: response.status,
-      );
-      final before = all.length;
-      for (final nomination in result.items) {
-        all.putIfAbsent(nomination.id, () => nomination);
-      }
-      if (!result.meta.hasMore) return all.values.toList();
-
-      // More past the last page the server itself counted, or a page that
-      // adds nothing new, is an envelope that contradicts itself, and
-      // nothing else would stop the read until the server refused a page
-      // past its offset ceiling.
-      if (page >= result.meta.totalPages) {
-        throw EventRemotePermanentException(
-          '$action page $page reports another page past its own last page, '
-          '${result.meta.totalPages}',
-          statusCode: response.status,
-        );
-      }
-      if (all.length == before) {
-        throw EventRemotePermanentException(
-          '$action page $page reports another page but adds no nomination '
-          'not already read',
-          statusCode: response.status,
-        );
-      }
-    }
+    // A nomination created mid-read shifts the offsets of a newest-first
+    // list, so a later page can repeat a row an earlier one held: the first
+    // is kept. The path names one event, so an application 404 is the
+    // service saying it is gone.
+    return _readAllPages(
+      _nominationsPath(eventId),
+      action: 'Nominations',
+      key: 'nominations',
+      noun: 'nomination',
+      item: _mapNomination,
+      idOf: (nomination) => nomination.id,
+    );
   }
 
   @override
