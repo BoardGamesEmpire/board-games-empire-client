@@ -29,7 +29,8 @@
 ///
 /// The sinks are enumerable and few: `DeepLinkHandler` logs the rendered
 /// form on both the accept and reject branches, and
-/// `NormalizedDeepLink.toString` renders its two fields. Both are covered.
+/// `ServerDeepLink.toString` and `AppDeepLink.toString` render their fields.
+/// All are covered.
 library;
 
 /// Placeholder substituted for redacted material.
@@ -141,7 +142,7 @@ String redactDeepLinkForLog(Uri uri) {
 /// Redacts anything ahead of an `@` in a single **raw** (still-encoded)
 /// [segment]. This is the one credential rule of the module, and it runs
 /// on every component emitted as found: path segments, query keys, and
-/// (via `NormalizedDeepLink.toString`, which is why it is public) a
+/// (via `ServerDeepLink.toString`, which is why it is public) a
 /// serverId logged detached from the URI it came out of.
 ///
 /// It is deliberately not scoped to the shapes `Uri` fails to parse a

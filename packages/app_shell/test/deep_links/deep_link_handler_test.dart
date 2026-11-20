@@ -42,7 +42,7 @@ void main() {
 
       expect(
         holder.peek,
-        const NormalizedDeepLink(
+        const ServerDeepLink(
           serverId: 's1',
           location: '/server/s1/game/42',
         ),
@@ -68,7 +68,7 @@ void main() {
 
       expect(
         holder.peek,
-        const NormalizedDeepLink(
+        const ServerDeepLink(
           serverId: 's2',
           location: '/server/s2/event/9',
         ),
@@ -87,7 +87,7 @@ void main() {
 
         expect(
           holder.peek,
-          const NormalizedDeepLink(
+          const ServerDeepLink(
             serverId: 's1',
             location: '/server/s1/game/1',
           ),
@@ -105,7 +105,7 @@ void main() {
 
       expect(
         holder.peek,
-        const NormalizedDeepLink(serverId: 's1', location: '/server/s1/game/7'),
+        const ServerDeepLink(serverId: 's1', location: '/server/s1/game/7'),
       );
     });
 

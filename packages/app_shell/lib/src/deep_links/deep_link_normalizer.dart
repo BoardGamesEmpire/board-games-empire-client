@@ -1,4 +1,5 @@
 import 'package:app_shell/src/deep_links/deep_link_redaction.dart';
+import 'package:app_shell/src/router/app_router.dart';
 import 'package:flutter/foundation.dart';
 
 /// Normalization of raw `bge://` deep-link URIs into router locations (#10).
@@ -7,8 +8,11 @@ import 'package:flutter/foundation.dart';
 /// while the declared route table (see `reservedDeepLinkPathPatterns`)
 /// speaks path form: `/server/:serverId/...`. A raw URI therefore parses
 /// as scheme `bge`, host `server`, and a path whose first segment is the
-/// serverId — [normalizeDeepLink] validates that shape and rewrites it,
-/// rejecting anything else (`bge://evil/...` must never reach the router).
+/// serverId — [normalizeDeepLink] validates that shape and rewrites it.
+/// The app's own declared locations (`appDeepLinkLocations`, #126) are the
+/// other accepted shape: `bge://settings` parses as host `settings`.
+/// Anything else is rejected (`bge://evil/...` must never reach the
+/// router).
 
 /// Why a raw deep link was rejected. Reasons are safe to log; the URI
 /// that produced them is not (see [redactDeepLinkForLog]).
@@ -16,9 +20,13 @@ enum DeepLinkRejectionReason {
   /// The scheme is not `bge`.
   unsupportedScheme,
 
-  /// The authority is not the bare literal `server` (wrong host, or a
-  /// userInfo/port component is present).
+  /// The authority is not the bare literal `server` or an app host (wrong
+  /// host, or a userInfo/port component is present).
   unexpectedAuthority,
+
+  /// The host is an app host (`bge://settings`) but the path is not a
+  /// declared app location (`bge://settings/bogus`, #126).
+  undeclaredAppLocation,
 
   /// No serverId path segment (`bge://server`, `bge://server//...`).
   missingServerId,
@@ -33,27 +41,39 @@ enum DeepLinkRejectionReason {
 }
 
 /// A deep link that passed validation, expressed in the router's terms.
+///
+/// Either names a server ([ServerDeepLink]) or is the app's own, with no
+/// server to resolve ([AppDeepLink], #126).
 @immutable
-final class NormalizedDeepLink {
-  const NormalizedDeepLink({required this.serverId, required this.location});
+sealed class NormalizedDeepLink {
+  const NormalizedDeepLink();
+
+  /// The `go_router` location the link opens.
+  String get location;
+}
+
+/// A link into one server's resources (`bge://server/{id}/...`).
+@immutable
+final class ServerDeepLink extends NormalizedDeepLink {
+  const ServerDeepLink({required this.serverId, required this.location});
 
   /// The server's `bgeServerId` from the link (the stable UUID from
   /// `/.well-known/bge-identity`, not a hostname or the device-local
   /// `ServerConfig.id`), percent-decoded. Resolved against the server
-  /// registry by `KnownServerLookup` consumers (#82); on web it is carried
-  /// but ignored (single-origin).
+  /// registry by `KnownServerLookup` consumers (#82).
   final String serverId;
 
   /// The `go_router` location: `/server/{serverId}/{resource-path}` plus
   /// the original query, matching a declared reserved pattern's shape.
   /// Path segments keep their original percent-encoding; the fragment, if
   /// any, is dropped during normalization.
+  @override
   final String location;
 
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      other is NormalizedDeepLink &&
+      other is ServerDeepLink &&
           other.serverId == serverId &&
           other.location == location;
 
@@ -70,9 +90,33 @@ final class NormalizedDeepLink {
   /// newline and let a link forge a second log line.
   @override
   String toString() =>
-      'NormalizedDeepLink(serverId: '
+      'ServerDeepLink(serverId: '
       '${redactDeepLinkSegmentForLog(Uri.encodeComponent(serverId))}, '
       'location: ${redactDeepLinkForLog(Uri.parse(location))})';
+}
+
+/// A link to a place in the app itself, naming no server, so it needs no
+/// server lookup or switch (#126). A web cold load is one (#83).
+@immutable
+final class AppDeepLink extends NormalizedDeepLink {
+  const AppDeepLink({required this.location});
+
+  @override
+  final String location;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is AppDeepLink && other.location == location;
+
+  @override
+  int get hashCode => location.hashCode;
+
+  /// Redacted like [ServerDeepLink.toString]: the location can carry a
+  /// token or a query value.
+  @override
+  String toString() =>
+      'AppDeepLink(location: ${redactDeepLinkForLog(Uri.parse(location))})';
 }
 
 /// Outcome of [normalizeDeepLink].
@@ -100,12 +144,17 @@ final class DeepLinkRejected extends DeepLinkNormalizationResult {
 /// Contract (encoded by `deep_link_normalizer_test.dart`):
 /// - scheme must be `bge` (case-insensitive: `Uri` lowercases schemes and
 ///   hosts during parsing, so `BGE://SERVER/...` arrives normalized);
-/// - authority must be the bare literal `server` — a userInfo or explicit
+/// - authority must be the bare literal `server` or an app host (the first
+///   segment of an `appDeepLinkLocations` entry) — a userInfo or explicit
 ///   port component is a mismatch, and any other host is rejected;
-/// - the first path segment is the serverId and must be non-empty, and
-///   must decode — an escape that is not valid UTF-8 is a rejection, since
-///   a malformed link may never leave by way of an exception;
-/// - at least one further path segment (the resource path) must follow;
+/// - an app host opens only a declared app location (the raw path, one
+///   trailing `/` allowed, matched exactly and case-sensitively), as an
+///   [AppDeepLink] with the query kept and the fragment dropped (#126);
+/// - for a `server` link:
+///   - the first path segment is the serverId and must be non-empty, and
+///     must decode — an escape that is not valid UTF-8 is a rejection,
+///     since a malformed link may never leave by way of an exception;
+///   - at least one further path segment (the resource path) must follow;
 /// - the query string is preserved verbatim; the fragment is dropped;
 /// - percent-encoded path segments survive as single segments
 ///   (`a%2Fb` stays one segment, not two), which is why the rewrite works
@@ -114,8 +163,12 @@ DeepLinkNormalizationResult normalizeDeepLink(Uri uri) {
   if (uri.scheme != 'bge') {
     return const DeepLinkRejected(DeepLinkRejectionReason.unsupportedScheme);
   }
-  if (uri.host != 'server' || uri.hasPort || uri.userInfo.isNotEmpty) {
+  final host = uri.host;
+  if (uri.hasPort || uri.userInfo.isNotEmpty) {
     return const DeepLinkRejected(DeepLinkRejectionReason.unexpectedAuthority);
+  }
+  if (host != 'server') {
+    return _normalizeAppLink(uri);
   }
 
   // Raw (still-encoded) segments so an encoded slash inside a segment
@@ -160,6 +213,38 @@ DeepLinkNormalizationResult normalizeDeepLink(Uri uri) {
   // The fragment is intentionally dropped: no reserved pattern uses one.
 
   return DeepLinkNormalized(
-    NormalizedDeepLink(serverId: serverId, location: location.toString()),
+    ServerDeepLink(serverId: serverId, location: location.toString()),
+  );
+}
+
+/// The host of each declared app location (`bge://settings` has host
+/// `settings`), derived once (#126).
+final Set<String> _appDeepLinkHosts = {
+  for (final location in appDeepLinkLocations) location.split('/')[1],
+};
+
+/// The app-host branch of [normalizeDeepLink] (#126).
+DeepLinkNormalizationResult _normalizeAppLink(Uri uri) {
+  final host = uri.host;
+  if (!_appDeepLinkHosts.contains(host)) {
+    return const DeepLinkRejected(DeepLinkRejectionReason.unexpectedAuthority);
+  }
+
+  // The raw path, so an encoded slash stays encoded and cannot match.
+  final rawPath = uri.path;
+  final path = rawPath.endsWith('/')
+      ? rawPath.substring(0, rawPath.length - 1)
+      : rawPath;
+  final location = '/$host$path';
+  if (!appDeepLinkLocations.contains(location)) {
+    return const DeepLinkRejected(
+      DeepLinkRejectionReason.undeclaredAppLocation,
+    );
+  }
+
+  return DeepLinkNormalized(
+    AppDeepLink(
+      location: uri.query.isEmpty ? location : '$location?${uri.query}',
+    ),
   );
 }

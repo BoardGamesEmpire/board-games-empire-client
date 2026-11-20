@@ -4,10 +4,10 @@ project(runner LANGUAGES CXX)
 
 # The name of the executable created for the application. Change this to change
 # the on-disk name of your application.
-set(BINARY_NAME "desktop")
+set(BINARY_NAME "board_games_empire")
 # The unique GTK application identifier for this application. See:
 # https://wiki.gnome.org/HowDoI/ChooseApplicationID
-set(APPLICATION_ID "com.boardgamesempire.desktop.desktop")
+set(APPLICATION_ID "com.boardgamesempire.app")
 
 # Explicitly opt in to modern CMake behaviors to avoid warnings with recent
 # versions of CMake.
@@ -126,3 +126,25 @@ if(NOT CMAKE_BUILD_TYPE MATCHES "Debug")
   install(FILES "${AOT_LIBRARY}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
     COMPONENT Runtime)
 endif()
+
+# Desktop integration for bge:// links (#84): the entry, the icon and the
+# per-user scripts that register them. The icon has one source, the macOS
+# asset catalog, so there is no second copy in git.
+set(PACKAGING_LINUX_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../packaging/linux")
+set(APP_ICON_256
+  "${CMAKE_CURRENT_SOURCE_DIR}/../macos/Runner/Assets.xcassets/AppIcon.appiconset/app_icon_256.png")
+
+install(FILES "${PACKAGING_LINUX_DIR}/${APPLICATION_ID}.desktop"
+  DESTINATION "${CMAKE_INSTALL_PREFIX}/share/applications"
+  COMPONENT Runtime)
+
+install(FILES "${APP_ICON_256}"
+  DESTINATION "${CMAKE_INSTALL_PREFIX}/share/icons/hicolor/256x256/apps"
+  RENAME "${APPLICATION_ID}.png"
+  COMPONENT Runtime)
+
+install(PROGRAMS
+  "${PACKAGING_LINUX_DIR}/install-desktop.sh"
+  "${PACKAGING_LINUX_DIR}/uninstall-desktop.sh"
+  DESTINATION "${CMAKE_INSTALL_PREFIX}"
+  COMPONENT Runtime)

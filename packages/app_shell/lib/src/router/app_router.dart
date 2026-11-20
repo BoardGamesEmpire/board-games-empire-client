@@ -426,6 +426,15 @@ const reservedDeepLinkPathPatterns = <String>[
   '/server/:serverId/collection/:userId',
 ];
 
+/// The app-level locations a `bge://` link may open (#126): the link's host
+/// is the location's first segment (`bge://settings/export`). Only these
+/// open; any other path under an app host is rejected, so a link can never
+/// reach an arbitrary route.
+const appDeepLinkLocations = <String>{
+  AppRoutes.settings,
+  AppRoutes.settingsExport,
+};
+
 /// The reserved patterns that open without a session. Every pattern in
 /// [reservedDeepLinkPathPatterns] that is not here needs one (#82). The
 /// router's bootstrap redirect compares the matched route's full path with
@@ -1917,28 +1926,21 @@ class _LeaveForEventState extends State<_LeaveForEvent> {
   Widget build(BuildContext context) => const SizedBox.shrink();
 }
 
-/// The `serverId` a web cold load's link carries (#83).
-///
-/// Web is single-server and same-origin, so the consumer ignores the
-/// server a web link names; the slot keeps one type all the same. Server
-/// ids are UUIDs, so this can never name a registered server. It is logged
-/// through the same redaction as any server id.
-const webColdLoadServerId = 'web-cold-load';
-
 /// The link that holds a web cold load's [location] through bootstrap and
 /// sign-in, so that it opens once the app is ready (#83).
+///
+/// An app link: web is single-server and same-origin, so it names no server.
 ///
 /// Null for the locations the app opens on anyway: home, and the bootstrap
 /// screens, splash included. The query is kept and the fragment dropped,
 /// as the normalizer does for a native link. Whether the location matches
 /// a declared route is the router's to say, so [_holdColdLoad] checks that.
-NormalizedDeepLink? coldLoadLinkFor(Uri location) {
+AppDeepLink? coldLoadLinkFor(Uri location) {
   final path = location.path;
   if (path == AppRoutes.home || AppRoutes.bootstrapLocations.contains(path)) {
     return null;
   }
-  return NormalizedDeepLink(
-    serverId: webColdLoadServerId,
+  return AppDeepLink(
     location: location.hasQuery ? '$path?${location.query}' : path,
   );
 }

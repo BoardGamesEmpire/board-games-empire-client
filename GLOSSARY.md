@@ -150,3 +150,15 @@ _Avoid_: Instance, host, backend, tenant
 The one server the user is currently working in. Other connected servers remain
 connected but inactive.
 _Avoid_: Current server, selected server
+
+**Server link**:
+A `bge://server/…` link into one server's resources. It names that server, so opening
+it can mean looking the server up and switching to it first.
+_Avoid_: Deep link, when the kind matters
+
+**App link**:
+A link to a page of the app itself, such as `bge://settings`. It names no server, so it
+opens with no lookup or switch, and only at a location the app declares. A web cold
+load is one too. Not Android's App Links, which are verified `https` links, nor the
+`app_links` package that receives both kinds.
+_Avoid_: Settings link, server-less link

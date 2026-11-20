@@ -5,12 +5,11 @@ import 'package:flutter_test/flutter_test.dart';
 /// bootstrap and sign-in, and how they are carried.
 void main() {
   group('coldLoadLinkFor', () {
-    test('holds a declared location under the web sentinel', () {
-      final link = coldLoadLinkFor(Uri.parse('/household/h1'));
-
-      expect(link, isNotNull);
-      expect(link!.location, '/household/h1');
-      expect(link.serverId, webColdLoadServerId);
+    test('holds a declared location as an app link', () {
+      expect(
+        coldLoadLinkFor(Uri.parse('/household/h1')),
+        const AppDeepLink(location: '/household/h1'),
+      );
     });
 
     test('keeps the query', () {

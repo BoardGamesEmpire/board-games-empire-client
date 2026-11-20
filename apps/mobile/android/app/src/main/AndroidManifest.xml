@@ -54,19 +54,25 @@
                  deliberately absent — verified App Links require a per-server
                  .well-known/assetlinks.json a self-hosted product cannot
                  reliably publish; custom scheme only (#10 decision). The
-                 host filter narrows delivery to our published authority. -->
+                 host filter narrows delivery to our published authorities:
+                 `server`, and each app host (#126), the first segment of an
+                 entry in app_shell's appDeepLinkLocations. A host added there
+                 needs a <data> line here too, or Android delivers its links
+                 to no one. -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW"/>
                 <category android:name="android.intent.category.DEFAULT"/>
                 <category android:name="android.intent.category.BROWSABLE"/>
                 <data android:scheme="bge" android:host="server"/>
+                <data android:scheme="bge" android:host="settings"/>
             </intent-filter>
         </activity>
         <!-- Provider sign-in (#583): flutter_web_auth_2 opens the provider in
              a Custom/Auth Tab and takes bge://oauth back through this
              activity, which hands the URL to the waiting sign-in and
              finishes. The host filter keeps it apart from MainActivity's
-             bge://server deep links (#10), so each URL has one owner.
+             bge://server and bge://settings deep links (#10, #126), so each
+             URL has one owner.
              taskAffinity is empty, as the plugin's README requires for every
              exported activity. The Custom Tabs <queries> entries come from
              the plugin's own manifest and merge in; none are needed here. -->

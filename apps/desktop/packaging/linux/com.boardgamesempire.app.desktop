@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Board Games Empire
+Comment=Organize game nights and your board game collection
+Exec=board_games_empire %u
+Icon=com.boardgamesempire.app
+Terminal=false
+Categories=Game;BoardGame;
+MimeType=x-scheme-handler/bge;
+StartupWMClass=com.boardgamesempire.app

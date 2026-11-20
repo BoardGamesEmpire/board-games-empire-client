@@ -296,6 +296,29 @@ void main() {
         containsAll(publicDeepLinkPathPatterns),
       );
     });
+
+    test('appDeepLinkLocations names settings and its export page', () {
+      expect(appDeepLinkLocations, {
+        AppRoutes.settings,
+        AppRoutes.settingsExport,
+      });
+    });
+
+    for (final location in appDeepLinkLocations) {
+      testWidgets('the app link location $location is a declared route', (
+        tester,
+      ) async {
+        final router = await pumpRouter(
+          tester,
+          initialState: const AppBootstrapReady(),
+        );
+        router.go(location);
+        await tester.pumpAndSettle();
+
+        expect(router.routerDelegate.currentConfiguration.uri.path, location);
+        expect(find.byType(RouteNotFoundScreen), findsNothing);
+      });
+    }
   });
 
   group('buildAppRouter — a web cold load (#83)', () {
@@ -310,7 +333,7 @@ void main() {
       );
 
       expect(holder.peek!.location, '/household/h1');
-      expect(holder.peek!.serverId, webColdLoadServerId);
+      expect(holder.peek, isA<AppDeepLink>());
       expect(find.byType(SplashScreen), findsOneWidget);
     });
 
