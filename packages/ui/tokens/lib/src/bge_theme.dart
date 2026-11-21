@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:ui_tokens/src/accessibility/bge_button_focus_ring.dart';
+import 'package:ui_tokens/src/accessibility/bge_chip_focus.dart';
 import 'package:ui_tokens/src/accessibility/bge_navigation_focus.dart';
 import 'package:ui_tokens/src/accessibility/bge_pointer_pressed.dart';
 import 'package:ui_tokens/src/accessibility/bge_segment_focus.dart';
@@ -83,7 +84,8 @@ ButtonStyle _buttonStyle(BgeButtonFocusRingPlacement placement) => ButtonStyle(
 ///   Every ring hides after a mouse press until the next key press
 ///   ([BgePointerPressed]). A segmented button's segment can't take a
 ///   ring from the theme, so it shows focus by a fill 3:1 from rest, its
-///   label changing with it ([BgeSegmentFocus], #759).
+///   label changing with it ([BgeSegmentFocus], #759). A chip's ring is its
+///   side, which the theme sets ([BgeChipFocus], #761).
 /// - **Two-family typography** — the bundled display face on
 ///   display/headline/title, the platform face on body/label. See
 ///   [BgeTypography] for why the split falls there.
@@ -162,7 +164,7 @@ abstract final class BgeTheme {
       selected: BgeSegmentFocus.selected(scheme),
       unselected: BgeSegmentFocus.unselected(scheme),
     );
-    return ThemeData(
+    final theme = ThemeData(
       useMaterial3: true,
       colorScheme: scheme,
       textTheme: BgeTypography.textTheme(),
@@ -280,6 +282,20 @@ abstract final class BgeTheme {
         BgeStatusColors.forScheme(scheme),
         BgeLineColors.forScheme(scheme, highContrast: highContrast),
       ],
+    );
+    // #761: a chip shows focus by a `focusOutlineWidth` ring its side draws,
+    // which hides after a mouse press as every ring does. Set after the
+    // theme is built, since a selected chip's ring is chosen against the
+    // theme's own focus tint. See [BgeChipFocus].
+    return theme.copyWith(
+      chipTheme: ChipThemeData(
+        side: _ChipFocusSide(
+          unselected: BgeChipFocus.ringColor(theme, selected: false),
+          selected: BgeChipFocus.ringColor(theme, selected: true),
+          ringWidth: tokens.focusOutlineWidth,
+          atRest: scheme.outlineVariant,
+        ),
+      ),
     );
   }
 }
@@ -461,4 +477,71 @@ class _SegmentOverlay extends _SegmentProperty {
     if (states.contains(WidgetState.focused)) return tint.withAlpha(0);
     return null;
   }
+}
+
+/// A chip's side (#761): a ring while it shows keyboard focus, and
+/// Material's otherwise.
+///
+/// Every other state resolves to null, and the chip falls back to its own
+/// default side, which differs by chip type and variant. With no state at
+/// all, it is [atRest], Material's flat chip at rest, spelled out: a theme
+/// animation lerps the two themes' sides resolved with no state, and throws
+/// where both are null. An elevated chip, which has none in this app, would
+/// take that outline at rest too.
+///
+/// That lerp flattens the side to a plain [BorderSide] for the animation's
+/// length, so a chip focused while the theme changes, light to dark, loses
+/// its ring until the animation ends.
+@immutable
+class _ChipFocusSide extends WidgetStateBorderSide {
+  const _ChipFocusSide({
+    required this.unselected,
+    required this.selected,
+    required this.ringWidth,
+    required this.atRest,
+  });
+
+  /// The ring on an unselected chip.
+  final Color unselected;
+
+  /// The ring on a selected chip.
+  final Color selected;
+
+  /// The ring's width.
+  final double ringWidth;
+
+  /// Material's side on a flat chip with no state.
+  final Color atRest;
+
+  /// Where the ring sits on the chip's edge: its inset matches the 1px side
+  /// Material draws at rest, half the ring inside the edge and half outside
+  /// when it is 2 wide.
+  ///
+  /// A chip pads its content by its side's inset (`ShapeDecoration`'s
+  /// padding), so a ring wholly inside the edge would grow the chip as it
+  /// takes focus, and move whatever sits beside it.
+  double get _strokeAlign => 1 - 2 * const BorderSide().width / ringWidth;
+
+  @override
+  BorderSide? resolve(Set<WidgetState> states) {
+    if (BgeChipFocus.showsRing(states)) {
+      return BorderSide(
+        color: states.contains(WidgetState.selected) ? selected : unselected,
+        width: ringWidth,
+        strokeAlign: _strokeAlign,
+      );
+    }
+    return states.isEmpty ? BorderSide(color: atRest) : null;
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is _ChipFocusSide &&
+      other.unselected == unselected &&
+      other.selected == selected &&
+      other.ringWidth == ringWidth &&
+      other.atRest == atRest;
+
+  @override
+  int get hashCode => Object.hash(unselected, selected, ringWidth, atRest);
 }

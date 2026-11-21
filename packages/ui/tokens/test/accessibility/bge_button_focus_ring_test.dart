@@ -995,16 +995,21 @@ void main() {
         // Focus alone gets no tint: the background shows it. Not null, which
         // would fall through to the text button's own focus tint.
         for (final selected in [true, false]) {
+          final tint = selected
+              ? themed.colorScheme.onSecondaryContainer
+              : themed.colorScheme.onSurface;
           expect(
             ours.overlayColor?.resolve({
               WidgetState.focused,
               if (selected) WidgetState.selected,
-            })?.a,
-            0,
+            }),
+            tint.withAlpha(0),
+            reason: 'selected: $selected',
           );
         }
-        // A press or hover that comes with focus is Material's too: the
-        // ink well asks for the focus fill with focus alone.
+        // A press or hover that comes with focus keeps Material's overlay.
+        // The focus fill is the segment's `backgroundColor`, not an overlay,
+        // so the overlay has nothing of the fill's to add.
         for (final states
             in subsets([
               WidgetState.selected,
@@ -1068,10 +1073,136 @@ void main() {
       }
     });
 
+    group("a focused segment's fill and label follow the highlight mode "
+        'with the lease the app root holds', () {
+      /// The segment's [Material], whose colour is its background and whose
+      /// text style carries its label's colour.
+      Material materialOfSegment(WidgetTester tester, Finder text) =>
+          tester.widget<Material>(
+            find
+                .descendant(
+                  of: find.ancestor(
+                    of: text,
+                    matching: find.byType(TextButton),
+                  ),
+                  matching: find.byType(Material),
+                )
+                .first,
+          );
+
+      for (final MapEntry(key: name, value: build) in themes.entries) {
+        for (final selected in [true, false]) {
+          final which = selected ? 'selected' : 'unselected';
+          final segments = SegmentedButton<int>(
+            segments: const [
+              ButtonSegment(value: 0, label: Text('One')),
+              ButtonSegment(value: 1, label: Text('Two')),
+            ],
+            selected: const {0},
+            onSelectionChanged: (_) {},
+          );
+
+          testWidgets("Tab, then a touch elsewhere: Material's rest, $name, "
+              '$which', (tester) async {
+            BgeFocusLease.attach();
+            addTearDown(BgeFocusLease.detach);
+            final themeData = build();
+            final scheme = themeData.colorScheme;
+            final focus = selected
+                ? BgeSegmentFocus.selected(scheme)
+                : BgeSegmentFocus.unselected(scheme);
+            await host(tester, [segments], themeData: themeData);
+            final text = find.text(selected ? 'One' : 'Two');
+            // The theme leaves rest as Material's, pinned above.
+            final rest = materialOfSegment(tester, text).color;
+
+            await tab(tester);
+            if (!selected) await tab(tester);
+            await tester.pumpAndSettle();
+            final node = Focus.of(tester.element(text));
+            expect(node.hasPrimaryFocus, isTrue);
+            expect(materialOfSegment(tester, text).color, focus.background);
+            expect(
+              materialOfSegment(tester, text).textStyle?.color,
+              focus.label,
+            );
+
+            // A touch elsewhere: the segment keeps focus, and shows none.
+            await tester.tapAt(empty);
+            await tester.pumpAndSettle();
+            expect(
+              FocusManager.instance.highlightMode,
+              FocusHighlightMode.touch,
+            );
+            expect(node.hasPrimaryFocus, isTrue);
+            expect(
+              materialOfSegment(tester, text).color,
+              rest,
+              reason: "Material's background at rest",
+            );
+            expect(
+              materialOfSegment(tester, text).textStyle?.color,
+              selected ? scheme.onSecondaryContainer : scheme.onSurface,
+              reason: "Material's label",
+            );
+          });
+
+          testWidgets('focused by touch, then Shift: the fill and its label, '
+              '$name, $which', (tester) async {
+            BgeFocusLease.attach();
+            addTearDown(BgeFocusLease.detach);
+            final themeData = build();
+            final scheme = themeData.colorScheme;
+            final focus = selected
+                ? BgeSegmentFocus.selected(scheme)
+                : BgeSegmentFocus.unselected(scheme);
+            await host(tester, [segments], themeData: themeData);
+            final text = find.text(selected ? 'One' : 'Two');
+            final rest = materialOfSegment(tester, text).color;
+
+            await tester.tapAt(empty);
+            await tester.pump();
+            expect(
+              FocusManager.instance.highlightMode,
+              FocusHighlightMode.touch,
+            );
+            final node = Focus.of(tester.element(text))..requestFocus();
+            await tester.pumpAndSettle();
+            expect(node.hasPrimaryFocus, isTrue);
+            expect(
+              materialOfSegment(tester, text).color,
+              rest,
+              reason: 'no focus shown by touch',
+            );
+            expect(
+              materialOfSegment(tester, text).textStyle?.color,
+              selected ? scheme.onSecondaryContainer : scheme.onSurface,
+              reason: 'no focus shown by touch',
+            );
+
+            await tester.sendKeyEvent(LogicalKeyboardKey.shift);
+            await tester.pumpAndSettle();
+            expect(
+              FocusManager.instance.highlightMode,
+              FocusHighlightMode.traditional,
+            );
+            expect(node.hasPrimaryFocus, isTrue);
+            expect(materialOfSegment(tester, text).color, focus.background);
+            expect(
+              materialOfSegment(tester, text).textStyle?.color,
+              focus.label,
+            );
+          });
+        }
+      }
+    });
+
     // The fill and the label read the highlight mode together, in one
     // build, so a touch that changes the mode can't take one away and leave
-    // the other. Whatever the segment shows until it next builds, the label
-    // reads on it.
+    // the other. In the app, the root's lease rebuilds the segment as the
+    // mode changes, so it shows Material's rest (the group above). This
+    // test holds no lease, so the segment keeps its fill until it next
+    // builds, and the label must read on whatever it shows meanwhile.
     group(
       'a touch after Tab leaves the label readable on what is under it',
       () {
@@ -1191,6 +1322,407 @@ void main() {
     });
   });
 
+  // #761: a chip shows keyboard focus by a ring its theme's side draws, as it
+  // shows focus by Material's faint tint alone without it.
+  group("a chip's keyboard focus is a ring, 3:1 against its fill (#761)", () {
+    final themes = {
+      'light': BgeTheme.light,
+      'dark': BgeTheme.dark,
+      'highContrastLight': BgeTheme.highContrastLight,
+      'highContrastDark': BgeTheme.highContrastDark,
+    };
+    final backgrounds = <String, Color Function(ColorScheme)>{
+      'surface': (s) => s.surface,
+      'surfaceContainerLow': (s) => s.surfaceContainerLow,
+      'surfaceContainerHigh': (s) => s.surfaceContainerHigh,
+    };
+
+    /// Each chip type that takes focus, labelled "Entry", selected or not.
+    /// An action chip can't be selected.
+    final chips =
+        <String, Widget Function({required bool selected, bool enabled})>{
+          'FilterChip': ({required selected, enabled = true}) => FilterChip(
+            key: goKey,
+            label: const Text('Entry'),
+            selected: selected,
+            onSelected: enabled ? (_) {} : null,
+          ),
+          'ChoiceChip': ({required selected, enabled = true}) => ChoiceChip(
+            key: goKey,
+            label: const Text('Entry'),
+            selected: selected,
+            onSelected: enabled ? (_) {} : null,
+          ),
+          'InputChip': ({required selected, enabled = true}) => InputChip(
+            key: goKey,
+            label: const Text('Entry'),
+            selected: selected,
+            isEnabled: enabled,
+            onSelected: (_) {},
+          ),
+          'ActionChip': ({required selected, enabled = true}) => ActionChip(
+            key: goKey,
+            label: const Text('Entry'),
+            onPressed: enabled ? () {} : null,
+          ),
+        };
+    bool selectable(String chip) => chip != 'ActionChip';
+
+    // From the probe (#761), with a mouse resting on the chip: under the
+    // chip's focus and hover tints, `primary` stands 3.61 on a selected
+    // chip's fill in high-contrast light, but 2.88 in light, 1.88 in dark
+    // and 2.20 in high-contrast dark.
+    final selectedRing = <String, Color Function(ColorScheme)>{
+      'light': (s) => s.onSecondaryContainer,
+      'dark': (s) => s.onSecondaryContainer,
+      'highContrastLight': (s) => s.primary,
+      'highContrastDark': (s) => s.onSecondaryContainer,
+    };
+
+    /// The chip's resolved side, as its [Material] paints it.
+    BorderSide sideOf(WidgetTester tester) =>
+        (tester.widget<Material>(materialOf(goKey)).shape! as OutlinedBorder)
+            .side;
+
+    /// A ring in [color], half inside the chip's edge, so its inset is the
+    /// 1px side's at rest.
+    BorderSide ringOf(Color color) => BorderSide(
+      color: color,
+      width: tokens.focusOutlineWidth,
+      strokeAlign: BorderSide.strokeAlignCenter,
+    );
+
+    for (final MapEntry(key: name, value: build) in themes.entries) {
+      for (final MapEntry(key: chip, value: make) in chips.entries) {
+        for (final selected in [false, if (selectable(chip)) true]) {
+          final which = selected ? 'selected' : 'unselected';
+          // A selected chip has its own fill; an unselected one shows what
+          // it sits on.
+          final on = selected
+              ? {'surface': backgrounds['surface']!}
+              : backgrounds;
+          for (final MapEntry(key: where, value: background) in on.entries) {
+            testWidgets('$chip, $name, $which, on $where', (tester) async {
+              final themeData = build();
+              final scheme = themeData.colorScheme;
+              await host(tester, [
+                ColoredBox(
+                  color: background(scheme),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: make(selected: selected),
+                  ),
+                ),
+              ], themeData: themeData);
+              final shape = tester.getRect(materialOf(goKey));
+              final atRest = await capturePixels(tester, boundary);
+
+              await tab(tester);
+              await tester.pumpAndSettle();
+              expect(
+                Focus.of(tester.element(find.text('Entry'))).hasPrimaryFocus,
+                isTrue,
+              );
+              expect(
+                sideOf(tester),
+                ringOf(
+                  selected ? selectedRing[name]!(scheme) : scheme.primary,
+                ),
+              );
+              // The chip pads its content by its side's inset, so a ring
+              // inside the edge would grow it, and move what is beside it.
+              expect(
+                tester.getRect(materialOf(goKey)),
+                shape,
+                reason: 'focus keeps the chip its size',
+              );
+              final focused = await capturePixels(tester, boundary);
+
+              // On the ring's inner half, and just inside it on the fill,
+              // both under the chip's own focus tint.
+              final onRing = Offset(shape.left + 0.5, shape.center.dy);
+              final onFill = Offset(
+                shape.left + tokens.focusOutlineWidth + 2,
+                shape.center.dy,
+              );
+              expect(
+                Wcag.contrastRatio(focused(onRing), focused(onFill)),
+                greaterThanOrEqualTo(3.0),
+                reason: 'the ring on the fill',
+              );
+              expect(
+                strongestContrast(shape, atRest, focused),
+                greaterThanOrEqualTo(3.0),
+                reason: 'focused against rest',
+              );
+
+              // A mouse resting on the chip lays Material's hover tint over
+              // the focus tint: the ring still stands 3:1, selected or not.
+              // An unselected chip in a dialog in dark measures 3.52 here.
+              // Worked out over the dialog's colour it would be 2.90, but an
+              // unselected chip's own Material paints `surface` under the
+              // tints, whatever it sits on.
+              final mouse = await tester.createGesture(
+                kind: PointerDeviceKind.mouse,
+              );
+              addTearDown(mouse.removePointer);
+              await mouse.addPointer(
+                location: tester.getCenter(find.text('Entry')),
+              );
+              await tester.pumpAndSettle();
+              expect(
+                sideOf(tester),
+                ringOf(
+                  selected ? selectedRing[name]!(scheme) : scheme.primary,
+                ),
+                reason: 'a hover keeps the ring',
+              );
+              final hovered = await capturePixels(tester, boundary);
+              expect(
+                Wcag.contrastRatio(hovered(onRing), hovered(onFill)),
+                greaterThanOrEqualTo(3.0),
+                reason: 'the ring on the fill under a hover',
+              );
+            });
+          }
+        }
+      }
+    }
+
+    // The check #50's audit pinned, skipped until now: the filter chip's
+    // focus measured 1.32 to 1.40 from its rest.
+    for (final MapEntry(key: name, value: build) in themes.entries) {
+      testWidgets("a filter chip's keyboard focus differs from its rest by "
+          '3:1, $name', (tester) async {
+        await host(tester, [
+          FilterChip(
+            key: goKey,
+            label: const Text('Entry'),
+            onSelected: (_) {},
+          ),
+        ], themeData: build());
+        final rect = tester.getRect(find.byKey(goKey));
+        final atRest = await capturePixels(tester, boundary);
+
+        await tab(tester);
+        await tester.pumpAndSettle();
+        expect(
+          Focus.of(tester.element(find.text('Entry'))).hasPrimaryFocus,
+          isTrue,
+        );
+        final focused = await capturePixels(tester, boundary);
+
+        // Anywhere the focus shows: a fill, a ring, an edge.
+        expect(
+          strongestContrast(rect, atRest, focused),
+          greaterThanOrEqualTo(3.0),
+        );
+      });
+    }
+
+    for (final MapEntry(key: name, value: build) in themes.entries) {
+      testWidgets("the theme leaves an unfocused chip's side as Material's, "
+          '$name', (tester) async {
+        final themed = build();
+        final material = themed.copyWith(chipTheme: const ChipThemeData());
+        expect(themed.chipTheme.side, isNotNull);
+
+        /// [chip]'s side under [themeData] at rest, hovered by a mouse, and
+        /// pressed.
+        Future<List<BorderSide>> sides(
+          ThemeData themeData,
+          Widget chip,
+        ) async {
+          await host(tester, [chip], themeData: themeData);
+          final atRest = sideOf(tester);
+          final mouse = await tester.createGesture(
+            kind: PointerDeviceKind.mouse,
+          );
+          await mouse.addPointer(
+            location: tester.getCenter(find.text('Entry')),
+          );
+          await tester.pumpAndSettle();
+          final hovered = sideOf(tester);
+          await mouse.down(tester.getCenter(find.text('Entry')));
+          await tester.pump();
+          final pressed = sideOf(tester);
+          await mouse.up();
+          await mouse.removePointer();
+          await tester.pumpAndSettle();
+          return [atRest, hovered, pressed];
+        }
+
+        for (final MapEntry(key: chip, value: make) in chips.entries) {
+          for (final selected in [false, if (selectable(chip)) true]) {
+            for (final enabled in [true, false]) {
+              final widget = make(selected: selected, enabled: enabled);
+              expect(
+                await sides(themed, widget),
+                await sides(material, widget),
+                reason: '$chip, selected: $selected, enabled: $enabled',
+              );
+            }
+          }
+        }
+      });
+    }
+
+    test(
+      'the four themes lerp into each other, as a theme change animates',
+      () {
+        // Mid-animation, Flutter resolves each side with no state, and throws
+        // where both resolve to null.
+        for (final a in themes.values) {
+          for (final b in themes.values) {
+            expect(() => ThemeData.lerp(a(), b(), 0.5), returnsNormally);
+          }
+        }
+      },
+    );
+
+    test('two themes built from one palette have equal chip themes', () {
+      final again = BgeTheme.from(BgePalette.storm);
+      expect(again.light.chipTheme, BgeTheme.light().chipTheme);
+      expect(
+        again.highContrastDark.chipTheme,
+        BgeTheme.highContrastDark().chipTheme,
+      );
+      expect(
+        BgeTheme.light().chipTheme,
+        isNot(BgeTheme.dark().chipTheme),
+      );
+    });
+
+    testWidgets("a focused chip's ring follows the highlight mode", (
+      tester,
+    ) async {
+      BgeFocusLease.attach();
+      addTearDown(BgeFocusLease.detach);
+      await host(tester, [chips['FilterChip']!(selected: false)]);
+      await tab(tester);
+      final focus = FocusManager.instance.primaryFocus;
+      expect(sideOf(tester), ringOf(ring), reason: 'Tab rings it');
+
+      // A touch elsewhere: the chip keeps focus, and the ring goes.
+      await tester.tapAt(empty);
+      await tester.pump();
+      expect(FocusManager.instance.highlightMode, FocusHighlightMode.touch);
+      expect(FocusManager.instance.primaryFocus, same(focus));
+      expect(
+        sideOf(tester),
+        BorderSide(color: theme.colorScheme.outlineVariant),
+        reason: "Material's side after a touch",
+      );
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.shift);
+      await tester.pump();
+      expect(FocusManager.instance.primaryFocus, same(focus));
+      expect(sideOf(tester), ringOf(ring), reason: 'a key press');
+    });
+
+    group('with the lease the app root holds', () {
+      testWidgets(
+        'no ring after a mouse press while the lease is held',
+        (tester) async {
+          BgeFocusLease.attach();
+          addTearDown(BgeFocusLease.detach);
+          await host(tester, [chips['FilterChip']!(selected: false)]);
+          final material = BorderSide(color: theme.colorScheme.outlineVariant);
+          await tab(tester);
+          final focus = FocusManager.instance.primaryFocus;
+          expect(sideOf(tester), ringOf(ring), reason: 'Tab rings it');
+
+          // A press elsewhere leaves focus on the chip, and takes the ring.
+          await tester.tapAt(empty, kind: PointerDeviceKind.mouse);
+          await tester.pump();
+          expect(FocusManager.instance.primaryFocus, same(focus));
+          expect(
+            FocusManager.instance.highlightMode,
+            FocusHighlightMode.traditional,
+          );
+          expect(sideOf(tester), material, reason: 'the press');
+
+          // A shortcut isn't navigation: Meta+C leaves it hidden.
+          await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+          await tester.sendKeyEvent(LogicalKeyboardKey.keyC);
+          await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+          await tester.pump();
+          expect(sideOf(tester), material, reason: 'Meta+C');
+
+          await tester.sendKeyEvent(LogicalKeyboardKey.shift);
+          await tester.pump();
+          expect(sideOf(tester), ringOf(ring), reason: 'a key press');
+
+          // A press on the chip itself, which focus stays on.
+          await tester.tap(find.byKey(goKey), kind: PointerDeviceKind.mouse);
+          await tester.pumpAndSettle();
+          expect(FocusManager.instance.primaryFocus, same(focus));
+          expect(
+            sideOf(tester),
+            BorderSide(color: theme.colorScheme.outlineVariant),
+            reason: 'a press on the chip',
+          );
+        },
+        variant: TargetPlatformVariant.only(TargetPlatform.macOS),
+      );
+
+      testWidgets(
+        'a mouse press on a page with no ring built, then focus landing on a '
+        'ringed control, shows no ring',
+        (tester) async {
+          // Review Focus 4 of #761's plan: the chip's ring has no lifecycle
+          // to watch for the press, and here no ring is built to watch for
+          // it either. The lease records it.
+          BgeFocusLease.attach();
+          addTearDown(BgeFocusLease.detach);
+          const nothing = Text('Nothing to focus');
+
+          await host(tester, [nothing]);
+          await tester.tapAt(empty, kind: PointerDeviceKind.mouse);
+          await tester.pump();
+          await host(tester, [
+            FilterChip(
+              key: goKey,
+              autofocus: true,
+              label: const Text('Entry'),
+              onSelected: (_) {},
+            ),
+          ]);
+          expect(
+            Focus.of(tester.element(find.text('Entry'))).hasPrimaryFocus,
+            isTrue,
+          );
+          expect(
+            sideOf(tester),
+            BorderSide(color: theme.colorScheme.outlineVariant),
+            reason: 'focus after the press',
+          );
+          await tester.sendKeyEvent(LogicalKeyboardKey.shift);
+          await tester.pump();
+          expect(sideOf(tester), ringOf(ring), reason: 'a key press');
+
+          // A button's ring, built after the press, too.
+          await host(tester, [nothing]);
+          await tester.tapAt(empty, kind: PointerDeviceKind.mouse);
+          await tester.pump();
+          await host(tester, [
+            TextButton(
+              key: goKey,
+              autofocus: true,
+              onPressed: () {},
+              child: const Text('Go'),
+            ),
+          ]);
+          expect(painters(tester, find.byKey(goKey)).single.color, isNull);
+          await tester.sendKeyEvent(LogicalKeyboardKey.shift);
+          await tester.pump();
+          expect(painters(tester, find.byKey(goKey)).single.color, ring);
+        },
+        variant: TargetPlatformVariant.only(TargetPlatform.macOS),
+      );
+    });
+  });
+
   // What #50's drafted findings want, skipped until each is fixed, so the gap
   // stays visible in the suite. Each is written against what a user sees
   // rather than against today's ring, so a fix of any shape passes it. Each
@@ -1280,13 +1812,13 @@ void main() {
       },
     );
 
-    // A drawer entry and a filter chip show focus as a fill alone.
+    // A drawer entry shows focus as a fill alone. The filter chip pinned
+    // beside it is ringed now (#761), and its check is in the chips' group.
     group(
-      "a drawer entry's and a filter chip's keyboard focus differs from their "
-      'rest by 3:1',
+      "a drawer entry's keyboard focus differs from its rest by 3:1",
       skip: 'see #761',
       () {
-        // Each labelled "Entry", its only stop.
+        // Labelled "Entry", its only stop.
         final controls = <String, Widget>{
           'NavigationDrawerDestination': const SizedBox(
             height: 200,
@@ -1299,11 +1831,6 @@ void main() {
                 ),
               ],
             ),
-          ),
-          'FilterChip': FilterChip(
-            key: goKey,
-            label: const Text('Entry'),
-            onSelected: (_) {},
           ),
         };
         for (final MapEntry(key: control, value: widget) in controls.entries) {

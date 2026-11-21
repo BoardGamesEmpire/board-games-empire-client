@@ -17,13 +17,16 @@ import 'package:flutter/services.dart';
 /// Fills don't read it: they follow the highlight mode alone, as Material's
 /// do.
 ///
-/// A ring [attach]es while it is built and [detach]es as it goes. The flag
-/// watches pointers and keys only while some ring is attached, and forgets the
-/// press once none is, so an app with no ring on screen holds no handlers.
+/// A ring [attach]es while it is built and [detach]es as it goes, and the
+/// app's root attaches for the app's lifetime (`BgeFocusLease`), so in the
+/// app the flag watches pointers and keys all the time, and records a press
+/// on a page with no ring built. It watches only while something is
+/// attached, and forgets the press once nothing is, so a test or a widget
+/// tree with no ring and no root holds no handlers.
 abstract final class BgePointerPressed {
   static final _notifier = ValueNotifier<bool>(false);
 
-  /// How many rings are attached.
+  /// How many holders are attached: rings, and the app root's lease.
   static int _rings = 0;
 
   /// The flag, for a ring to listen to.
