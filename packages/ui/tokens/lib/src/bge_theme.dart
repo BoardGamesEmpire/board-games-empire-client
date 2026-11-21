@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:ui_tokens/src/accessibility/bge_button_focus_ring.dart';
 import 'package:ui_tokens/src/accessibility/bge_navigation_focus.dart';
+import 'package:ui_tokens/src/accessibility/bge_pointer_pressed.dart';
 import 'package:ui_tokens/src/accessibility/bge_selection.dart';
 import 'package:ui_tokens/src/bge_line_colors.dart';
 import 'package:ui_tokens/src/bge_palette.dart';
@@ -74,8 +75,13 @@ ButtonStyle _buttonStyle(BgeButtonFocusRingPlacement placement) => ButtonStyle(
 ///   on keyboard focus only (#644), [BgeButtonFocusRing]:
 ///   [BgeTokens.focusRingGap] outside the shape on filled, tonal and icon
 ///   buttons, and inside the edge on text, outlined and elevated buttons,
-///   which Flutter clips to their shape. Segmented buttons, floating action
-///   buttons and list rows don't get one yet; see [BgeButtonFocusRing].
+///   which Flutter clips to their shape. The theme can't reach the rest, so
+///   `ui` rings them: a list row sits in `BgeRowFocusRing`, ringed inside the
+///   row's box with `radiusMd` corners (#758), and an extended floating
+///   action button is a `BgeExtendedFab`, ringed inside its edge (#760).
+///   Every ring hides after a mouse press until the next key press
+///   ([BgePointerPressed]). Segmented buttons don't get one yet; see
+///   [BgeButtonFocusRing].
 /// - **Two-family typography** — the bundled display face on
 ///   display/headline/title, the platform face on body/label. See
 ///   [BgeTypography] for why the split falls there.

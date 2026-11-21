@@ -29,9 +29,12 @@ enum BgeButtonFocusRingPlacement {
 /// The keyboard focus ring `BgeTheme` gives the filled, tonal, icon, text,
 /// outlined and elevated buttons (#644).
 ///
-/// Not yet the other Material controls: `SegmentedButton` builds its segments'
-/// style without the theme's builder, and floating action buttons, list rows,
-/// chips and drawer entries aren't these buttons. `ACCESSIBILITY_AUDIT.md`
+/// The other Material controls aren't these buttons, and take their focus
+/// cue elsewhere. A list row is ringed by `ui`'s `BgeRowFocusRing` (#758), an
+/// extended floating action button by `BgeExtendedFab` (#760), and a ring
+/// over a cover by `BgeFocusRing` with two tones (#812). `SegmentedButton`
+/// builds its segments' style without the theme's builder, and chips and
+/// drawer entries still show focus by a faint fill; `ACCESSIBILITY_AUDIT.md`
 /// lists each in its findings.
 ///
 /// Material 3's only focus feedback on a button is a faint tint, which a
@@ -44,10 +47,11 @@ enum BgeButtonFocusRingPlacement {
 ///
 /// A mouse or a trackpad leaves the highlight mode as it was, which on a
 /// desktop is the keyboard's. So a press from one, anywhere in the app, hides
-/// every button's ring until the next key press, as a browser's
-/// `:focus-visible` does. Focus that then lands on a button the mouse never
-/// pressed stays unringed too: handed back as a dialog closes, given to a
-/// button that autofocuses, or moved there in code.
+/// every ring in the app, the buttons' among them, until the next key press,
+/// as a browser's `:focus-visible` does ([BgePointerPressed]). Focus that
+/// then lands on a button the mouse never pressed stays unringed too: handed
+/// back as a dialog closes, given to a button that autofocuses, or moved
+/// there in code.
 ///
 /// A button that sets its own shape passes it here, in its style's
 /// `backgroundBuilder`, or the theme's ring would follow the theme's shape

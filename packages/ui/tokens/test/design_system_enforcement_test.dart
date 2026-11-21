@@ -127,6 +127,23 @@ void main() {
             'snackbar',
         'ScaffoldMessenger.of(\n  context,\n).showSnackBar(bar)': 'snackbar',
         'showSnackBar(bar)': 'snackbar',
+        // A tappable tile outside `packages/ui` passes the ring's
+        // `onFocusChange`, or its focus shows only as a 1.3:1 tint (#758).
+        'ListTile(title: Text(t), onTap: open)': 'tile-without-ring',
+        'ListTile(\n  onTap: () => open(context),\n  title: Text(t),\n)':
+            'tile-without-ring',
+        // A long press makes a tile a focus stop as surely as a tap.
+        'ListTile(title: Text(t), onLongPress: pick)': 'tile-without-ring',
+        // An `onFocusChange` nested in an argument is not the tile's own.
+        'ListTile(onTap: f, title: Focus(onFocusChange: g, child: x))':
+            'tile-without-ring',
+        'CheckboxListTile(value: v, onChanged: set)': 'tile-without-ring',
+        'SwitchListTile.adaptive(value: v, onChanged: set)':
+            'tile-without-ring',
+        'RadioListTile<String>(value: v, title: Text(t))': 'tile-without-ring',
+        // The shared extended FAB carries the ring (#760).
+        'FloatingActionButton.extended(onPressed: f, label: Text(l))':
+            'raw-extended-fab',
       };
 
       const shouldNotFire = <String>[
@@ -163,6 +180,16 @@ void main() {
         'messenger.replaceSnackBar(message)',
         'messenger.clearSnackBars()',
         '// showSnackBar(SnackBar(content: Text(m)))',
+        // A tile with no tap is no focus stop, so it needs no ring (#758).
+        'ListTile(title: Text(t), subtitle: Text(s))',
+        // The tiles as the ring's builder passes them.
+        'ListTile(focusNode: n, onFocusChange: row.onFocusChange, onTap: tap)',
+        'CheckboxListTile(\n  value: v,\n  onChanged: s,\n  onFocusChange: f)',
+        'RadioListTile<String>(value: v, onFocusChange: row.onFocusChange)',
+        // Names that only contain a tile's, and the theme around one.
+        'ListTileTheme.merge(shape: shape, child: child)',
+        'BgeExtendedFab(onPressed: f, label: l)',
+        'FloatingActionButton(onPressed: f, child: icon)',
       ];
 
       shouldFire.forEach((source, ruleId) {
@@ -182,6 +209,24 @@ void main() {
             _scanSource(source).map((v) => v.rule.id),
             isEmpty,
             reason: '"$source" is the sanctioned form and must be legal',
+          );
+        });
+      }
+
+      // The shared row and the shared FAB are built from the raw controls,
+      // so the two rules end at `packages/ui`.
+      for (final source in [
+        'ListTile(onTap: f)',
+        'FloatingActionButton.extended(onPressed: f, label: l)',
+      ]) {
+        test('allows $source inside packages/ui', () {
+          expect(
+            _scanSource(
+              source,
+              path: 'packages/ui/widgets/lib/src/buttons/bge_extended_fab.dart',
+            ).map((v) => v.rule.id),
+            isEmpty,
+            reason: 'the shared widgets wrap "$source" themselves',
           );
         });
       }
@@ -205,7 +250,7 @@ void main() {
           stale.add('${entry.key} — file no longer exists');
           continue;
         }
-        final hits = _scanSource(file.readAsStringSync());
+        final hits = _scanSource(file.readAsStringSync(), path: entry.key);
         for (final ruleId in entry.value) {
           // Same scanner the real check uses — a staleness test with its own
           // matching logic would drift from the rules it claims to audit.
@@ -345,7 +390,26 @@ final List<_Rule> _rules = [
     RegExp(r'\bshowSnackBar\b'),
     'raw showSnackBar, which queues (#343)',
   ),
+  // Reached only via `_scanTilesWithoutRing`, outside `packages/ui`: whether
+  // a tile is tappable, and whether it passes `onFocusChange`, are arguments
+  // anywhere in a call whose children nest calls of their own.
+  const _Rule(
+    'tile-without-ring',
+    null,
+    'tappable list tile outside BgeRowFocusRing (pass its onFocusChange, '
+        '#758)',
+  ),
+  // Outside `packages/ui` only. `BgeExtendedFab` wraps the raw one in a ring.
+  _Rule(
+    'raw-extended-fab',
+    RegExp(r'\bFloatingActionButton\.extended\s*\('),
+    'raw extended FAB, which has no focus ring (use BgeExtendedFab, #760)',
+  ),
 ];
+
+/// Rules that hold outside `packages/ui` only. The shared widgets there are
+/// built from the raw controls these rules flag.
+const Set<String> _outsideUiRules = {'tile-without-ring', 'raw-extended-fab'};
 
 class _Violation {
   _Violation(this.file, this.line, this.rule, this.text);
@@ -409,6 +473,7 @@ List<_Violation> _scan(String root) {
       _scanSource(
         entity.readAsStringSync(),
         exempt: exempt,
+        path: rel,
       ).map((v) => _Violation(path, v.line, v.rule, v.text)),
     );
   }
@@ -567,7 +632,46 @@ List<_Violation> _scanRootModals(String source) {
   return found;
 }
 
+/// Finds tappable list tiles that don't pass `onFocusChange` (#758).
+///
+/// A tile's only focus cue is its ink's tint, about 1.3:1 from the row at
+/// rest. `BgeRowFocusRing` rings it, and hands the tile the `onFocusChange`
+/// that shows the ring. The check is only that the tile passes an
+/// `onFocusChange`, whatever it is: in practice it comes only from the ring.
+/// A `ListTile` is tappable when it has an `onTap` or an `onLongPress`; one
+/// with neither is no focus stop. A `CheckboxListTile`, `SwitchListTile` or
+/// `RadioListTile` is always one.
+List<_Violation> _scanTilesWithoutRing(String source) {
+  final found = <_Violation>[];
+  final rule = _rules.firstWhere((r) => r.id == 'tile-without-ring');
+  final opener = RegExp(
+    r'\b(ListTile|CheckboxListTile|SwitchListTile|RadioListTile)'
+    r'(?:<[^(]*>)?(?:\.\w+)?\s*\(',
+  );
+  final named = RegExp(r'^\s*(\w+)\s*:');
+
+  for (final m in opener.allMatches(source)) {
+    final end = _closingParen(source, m.end - 1);
+    if (end == -1) continue;
+    final names = {
+      for (final arg in _topLevelArgs(source.substring(m.end, end)))
+        ?named.firstMatch(arg)?.group(1),
+    };
+    final tappable =
+        m.group(1) != 'ListTile' ||
+        names.contains('onTap') ||
+        names.contains('onLongPress');
+    if (!tappable || names.contains('onFocusChange')) continue;
+    final line = '\n'.allMatches(source.substring(0, m.start)).length + 1;
+    found.add(_Violation('', line, rule, m.group(0)!));
+  }
+  return found;
+}
+
 /// Scans one file's source. Exposed for the allowlist staleness check.
+///
+/// [path] is the file's workspace-relative path. A file in `packages/ui`
+/// skips [_outsideUiRules]; a fixture with no path is held to them.
 ///
 /// Matches against the WHOLE source, not line by line. `dart format` wraps
 /// constructors across lines as a matter of course, so a line-based scan never
@@ -583,7 +687,15 @@ List<_Violation> _scanRootModals(String source) {
 /// That is not a hypothetical — six of the seven original allowlist entries
 /// turned out to be exempting rules that could never have fired, because the
 /// code they guarded was formatted across lines.
-List<_Violation> _scanSource(String source, {List<String> exempt = const []}) {
+List<_Violation> _scanSource(
+  String source, {
+  List<String> exempt = const [],
+  String path = '',
+}) {
+  final skipped = {
+    ...exempt,
+    if (path.startsWith('packages/ui/')) ..._outsideUiRules,
+  };
   // Strip line comments before matching. Doc comments discuss these values
   // constantly ("no literal colors", "16dp gap"), and a scanner that flags its
   // own documentation gets switched off. Done by blanking the comment rather
@@ -603,11 +715,12 @@ List<_Violation> _scanSource(String source, {List<String> exempt = const []}) {
     for (final v in [
       ..._scanDimensionalConstructors(stripped),
       ..._scanRootModals(stripped),
+      ..._scanTilesWithoutRing(stripped),
     ])
-      if (!exempt.contains(v.rule.id)) v,
+      if (!skipped.contains(v.rule.id)) v,
   ];
   for (final rule in _rules) {
-    if (exempt.contains(rule.id)) continue;
+    if (skipped.contains(rule.id)) continue;
     final pattern = rule.pattern;
     if (pattern == null) continue;
     for (final match in pattern.allMatches(stripped)) {

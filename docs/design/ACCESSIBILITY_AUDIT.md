@@ -111,6 +111,26 @@ unringed: handed back as a dialog closes, or taken by a button that
 autofocuses. The same file holds the skipped checks for the controls the ring
 doesn't reach yet (see §5).
 
+The controls the theme can't reach are ringed in `ui`, and pinned there:
+
+- **List rows** (#758): `packages/ui/widgets/test/focus/bge_row_focus_ring_test.dart`
+  measures 3:1 between a focused row and the row at rest, outlined and plain,
+  in all four themes. Each screen's suite checks its own rows ring on
+  keyboard focus.
+- **Extended floating action buttons** (#760):
+  `packages/ui/widgets/test/buttons/bge_extended_fab_test.dart` measures the
+  ring 3:1 against the button's fill in all four themes.
+- **Rings over pictures** (#812): `packages/ui/widgets/test/images/bge_cover_tile_test.dart`
+  measures the cover's and the badge's rings over a `primary` picture and a
+  mid-grey one in all four themes, and the `ui` goldens draw both.
+- **The same rule for all of them.** A mouse or trackpad press hides every
+  ring, these included, until the next key press.
+  `packages/ui/tokens/test/accessibility/bge_pointer_pressed_test.dart` pins
+  the flag they share.
+- **Kept that way.** `design_system_enforcement_test.dart` fails a tappable
+  list tile outside `packages/ui` that doesn't pass the ring's
+  `onFocusChange`, and a raw `FloatingActionButton.extended`.
+
 ---
 
 ## 3. What they don't cover
@@ -794,13 +814,12 @@ can express what the finding wants, that check is in the suite, skipped with
 
 | Issue | Summary | Skipped check |
 |---|---|---|
-| #758 | Every list row (`ListTile`): the focused row's only indicator is the InkWell highlight, 1.27 to 1.40:1 against the resting row (WCAG 1.4.11) | `packages/ui/tokens/test/accessibility/bge_button_focus_ring_test.dart` |
-| #759 | `SegmentedButton` segments get no #644 ring; only Material's focus overlay marks them | the same file |
-| #760 | `FloatingActionButton.extended` gets no #644 ring; its focus overlay is 1.17:1 on its fill (five screens) | the same file |
+| #759 | `SegmentedButton` segments get no #644 ring; only Material's focus overlay marks them | `packages/ui/tokens/test/accessibility/bge_button_focus_ring_test.dart` |
 | #761 | Drawer entries, filter chips and the date and time pickers show focus as a fill only, 1.14 to 1.40:1 | the same file, for the drawer entry and the filter chip |
 | #762 | The filter sheet and every `AlertDialog` without `semanticLabel` have no accessible name on iOS and macOS | `packages/features/catalog/test/widgets/game_search_screen_test.dart`, for the sheet |
 | #763 | Drawer entries read "Tab n of m" though the drawer is a launcher | `packages/app_shell/test/screens/home_screen_test.dart` |
 | #764 | `TextButton()`, `OutlinedButton()` and `ElevatedButton()` clip their content to their shape once the ring's builder is set, so a label that wraps at 2.0 text loses glyph pixels at the curved ends | `packages/ui/tokens/test/accessibility/bge_button_focus_ring_test.dart` |
+| a follow-up to #758, no issue yet | `ExpansionTile` headers show focus only by their ink's tint, about 1.3:1: the event create form's "Advanced: rules" (`event_rules_section.dart`) and the feedback review's stack trace and breadcrumbs (`feedback_review_screen.dart`). The fix is a shared ringed expansion row in `ui` | none yet |
 | #765 | Shift+Tab from the top of a lazily built list wraps to the last child still built, not the list's end: focus can't reach a child the list hasn't built | `packages/ui/widgets/test/layout/bge_page_test.dart` |
 
 Fixed in this run, each with a regression test in the PR:
@@ -841,6 +860,20 @@ Fixed in this run, each with a regression test in the PR:
 
 Fixed after the run, so no longer in the findings table:
 
+- #758, fixed 2026-11-20: every tappable `ListTile`, `CheckboxListTile`,
+  `SwitchListTile` and `RadioListTile` outside `packages/ui`, plain or
+  outlined, sits in `BgeRowFocusRing`, a `focusOutlineWidth` ring on keyboard
+  focus only. `ExpansionTile` headers don't yet: see the open findings above.
+  The skipped check moved from `ui_tokens` to `packages/ui/widgets/test/focus/bge_row_focus_ring_test.dart`
+  and passes.
+- #760, fixed 2026-11-20: the six extended floating buttons are `BgeExtendedFab`,
+  ringed inside the edge in a colour that holds 3:1 on the fill. The skipped
+  check moved to `packages/ui/widgets/test/buttons/bge_extended_fab_test.dart`
+  and passes.
+- #812, fixed 2026-11-20, found in PR #809's review rather than this run: a
+  one-tone ring could vanish on cover art close to `primary`. The cover's
+  and the badge's rings now draw two tones 9:1 apart, which keeps one 3:1
+  from any artwork (`bge_cover_tile_test.dart`).
 - #802, fixed 2026-11-19: `CollectionEntryScreen`'s
   Edit and Remove, `primary` text on the app bar's scrolled-under tint,
   measured 4.39:1 in light. The scrolled-under app bar no longer tints, so
