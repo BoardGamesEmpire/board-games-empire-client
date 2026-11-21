@@ -173,8 +173,7 @@ List<EventNomination> nominationsInView(
   null => all,
   EveryDateView() => _wholeEvent(all),
   OneDateView(:final occurrenceId) => [
-    for (final n in all)
-      if (n.occurrenceId == occurrenceId) n,
+    ..._onDate(all, occurrenceId),
     ..._wholeEvent(all),
   ],
 };
@@ -183,6 +182,16 @@ List<EventNomination> nominationsInView(
 List<EventNomination> _wholeEvent(List<EventNomination> all) => [
   for (final n in all)
     if (n.occurrenceId == null) n,
+];
+
+/// The nominations in [all] for the date [occurrenceId] alone, in their
+/// order.
+List<EventNomination> _onDate(
+  List<EventNomination> all,
+  String occurrenceId,
+) => [
+  for (final n in all)
+    if (n.occurrenceId == occurrenceId) n,
 ];
 
 /// The nominations the Nominations section shows (#517): those [view] shows
@@ -205,10 +214,7 @@ List<EventNomination> shownNominations(
   );
   return switch (view) {
     OneDateView(:final occurrenceId) => [
-      ...ordered([
-        for (final n in all)
-          if (n.occurrenceId == occurrenceId) n,
-      ]),
+      ...ordered(_onDate(all, occurrenceId)),
       ...ordered(_wholeEvent(all)),
     ],
     EveryDateView() || null => ordered(nominationsInView(view, all)),

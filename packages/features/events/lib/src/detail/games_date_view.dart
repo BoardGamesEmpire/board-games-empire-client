@@ -56,13 +56,24 @@ final class OneDateView extends GamesDateView {
 bool showsDateRow(EventSnapshot s) => s.occurrences.length >= 2;
 
 /// The view the Games tab opens on where the location names none it can
-/// show (#1042): the next date still to come, the first of
-/// [nominatableDates] as of [now]; once none is, Every date.
-GamesDateView defaultDateView(EventDetail d, {required DateTime now}) =>
-    switch (nominatableDates(d, now: now)) {
-      [final next, ...] => OneDateView(next.id),
-      [] => const EveryDateView(),
-    };
+/// show (#1042): the next date still to come, of [nominatableDates] as of
+/// [now], by when it starts, not by its place in the row, since a date
+/// added later can start sooner. A date still to be set comes after those
+/// with a start, and dates that tie keep the row's order. Once none is
+/// still to come, Every date.
+GamesDateView defaultDateView(EventDetail d, {required DateTime now}) {
+  EventOccurrence? next;
+  for (final date in nominatableDates(d, now: now)) {
+    final start = date.startDate;
+    if (start == null) {
+      next ??= date;
+      continue;
+    }
+    final soonest = next?.startDate;
+    if (soonest == null || start.isBefore(soonest)) next = date;
+  }
+  return next == null ? const EveryDateView() : OneDateView(next.id);
+}
 
 /// The view the location's `date`, [query], opens on [d] (#1042): none
 /// where it has no row ([showsDateRow]); Every date for `all`; the date it

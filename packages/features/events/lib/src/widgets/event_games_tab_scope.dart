@@ -141,11 +141,16 @@ class EventGamesTabController extends ChangeNotifier {
   }
 
   /// Whether any nomination [state] holds is in the date view
-  /// ([nominationsInView], #519): only those the client knows. None read
-  /// yet, hidden, or a first read that failed, counts as none.
+  /// ([nominationsInView], #519), or may be: only those the client knows.
+  /// None read yet, or hidden, counts as none. A read that failed can't say
+  /// none are, so it counts as some: the section, and its Try again, stay
+  /// reachable until a read that answers says (#519).
   bool nominationsInViewExist(EventNominationsState state) =>
-      drawnNominationsLoad(state) != EventNominationsLoad.hidden &&
-      nominationsInView(_dateView, state.nominations).isNotEmpty;
+      switch (drawnNominationsLoad(state)) {
+        EventNominationsLoad.hidden => false,
+        EventNominationsLoad.failed => true,
+        _ => nominationsInView(_dateView, state.nominations).isNotEmpty,
+      };
 
   /// Tells the listeners the chosen sub-tab changed. For the scope only,
   /// which calls it once for each change, as the change starts, the way the

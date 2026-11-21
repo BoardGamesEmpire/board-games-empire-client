@@ -114,6 +114,27 @@ void main() {
     expect(tester.widget<ChoiceChip>(chip('o-1')).selected, isFalse);
   });
 
+  testWidgets('a row that comes to overflow asks for the frame that says so', (
+    tester,
+  ) async {
+    useViewSize(tester, const Size(2000, 600));
+    await tester.pumpWidget(app(dates(3)));
+    await tester.pumpAndSettle();
+    bool overflows() =>
+        tester.widget<DatesScroller>(find.byType(DatesScroller)).overflows;
+    expect(overflows(), isFalse);
+    expect(tester.binding.hasScheduledFrame, isFalse);
+
+    // The resize's own frame lays the row out narrower; nothing else asks
+    // for another.
+    useViewSize(tester, const Size(300, 600));
+    await tester.pump();
+
+    expect(tester.binding.hasScheduledFrame, isTrue);
+    await tester.pump();
+    expect(overflows(), isTrue);
+  });
+
   testWidgets('tapping a date chooses it', (tester) async {
     useViewSize(tester, const Size(800, 600));
     await tester.pumpWidget(app(dates(3)));

@@ -5,6 +5,7 @@ import 'package:bge_test_support/widgets.dart';
 import 'package:events/events.dart';
 import 'package:events/l10n/events_localizations.dart';
 import 'package:events/src/widgets/event_games_footer.dart';
+import 'package:events/src/widgets/event_games_tab_scope.dart';
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -6380,6 +6381,32 @@ void main() {
 
       await chooseDate(tester, 'd-1');
       expect(nominateOn(azul.id), findsOneWidget);
+    });
+
+    testWidgets("an open quick look's Nominate follows a date the location "
+        'names meanwhile', (tester) async {
+      final quickLook = find.byKey(EventDetailScreen.quickLookKey);
+      final nominateIn = find.descendant(
+        of: quickLook,
+        matching: find.byKey(EventDetailScreen.quickLookNominateKey),
+      );
+      await showGames(
+        tester,
+        detail: twoDated(overrides: [hostOnlyOn('d-2')]),
+      );
+      // Friday, which needs a vote.
+      await press(tester, head(azul.id));
+      await animate(tester);
+      expect(nominateIn, findsOneWidget);
+
+      // Back or Forward names Saturday, where only the hosts add games, with
+      // no bloc changing.
+      final controller = EventGamesTabScope.of(tester.element(quickLook));
+      controller.takeDate('d-2', now: controller.clock());
+      await animate(tester);
+
+      expect(quickLook, findsOneWidget);
+      expect(nominateIn, findsNothing);
     });
 
     testWidgets('a date started, or cancelled, has Nominate disabled, saying '

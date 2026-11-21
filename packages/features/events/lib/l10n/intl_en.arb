@@ -602,7 +602,7 @@
   },
   "eventsGamesDatesLabel": "Dates",
   "@eventsGamesDatesLabel": {
-    "description": "Name of the row of date chips above the sub-tabs of the Games tab of an event's screen, on an event with two dates or more, read by a screen reader as it enters the row. The row chooses which date the Lineup, Nominations and Pool sub-tabs show."
+    "description": "Name of the row of date chips above the sub-tabs of the Games tab of an event's screen, on an event with two dates or more, read by a screen reader as it enters the row. The row chooses which date the Lineup and Nominations sub-tabs show. The Pool sub-tab lists the same games whichever is chosen; the date decides only what a game in the pool can be nominated for, and under which rules."
   },
   "eventsGamesEveryDate": "Every date",
   "@eventsGamesEveryDate": {
@@ -1218,7 +1218,7 @@
   },
   "eventsNominate": "Nominate",
   "@eventsNominate": {
-    "description": "Button under a game in the games pool on the Games tab of an event's screen, the games people offer to bring: it puts the game forward for the event's lineup, for everyone to vote on or a host to approve. On an event of more than one date it first asks which (eventsNominateTitle). Screen readers hear eventsNominateNamed instead."
+    "description": "Button under a game in the games pool on the Games tab of an event's screen, the games people offer to bring: it puts the game forward for the event's lineup, for everyone to vote on or a host to approve. On an event of more than one date it nominates for the date chosen in the row of dates above the sub-tabs (eventsGamesDatesLabel), or for the whole event under Every date (eventsGamesEveryDate), without asking. Screen readers hear eventsNominateNamed instead."
   },
   "eventsNominatedNamed": "Nominated: {title}",
   "@eventsNominatedNamed": {

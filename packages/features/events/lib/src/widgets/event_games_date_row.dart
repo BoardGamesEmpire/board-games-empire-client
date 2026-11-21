@@ -141,11 +141,11 @@ class _EventGamesDateRowState extends State<EventGamesDateRow> {
 
   bool _onMetrics(ScrollMetricsNotification notification) {
     final overflows = notification.metrics.maxScrollExtent > 0;
-    if (overflows != _overflows) {
-      // Not while the scroller lays out.
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) setState(() => _overflows = overflows);
-      });
+    // The scroller sends its metrics after the frame that laid it out, not
+    // during that layout, so this can build again at once. A post-frame
+    // callback would wait for a frame nothing asks for.
+    if (overflows != _overflows && mounted) {
+      setState(() => _overflows = overflows);
     }
     return false;
   }

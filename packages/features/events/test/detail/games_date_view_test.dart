@@ -113,15 +113,31 @@ void main() {
       );
     });
 
-    test('a date still to be set counts as still to come, in the order of '
-        'the dates', () {
+    test('the earliest start opens, whatever the order of the dates', () {
+      // As where the 3rd is added after the 10th, and takes the next place.
+      final d = detail([
+        date('later', later),
+        date('soon', soon, order: 1),
+      ]);
+
+      expect(defaultDateView(d, now: now), const OneDateView('soon'));
+    });
+
+    test('a date still to be set counts as still to come, after those with '
+        'a start, in the order of the dates', () {
       final d = detail([
         date('later', later, order: 2),
         date('tbd', null, order: 1),
         date('passed', passed),
       ]);
+      expect(defaultDateView(d, now: now), const OneDateView('later'));
 
-      expect(defaultDateView(d, now: now), const OneDateView('tbd'));
+      final unset = detail([
+        date('tbd-2', null, order: 2),
+        date('tbd-1', null, order: 1),
+        date('passed', passed),
+      ]);
+      expect(defaultDateView(unset, now: now), const OneDateView('tbd-1'));
     });
 
     test('a cancelled date is passed over', () {

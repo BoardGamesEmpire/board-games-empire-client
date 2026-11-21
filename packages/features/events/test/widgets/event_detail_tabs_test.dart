@@ -16,6 +16,8 @@ import 'package:game_filters/game_filters.dart' show GameFiltersLocalizations;
 import 'package:interfaces/repositories.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
+import 'package:network_interface/network_interface.dart'
+    show EventRemoteTransientException;
 import 'package:ui_tokens/ui_tokens.dart';
 
 import '../support/event_list_items.dart';
@@ -1522,6 +1524,43 @@ void main() {
 
         expect(section(EventGamesSection.nominations), findsOneWidget);
         expect(sections(tester).length, 3);
+      });
+
+      testWidgets('a HostOnly date keeps Nominations, and its Try again, '
+          "while a read that failed can't say none are in view", (
+        tester,
+      ) async {
+        var offline = true;
+        await open(
+          tester,
+          'lineup',
+          date: 'o-2',
+          remote: FakeEventRemote.detail(
+            (_) => dated.snapshot,
+            pool: (_) => const [],
+            nominations: (_) => offline
+                ? throw const EventRemoteTransientException('offline')
+                : const <EventNomination>[],
+          ),
+        );
+        cache.add(dated);
+        await tester.pumpAndSettle();
+
+        expect(section(EventGamesSection.nominations), findsOneWidget);
+        expect(sections(tester).length, 3);
+
+        await tester.tap(section(EventGamesSection.nominations));
+        await tester.pumpAndSettle();
+        final tryAgain = find.byKey(EventDetailScreen.nominationsRetryKey);
+        expect(tryAgain, findsOneWidget);
+
+        // A read that answers settles it: none are in view.
+        offline = false;
+        await tester.tap(tryAgain);
+        await tester.pumpAndSettle();
+
+        expect(section(EventGamesSection.nominations), findsNothing);
+        expect(sections(tester).length, 2);
       });
 
       testWidgets('a HostOnly date keeps Nominations for a whole-event one, '
