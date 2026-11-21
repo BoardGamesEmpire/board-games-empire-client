@@ -8,8 +8,8 @@ import 'package:web_network/web_network.dart'
         providerSignInMarkerKey,
         readProviderSignInReturn;
 
-/// The browser half of a provider sign-in (#583), captured by
-/// `bgeWebPlatformBootstrap` and handed to the repository through
+/// The browser half of a provider sign-in (#583) or link (#582), captured
+/// by `bgeWebPlatformBootstrap` and handed to the repository through
 /// `buildWebServerScope`.
 ///
 /// Here rather than in `web_network`, which compiles for every target and so
@@ -19,12 +19,14 @@ import 'package:web_network/web_network.dart'
 /// Reads what this page load brought back from a provider, synchronously, so
 /// that `main()` runs it before the router can rewrite the address:
 ///
-/// 1. Reads the return id the marker holds, set by a provider sign-in before
-///    it left the page, and removes the marker whatever the load, so that no
-///    later load can read it again.
-/// 2. Reads the address with it ([readProviderSignInReturn]). The load is the
-///    attempt's return only when the address carries the same return id, as
-///    the server's redirect back does. Back from the provider page, a reload
+/// 1. Reads the marker, set by a provider sign-in or link before it left the
+///    page, and removes it whatever the load, so that no later load can read
+///    it again. It holds the attempt's return id, and for a link the
+///    provider too (#582).
+/// 2. Reads the address with it ([readProviderSignInReturn]), which also
+///    tells a link's return from a sign-in's. The load is the attempt's
+///    return only when the address carries the marker's return id, as the
+///    server's redirect back does. Back from the provider page, a reload
 ///    of the page that left, and an address the user reaches by hand in the
 ///    same tab after giving up on the provider, a typed address or a
 ///    bookmark, all keep the marker but not the id. Taken as a return with no
@@ -50,11 +52,11 @@ import 'package:web_network/web_network.dart'
 /// Call it once per page load: a second call finds the marker gone and reads
 /// no return.
 ///
-/// The bindings' page navigator sets the marker to the attempt's return id,
-/// then navigates the page to the provider. A browser that refuses session
-/// storage refuses the marker too, so the navigator throws and the page
-/// stays: its return would be read as no return at all, and a refusal would
-/// go unexplained.
+/// The bindings' page navigator sets the marker it is given, a sign-in's
+/// return id or a link's marker, then navigates the page to the provider. A
+/// browser that refuses session storage refuses the marker too, so the
+/// navigator throws and the page stays: its return would be read as no
+/// return at all, and a refusal would go unexplained.
 ///
 /// Nothing here logs the address, which carries the provider's own `state` on
 /// the way out and its error on the way back.
@@ -98,8 +100,8 @@ WebProviderSignInBindings captureWebProviderSignIn({
   );
 }
 
-/// The return id the marker holds, or null when it is not set, removing it
-/// either way.
+/// What the marker holds, or null when it is not set, removing it either
+/// way.
 ///
 /// Null where the browser refuses session storage, which it does by throwing
 /// on access when site data is blocked. No sign-in could have set a marker
@@ -107,9 +109,9 @@ WebProviderSignInBindings captureWebProviderSignIn({
 String? _takeMarker() {
   try {
     final storage = web.window.sessionStorage;
-    final returnId = storage.getItem(providerSignInMarkerKey);
+    final marker = storage.getItem(providerSignInMarkerKey);
     storage.removeItem(providerSignInMarkerKey);
-    return returnId;
+    return marker;
   } on Object catch (error) {
     _log.warn(
       'Session storage is unavailable; this page load is not read as a '
@@ -134,7 +136,7 @@ void _listenForPageShow(
 }
 
 /// Reloads a page the back-forward cache restored after it left for a
-/// provider, removing the marker first.
+/// provider, to sign in or to link, removing the marker first.
 ///
 /// The reload is a load of type `reload` with no marker, so it starts as any
 /// other: no banner, and live buttons. Never throws: it runs in a browser
@@ -161,12 +163,13 @@ void _settleCacheRestore({
 
 void _reload() => web.window.location.reload();
 
-/// Sets the marker to [returnId], then navigates the page to [url].
+/// Sets the marker to [marker], a sign-in's return id or a link's marker,
+/// then navigates the page to [url].
 ///
 /// The marker goes first: a page that leaves without it comes back to an
 /// address that is not read as a return.
-void _leavePageFor(Uri url, String returnId) {
-  web.window.sessionStorage.setItem(providerSignInMarkerKey, returnId);
+void _leavePageFor(Uri url, String marker) {
+  web.window.sessionStorage.setItem(providerSignInMarkerKey, marker);
   web.window.location.assign(url.toString());
 }
 

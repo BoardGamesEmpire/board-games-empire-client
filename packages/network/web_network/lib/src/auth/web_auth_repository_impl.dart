@@ -13,12 +13,18 @@ import 'package:dio_network/dio_network.dart'
         decodeAuthBody,
         decodeJsonBody,
         isAuthSuccessStatus,
+        linkProviderPath,
+        listSignInMethodsPath,
         mapAuthDioException,
         postSignIn,
         postSignUp,
         rateLimitedFrom,
         readSessionStatus,
-        requireEmailPasswordStrategy;
+        readSignInMethods,
+        requireEmailPasswordStrategy,
+        sendSignInMethodsRequest,
+        signInMethodsRefusal,
+        unlinkSignInMethodPath;
 import 'package:http_status/http_status.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
@@ -66,6 +72,15 @@ import 'package:web_network/src/auth/session_channel.dart';
 /// handed in with the bindings: a refusal goes to [takeProviderSignInReturn]
 /// once, and a success is announced to the other tabs (see
 /// [_providerReturnUnannounced]).
+///
+/// ## Sign-in methods (#582)
+///
+/// [listSignInMethods] and [unlinkSignInMethod] are plain requests that the
+/// cookie authenticates, classified as the native repository's are.
+/// [linkProvider] leaves the page for the provider as [signInWithProvider]
+/// does, with a marker that records the link, and comes back to the page it
+/// names. That load's result goes to [takeProviderLinkReturn] once, and is
+/// never a sign-in's: a link moves no session, so nothing is announced.
 class WebAuthRepositoryImpl implements AuthRepository, Disposable {
   WebAuthRepositoryImpl({
     required this._identity,
@@ -75,7 +90,7 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
     this._pageLeaveGrace = defaultPageLeaveGrace,
   }) : _stateController = StreamController<AuthState>.broadcast(sync: true) {
     _providerReturnUnannounced = switch (_providerSignIn?.startupReturn) {
-      WebProviderSignInReturn(errorCode: null) => true,
+      WebProviderSignInReturn(errorCode: null, linkProviderId: null) => true,
       _ => false,
     };
   }
@@ -97,8 +112,18 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
   /// return, so that it hands it out once (#583).
   bool _providerReturnTaken = false;
 
+  /// Whether [takeProviderLinkReturn] has handed out this page load's link
+  /// return, so that it hands it out once (#582), or dropped it because this
+  /// tab showed someone other than the user who started the link
+  /// ([_dropLinkReturnOnSessionChange]). Apart
+  /// from [_providerReturnTaken]: neither take consumes the other's.
+  bool _providerLinkReturnTaken = false;
+
   /// Whether this page load is a provider sign-in's successful return that
   /// the other tabs have not heard of yet (#583).
+  ///
+  /// Never a link's return (#582): a link moves no session, and the session
+  /// the page came back to is one the other tabs already know.
   ///
   /// The server set the cookie on its own callback, before this page loaded,
   /// so no grant here saw it and nothing announced it. The first [getSession]
@@ -1056,15 +1081,7 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
       );
     }
 
-    try {
-      providerSignIn.leavePageFor(address, returnId);
-    } on Object catch (error) {
-      // Neither the error nor its message is kept: a browser's refusal to
-      // navigate quotes the address it refused.
-      _log.warn(
-        'Could not leave the page for the sign-in provider',
-        context: {'cause': error.runtimeType.toString()},
-      );
+    if (!_leavePageFor(providerSignIn, address, marker: returnId)) {
       throw const AuthProviderSignInException(
         ProviderSignInFailureReason.generic,
         message: 'The page could not leave for the sign-in provider.',
@@ -1137,6 +1154,28 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
     return (address: address, failedCheck: null);
   }
 
+  /// Sets [marker] and sends the page to [address] through [bindings], for a
+  /// sign-in (#583) or a link (#582). False when the browser refused.
+  ///
+  /// Neither the error nor its message is kept: a browser's refusal to
+  /// navigate quotes the address it refused.
+  bool _leavePageFor(
+    WebProviderSignInBindings bindings,
+    Uri address, {
+    required String marker,
+  }) {
+    try {
+      bindings.leavePageFor(address, marker);
+      return true;
+    } on Object catch (error) {
+      _log.warn(
+        'Could not leave the page for the sign-in provider',
+        context: {'cause': error.runtimeType.toString()},
+      );
+      return false;
+    }
+  }
+
   /// A start request that threw. With a response attached (an injected Dio
   /// that throws on a non-2xx) it is classified as a resolved one is; without
   /// one, it is the transport failure it looks like.
@@ -1184,12 +1223,19 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
   ///
   /// Once per repository. A page load builds one repository: the bootstrap
   /// builds another only after a failed attempt, whose scope nothing read.
+  ///
+  /// Never a link's return, whose refusal is [takeProviderLinkReturn]'s
+  /// alone (#582).
   @override
   AuthProviderSignInException? takeProviderSignInReturn() {
     if (_providerReturnTaken) return null;
     _providerReturnTaken = true;
 
-    final code = _providerSignIn?.startupReturn?.errorCode;
+    final startupReturn = _providerSignIn?.startupReturn;
+    if (startupReturn == null || startupReturn.linkProviderId != null) {
+      return null;
+    }
+    final code = startupReturn.errorCode;
     if (code == null) return null;
 
     // Mapped by the code alone. `error_description` never reaches here.
@@ -1203,6 +1249,215 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
     );
   }
 
+  /// `list-accounts`, which the cookie authenticates (#582).
+  @override
+  Future<List<SignInMethod>> listSignInMethods() async {
+    final response = await sendSignInMethodsRequest(
+      (options) => _dio.get<String>(
+        listSignInMethodsPath(_identity),
+        options: options,
+      ),
+      options: _plainBody,
+      context: 'listing sign-in methods',
+    );
+    return readSignInMethods(response, decode: _decodeJson);
+  }
+
+  /// Whenever the page can leave for a provider (#582).
+  @override
+  bool get providerLinkSupported => _providerSignIn != null;
+
+  /// Web provider link (#582): posts `link-social`, then leaves the page for
+  /// the address the server answers with, as [signInWithProvider] does.
+  ///
+  /// The server sends the browser back to [returnPath] carrying a return id
+  /// this attempt chose ([providerLinkCallback]), for a success and a failure
+  /// alike. The page navigator keeps the same id in a marker that records the
+  /// link and its provider ([providerLinkMarker]), so the page load that
+  /// comes back reads as this link's return, and never as a sign-in's. Its
+  /// result goes to [takeProviderLinkReturn].
+  ///
+  /// A refusal is classified by [signInMethodsRefusal], as listing and
+  /// unlinking are: a 429 is a rate limit, a refusal with a code is an
+  /// [AuthProviderLinkException] worded by that code (a stale session answers
+  /// 403 `PROVIDER_LINK_NEEDS_RECENT_SIGN_IN`), and one with no code is a
+  /// server fault. A success that names no address to leave for is the
+  /// generic failure. Either way the page stays where it is. The request
+  /// waits [providerStartReceiveTimeout] for its answer, as a sign-in's start
+  /// does.
+  ///
+  /// A link moves no session: it is no credential grant, and nothing is
+  /// announced to the other tabs.
+  ///
+  /// The link the server starts belongs to the session that asked for it. A
+  /// session change while the start request is out, a sign-in or a sign-out
+  /// here or in another tab, or a session read that finds another user or
+  /// none, is the newer intent: the page stays, and the call throws
+  /// [AuthSupersededException], so the provider is never linked to an
+  /// account this tab no longer shows. Unlike [signInWithProvider], a
+  /// sign-out counts, because it ends the session the link was for.
+  ///
+  /// A page that leaves never sees this call complete. One that is still
+  /// here [defaultPageLeaveGrace] later was stopped from leaving, and the
+  /// call completes so the screen comes back to rest. The marker stays: a
+  /// navigation that was only slow still lands as a return.
+  @override
+  Future<void> linkProvider(
+    OidcStrategy strategy, {
+    required String returnPath,
+  }) async {
+    final providerSignIn = _providerSignIn;
+    if (providerSignIn == null) {
+      // The screen disables Link in this case, so reaching here is a caller
+      // that skipped [providerLinkSupported]. Refused before any request.
+      _log.warn(
+        'Refusing to start a provider link that is not available here',
+        context: {'check': 'device'},
+      );
+      throw const AuthProviderLinkException(
+        ProviderLinkFailureReason.generic,
+        message: 'Linking a sign-in provider is not available here.',
+      );
+    }
+
+    final returnId = newProviderSignInReturnId();
+    final callback = providerLinkCallback(returnPath, returnId);
+    // Before the first await, so that a session change while the start is
+    // out moves one of them: a sign-in here or in another tab moves
+    // [_credentialGrants], and a sign-out here or in another tab moves
+    // [_sessionEpoch].
+    final grantsAtStart = _credentialGrants;
+    final epochAtStart = _sessionEpoch;
+    // Neither counter moves for a session read that finds another user, or
+    // none, without a broadcast: a session the server ended, or another
+    // tab's sign-in read here before that tab announced it. The user this
+    // tab shows is the third check, and the marker names them, so that the
+    // return is theirs alone.
+    final userAtStart = _shownUserId;
+    if (userAtStart == null) {
+      _log.info('No user is shown, so the provider link does not start');
+      throw const AuthSupersededException(
+        message: 'No user is signed in here, so the link did not start.',
+      );
+    }
+
+    // Relative, as the sign-in's start is: this Dio's base URL is the page
+    // origin, which is also why the server's origin check accepts a relative
+    // callback.
+    final response = await sendSignInMethodsRequest(
+      (options) => _dio.post<String>(
+        linkProviderPath(_identity),
+        data: {
+          'provider': strategy.providerId,
+          'callbackURL': callback,
+          'errorCallbackURL': callback,
+        },
+        options: options,
+      ),
+      options: _plainBody.copyWith(receiveTimeout: providerStartReceiveTimeout),
+      context: 'linking a sign-in provider',
+    );
+
+    final (:address, :failedCheck) = await _providerAddress(response);
+    if (address == null) {
+      _log.warn(
+        'The provider link start named no address to leave for',
+        context: {'check': failedCheck, 'status': response.statusCode},
+      );
+      throw const AuthProviderLinkException(
+        ProviderLinkFailureReason.generic,
+        message: 'The server named no address for the provider link.',
+      );
+    }
+
+    // Nothing suspends between this check and the navigation.
+    if (_credentialGrants != grantsAtStart ||
+        _sessionEpoch != epochAtStart ||
+        _shownUserId != userAtStart) {
+      _log.info(
+        'The session changed while the provider link was starting; the page '
+        'stays',
+      );
+      throw const AuthSupersededException(
+        message:
+            'The session changed while the provider link was starting, so '
+            'the page stayed.',
+      );
+    }
+
+    final marker = providerLinkMarker(
+      strategy.providerId,
+      returnId,
+      userAtStart,
+    );
+    if (!_leavePageFor(providerSignIn, address, marker: marker)) {
+      throw const AuthProviderLinkException(
+        ProviderLinkFailureReason.generic,
+        message: 'The page could not leave to link the sign-in provider.',
+      );
+    }
+
+    _log.info('Left the page to link a sign-in provider');
+    await Future<void>.delayed(_pageLeaveGrace);
+    _log.info('The page did not leave to link a sign-in provider');
+  }
+
+  /// The user this tab shows as signed in, or null when it shows none.
+  String? get _shownUserId => switch (_currentState) {
+    AuthStateAuthenticated(:final session) => session.user.id,
+    _ => null,
+  };
+
+  /// `unlink-account` with the row's id, which the cookie authenticates
+  /// (#582).
+  @override
+  Future<void> unlinkSignInMethod(String id) async {
+    await sendSignInMethodsRequest(
+      (options) => _dio.post<String>(
+        unlinkSignInMethodPath(_identity),
+        data: {'accountId': id},
+        options: options,
+      ),
+      options: _plainBody,
+      context: 'unlinking a sign-in method',
+    );
+  }
+
+  /// How the link this page load came back from ended, once (#582).
+  ///
+  /// Once per repository, as [takeProviderSignInReturn] is, and apart from
+  /// it: neither take consumes the other's return, and a sign-in's return is
+  /// never this one's. A refusal is mapped by its code alone, and an empty
+  /// code is the generic failure.
+  @override
+  ProviderLinkReturn? takeProviderLinkReturn() {
+    if (_providerLinkReturnTaken) return null;
+    _providerLinkReturnTaken = true;
+
+    final startupReturn = _providerSignIn?.startupReturn;
+    final providerId = startupReturn?.linkProviderId;
+    if (startupReturn == null || providerId == null) return null;
+
+    final code = startupReturn.errorCode;
+    if (code == null) {
+      _log.info('The provider link came back linked');
+      return ProviderLinkSucceeded(providerId);
+    }
+
+    // `error_description` never reaches here.
+    _log.warn(
+      'The provider link came back with an error',
+      context: {'code': code},
+    );
+    return ProviderLinkFailed(
+      providerId,
+      AuthProviderLinkException(
+        ProviderLinkFailureReason.forCode(code),
+        code: code,
+      ),
+    );
+  }
+
   @override
   Stream<AuthState> watchAuthState() {
     return replayThenForward(
@@ -1213,7 +1468,34 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
 
   void _setState(AuthState next) {
     _currentState = next;
+    _dropLinkReturnOnSessionChange(next);
     if (!_stateController.isClosed) _stateController.add(next);
+  }
+
+  /// Drops this page load's link return, untaken, once this tab shows
+  /// anyone but the user who started the link (#582): no session, or a
+  /// session for another user. The server linked the provider to the user
+  /// the marker names ([providerLinkMarker]), so nobody else hears its
+  /// result: not a user another tab signed in before the page came back, and
+  /// not whoever signs in next on this page.
+  ///
+  /// Dropped once, it stays dropped. A return the screen has already taken
+  /// is not affected.
+  void _dropLinkReturnOnSessionChange(AuthState next) {
+    if (_providerLinkReturnTaken) return;
+    final linkUserId = _providerSignIn?.startupReturn?.linkUserId;
+    if (linkUserId == null) return;
+    final notTheirs = switch (next) {
+      AuthStateAuthenticated(:final session) => session.user.id != linkUserId,
+      AuthStateUnauthenticated() => true,
+      _ => false,
+    };
+    if (!notTheirs) return;
+    _providerLinkReturnTaken = true;
+    _log.info(
+      'Dropped the provider link return: this tab no longer shows the user '
+      'who started it',
+    );
   }
 
   void _announce(SessionChange change) {

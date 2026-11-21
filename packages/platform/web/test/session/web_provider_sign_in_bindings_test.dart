@@ -6,6 +6,7 @@ import 'package:web/web.dart' as web;
 import 'package:web_network/web_network.dart'
     show
         WebProviderSignInBindings,
+        providerLinkMarker,
         providerSignInMarkerKey,
         providerSignInReturnKey;
 import 'package:web_platform/web_storage_composition.dart';
@@ -38,6 +39,11 @@ void main() {
 
   void leftForProvider() =>
       web.window.sessionStorage.setItem(providerSignInMarkerKey, returnId);
+
+  void leftToLink() => web.window.sessionStorage.setItem(
+    providerSignInMarkerKey,
+    providerLinkMarker('authentik', returnId, 'user-1'),
+  );
 
   /// The test page's address with [query] added, as the server would send
   /// the user back to it. The server's redirect carries the attempt's
@@ -88,6 +94,22 @@ void main() {
 
       expect(captured.startupReturn, isNotNull);
       expect(captured.startupReturn!.errorCode, isNull);
+      expect(captured.startupReturn!.linkProviderId, isNull);
+      expect(marker(), isNull);
+      expect(web.window.location.href, original);
+    });
+
+    test("with a link's marker and its return id, reads a link return "
+        'naming the provider, and takes the id out of the address '
+        '(#582)', () {
+      leftToLink();
+      cameBackWith({providerSignInReturnKey: returnId});
+
+      final captured = capture();
+
+      expect(captured.startupReturn?.linkProviderId, 'authentik');
+      expect(captured.startupReturn?.linkUserId, 'user-1');
+      expect(captured.startupReturn?.errorCode, isNull);
       expect(marker(), isNull);
       expect(web.window.location.href, original);
     });
@@ -167,6 +189,16 @@ void main() {
     test('from the back-forward cache after leaving for a provider is '
         'reloaded once, with the marker gone', () {
       leftForProvider();
+
+      pageShown(persisted: true);
+
+      expect(marker(), isNull);
+      expect(reloads, 1);
+    });
+
+    test('from the back-forward cache after leaving to link a provider is '
+        'reloaded once, with the marker gone (#582)', () {
+      leftToLink();
 
       pageShown(persisted: true);
 

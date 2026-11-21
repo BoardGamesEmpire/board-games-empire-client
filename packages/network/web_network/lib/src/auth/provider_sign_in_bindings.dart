@@ -1,8 +1,9 @@
 import 'dart:convert' show base64Url;
 import 'dart:math' show Random;
 
-/// The sessionStorage key a provider sign-in sets before it leaves the page.
-/// Its value is the attempt's return id.
+/// The sessionStorage key a provider sign-in or link sets before it leaves
+/// the page. Its value is the marker: the attempt's bare return id for a
+/// sign-in, and [providerLinkMarker] for a link (#582).
 const String providerSignInMarkerKey = 'bge.providerSignIn.pending';
 
 /// The query key that carries an attempt's return id on the address the
@@ -29,39 +30,108 @@ String providerSignInCallback(String returnId) => Uri(
   queryParameters: {providerSignInReturnKey: returnId},
 ).toString();
 
-/// The two browser hooks a web provider sign-in needs, injected so the
-/// VM-testable code never touches `package:web`.
+/// The marker a provider link sets before it leaves the page (#582):
+/// `link:`, the provider id, `:`, the attempt's return id, `:`, and the id
+/// of the user who started it.
+///
+/// The purpose rides in the marker so that a link's return is never read as
+/// a sign-in. The user rides in it because the server links the provider to
+/// that user, while the page may come back to another: a sign-in in another
+/// tab swaps the shared cookie. Neither the provider id nor the return id
+/// holds a `:`: provider ids are `[a-z0-9-]`, and return ids are base64url
+/// ([newProviderSignInReturnId]). The user id comes last, so it may. Nor
+/// does a bare return id start with `link:`, so the two kinds of marker
+/// cannot be mistaken for each other.
+String providerLinkMarker(String providerId, String returnId, String userId) =>
+    '$_linkMarkerPrefix$providerId:$returnId:$userId';
+
+/// The relative address the server sends the browser back to after the link
+/// attempt [returnId] names (#582), for a success and a failure alike:
+/// [returnPath], carrying the id under [providerSignInReturnKey]. The server
+/// adds `error` (and `error_description`) to it for a failure.
+String providerLinkCallback(String returnPath, String returnId) => Uri(
+  path: returnPath,
+  queryParameters: {providerSignInReturnKey: returnId},
+).toString();
+
+/// The two browser hooks a web provider sign-in or link needs, injected so
+/// the VM-testable code never touches `package:web`.
 final class WebProviderSignInBindings {
   const WebProviderSignInBindings({
     required this.leavePageFor,
     this.startupReturn,
   });
 
-  /// Sets the marker to `returnId`, then navigates the page to `url`.
-  final void Function(Uri url, String returnId) leavePageFor;
+  /// Sets the marker to `marker`, then navigates the page to `url`.
+  ///
+  /// `marker` is a sign-in's bare return id, or a link's
+  /// [providerLinkMarker].
+  final void Function(Uri url, String marker) leavePageFor;
 
   /// What this page load brought back, read once in main().
   final WebProviderSignInReturn? startupReturn;
 }
 
-/// A page load after a provider sign-in left the page. [errorCode] is null for
-/// a success.
+/// A page load after a provider sign-in or link left the page. [errorCode] is
+/// null for a success.
 final class WebProviderSignInReturn {
-  const WebProviderSignInReturn({this.errorCode});
+  const WebProviderSignInReturn({
+    this.errorCode,
+    this.linkProviderId,
+    this.linkUserId,
+  }) : assert(
+         (linkProviderId == null) == (linkUserId == null),
+         "A link's return names its provider and its user, a sign-in's "
+         'neither.',
+       );
 
   final String? errorCode;
+
+  /// The provider a link's return was for, or null for a sign-in's return
+  /// (#582).
+  final String? linkProviderId;
+
+  /// The user who started the link, or null for a sign-in's return (#582).
+  /// The return is theirs alone.
+  final String? linkUserId;
 }
 
 const String _errorKey = 'error';
 const String _errorDescriptionKey = 'error_description';
+const String _linkMarkerPrefix = 'link:';
+
+/// What [marker] says: the return id to match, and for a link the provider
+/// and the user who started it. Null for no marker: none at all, an empty
+/// one, or a `link:` marker that does not split into a provider id, a return
+/// id and a user id, all non-empty.
+///
+/// A `link:` marker is never read as a sign-in's bare return id.
+({String returnId, ({String providerId, String userId})? link})? _readMarker(
+  String? marker,
+) {
+  if (marker == null || marker.isEmpty) return null;
+  if (!marker.startsWith(_linkMarkerPrefix)) {
+    return (returnId: marker, link: null);
+  }
+
+  final parts = marker.substring(_linkMarkerPrefix.length).split(':');
+  if (parts.length < 3) return null;
+  final [providerId, returnId, ...userIdParts] = parts;
+  final userId = userIdParts.join(':');
+  if (providerId.isEmpty || returnId.isEmpty || userId.isEmpty) return null;
+  return (returnId: returnId, link: (providerId: providerId, userId: userId));
+}
 
 /// Pure: what to make of this page load.
 ///
-/// [marker] is the return id the marker held, or null when there was none to
-/// count. This page load is the attempt's return only when the address
-/// carries that same id under [providerSignInReturnKey]: the server's
-/// redirect back does, and nothing the user reaches by hand in the same tab
-/// does, a typed address or a bookmark included.
+/// [marker] is what the marker held, or null when there was none to count:
+/// a sign-in's bare return id, or a link's [providerLinkMarker] (#582). This
+/// page load is the attempt's return only when the address carries the
+/// marker's return id under [providerSignInReturnKey]: the server's redirect
+/// back does, and nothing the user reaches by hand in the same tab does, a
+/// typed address or a bookmark included. A link's return names its provider
+/// in [WebProviderSignInReturn.linkProviderId] and the user who started it
+/// in [WebProviderSignInReturn.linkUserId], and is never a sign-in's.
 ///
 /// Not a return, a `?error=` in the address is not this tab's to report, and
 /// stays where it is. A return with an `error` key (even an empty one) is a
@@ -89,11 +159,9 @@ readProviderSignInReturn({required String? marker, required Uri address}) {
     return (startupReturn: null, cleanedAddress: null);
   }
   final returnIds = all[providerSignInReturnKey];
+  final read = _readMarker(marker);
   final isReturn =
-      marker != null &&
-      marker.isNotEmpty &&
-      returnIds != null &&
-      returnIds.first == marker;
+      read != null && returnIds != null && returnIds.first == read.returnId;
 
   final errors = isReturn ? all[_errorKey] : null;
   final removed = {
@@ -107,9 +175,11 @@ readProviderSignInReturn({required String? marker, required Uri address}) {
 
   final startupReturn = !isReturn
       ? null
-      : errors == null
-      ? const WebProviderSignInReturn()
-      : WebProviderSignInReturn(errorCode: errors.first);
+      : WebProviderSignInReturn(
+          errorCode: errors?.first,
+          linkProviderId: read.link?.providerId,
+          linkUserId: read.link?.userId,
+        );
 
   if (kept.length == all.length) {
     return (startupReturn: startupReturn, cleanedAddress: null);

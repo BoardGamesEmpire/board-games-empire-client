@@ -56,6 +56,7 @@ export 'src/screens/unknown_server_link_screen.dart';
 export 'src/servers/registered_servers.dart';
 export 'src/settings/entries/data_export_settings_entry.dart';
 export 'src/settings/entries/language_settings_entry.dart';
+export 'src/settings/entries/sign_in_methods_settings_entry.dart';
 export 'src/settings/entries/theme_mode_settings_entry.dart';
 export 'src/settings/locale_cubit.dart';
 export 'src/settings/settings_entry.dart';

@@ -2,6 +2,7 @@ export 'src/auth/auth_wire_errors.dart';
 export 'src/auth/credential_grant_requests.dart';
 export 'src/auth/rate_limited.dart';
 export 'src/auth/session_read_status.dart';
+export 'src/auth/sign_in_methods_wire.dart';
 
 export 'src/data_gateway/data_gateway_remote_data_source_impl.dart';
 

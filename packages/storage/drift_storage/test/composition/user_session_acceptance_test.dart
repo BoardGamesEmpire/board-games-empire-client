@@ -64,6 +64,24 @@ class _FakeAuthRepository implements AuthRepository {
   AuthProviderSignInException? takeProviderSignInReturn() => null;
 
   @override
+  Future<List<SignInMethod>> listSignInMethods() => throw UnimplementedError();
+
+  @override
+  bool get providerLinkSupported => false;
+
+  @override
+  Future<void> linkProvider(
+    OidcStrategy strategy, {
+    required String returnPath,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<void> unlinkSignInMethod(String id) => throw UnimplementedError();
+
+  @override
+  ProviderLinkReturn? takeProviderLinkReturn() => null;
+
+  @override
   Future<AuthResponse?> restoreCachedSession() => throw UnimplementedError();
 
   @override

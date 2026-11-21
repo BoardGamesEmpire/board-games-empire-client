@@ -1,4 +1,5 @@
 import 'package:auth/l10n/auth_localizations.dart';
+import 'package:auth/src/widgets/busy_button_look.dart';
 import 'package:flutter/material.dart';
 import 'package:models/domain.dart';
 import 'package:ui/ui.dart';
@@ -123,50 +124,13 @@ class _OidcButton extends StatelessWidget {
       focusNode: focusNode,
       onPressed: onPressed,
       style: waiting
-          ? _waitingStyle(context, muted: !busy).merge(style)
+          ? inertButtonStyle(context, muted: !busy).merge(style)
           : style,
-      icon: busy ? const _BusySpinner() : const Icon(Icons.login, size: 20),
+      icon: busy
+          ? const BusyButtonSpinner()
+          : const Icon(Icons.login, size: 20),
       // OutlinedButton.icon puts the label in a Flexible, so it wraps.
       label: Text(label),
     );
   }
-
-  /// No answer to a press or a hover, as `BgeShelf`'s button at an end has
-  /// none, and when [muted], drawn as a disabled button is. The focus overlay
-  /// stays: it is how a keyboard user sees where they are.
-  ButtonStyle _waitingStyle(BuildContext context, {required bool muted}) {
-    final disabled = Theme.of(context).disabledColor;
-    return ButtonStyle(
-      foregroundColor: muted ? WidgetStatePropertyAll(disabled) : null,
-      iconColor: muted ? WidgetStatePropertyAll(disabled) : null,
-      side: muted ? WidgetStatePropertyAll(BorderSide(color: disabled)) : null,
-      overlayColor: WidgetStateProperty.resolveWith(
-        (states) => states.contains(WidgetState.focused)
-            ? null
-            : disabled.withValues(alpha: 0),
-      ),
-      mouseCursor: const WidgetStatePropertyAll(SystemMouseCursors.basic),
-      splashFactory: NoSplash.splashFactory,
-      enableFeedback: false,
-    );
-  }
-}
-
-/// The busy button's icon: a spinner scaled with the label beside it, in the
-/// button's icon colour, and mute to a screen reader. The button's label is
-/// what says it is waiting.
-class _BusySpinner extends StatelessWidget {
-  const _BusySpinner();
-
-  @override
-  Widget build(BuildContext context) => ExcludeSemantics(
-    child: SizedBox.square(
-      dimension: BgeTextScale.clampedOf(context)
-          .scale(BgeTokens.of(context).spaceMd),
-      child: CircularProgressIndicator(
-        strokeWidth: 2,
-        color: IconTheme.of(context).color,
-      ),
-    ),
-  );
 }

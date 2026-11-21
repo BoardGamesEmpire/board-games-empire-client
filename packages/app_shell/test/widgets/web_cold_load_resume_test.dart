@@ -1,4 +1,5 @@
 import 'package:app_shell/app_shell.dart';
+import 'package:auth/auth.dart';
 import 'package:bge_test_support/domain.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -157,5 +158,44 @@ void main() {
     await page.history.back();
 
     expect(page.history.leftApp, isTrue);
+  });
+
+  // A provider link returns the browser to the Sign-in methods screen, so a
+  // load there must land on it, signed in now or once the session restores
+  // (#582). The return's id is gone before the router sees the address.
+  group('at /settings/sign-in-methods (#582)', () {
+    testWidgets('resumes there after sign-in', (tester) async {
+      final page = await loadAt(tester, AppRoutes.settingsSignInMethods);
+      expect(page.cubit.state, isA<AppBootstrapNeedsAuth>());
+      expect(page.holder.peek?.location, AppRoutes.settingsSignInMethods);
+
+      await signIn(tester, page.repo);
+
+      final router = routerOf(tester);
+      expect(router.state.fullPath, AppRoutes.settingsSignInMethods);
+      expect(router.state.uri.toString(), AppRoutes.settingsSignInMethods);
+      expect(find.byType(SignInMethodsScreen), findsOneWidget);
+      expect(page.holder.peek, isNull);
+      expect(page.history.locations.last, AppRoutes.settingsSignInMethods);
+    });
+
+    testWidgets('opens there when the session restores at once', (
+      tester,
+    ) async {
+      final page = await loadAt(
+        tester,
+        AppRoutes.settingsSignInMethods,
+        signedIn: true,
+      );
+
+      expect(page.cubit.state, isA<AppBootstrapReady>());
+      expect(
+        routerOf(tester).state.uri.toString(),
+        AppRoutes.settingsSignInMethods,
+      );
+      expect(find.byType(SignInMethodsScreen), findsOneWidget);
+      expect(page.holder.peek, isNull);
+      expect(page.history.allLocations, [AppRoutes.settingsSignInMethods]);
+    });
   });
 }

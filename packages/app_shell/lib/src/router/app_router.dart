@@ -32,6 +32,13 @@ abstract final class AppRoutes {
   static const settingsExport = '$settings/$_settingsExportSegment';
   static const _settingsExportSegment = 'export';
 
+  /// The signed-in user's sign-in methods on the active server (#582): a
+  /// child of [settings], beside [settingsExport]. On web a provider link
+  /// returns the browser here.
+  static const settingsSignInMethods =
+      '$settings/$_settingsSignInMethodsSegment';
+  static const _settingsSignInMethodsSegment = 'sign-in-methods';
+
   /// The household list (#269). Singular, consistent with
   /// [householdCreate] and with the reserved
   /// `/server/:serverId/household/:householdId/invite/:token` deep link.
@@ -532,6 +539,16 @@ typedef SettingsScreenBuilder = Widget? Function(BuildContext context);
 /// the entry is never shown for a route that would fall back.
 typedef DataExportScreenBuilder = Widget? Function(BuildContext context);
 
+/// Builds the sign-in methods screen (#582) for the
+/// [AppRoutes.settingsSignInMethods] route. Supplied by `BgeApp`; returns
+/// null when there is no active server or its container lacks the
+/// `AuthRepository`, in which case the route falls back to
+/// [NotYetAvailableScreen].
+///
+/// The Settings entry that opens it is offered under the same conditions, so
+/// the entry is never shown for a route that would fall back.
+typedef SignInMethodsScreenBuilder = Widget? Function(BuildContext context);
+
 /// Builds the create-household flow (#129) for the
 /// [AppRoutes.householdCreate] route. Supplied by `BgeApp`; returns null at
 /// navigation time when no active server is resolvable or its container
@@ -944,6 +961,7 @@ GoRouter buildAppRouter({
   FeedbackScreenBuilder? feedbackBuilder,
   SettingsScreenBuilder? settingsBuilder,
   DataExportScreenBuilder? dataExportBuilder,
+  SignInMethodsScreenBuilder? signInMethodsBuilder,
   CreateHouseholdScreenBuilder? createHouseholdBuilder,
   HouseholdListScreenBuilder? householdListBuilder,
   HouseholdDetailScreenBuilder? householdDetailBuilder,
@@ -1228,6 +1246,16 @@ GoRouter buildAppRouter({
                     pageBuilder: (context, state) => _materialPage(
                       state,
                       dataExportBuilder?.call(context) ??
+                          const NotYetAvailableScreen(),
+                    ),
+                  ),
+                  // #582: sign-in methods, beside export and for the same
+                  // reason not a [BgeTopLevelRoute].
+                  GoRoute(
+                    path: AppRoutes._settingsSignInMethodsSegment,
+                    pageBuilder: (context, state) => _materialPage(
+                      state,
+                      signInMethodsBuilder?.call(context) ??
                           const NotYetAvailableScreen(),
                     ),
                   ),

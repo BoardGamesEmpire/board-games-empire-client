@@ -14,6 +14,7 @@ class _MockAppBootstrapCubit extends MockCubit<AppBootstrapState>
 /// fallback.
 const _settingsMarkerKey = Key('settings_route_marker');
 const _exportMarkerKey = Key('export_route_marker');
+const _signInMethodsMarkerKey = Key('sign_in_methods_route_marker');
 
 void main() {
   late _MockAppBootstrapCubit cubit;
@@ -27,6 +28,7 @@ void main() {
     required AppBootstrapState initialState,
     SettingsScreenBuilder? settingsBuilder,
     DataExportScreenBuilder? dataExportBuilder,
+    SignInMethodsScreenBuilder? signInMethodsBuilder,
   }) async {
     whenListen(
       cubit,
@@ -39,6 +41,7 @@ void main() {
       refreshListenable: listenable,
       settingsBuilder: settingsBuilder,
       dataExportBuilder: dataExportBuilder,
+      signInMethodsBuilder: signInMethodsBuilder,
     );
     addTearDown(() {
       router.dispose();
@@ -170,6 +173,94 @@ void main() {
 
       expect(find.byKey(_settingsMarkerKey), findsOneWidget);
       expect(find.byKey(_exportMarkerKey), findsNothing);
+    });
+  });
+
+  group('buildAppRouter — sign-in methods route (#582)', () {
+    testWidgets('/settings/sign-in-methods builds the screen when the builder '
+        'answers', (tester) async {
+      final router = await pumpRouter(
+        tester,
+        initialState: const AppBootstrapReady(),
+        signInMethodsBuilder: (_) =>
+            const Scaffold(body: SizedBox(key: _signInMethodsMarkerKey)),
+      );
+
+      router.go(AppRoutes.settingsSignInMethods);
+      await tester.pumpAndSettle();
+
+      expect(AppRoutes.settingsSignInMethods, '/settings/sign-in-methods');
+      expect(find.byKey(_signInMethodsMarkerKey), findsOneWidget);
+    });
+
+    testWidgets('falls back to NotYetAvailableScreen when it returns null', (
+      tester,
+    ) async {
+      final router = await pumpRouter(
+        tester,
+        initialState: const AppBootstrapReady(),
+        signInMethodsBuilder: (_) => null,
+      );
+
+      router.go(AppRoutes.settingsSignInMethods);
+      await tester.pumpAndSettle();
+
+      expect(find.byType(NotYetAvailableScreen), findsOneWidget);
+    });
+
+    testWidgets('falls back to NotYetAvailableScreen with no builder', (
+      tester,
+    ) async {
+      final router = await pumpRouter(
+        tester,
+        initialState: const AppBootstrapReady(),
+      );
+
+      router.go(AppRoutes.settingsSignInMethods);
+      await tester.pumpAndSettle();
+
+      expect(find.byType(NotYetAvailableScreen), findsOneWidget);
+    });
+
+    testWidgets('Back from /settings/sign-in-methods returns to Settings', (
+      tester,
+    ) async {
+      final router = await pumpRouter(
+        tester,
+        initialState: const AppBootstrapReady(),
+        settingsBuilder: (_) =>
+            const Scaffold(body: SizedBox(key: _settingsMarkerKey)),
+        signInMethodsBuilder: (_) =>
+            const Scaffold(body: SizedBox(key: _signInMethodsMarkerKey)),
+      );
+
+      router.go(AppRoutes.settings);
+      await tester.pumpAndSettle();
+      unawaited(router.push(AppRoutes.settingsSignInMethods));
+      await tester.pumpAndSettle();
+      expect(find.byKey(_signInMethodsMarkerKey), findsOneWidget);
+
+      router.pop();
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(_settingsMarkerKey), findsOneWidget);
+      expect(find.byKey(_signInMethodsMarkerKey), findsNothing);
+    });
+
+    testWidgets('is gated behind bootstrap: visiting it while unauthenticated '
+        'redirects to auth', (tester) async {
+      final router = await pumpRouter(
+        tester,
+        initialState: const AppBootstrapNeedsAuth(),
+        signInMethodsBuilder: (_) =>
+            const Scaffold(body: SizedBox(key: _signInMethodsMarkerKey)),
+      );
+
+      router.go(AppRoutes.settingsSignInMethods);
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(_signInMethodsMarkerKey), findsNothing);
+      expect(find.text('Sign in'), findsOneWidget);
     });
   });
 }

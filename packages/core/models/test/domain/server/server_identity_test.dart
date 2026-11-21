@@ -278,5 +278,55 @@ void main() {
         expect(identity.hasOidc, isFalse);
       });
     });
+
+    group('providerLinkingPolicy', () {
+      test('reads bge_provider_linking_policy (#791)', () {
+        final identity = ServerIdentity.fromJson({
+          ..._fullIdentityJson(),
+          'bge_provider_linking_policy': 'AutomaticWhenVerified',
+        });
+
+        expect(
+          identity.providerLinkingPolicy,
+          ProviderLinkingPolicy.automaticWhenVerified,
+        );
+      });
+
+      test('an identity saved without the policy reads as unknown (#791)', () {
+        final identity = ServerIdentity.fromJson(_fullIdentityJson());
+
+        expect(identity.providerLinkingPolicy, ProviderLinkingPolicy.unknown);
+      });
+
+      test('an unrecognised policy reads as unknown', () {
+        final identity = ServerIdentity.fromJson({
+          ..._fullIdentityJson(),
+          'bge_provider_linking_policy': 'SomethingNew',
+        });
+
+        expect(identity.providerLinkingPolicy, ProviderLinkingPolicy.unknown);
+      });
+
+      test('round-trips through toJson', () {
+        final signedIn = ServerIdentity.fromJson({
+          ..._fullIdentityJson(),
+          'bge_provider_linking_policy': 'SignedIn',
+        });
+        final signedInJson = signedIn.toJson();
+        expect(signedInJson['bge_provider_linking_policy'], 'SignedIn');
+        expect(
+          ServerIdentity.fromJson(signedInJson).providerLinkingPolicy,
+          ProviderLinkingPolicy.signedIn,
+        );
+
+        final unknown = ServerIdentity.fromJson(_fullIdentityJson());
+        final unknownJson = unknown.toJson();
+        expect(unknownJson['bge_provider_linking_policy'], isNull);
+        expect(
+          ServerIdentity.fromJson(unknownJson).providerLinkingPolicy,
+          ProviderLinkingPolicy.unknown,
+        );
+      });
+    });
   });
 }

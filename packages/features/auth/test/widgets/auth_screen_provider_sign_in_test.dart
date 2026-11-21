@@ -54,6 +54,15 @@ const _mismatchNote =
     'Sign-in providers only work when this server is reached at '
     '$_configuredAddress.';
 
+const _notLinkedCopy =
+    'An account with this email already exists here. Sign in another way, '
+    'then link this provider from Sign-in methods in Settings.';
+const _notLinkedAutomaticCopy =
+    'An account with this email already exists here, and it '
+    "couldn't be linked automatically because an email address isn't "
+    'confirmed. Sign in another way, then link this provider from Sign-in '
+    'methods in Settings.';
+
 const _genericCopy =
     'Something went wrong signing in with the provider. Try again.';
 
@@ -204,9 +213,7 @@ void main() {
       ProviderSignInFailureReason.emailUnverified:
           "Your sign-in provider hasn't confirmed your email address. Confirm "
           'it with the provider, then try again.',
-      ProviderSignInFailureReason.accountNotLinked:
-          'An account with this email already exists here. Sign in with its '
-          'password instead.',
+      ProviderSignInFailureReason.accountNotLinked: _notLinkedCopy,
       ProviderSignInFailureReason.accessDenied:
           "The sign-in provider didn't allow this sign-in. If you think it "
           "should have, ask this server's administrator.",
@@ -229,6 +236,36 @@ void main() {
       testWidgets('each reason shows its copy: ${reason.name}', (tester) async {
         await pumpScreen(tester);
         states.add(AuthFailureProviderSignIn(reason));
+        await tester.pumpAndSettle();
+
+        expect(
+          find.descendant(of: _banner, matching: find.text(copy)),
+          findsOneWidget,
+        );
+      });
+    }
+
+    const notLinkedByPolicy = {
+      ProviderLinkingPolicy.signedIn: _notLinkedCopy,
+      ProviderLinkingPolicy.automaticWhenVerified: _notLinkedAutomaticCopy,
+      ProviderLinkingPolicy.unknown: _notLinkedCopy,
+    };
+
+    for (final MapEntry(key: policy, value: copy)
+        in notLinkedByPolicy.entries) {
+      testWidgets('each reason shows its copy: accountNotLinked under the '
+          '${policy.name} linking policy', (tester) async {
+        await pumpScreen(
+          tester,
+          identity: testIdentityWithOidc().copyWith(
+            providerLinkingPolicy: policy,
+          ),
+        );
+        states.add(
+          const AuthFailureProviderSignIn(
+            ProviderSignInFailureReason.accountNotLinked,
+          ),
+        );
         await tester.pumpAndSettle();
 
         expect(

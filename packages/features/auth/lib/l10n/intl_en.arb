@@ -127,9 +127,13 @@
   "@authProviderErrorEmailUnverified": {
     "description": "Provider sign-in failure, under the heading authSignInErrorTitle: the provider reports the user's email address as unconfirmed, so this server won't sign them in with it. The fix is with the provider, not this server."
   },
-  "authProviderErrorAccountNotLinked": "An account with this email already exists here. Sign in with its password instead.",
+  "authProviderErrorAccountNotLinked": "An account with this email already exists here. Sign in another way, then link this provider from Sign-in methods in Settings.",
   "@authProviderErrorAccountNotLinked": {
-    "description": "Provider sign-in failure, under the heading authSignInErrorTitle: an account with the provider's email address already exists on this server, and the provider isn't linked to it. For now the only way in is that account's password. #582 adds the next step later (linking the provider from the account's sign-in methods), and will extend this message when it does."
+    "description": "Provider sign-in failure, under the heading authSignInErrorTitle: an account with the provider's email address already exists on this server, and the provider isn't linked to it. Names the next step, linking the provider from Sign-in methods (#582). Shown when the server's provider linking policy is SignedIn, or when it isn't known (#791)."
+  },
+  "authProviderErrorAccountNotLinkedAutomatic": "An account with this email already exists here, and it couldn't be linked automatically because an email address isn't confirmed. Sign in another way, then link this provider from Sign-in methods in Settings.",
+  "@authProviderErrorAccountNotLinkedAutomatic": {
+    "description": "Same failure as authProviderErrorAccountNotLinked, shown when the server's provider linking policy is AutomaticWhenVerified (#791): the server would have linked the provider by itself had both email addresses been confirmed, so the message says that one isn't. The next step is the same, Sign-in methods (#582)."
   },
   "authProviderErrorAccessDenied": "The sign-in provider didn't allow this sign-in. If you think it should have, ask this server's administrator.",
   "@authProviderErrorAccessDenied": {
@@ -296,5 +300,227 @@
         "type": "int"
       }
     }
+  },
+  "signInMethodsTitle": "Sign-in methods",
+  "@signInMethodsTitle": {
+    "description": "Title of the Sign-in methods screen, and of its row in Settings (#582): the ways the signed-in user can sign in to this server, a password or a linked sign-in provider such as a company's single sign-on."
+  },
+  "signInMethodsSettingsSubtitle": "How you sign in to {serverName}",
+  "@signInMethodsSettingsSubtitle": {
+    "description": "Second line of the Sign-in methods row in Settings, in the section for the server the user is signed in to (#582). {serverName} is the name the server gives itself.",
+    "placeholders": {
+      "serverName": {
+        "type": "String",
+        "example": "Board Game Night"
+      }
+    }
+  },
+  "signInMethodsYourMethods": "Your sign-in methods",
+  "@signInMethodsYourMethods": {
+    "description": "Heading over the list of ways the user can sign in now, on the Sign-in methods screen (#582)."
+  },
+  "signInMethodsPassword": "Password",
+  "@signInMethodsPassword": {
+    "description": "Name of the row for the user's password in the list of sign-in methods (#582). The password itself is never shown."
+  },
+  "signInMethodsPasswordNotOffered": "This server no longer accepts sign-in with a password",
+  "@signInMethodsPasswordNotOffered": {
+    "description": "Shown under the Password row in the list of sign-in methods when the server has turned email and password sign-in off (#582). The user still holds a password, but it no longer signs them in, so it doesn't count as a way in, and a provider's Unlink may be withheld because of it. Read together with the row's name, signInMethodsPassword."
+  },
+  "signInMethodsRemovedProvider": "A sign-in provider this server no longer offers",
+  "@signInMethodsRemovedProvider": {
+    "description": "Name of a row for a sign-in provider the user linked once that the server has since stopped offering, on the Sign-in methods screen (#582). Its own name is gone with it, so this stands in for it, as a row's name and in the message after it is unlinked. It can't be used to sign in any more, and can't be linked again."
+  },
+  "signInMethodsLinkedOn": "Linked {date}",
+  "@signInMethodsLinkedOn": {
+    "description": "Second line of a sign-in provider's row on the Sign-in methods screen (#582): when the user linked it, as in 'Linked Nov 3, 2026'.",
+    "placeholders": {
+      "date": {
+        "type": "DateTime",
+        "format": "yMMMd"
+      }
+    }
+  },
+  "signInMethodsLinkSection": "Link a sign-in provider",
+  "@signInMethodsLinkSection": {
+    "description": "Heading over the buttons that link another sign-in provider to the user's account, on the Sign-in methods screen (#582). Only shown while there is a provider left to link."
+  },
+  "signInMethodsLink": "Link {provider}",
+  "@signInMethodsLink": {
+    "description": "Button that links the sign-in provider {provider} to the user's account, so they can sign in with it too (#582). It opens the provider's own page. {provider} is the provider's display name, as the server gives it.",
+    "placeholders": {
+      "provider": {
+        "type": "String",
+        "example": "Authentik"
+      }
+    }
+  },
+  "signInMethodsLinkInProgress": "Linking {provider}…",
+  "@signInMethodsLinkInProgress": {
+    "description": "Label of a Link button while the link it started is on its way to the provider's page (#582). Also the button's screen-reader name, so it says why pressing it does nothing meanwhile. {provider} is the provider's display name, as the server gives it.",
+    "placeholders": {
+      "provider": {
+        "type": "String",
+        "example": "Authentik"
+      }
+    }
+  },
+  "signInMethodsLinkUnavailable": "Linking {provider} isn't available in this app yet. Link it from the web app.",
+  "@signInMethodsLinkUnavailable": {
+    "description": "Label of a disabled Link button where this app can't link a sign-in provider yet (#582): the phone and desktop apps. The label is the only place the reason is given. 'Yet' because support is planned; the web app can link it today. {provider} is the provider's display name, as the server gives it.",
+    "placeholders": {
+      "provider": {
+        "type": "String",
+        "example": "Authentik"
+      }
+    }
+  },
+  "signInMethodsUnlink": "Unlink",
+  "@signInMethodsUnlink": {
+    "description": "Button under a sign-in provider's row that removes it from the user's ways in, after asking first (#582). Its screen-reader name is signInMethodsUnlinkSemantics, which says which row it belongs to."
+  },
+  "signInMethodsUnlinkSemantics": "Unlink {method}",
+  "@signInMethodsUnlinkSemantics": {
+    "description": "Screen-reader name of the Unlink button under a sign-in provider's row (#582), whose visible text is signInMethodsUnlink. Every row's button reads 'Unlink', so the name says which row it is for, and it must start with the visible text so a voice-control user can say what they see. {method} is the provider's display name, as the server gives it. A provider the server no longer offers has its own name, signInMethodsUnlinkRemovedSemantics.",
+    "placeholders": {
+      "method": {
+        "type": "String",
+        "example": "Authentik"
+      }
+    }
+  },
+  "signInMethodsUnlinkRemovedSemantics": "Unlink the sign-in provider this server no longer offers",
+  "@signInMethodsUnlinkRemovedSemantics": {
+    "description": "Screen-reader name of the Unlink button under the row of a sign-in provider the server has stopped offering (#582), whose visible text is signInMethodsUnlink. Its own name is gone with it, so the name describes it instead, as signInMethodsUnlinkRemovedConfirmTitle does, and it must start with the visible text so a voice-control user can say what they see."
+  },
+  "signInMethodsUnlinkInProgress": "Unlinking…",
+  "@signInMethodsUnlinkInProgress": {
+    "description": "Label of the Unlink button while its unlink is under way (#582). Also the button's screen-reader name, so it says why pressing it does nothing meanwhile."
+  },
+  "signInMethodsUnlinkLastWayIn": "Can't unlink: you have no other way to sign in",
+  "@signInMethodsUnlinkLastWayIn": {
+    "description": "Label of a disabled Unlink button, on a row the user can't unlink because nothing else would let them sign in (#582): their only way in, or a provider the server no longer offers when no other row is a way in. Such a provider is no way in itself, so the label mustn't call it one. The label is the only place the reason is given."
+  },
+  "signInMethodsUnlinkConfirmTitle": "Unlink {method}?",
+  "@signInMethodsUnlinkConfirmTitle": {
+    "description": "Title of the dialog that asks before a sign-in provider is unlinked (#582). {method} is the provider's display name, as the server gives it. A provider the server no longer offers has its own title, signInMethodsUnlinkRemovedConfirmTitle.",
+    "placeholders": {
+      "method": {
+        "type": "String",
+        "example": "Authentik"
+      }
+    }
+  },
+  "signInMethodsUnlinkConfirmBody": "You won't be able to sign in with {method} until you link it again, which needs a recent sign-in.",
+  "@signInMethodsUnlinkConfirmBody": {
+    "description": "Body of the dialog that asks before a sign-in provider is unlinked (#582): what the user loses, and what undoing it takes. {method} is the provider's display name, as the server gives it. A provider the server no longer offers has its own body, signInMethodsUnlinkRemovedConfirmBody.",
+    "placeholders": {
+      "method": {
+        "type": "String",
+        "example": "Authentik"
+      }
+    }
+  },
+  "signInMethodsUnlinkRemovedConfirmTitle": "Unlink the sign-in provider this server no longer offers?",
+  "@signInMethodsUnlinkRemovedConfirmTitle": {
+    "description": "Title of the dialog that asks before unlinking a sign-in provider the server has stopped offering (#582). Its name is gone with it, so the title describes it instead."
+  },
+  "signInMethodsUnlinkRemovedConfirmBody": "This server no longer offers it, so it can't be linked again.",
+  "@signInMethodsUnlinkRemovedConfirmBody": {
+    "description": "Body of the dialog that asks before unlinking a sign-in provider the server has stopped offering (#582): once unlinked it is gone for good, since the server can't link it again. It can't be used to sign in now either."
+  },
+  "signInMethodsUnlinkConfirmAction": "Unlink",
+  "@signInMethodsUnlinkConfirmAction": {
+    "description": "The dialog's button that unlinks the sign-in provider it names (#582)."
+  },
+  "signInMethodsUnlinkCancel": "Cancel",
+  "@signInMethodsUnlinkCancel": {
+    "description": "The dialog's button that closes it and unlinks nothing (#582)."
+  },
+  "signInMethodsLinked": "{provider} is linked",
+  "@signInMethodsLinked": {
+    "description": "Announced on the Sign-in methods screen when the user is back from the provider's page and the link worked (#582). {provider} is the provider's display name, as the server gives it.",
+    "placeholders": {
+      "provider": {
+        "type": "String",
+        "example": "Authentik"
+      }
+    }
+  },
+  "signInMethodsLinkedUnknown": "The sign-in provider is linked",
+  "@signInMethodsLinkedUnknown": {
+    "description": "Stands in for signInMethodsLinked when the provider that was linked is one the server no longer lists, so there is no name to give (#582)."
+  },
+  "signInMethodsUnlinked": "{method} is unlinked",
+  "@signInMethodsUnlinked": {
+    "description": "Announced on the Sign-in methods screen once a sign-in provider has been unlinked (#582). {method} is the provider's display name, as the server gives it, or signInMethodsRemovedProvider for one the server no longer offers.",
+    "placeholders": {
+      "method": {
+        "type": "String",
+        "example": "Authentik"
+      }
+    }
+  },
+  "signInMethodsLinkFailedTitle": "Couldn't link the sign-in provider",
+  "@signInMethodsLinkFailedTitle": {
+    "description": "Heading over any message that says why linking a sign-in provider failed (#582). Names the operation, because some of the messages beneath it only give a cause, such as a connection problem."
+  },
+  "signInMethodsUnlinkFailedTitle": "Couldn't unlink",
+  "@signInMethodsUnlinkFailedTitle": {
+    "description": "Heading over any message that says why unlinking a sign-in provider failed (#582). Names the operation, because some of the messages beneath it only give a cause, such as a connection problem."
+  },
+  "signInMethodsErrorNeedsRecentSignIn": "Linking needs a recent sign-in. Sign out, sign in again, then link it.",
+  "@signInMethodsErrorNeedsRecentSignIn": {
+    "description": "Link failure, under signInMethodsLinkFailedTitle (#582): the server links a provider only for a session signed in within the last day. There is no sign-out button beside it on purpose; the user signs out from the app's menu."
+  },
+  "signInMethodsErrorUnlinkNeedsRecentSignIn": "Unlinking needs a recent sign-in. Sign out, sign in again, then unlink it.",
+  "@signInMethodsErrorUnlinkNeedsRecentSignIn": {
+    "description": "Unlink failure, under signInMethodsUnlinkFailedTitle (#582): the server unlinks a provider only for a session signed in within the last day. There is no sign-out button beside it on purpose; the user signs out from the app's menu."
+  },
+  "signInMethodsErrorAlreadyLinkedElsewhere": "That {provider} identity is already linked to another user here.",
+  "@signInMethodsErrorAlreadyLinkedElsewhere": {
+    "description": "Link failure, under signInMethodsLinkFailedTitle (#582): the account the user signed in to at the provider is already linked to a different user on this server, so it can't be linked to this one too. {provider} is the provider's display name, as the server gives it.",
+    "placeholders": {
+      "provider": {
+        "type": "String",
+        "example": "Authentik"
+      }
+    }
+  },
+  "signInMethodsErrorAlreadyLinkedElsewhereUnknown": "That identity is already linked to another user here.",
+  "@signInMethodsErrorAlreadyLinkedElsewhereUnknown": {
+    "description": "Stands in for signInMethodsErrorAlreadyLinkedElsewhere when the provider is one the server no longer lists, so there is no name to give (#582)."
+  },
+  "signInMethodsErrorEmailUnconfirmed": "The provider hasn't confirmed the email address, so it can't be linked. Confirm it with the provider, then try again.",
+  "@signInMethodsErrorEmailUnconfirmed": {
+    "description": "Link failure, under signInMethodsLinkFailedTitle (#582): the provider reports the email address of the account the user signed in to there as unconfirmed, so this server won't link it. The fix is with the provider, not this server."
+  },
+  "signInMethodsErrorLastWayIn": "It's your only way to sign in, so it can't be unlinked.",
+  "@signInMethodsErrorLastWayIn": {
+    "description": "Unlink failure, under signInMethodsUnlinkFailedTitle (#582): the server refused to unlink the user's last way to sign in. The screen withholds Unlink there already, so this shows only when the list was out of date."
+  },
+  "signInMethodsErrorGeneric": "Something went wrong. Try again.",
+  "@signInMethodsErrorGeneric": {
+    "description": "Link or unlink failure, under signInMethodsLinkFailedTitle or signInMethodsUnlinkFailedTitle, for any cause no other message covers (#582). The heading names the operation, so this doesn't. The server's and the provider's own error text is never shown, so this must not promise a specific reason."
+  },
+  "signInMethodsDismiss": "Dismiss",
+  "@signInMethodsDismiss": {
+    "description": "Button on the message that says how the last link or unlink went, on the Sign-in methods screen; it closes the message (#582)."
+  },
+  "signInMethodsLoading": "Loading your sign-in methods…",
+  "@signInMethodsLoading": {
+    "description": "Announced on the Sign-in methods screen while the user's sign-in methods are being read (#582). Not drawn: a spinner shows instead."
+  },
+  "signInMethodsLoadFailed": "Couldn't load your sign-in methods.",
+  "@signInMethodsLoadFailed": {
+    "description": "Title shown on the Sign-in methods screen when the user's sign-in methods could not be read (#582)."
+  },
+  "signInMethodsLoadFailedBody": "Check your connection and try again.",
+  "@signInMethodsLoadFailedBody": {
+    "description": "Body under signInMethodsLoadFailed on the Sign-in methods screen (#582)."
+  },
+  "signInMethodsRetry": "Try again",
+  "@signInMethodsRetry": {
+    "description": "Button that reads the user's sign-in methods again after the Sign-in methods screen failed to read them (#582)."
   }
 }
