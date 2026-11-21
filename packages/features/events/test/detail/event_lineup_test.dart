@@ -495,4 +495,200 @@ void main() {
       );
     });
   });
+
+  group('lineupGameAhead (#905)', () {
+    final now = DateTime(2026, 11, 20, 12);
+    final past = confirmed('d-past', DateTime(2026, 11, 1, 19));
+    final ahead = confirmed('d-ahead', DateTime(2026, 12, 1, 19));
+
+    bool isAhead(LineupGame game, {List<EventOccurrence> dates = const []}) =>
+        lineupGameAhead(ready(dates: dates).detail, game, now: now);
+
+    test("a date's game is ahead until its date starts", () {
+      expect(
+        isAhead(game('l', occurrenceId: 'd-ahead'), dates: [past, ahead]),
+        isTrue,
+      );
+      expect(
+        isAhead(game('l', occurrenceId: 'd-past'), dates: [past, ahead]),
+        isFalse,
+      );
+    });
+
+    test('a date called off or declined holds no game ahead', () {
+      for (final status in [
+        OccurrenceStatus.cancelled,
+        OccurrenceStatus.declined,
+      ]) {
+        expect(
+          isAhead(
+            game('l', occurrenceId: 'd-ahead'),
+            dates: [ahead.copyWith(status: status)],
+          ),
+          isFalse,
+          reason: '$status',
+        );
+      }
+    });
+
+    test("the event's own game is ahead while a date is, or while it has "
+        'none', () {
+      expect(isAhead(game('l'), dates: [past, ahead]), isTrue);
+      expect(isAhead(game('l'), dates: [past]), isFalse);
+      expect(isAhead(game('l')), isTrue);
+    });
+
+    test("a date the event doesn't list can't be told, so isn't counted", () {
+      expect(
+        isAhead(game('l', occurrenceId: 'd-gone'), dates: [ahead]),
+        isFalse,
+      );
+    });
+
+    test('it asks for no right to take the game out', () {
+      // A participant can't remove it, which says nothing of its date.
+      final state = ready(
+        dates: [past],
+        actions: actionsOf(eventRole: EventRole.participant),
+      );
+
+      expect(
+        lineupGameAhead(
+          state.detail,
+          game('l', occurrenceId: 'd-past'),
+          now: now,
+        ),
+        isFalse,
+      );
+    });
+  });
+
+  group('stillSupplies (#905)', () {
+    /// The pool row `o-l`, which `game('l')` names as its supplier, with the
+    /// counts the pool's read served.
+    OfferedGame offered({int? nominations, int? lineup}) => OfferedGame(
+      id: 'o-l',
+      attendeeId: 'att-ada',
+      collectionId: 'col-l',
+      platformGameId: 'pg-l',
+      gameId: 'g-l',
+      title: 'Game l',
+      platformName: 'Tabletop',
+      suppliedNominations: nominations,
+      suppliedLineup: lineup,
+    );
+
+    /// A nomination as [status], supplied from the row [from].
+    EventNomination nominated(
+      NominationStatus status, {
+      String from = 'o-l',
+    }) => EventNomination(
+      id: 'n-1',
+      eventId: 'e',
+      platformGameId: 'pg-l',
+      gameId: 'g-l',
+      title: 'Game l',
+      platformName: 'Tabletop',
+      status: status,
+      nominatedById: 'att-bo',
+      suppliedFromId: from,
+      createdAt: kItemInstant,
+    );
+
+    bool always(LineupGame _) => true;
+    bool never(LineupGame _) => false;
+
+    StillSupplies of(
+      OfferedGame row, {
+      List<EventNomination>? nominations,
+      List<LineupGame>? lineup,
+      bool Function(LineupGame)? ahead,
+    }) => stillSupplies(
+      row,
+      nominations: nominations,
+      lineup: lineup,
+      ahead: ahead ?? always,
+    );
+
+    test("the pool's counts say what the row supplies", () {
+      expect(of(offered(nominations: 0, lineup: 1)), StillSupplies.lineup);
+      expect(of(offered(nominations: 2, lineup: 0)), StillSupplies.nomination);
+      expect(of(offered(nominations: 0, lineup: 0)), StillSupplies.nothing);
+    });
+
+    test('a null count and an unknown lineup say nothing, never none', () {
+      expect(of(offered()), StillSupplies.nothing);
+      expect(of(offered(), nominations: const []), StillSupplies.nothing);
+    });
+
+    test('the lineup read counts its games still ahead that the row '
+        'supplies, whatever the count says', () {
+      expect(of(offered(lineup: 0), lineup: [game('l')]), StillSupplies.lineup);
+      expect(of(offered(), lineup: [game('l')]), StillSupplies.lineup);
+      expect(
+        of(offered(lineup: 0), lineup: [game('l')], ahead: never),
+        StillSupplies.nothing,
+      );
+      // Another row's game.
+      expect(
+        of(offered(lineup: 0), lineup: [game('x')]),
+        StillSupplies.nothing,
+      );
+    });
+
+    test('a live nomination held counts, whatever the count says; a decided '
+        "one or another row's does not", () {
+      for (final status in [
+        NominationStatus.open,
+        NominationStatus.awaitingApproval,
+        NominationStatus.paused,
+      ]) {
+        expect(
+          of(offered(nominations: 0), nominations: [nominated(status)]),
+          StillSupplies.nomination,
+          reason: '$status',
+        );
+      }
+      for (final status in [
+        NominationStatus.passed,
+        NominationStatus.approved,
+        NominationStatus.withdrawn,
+        NominationStatus.rejected,
+      ]) {
+        expect(
+          of(offered(nominations: 0), nominations: [nominated(status)]),
+          StillSupplies.nothing,
+          reason: '$status',
+        );
+      }
+      expect(
+        of(
+          offered(),
+          nominations: [nominated(NominationStatus.open, from: 'o-x')],
+        ),
+        StillSupplies.nothing,
+      );
+    });
+
+    test(
+      'a live nomination comes before the lineup, as the 409 names them',
+      () {
+        expect(
+          of(offered(nominations: 1, lineup: 1)),
+          StillSupplies.nomination,
+        );
+        expect(
+          of(
+            offered(lineup: 1),
+            nominations: [nominated(NominationStatus.open)],
+          ),
+          StillSupplies.nomination,
+        );
+        expect(
+          of(offered(nominations: 1), lineup: [game('l')]),
+          StillSupplies.nomination,
+        );
+      },
+    );
+  });
 }

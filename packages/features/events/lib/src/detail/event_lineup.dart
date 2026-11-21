@@ -6,6 +6,7 @@ import 'package:events/src/bloc/event_detail_state.dart';
 import 'package:events/src/bloc/event_lineup_state.dart';
 import 'package:events/src/detail/event_actions.dart';
 import 'package:events/src/detail/event_date_actions.dart';
+import 'package:events/src/detail/event_nominations.dart';
 import 'package:events/src/detail/event_status_now.dart';
 import 'package:events/src/detail/games_date_view.dart';
 import 'package:models/domain.dart';
@@ -223,14 +224,7 @@ LineupRemoveGate lineupRemoveGate(
 
   if (wasCancelled(event)) return LineupRemoveGate.started;
 
-  bool ahead(EventOccurrence date) =>
-      switch (date.status) {
-        OccurrenceStatus.proposed || OccurrenceStatus.confirmed => true,
-        OccurrenceStatus.declined ||
-        OccurrenceStatus.cancelled ||
-        OccurrenceStatus.unknown => false,
-      } &&
-      (date.startDate == null || date.startDate!.isAfter(now));
+  bool ahead(EventOccurrence date) => _dateAhead(date, now: now);
 
   final started = switch (game.occurrenceId) {
     null => dates.isNotEmpty && !dates.any(ahead),
@@ -243,21 +237,128 @@ LineupRemoveGate lineupRemoveGate(
   return started ? LineupRemoveGate.started : LineupRemoveGate.open;
 }
 
-/// Whether the lineup [known] (null where it isn't read, [knownLineup]) holds
-/// a game the pool row [offeredGameId] supplies, one a host could take out
-/// (#520): its [lineupRemoveGate] isn't [LineupRemoveGate.started], as of
-/// [now]. What a take-back's 409 names, for a game in the lineup, as the step
-/// that frees it: a game whose lineup has started stays in it, which no host
-/// can change.
-bool lineupHoldsRemovable(
-  EventDetailReady state,
-  List<LineupGame>? known,
-  String offeredGameId, {
+/// Whether [date] is still to come as of [now]: proposed or confirmed, with
+/// no start or one after [now]. A date the server would still play a lineup
+/// on (#520).
+bool _dateAhead(EventOccurrence date, {required DateTime now}) =>
+    switch (date.status) {
+      OccurrenceStatus.proposed || OccurrenceStatus.confirmed => true,
+      OccurrenceStatus.declined ||
+      OccurrenceStatus.cancelled ||
+      OccurrenceStatus.unknown => false,
+    } &&
+    (date.startDate == null || date.startDate!.isAfter(now));
+
+/// Whether [game] is still ahead on [detail] as of [now], as a take-back's
+/// 409 counts a lineup game (#905): a date's game while its date is
+/// proposed or confirmed and hasn't started; the event's own while the
+/// event has no dates or one of them is still to come. A game whose date
+/// the event doesn't list isn't counted: the client can't tell, and the 409
+/// answers. Who may take it out of the lineup ([lineupRemoveGate]) has no
+/// say.
+bool lineupGameAhead(
+  EventDetail detail,
+  LineupGame game, {
   required DateTime now,
-}) =>
-    known?.any(
-      (game) =>
-          game.suppliedById == offeredGameId &&
-          lineupRemoveGate(state, game, now: now) != LineupRemoveGate.started,
-    ) ??
-    false;
+}) {
+  final dates = detail.snapshot.occurrences;
+  bool ahead(EventOccurrence date) => _dateAhead(date, now: now);
+
+  return switch (game.occurrenceId) {
+    null => dates.isEmpty || dates.any(ahead),
+    final id => dates.where((date) => date.id == id).any(ahead),
+  };
+}
+
+/// What a pool row still supplies the event, as far as the reads the
+/// screen holds can tell (#905): what keeps it from being taken back.
+enum StillSupplies {
+  /// No read says it supplies anything: none does, or none can tell.
+  nothing,
+
+  /// A live nomination: open, awaiting approval or paused.
+  nomination,
+
+  /// A lineup game still ahead.
+  lineup,
+}
+
+/// What the pool row [game] still supplies, by every read that knows
+/// (#905): the pool's own counts ([OfferedGame.suppliedNominations],
+/// [OfferedGame.suppliedLineup]), the [nominations] held ([suppliesLive]),
+/// and the [lineup] where it is known ([knownLineup]), whose games the row
+/// supplies count where [ahead] says they are still ahead
+/// ([lineupGameAhead]). Any one of them saying so is enough: they are read
+/// apart, and whichever is newer may be the one that knows. A null count, a
+/// lineup not known and no nominations held each say nothing, never none.
+///
+/// A live nomination comes before the lineup, as a take-back's 409 names
+/// them: withdrawing it is the step its nominator can take, and the
+/// lineup's is a host's.
+StillSupplies stillSupplies(
+  OfferedGame game, {
+  required List<EventNomination>? nominations,
+  required List<LineupGame>? lineup,
+  required bool Function(LineupGame) ahead,
+}) {
+  if ((game.suppliedNominations ?? 0) > 0 ||
+      (nominations != null && suppliesLive(game, nominations))) {
+    return StillSupplies.nomination;
+  }
+  if ((game.suppliedLineup ?? 0) > 0 ||
+      (lineup?.any((each) => each.suppliedById == game.id && ahead(each)) ??
+          false)) {
+    return StillSupplies.lineup;
+  }
+  return StillSupplies.nothing;
+}
+
+/// [stillSupplies] of the pool row [game] on [detail] as of [now] (#905),
+/// by the [nominations] held and the [lineup] where it is known
+/// ([knownLineup]), whose games count while still ahead
+/// ([lineupGameAhead]): one rule for Take back's reason, up front, and a
+/// take-back's 409 ([takeBackSuppliesById]), so the two can't disagree. A
+/// game in the lineup still ahead is one a host could take out (#520).
+StillSupplies takeBackSupplies(
+  EventDetail detail,
+  OfferedGame game, {
+  required List<EventNomination>? nominations,
+  required List<LineupGame>? lineup,
+  required DateTime now,
+}) => stillSupplies(
+  game,
+  nominations: nominations,
+  lineup: lineup,
+  ahead: (each) => lineupGameAhead(detail, each, now: now),
+);
+
+/// [takeBackSupplies] by the id of a pool row, which a take-back's 409
+/// names it by (#905): of the row as [pool] holds it. Where the pool no
+/// longer holds it, the [lineup]'s games still name it by its id, with no
+/// count to go on; its live nominations the 409's banner finds by the id
+/// itself ([stillSuppliedBy]).
+StillSupplies Function(String offeredGameId) takeBackSuppliesById(
+  EventDetail detail, {
+  required List<OfferedGame> pool,
+  required List<EventNomination>? nominations,
+  required List<LineupGame>? lineup,
+  required DateTime now,
+}) => (id) {
+  final row = pool.where((each) => each.id == id).firstOrNull;
+  if (row != null) {
+    return takeBackSupplies(
+      detail,
+      row,
+      nominations: nominations,
+      lineup: lineup,
+      now: now,
+    );
+  }
+  final held =
+      lineup?.any(
+        (each) =>
+            each.suppliedById == id && lineupGameAhead(detail, each, now: now),
+      ) ??
+      false;
+  return held ? StillSupplies.lineup : StillSupplies.nothing;
+};
