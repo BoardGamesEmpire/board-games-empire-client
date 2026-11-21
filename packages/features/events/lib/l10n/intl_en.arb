@@ -3584,5 +3584,125 @@
   "eventEditNotCached": "This event isn't on this device yet. Open it from your events, then edit it.",
   "@eventEditNotCached": {
     "description": "Shown on the Edit event page in place of the form, when the event isn't on this device or couldn't be read from it, as when a link to the page is opened before the event was ever loaded. Above a button back to the event."
+  },
+  "eventsLineupAddDone": "{title} is in the lineup.",
+  "@eventsLineupAddDone": {
+    "description": "Banner at the foot of an event's screen after a host added a game from the games pool straight to the lineup (#519, #520). The title is the game's title, with its subtitle where it has one (#920).",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsLineupAddRefused": "{title} wasn't added: you can't add games to this lineup.",
+  "@eventsLineupAddRefused": {
+    "description": "Banner at the foot of an event's screen when the server refused a host's adding a game straight to the lineup (#519, #520). The title is the game's title, with its subtitle where it has one (#920).",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsLineupAddSupplierGone": "{title} wasn't added: it isn't in the games pool any more.",
+  "@eventsLineupAddSupplierGone": {
+    "description": "Banner at the foot of an event's screen when a game couldn't be added to the lineup because the pool row, or the person bringing it, is gone (#519, #520). The title is the game's title, with its subtitle where it has one (#920).",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsLineupAddSupplierNotGoing": "{title} wasn't added: whoever brings it isn't going.",
+  "@eventsLineupAddSupplierNotGoing": {
+    "description": "Banner at the foot of an event's screen when a game couldn't be added to the lineup because the attendee who brings it isn't attending (#519, #520). The title is the game's title, with its subtitle where it has one (#920).",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsLineupAddFailed": "{title} wasn't added. Try again.",
+  "@eventsLineupAddFailed": {
+    "description": "Banner at the foot of an event's screen when adding a game to the lineup failed for a reason other than a refusal (#519, #520). The title is the game's title, with its subtitle where it has one (#920).",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsLineupAddDropped": "{title} wasn't added: something changed on this event first.",
+  "@eventsLineupAddDropped": {
+    "description": "Banner at the foot of an event's screen when adding a game to the lineup was not sent at all, because the event changed between the press and the moment it would have gone (#519, #520). The title is the game's title, with its subtitle where it has one (#920).",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsLineupRemoveDone": "{title} is out of the lineup.",
+  "@eventsLineupRemoveDone": {
+    "description": "Banner at the foot of an event's screen after a host took a game out of the lineup (#519, #520). The title is the game's title, with its subtitle where it has one (#920).",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsLineupRemoveAlreadyGone": "{title} was already out of the lineup.",
+  "@eventsLineupRemoveAlreadyGone": {
+    "description": "Banner at the foot of an event's screen when a host's removal of a game found it no longer in the lineup, as another removal got there first (#519, #520). The title is the game's title, with its subtitle where it has one (#920).",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsLineupRemoveStarted": "{title} can't come out of the lineup: it has started, or the event was called off.",
+  "@eventsLineupRemoveStarted": {
+    "description": "Banner at the foot of an event's screen when the server refused removing a game because its date has started, or the event was called off (#519, #520). The title is the game's title, with its subtitle where it has one (#920).",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsLineupRemoveRefused": "{title} wasn't taken out: you can't change this lineup.",
+  "@eventsLineupRemoveRefused": {
+    "description": "Banner at the foot of an event's screen when the server refused a host's removing a game from the lineup (#519, #520). The title is the game's title, with its subtitle where it has one (#920).",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsLineupRemoveFailed": "{title} wasn't taken out. Try again.",
+  "@eventsLineupRemoveFailed": {
+    "description": "Banner at the foot of an event's screen when removing a game from the lineup failed for a reason other than a refusal (#519, #520). The title is the game's title, with its subtitle where it has one (#920).",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsLineupRemoveDropped": "{title} wasn't taken out: something changed on this event first.",
+  "@eventsLineupRemoveDropped": {
+    "description": "Banner at the foot of an event's screen when removing a game from the lineup was not sent at all, because the event changed between the press and the moment it would have gone (#519, #520). The title is the game's title, with its subtitle where it has one (#920).",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
   }
 }

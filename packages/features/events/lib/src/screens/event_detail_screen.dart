@@ -753,6 +753,10 @@ class EventDetailScreen extends StatelessWidget {
     'event_detail.nominations_outcome',
   );
 
+  /// Key on the banner in the footer saying how a host's last lineup write
+  /// went (#519, #520): an add or a removal.
+  static const Key lineupOutcomeKey = Key('event_detail.lineup_outcome');
+
   /// Key on the footer's banner saying the nominations shown may be out of
   /// date, after a read of them failed (#517).
   static const Key nominationsRefreshBannerKey = Key(
@@ -1426,6 +1430,24 @@ class _EventDetailView extends StatelessWidget {
               _joinsLineup(current.outcome),
           listener: _readLineupAfterNominationWrite,
         ),
+        BlocListener<EventNominationsBloc, EventNominationsState>(
+          // The pool read (#905): a nominations write that changes what a
+          // pool row supplies. The lineup's read after one is the listener
+          // above's, so each list is read once per outcome.
+          listenWhen: (previous, current) =>
+              current.outcome != previous.outcome &&
+              _changesPoolRow(current.outcome),
+          listener: _readPoolAfterWrite,
+        ),
+        BlocListener<EventLineupBloc, EventLineupState>(
+          // A game added or taken out changes what its pool row supplies
+          // (#519, #905). The lineup's own read follows a sent write in its
+          // bloc.
+          listenWhen: (previous, current) =>
+              current.outcome != previous.outcome &&
+              _changesPoolRow(current.outcome),
+          listener: _readPoolAfterWrite,
+        ),
         BlocListener<EventLineupBloc, EventLineupState>(
           // As the nominations': on the way into gone only, and the read
           // after the event's re-read ends a 404 again as failed, so no loop
@@ -1964,6 +1986,38 @@ void _readLineupAfterNominationWrite(
   final state = context.read<EventDetailBloc>().state;
   if (state is! EventDetailReady) return;
   _readLineup(context, state);
+}
+
+/// Whether [outcome] ends a write that changes what a pool row supplies
+/// (#905): a nominations write that went through, bar a vote, which changes
+/// no row's supply, or a lineup write that put a game in the lineup or found
+/// it out of it. A rejection counts: it ends a live nomination.
+bool _changesPoolRow(Object? outcome) => switch (outcome) {
+  NominateOutcome(:final result) => switch (result) {
+    NominateResult.open ||
+    NominateResult.awaitingApproval ||
+    NominateResult.inLineup ||
+    NominateResult.settled => true,
+    _ => false,
+  },
+  WithdrawOutcome(result: WithdrawResult.done) => true,
+  HostDecisionOutcome(result: HostDecisionResult.done) => true,
+  ResolveOutcome(result: ResolveResult.decided) => true,
+  LineupAddOutcome(result: LineupAddResult.done) => true,
+  LineupRemoveOutcome(
+    result: LineupRemoveResult.done || LineupRemoveResult.alreadyGone,
+  ) =>
+    true,
+  _ => false,
+};
+
+/// Reads the games pool again after a write ([_changesPoolRow], #905), as
+/// the Games tab asked for it, where it has shown.
+void _readPoolAfterWrite(BuildContext context, Object _) {
+  final state = context.read<EventDetailBloc>().state;
+  final scope = EventGamesTabScope.of(context);
+  if (state is! EventDetailReady || !scope.shown) return;
+  _readPool(context, state, scope);
 }
 
 /// Reads the lineup of the event [state] shows (#519), by the id it shows

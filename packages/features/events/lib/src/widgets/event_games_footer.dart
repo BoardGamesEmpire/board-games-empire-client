@@ -97,8 +97,9 @@ class EventGamesFooter extends StatelessWidget {
   /// names no nomination.
   final EventNominationsState? nominations;
 
-  /// The lineup's state (#519), whose stale-data banner shows on the Lineup
-  /// sub-tab. Null shows none.
+  /// The lineup's state (#519), whose last write's banner follows the
+  /// nominations', and whose stale-data banner shows on the Lineup sub-tab.
+  /// Null shows neither.
   final EventLineupState? lineup;
 
   /// The viewer's roster row id, which says which nominations are theirs, or
@@ -133,6 +134,7 @@ class EventGamesFooter extends StatelessWidget {
     final nominations = this.nominations;
     final nominationsOutcome = nominations?.outcome;
     final lineup = this.lineup;
+    final lineupOutcome = lineup?.outcome;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -168,6 +170,14 @@ class EventGamesFooter extends StatelessWidget {
           EventNominationsOutcomeBanner(
             outcome: nominationsOutcome,
             announce: !(saidInQuickLook?.call(nominationsOutcome) ?? false),
+          ),
+        ],
+        // The lineup's own: a host's add or removal (#519, #520).
+        if (lineupOutcome != null) ...[
+          const BgeGap.sm(),
+          EventLineupOutcomeBanner(
+            outcome: lineupOutcome,
+            announce: !(saidInQuickLook?.call(lineupOutcome) ?? false),
           ),
         ],
         if (staleFor == EventGamesSection.pool &&
@@ -429,6 +439,71 @@ class EventPoolOutcomeBanner extends StatelessWidget {
       EventTakeBackResult.dropped => l10n.eventsGamesTakeBackDropped(name),
       EventTakeBackResult.failed => l10n.eventsGamesTakeBackFailed(name),
     };
+  }
+}
+
+/// The banner saying how a host's last lineup write went (#519, #520),
+/// [outcome]: an add or a removal. Keyed by [outcome], so each is a banner
+/// of its own, built anew, and one that says what the last said is still
+/// heard as it lands. Its Dismiss clears the outcome from the lineup's bloc.
+class EventLineupOutcomeBanner extends StatelessWidget {
+  EventLineupOutcomeBanner({required this.outcome, this.announce = true})
+    : super(key: ObjectKey(outcome));
+
+  final EventLineupOutcome outcome;
+
+  /// Whether it is a live region ([BgeInlineBanner.announce]).
+  final bool announce;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = EventsLocalizations.of(context);
+    final title = gameName(l10n, outcome.title, outcome.subtitle);
+    return BgeInlineBanner(
+      key: EventDetailScreen.lineupOutcomeKey,
+      announce: announce,
+      tone: switch (outcome) {
+        LineupAddOutcome(:final result) => switch (result) {
+          LineupAddResult.done => BgeBannerTone.success,
+          LineupAddResult.failed => BgeBannerTone.error,
+          _ => BgeBannerTone.warning,
+        },
+        LineupRemoveOutcome(:final result) => switch (result) {
+          LineupRemoveResult.done => BgeBannerTone.success,
+          LineupRemoveResult.failed => BgeBannerTone.error,
+          _ => BgeBannerTone.warning,
+        },
+      },
+      message: switch (outcome) {
+        LineupAddOutcome(:final result) => switch (result) {
+          LineupAddResult.done => l10n.eventsLineupAddDone(title),
+          LineupAddResult.refused => l10n.eventsLineupAddRefused(title),
+          LineupAddResult.supplierGone => l10n.eventsLineupAddSupplierGone(
+            title,
+          ),
+          LineupAddResult.supplierNotGoing =>
+            l10n.eventsLineupAddSupplierNotGoing(title),
+          LineupAddResult.failed => l10n.eventsLineupAddFailed(title),
+          LineupAddResult.dropped => l10n.eventsLineupAddDropped(title),
+        },
+        LineupRemoveOutcome(:final result) => switch (result) {
+          LineupRemoveResult.done => l10n.eventsLineupRemoveDone(title),
+          LineupRemoveResult.alreadyGone => l10n.eventsLineupRemoveAlreadyGone(
+            title,
+          ),
+          LineupRemoveResult.started => l10n.eventsLineupRemoveStarted(title),
+          LineupRemoveResult.refused => l10n.eventsLineupRemoveRefused(title),
+          LineupRemoveResult.failed => l10n.eventsLineupRemoveFailed(title),
+          LineupRemoveResult.dropped => l10n.eventsLineupRemoveDropped(title),
+        },
+      },
+      action: TextButton(
+        onPressed: () => context.read<EventLineupBloc>().add(
+          const EventLineupOutcomeDismissed(),
+        ),
+        child: Text(l10n.eventsActionDismiss),
+      ),
+    );
   }
 }
 
