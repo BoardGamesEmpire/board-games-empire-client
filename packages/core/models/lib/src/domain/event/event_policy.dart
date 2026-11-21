@@ -50,8 +50,9 @@ abstract class EventPolicy with _$EventPolicy {
     required DateTime createdAt,
     required DateTime updatedAt,
 
-    /// How far a date's own rules may depart from this policy. The server's
-    /// column defaults to [OccurrenceOverrideScope.any].
+    /// How far a date's own rules may depart from this policy's restrictions,
+    /// its allowed lists and capacity. The server's column defaults to
+    /// [OccurrenceOverrideScope.any].
     @Default(OccurrenceOverrideScope.any)
     OccurrenceOverrideScope occurrenceOverrideScope,
 

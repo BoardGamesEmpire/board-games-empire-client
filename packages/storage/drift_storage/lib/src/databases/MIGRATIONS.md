@@ -136,7 +136,9 @@ Server schema history:
   fresh database), so none needs to drop the column.
 - **v18 → v19 (#1009):** adds `event_policies.occurrence_override_scope`
   (`TEXT NOT NULL`, default `'Any'`, the server's default), how far a date's
-  rules may depart from the event's, and nullable
+  rules may depart from the event's allowed platform types, platforms,
+  categories and capacity (not its game addition mode or voting rules, which
+  a date may override whatever the scope), and nullable
   `allowed_platform_types_json`, `allowed_platform_ids_json` and
   `allowed_category_ids_json`, the lists a restriction allows as JSON arrays
   of strings, and `occurrence_policies_read` (`INTEGER NOT NULL`, default

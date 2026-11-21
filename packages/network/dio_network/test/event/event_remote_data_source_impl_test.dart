@@ -44,7 +44,7 @@ Map<String, dynamic> _occurrenceRow({
   'updatedAt': '2026-10-01T10:45:00.000Z',
 };
 
-/// An event's policy as the backend serializes the Prisma model: the 18 policy
+/// An event's policy as the backend serializes the Prisma model: the 19 policy
 /// columns, with the keys any of them overrides.
 Map<String, dynamic> _policyRow([Map<String, dynamic> overrides = const {}]) =>
     {
@@ -68,13 +68,15 @@ Map<String, dynamic> _policyRow([Map<String, dynamic> overrides = const {}]) =>
       'voteEligibility': 'ConfirmedOnly',
       'interestedWeight': 'AsAbstain',
       'votingWindowHours': 24,
+      'occurrenceOverrideScope': 'Any',
       'createdAt': '2026-10-01T10:30:00.000Z',
       'updatedAt': '2026-10-02T08:00:00.000Z',
       ...overrides,
     };
 
 /// The three rule lists a policy read may carry (#1009), as the backend's
-/// policy view serves them: plain lists, sorted.
+/// policy view serves them: plain lists, sorted. With a scope other than
+/// [_policyRow]'s, so a test sees the read's own.
 Map<String, dynamic> _policyLists() => {
   'allowedPlatformTypes': ['Tabletop'],
   'allowedPlatformIds': ['plat_1', 'plat_2'],
@@ -545,20 +547,30 @@ void main() {
       },
     );
 
-    test('a list row carries no lists and no date rules', () async {
-      final remote = answering(_listBody([_eventRow()]));
+    test(
+      'a list row carries its scope but no lists and no date rules',
+      () async {
+        final remote = answering(
+          _listBody([
+            _eventRow()
+              ..['policy'] = _policyRow({
+                'occurrenceOverrideScope': 'TightenOnly',
+              }),
+          ]),
+        );
 
-      final snapshot = (await remote.fetchEvents()).items.single;
+        final snapshot = (await remote.fetchEvents()).items.single;
 
-      expect(snapshot.policy!.allowedPlatformTypes, isNull);
-      expect(snapshot.policy!.allowedPlatformIds, isNull);
-      expect(snapshot.policy!.allowedCategoryIds, isNull);
-      expect(
-        snapshot.policy!.occurrenceOverrideScope,
-        OccurrenceOverrideScope.any,
-      );
-      expect(snapshot.occurrencePolicies, isNull);
-    });
+        expect(snapshot.policy!.allowedPlatformTypes, isNull);
+        expect(snapshot.policy!.allowedPlatformIds, isNull);
+        expect(snapshot.policy!.allowedCategoryIds, isNull);
+        expect(
+          snapshot.policy!.occurrenceOverrideScope,
+          OccurrenceOverrideScope.tightenOnly,
+        );
+        expect(snapshot.occurrencePolicies, isNull);
+      },
+    );
 
     test(
       'maps every field of the event, its occurrences and its policy',
@@ -1491,6 +1503,17 @@ void main() {
     test('a list row whose occurrences are not a list', () async {
       final remote = answering(
         _listBody([_eventRow()..['occurrences'] = 'Saturday']),
+      );
+
+      await expectPermanent(remote.fetchEvents());
+    });
+
+    test('a policy without its override scope', () async {
+      final remote = answering(
+        _listBody([
+          _eventRow()
+            ..['policy'] = (_policyRow()..remove('occurrenceOverrideScope')),
+        ]),
       );
 
       await expectPermanent(remote.fetchEvents());

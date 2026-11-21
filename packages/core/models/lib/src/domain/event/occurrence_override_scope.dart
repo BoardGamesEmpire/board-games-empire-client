@@ -1,15 +1,18 @@
-/// How far a date's own rules may depart from its event's (#1009).
+/// How far a date's own rules may depart from its event's restrictions: the
+/// allowed platform types, platforms and categories, and capacity (#1009).
 ///
 /// Mirrors the backend's `OccurrenceOverrideScope` enum. It is an event policy
-/// field: the event's host sets how much a date may override.
+/// field: the event's host sets how much a date may override. It covers only
+/// those restrictions. A date's other rules, such as its game addition mode
+/// and voting rules, may override the event's whatever the scope.
 enum OccurrenceOverrideScope {
-  /// A date takes the event's rules and may not override them.
+  /// A date may not override the event's restrictions.
   none,
 
-  /// A date may override a rule only to make it stricter.
+  /// A date may override a restriction only to make it stricter.
   tightenOnly,
 
-  /// A date may override any rule.
+  /// A date may override a restriction either way, or lift it.
   any,
 
   /// A name this client does not know. Never sent.

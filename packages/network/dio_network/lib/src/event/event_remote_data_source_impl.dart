@@ -1373,11 +1373,11 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
         raw['allowedCategoryIds'],
         field: 'allowedCategoryIds',
       ),
-      occurrenceOverrideScope: raw['occurrenceOverrideScope'] == null
-          ? OccurrenceOverrideScope.any
-          : OccurrenceOverrideScope.fromWire(
-              raw['occurrenceOverrideScope'] as String,
-            ),
+      // A column of the row, so every read that serves a policy carries it,
+      // the list read's included.
+      occurrenceOverrideScope: OccurrenceOverrideScope.fromWire(
+        raw['occurrenceOverrideScope'] as String,
+      ),
       createdAt: DateTime.parse(raw['createdAt'] as String),
       updatedAt: DateTime.parse(raw['updatedAt'] as String),
     );
