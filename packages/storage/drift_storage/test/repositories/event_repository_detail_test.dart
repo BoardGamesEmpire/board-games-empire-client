@@ -474,6 +474,82 @@ void main() {
         expect(cached.occurrencePolicies, rules);
       },
     );
+
+    test("a read that brings a date the detail read didn't serve makes the "
+        'date rules not known', () async {
+      // A date added since, which may have rules of its own that no read has
+      // carried, so "no override" can't be said of it.
+      final added = testOccurrence('e-1-o3', sortOrder: 2);
+      final reads = <String, Future<void> Function()>{
+        'a list read': () => a.cacheEvent(
+          testSnapshot(
+            'e-1',
+            occurrences: [...dates, added],
+            policy: listedPolicy(testPolicy()),
+          ),
+          source: EventAccessSource.attending,
+        ),
+        'a household list read': () => a.cacheEvents([
+          testSnapshot(
+            'e-1',
+            occurrences: [...dates, added],
+            policy: listedPolicy(testPolicy()),
+          ),
+        ], source: EventAccessSource.household),
+        'a detail read refused the policy': () => a.cacheEvent(
+          testSnapshot(
+            'e-1',
+            occurrences: [...dates, added],
+            attendees: [testAttendee('att-a', userId: _kUserA)],
+            occurrencePolicies: const [],
+          ),
+          source: EventAccessSource.read,
+        ),
+        'a date write': () => a.cacheOccurrence(added),
+      };
+      for (final MapEntry(key: read, value: write) in reads.entries) {
+        await readDetail();
+
+        await write();
+
+        expect(
+          (await a.getEvent('e-1'))!.occurrencePolicies,
+          isNull,
+          reason: read,
+        );
+        // The rows the detail read cached stay, for it to replace.
+        expect(
+          await db.select(db.eventOccurrencePoliciesTable).get(),
+          hasLength(2),
+          reason: read,
+        );
+      }
+
+      // The next detail read covers every date again.
+      await readDetail();
+      expect((await a.getEvent('e-1'))!.occurrencePolicies, rules);
+    });
+
+    test('a read or write that keeps or drops dates leaves the date rules '
+        'known', () async {
+      await readDetail();
+
+      // A date write over a date the detail read served.
+      await a.cacheOccurrence(dates.first.copyWith(label: 'Renamed'));
+      expect((await a.getEvent('e-1'))!.occurrencePolicies, rules);
+
+      // A list read that drops a date: the rest stay covered.
+      await a.cacheEvent(
+        testSnapshot(
+          'e-1',
+          occurrences: [dates.first],
+          policy: listedPolicy(testPolicy()),
+        ),
+        source: EventAccessSource.attending,
+      );
+      expect((await a.getEvent('e-1'))!.occurrencePolicies, [rules.first]);
+      expect((await policyRow()).occurrencePoliciesRead, isTrue);
+    });
   });
 
   group('forgetEvent', () {
