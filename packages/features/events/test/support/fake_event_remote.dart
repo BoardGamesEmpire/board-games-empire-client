@@ -99,6 +99,20 @@ typedef CastVoteRequest = ({
   String? comment,
 });
 
+/// What a direct add sent (#519).
+typedef DirectAddRequest = ({
+  String eventId,
+  String platformGameId,
+  String suppliedById,
+  String? occurrenceId,
+  ScheduledGameRole role,
+  String? notes,
+  int? maxPlayTime,
+});
+
+/// What a lineup removal sent (#520).
+typedef LineupRemoveRequest = ({String eventId, String lineupGameId});
+
 /// What a withdrawal sent (#517).
 typedef WithdrawRequest = ({String eventId, String nominationId});
 
@@ -149,6 +163,8 @@ class FakeEventRemote implements EventRemoteDataSource {
     this.takenBack = _noTakeBack,
     this.nominations = _noNominations,
     this.lineup = _noLineup,
+    this.directAdded = _noDirectAdd,
+    this.lineupRemoved = _noLineupRemove,
     this.nomination = _noNomination,
     this.nominated = _noNominate,
     this.voteCast = _noVoteCast,
@@ -180,6 +196,8 @@ class FakeEventRemote implements EventRemoteDataSource {
     this.takenBack = _noTakeBack,
     this.nominations = _noNominations,
     this.lineup = _noLineup,
+    this.directAdded = _noDirectAdd,
+    this.lineupRemoved = _noLineupRemove,
     this.nomination = _noNomination,
     this.nominated = _noNominate,
     this.voteCast = _noVoteCast,
@@ -215,6 +233,8 @@ class FakeEventRemote implements EventRemoteDataSource {
     this.takenBack = _noTakeBack,
     this.nominations = _noNominations,
     this.lineup = _noLineup,
+    this.directAdded = _noDirectAdd,
+    this.lineupRemoved = _noLineupRemove,
     this.nomination = _noNomination,
     this.nominated = _noNominate,
     this.voteCast = _noVoteCast,
@@ -265,6 +285,12 @@ class FakeEventRemote implements EventRemoteDataSource {
 
   static Never _noLineup(String eventId) =>
       throw UnimplementedError('fetchLineup is not faked');
+
+  static Never _noDirectAdd(DirectAddRequest request) =>
+      throw UnimplementedError('directAddGame is not faked');
+
+  static Never _noLineupRemove(LineupRemoveRequest request) =>
+      throw UnimplementedError('removeLineupGame is not faked');
 
   static Never _noNomination(NominationRequest request) =>
       throw UnimplementedError('fetchNomination is not faked');
@@ -400,6 +426,20 @@ class FakeEventRemote implements EventRemoteDataSource {
 
   /// The event of each lineup read, in order, recorded before it is answered.
   final List<String> lineupRequests = [];
+
+  /// Answers each direct add (#519), which throws unless a test supplies one.
+  final FutureOr<LineupGame> Function(DirectAddRequest request) directAdded;
+
+  /// Each direct add, in order, recorded before it is answered.
+  final List<DirectAddRequest> directAdds = [];
+
+  /// Answers each lineup removal (#520), which throws unless a test supplies
+  /// one.
+  final FutureOr<LineupGame> Function(LineupRemoveRequest request)
+  lineupRemoved;
+
+  /// Each lineup removal, in order, recorded before it is answered.
+  final List<LineupRemoveRequest> lineupRemovals = [];
 
   /// Answers each single nomination read (#517).
   final FutureOr<EventNomination> Function(NominationRequest request)
@@ -799,6 +839,39 @@ class FakeEventRemote implements EventRemoteDataSource {
   Future<List<LineupGame>> fetchLineup(String eventId) async {
     lineupRequests.add(eventId);
     return lineup(eventId);
+  }
+
+  @override
+  Future<LineupGame> directAddGame(
+    String eventId, {
+    required String platformGameId,
+    required String suppliedById,
+    String? occurrenceId,
+    ScheduledGameRole role = ScheduledGameRole.primary,
+    String? notes,
+    int? maxPlayTime,
+  }) async {
+    final request = (
+      eventId: eventId,
+      platformGameId: platformGameId,
+      suppliedById: suppliedById,
+      occurrenceId: occurrenceId,
+      role: role,
+      notes: notes,
+      maxPlayTime: maxPlayTime,
+    );
+    directAdds.add(request);
+    return directAdded(request);
+  }
+
+  @override
+  Future<LineupGame> removeLineupGame(
+    String eventId,
+    String lineupGameId,
+  ) async {
+    final request = (eventId: eventId, lineupGameId: lineupGameId);
+    lineupRemovals.add(request);
+    return lineupRemoved(request);
   }
 
   @override
