@@ -814,8 +814,8 @@ can express what the finding wants, that check is in the suite, skipped with
 
 | Issue | Summary | Skipped check |
 |---|---|---|
-| #759 | `SegmentedButton` segments get no #644 ring; only Material's focus overlay marks them | `packages/ui/tokens/test/accessibility/bge_button_focus_ring_test.dart` |
-| #761 | Drawer entries, filter chips and the date and time pickers show focus as a fill only, 1.14 to 1.40:1 | the same file, for the drawer entry and the filter chip |
+| #761 | Drawer entries and the date and time pickers show focus as a fill only, 1.14 to 1.40:1. No fill passes on a drawer entry (the decision is back with #414), the day grid has none, and the time dial never reports focus | `packages/ui/tokens/test/accessibility/bge_button_focus_ring_test.dart`, for the drawer entry |
+| #909 | A focused *selected* bar or rail destination is under 3:1: the fill paints over its indicator, and no colour stands clear of that and carries both icons | `packages/ui/tokens/test/accessibility/bge_button_focus_ring_test.dart` for the bar, and `packages/app_shell/test/navigation/navigation_shell_test.dart` for the rail |
 | #762 | The filter sheet and every `AlertDialog` without `semanticLabel` have no accessible name on iOS and macOS | `packages/features/catalog/test/widgets/game_search_screen_test.dart`, for the sheet |
 | #763 | Drawer entries read "Tab n of m" though the drawer is a launcher | `packages/app_shell/test/screens/home_screen_test.dart` |
 | #764 | `TextButton()`, `OutlinedButton()` and `ElevatedButton()` clip their content to their shape once the ring's builder is set, so a label that wraps at 2.0 text loses glyph pixels at the curved ends | `packages/ui/tokens/test/accessibility/bge_button_focus_ring_test.dart` |
@@ -866,6 +866,19 @@ Fixed after the run, so no longer in the findings table:
   focus only. `ExpansionTile` headers don't yet (#1052, in the open findings above).
   The skipped check moved from `ui_tokens` to `packages/ui/widgets/test/focus/bge_row_focus_ring_test.dart`
   and passes.
+- #759, fixed 2026-11-20: a focused `SegmentedButton` segment is filled 3:1
+  from its rest, and its label changes with the fill, `onInverseSurface` in
+  all four themes. It holds over the page, a sheet and a dialog, and under a
+  hover (`bge_button_focus_ring_test.dart`).
+- #761, filter chips fixed 2026-11-20: a chip's side draws a
+  `focusOutlineWidth` ring, `primary` unselected. Selected, it is
+  `onSecondaryContainer` in light, dark and high-contrast dark, where
+  `primary` falls under 3:1 beneath the focus tint, and `primary` in
+  high-contrast light. The drawer and the pickers stay open in the findings
+  above. The chip's check moved into the chips' group and passes.
+- #909, fallback fixed 2026-11-20: a palette where no fill passes now gets
+  the closest one from `BgeFocusFill`, and its icon stays above 1:1. A
+  focused *selected* destination stays open in the findings above.
 - #760, fixed 2026-11-20: the six extended floating buttons are `BgeExtendedFab`,
   ringed inside the edge in a colour that holds 3:1 on the fill. The skipped
   check moved to `packages/ui/widgets/test/buttons/bge_extended_fab_test.dart`
