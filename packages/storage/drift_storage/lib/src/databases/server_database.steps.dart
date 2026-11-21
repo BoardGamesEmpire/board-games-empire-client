@@ -8547,6 +8547,834 @@ i1.GeneratedColumn<String> _column_123(String aliasedName) =>
       $customConstraints: 'NOT NULL DEFAULT \'[]\'',
       defaultValue: const i1.CustomExpression('\'[]\''),
     );
+
+final class Schema19 extends i0.VersionedSchema {
+  Schema19({required super.database}) : super(version: 19);
+  @override
+  late final List<i1.DatabaseSchemaEntity> entities = [
+    games,
+    platformGames,
+    gameCollections,
+    households,
+    householdMembers,
+    householdMoves,
+    syncQueue,
+    unsentChangesUsers,
+    gameAccess,
+    platformGameAccess,
+    events,
+    eventOccurrences,
+    eventAttendees,
+    eventPolicies,
+    eventAccess,
+    eventGeneration,
+    eventMoves,
+    listLayouts,
+    eventOccurrencePolicies,
+    platformGamesGameIdIdx,
+    gameCollectionsUserIdx,
+    gameCollectionsPlatformGameIdIdx,
+    gameCollectionsUserPgameMediumUniqueIdx,
+    householdMembersUserIdx,
+    householdMembersHouseholdUserUniqueIdx,
+    syncQueueUserStatusIdx,
+    gameAccessGameIdIdx,
+    platformGameAccessPlatformGameIdIdx,
+    eventOccurrencesEventIdIdx,
+    eventAttendeesEventIdIdx,
+    eventAttendeesUserIdIdx,
+    eventAccessEventIdIdx,
+    eventOccurrencePoliciesEventIdIdx,
+  ];
+  late final Shape29 games = Shape29(
+    source: i0.VersionedTable(
+      entityName: 'games',
+      withoutRowId: false,
+      isStrict: false,
+      tableConstraints: ['PRIMARY KEY(id)'],
+      columns: [
+        _column_0,
+        _column_1,
+        _column_2,
+        _column_3,
+        _column_4,
+        _column_5,
+        _column_6,
+        _column_7,
+        _column_8,
+        _column_10,
+        _column_12,
+        _column_14,
+        _column_15,
+        _column_16,
+        _column_17,
+        _column_18,
+        _column_19,
+        _column_20,
+        _column_21,
+        _column_22,
+        _column_23,
+        _column_24,
+        _column_25,
+        _column_26,
+        _column_123,
+        _column_114,
+        _column_28,
+        _column_29,
+        _column_30,
+        _column_31,
+        _column_67,
+      ],
+      attachedDatabase: database,
+    ),
+    alias: null,
+  );
+  late final Shape27 platformGames = Shape27(
+    source: i0.VersionedTable(
+      entityName: 'platform_games',
+      withoutRowId: false,
+      isStrict: false,
+      tableConstraints: ['PRIMARY KEY(id)'],
+      columns: [
+        _column_0,
+        _column_32,
+        _column_33,
+        _column_34,
+        _column_121,
+        _column_7,
+        _column_8,
+        _column_10,
+        _column_12,
+        _column_4,
+        _column_5,
+        _column_35,
+        _column_36,
+        _column_37,
+        _column_38,
+        _column_39,
+        _column_40,
+        _column_30,
+        _column_31,
+        _column_67,
+      ],
+      attachedDatabase: database,
+    ),
+    alias: null,
+  );
+  late final Shape2 gameCollections = Shape2(
+    source: i0.VersionedTable(
+      entityName: 'game_collections',
+      withoutRowId: false,
+      isStrict: false,
+      tableConstraints: ['PRIMARY KEY(id)'],
+      columns: [
+        _column_0,
+        _column_41,
+        _column_42,
+        _column_43,
+        _column_44,
+        _column_45,
+        _column_46,
+        _column_47,
+        _column_48,
+        _column_49,
+        _column_50,
+        _column_51,
+        _column_52,
+        _column_53,
+        _column_54,
+        _column_29,
+        _column_30,
+        _column_31,
+      ],
+      attachedDatabase: database,
+    ),
+    alias: null,
+  );
+  late final Shape19 households = Shape19(
+    source: i0.VersionedTable(
+      entityName: 'households',
+      withoutRowId: false,
+      isStrict: false,
+      tableConstraints: ['PRIMARY KEY(id)'],
+      columns: [
+        _column_0,
+        _column_55,
+        _column_3,
+        _column_4,
+        _column_113,
+        _column_53,
+        _column_54,
+        _column_29,
+        _column_30,
+        _column_31,
+      ],
+      attachedDatabase: database,
+    ),
+    alias: null,
+  );
+  late final Shape20 householdMembers = Shape20(
+    source: i0.VersionedTable(
+      entityName: 'household_members',
+      withoutRowId: false,
+      isStrict: false,
+      tableConstraints: ['PRIMARY KEY(id)'],
+      columns: [
+        _column_0,
+        _column_41,
+        _column_56,
+        _column_57,
+        _column_58,
+        _column_88,
+        _column_89,
+        _column_90,
+        _column_30,
+        _column_31,
+      ],
+      attachedDatabase: database,
+    ),
+    alias: null,
+  );
+  late final Shape7 householdMoves = Shape7(
+    source: i0.VersionedTable(
+      entityName: 'household_moves',
+      withoutRowId: false,
+      isStrict: false,
+      tableConstraints: ['PRIMARY KEY(local_id)'],
+      columns: [_column_64, _column_65],
+      attachedDatabase: database,
+    ),
+    alias: null,
+  );
+  late final Shape6 syncQueue = Shape6(
+    source: i0.VersionedTable(
+      entityName: 'sync_queue',
+      withoutRowId: false,
+      isStrict: false,
+      tableConstraints: ['PRIMARY KEY(id)'],
+      columns: [
+        _column_0,
+        _column_41,
+        _column_59,
+        _column_60,
+        _column_61,
+        _column_62,
+        _column_30,
+        _column_63,
+      ],
+      attachedDatabase: database,
+    ),
+    alias: null,
+  );
+  late final Shape8 unsentChangesUsers = Shape8(
+    source: i0.VersionedTable(
+      entityName: 'unsent_changes_users',
+      withoutRowId: false,
+      isStrict: false,
+      tableConstraints: ['PRIMARY KEY(user_id)'],
+      columns: [_column_41, _column_66],
+      attachedDatabase: database,
+    ),
+    alias: null,
+  );
+  late final Shape11 gameAccess = Shape11(
+    source: i0.VersionedTable(
+      entityName: 'game_access',
+      withoutRowId: false,
+      isStrict: false,
+      tableConstraints: ['PRIMARY KEY(user_id, game_id, source)'],
+      columns: [_column_41, _column_32, _column_68],
+      attachedDatabase: database,
+    ),
+    alias: null,
+  );
+  late final Shape12 platformGameAccess = Shape12(
+    source: i0.VersionedTable(
+      entityName: 'platform_game_access',
+      withoutRowId: false,
+      isStrict: false,
+      tableConstraints: ['PRIMARY KEY(user_id, platform_game_id, source)'],
+      columns: [_column_41, _column_42, _column_68],
+      attachedDatabase: database,
+    ),
+    alias: null,
+  );
+  late final Shape24 events = Shape24(
+    source: i0.VersionedTable(
+      entityName: 'events',
+      withoutRowId: false,
+      isStrict: false,
+      tableConstraints: ['PRIMARY KEY(id)'],
+      columns: [
+        _column_0,
+        _column_1,
+        _column_69,
+        _column_70,
+        _column_3,
+        _column_4,
+        _column_71,
+        _column_72,
+        _column_73,
+        _column_74,
+        _column_75,
+        _column_115,
+        _column_85,
+        _column_76,
+        _column_53,
+        _column_54,
+        _column_77,
+        _column_30,
+        _column_31,
+      ],
+      attachedDatabase: database,
+    ),
+    alias: null,
+  );
+  late final Shape23 eventOccurrences = Shape23(
+    source: i0.VersionedTable(
+      entityName: 'event_occurrences',
+      withoutRowId: false,
+      isStrict: false,
+      tableConstraints: ['PRIMARY KEY(id)'],
+      columns: [
+        _column_0,
+        _column_78,
+        _column_79,
+        _column_80,
+        _column_81,
+        _column_71,
+        _column_75,
+        _column_82,
+        _column_83,
+        _column_84,
+        _column_85,
+        _column_115,
+        _column_30,
+        _column_31,
+      ],
+      attachedDatabase: database,
+    ),
+    alias: null,
+  );
+  late final Shape15 eventAttendees = Shape15(
+    source: i0.VersionedTable(
+      entityName: 'event_attendees',
+      withoutRowId: false,
+      isStrict: false,
+      tableConstraints: ['PRIMARY KEY(id)'],
+      columns: [
+        _column_0,
+        _column_78,
+        _column_86,
+        _column_87,
+        _column_88,
+        _column_89,
+        _column_90,
+        _column_91,
+        _column_75,
+        _column_58,
+        _column_92,
+        _column_30,
+        _column_31,
+      ],
+      attachedDatabase: database,
+    ),
+    alias: null,
+  );
+  late final Shape30 eventPolicies = Shape30(
+    source: i0.VersionedTable(
+      entityName: 'event_policies',
+      withoutRowId: false,
+      isStrict: false,
+      tableConstraints: ['PRIMARY KEY(event_id)'],
+      columns: [
+        _column_0,
+        _column_78,
+        _column_93,
+        _column_94,
+        _column_95,
+        _column_96,
+        _column_97,
+        _column_98,
+        _column_99,
+        _column_100,
+        _column_101,
+        _column_102,
+        _column_103,
+        _column_104,
+        _column_105,
+        _column_106,
+        _column_107,
+        _column_108,
+        _column_109,
+        _column_110,
+        _column_124,
+        _column_125,
+        _column_126,
+        _column_127,
+        _column_128,
+        _column_30,
+        _column_31,
+      ],
+      attachedDatabase: database,
+    ),
+    alias: null,
+  );
+  late final Shape28 eventAccess = Shape28(
+    source: i0.VersionedTable(
+      entityName: 'event_access',
+      withoutRowId: false,
+      isStrict: false,
+      tableConstraints: ['PRIMARY KEY(user_id, event_id, source)'],
+      columns: [
+        _column_41,
+        _column_78,
+        _column_68,
+        _column_118,
+        _column_119,
+        _column_120,
+        _column_92,
+        _column_122,
+      ],
+      attachedDatabase: database,
+    ),
+    alias: null,
+  );
+  late final Shape18 eventGeneration = Shape18(
+    source: i0.VersionedTable(
+      entityName: 'event_generation',
+      withoutRowId: false,
+      isStrict: false,
+      tableConstraints: ['PRIMARY KEY(id)'],
+      columns: [_column_111, _column_112],
+      attachedDatabase: database,
+    ),
+    alias: null,
+  );
+  late final Shape7 eventMoves = Shape7(
+    source: i0.VersionedTable(
+      entityName: 'event_moves',
+      withoutRowId: false,
+      isStrict: false,
+      tableConstraints: ['PRIMARY KEY(local_id)'],
+      columns: [_column_64, _column_65],
+      attachedDatabase: database,
+    ),
+    alias: null,
+  );
+  late final Shape25 listLayouts = Shape25(
+    source: i0.VersionedTable(
+      entityName: 'list_layouts',
+      withoutRowId: false,
+      isStrict: false,
+      tableConstraints: ['PRIMARY KEY(user_id, screen)'],
+      columns: [_column_41, _column_116, _column_117],
+      attachedDatabase: database,
+    ),
+    alias: null,
+  );
+  late final Shape31 eventOccurrencePolicies = Shape31(
+    source: i0.VersionedTable(
+      entityName: 'event_occurrence_policies',
+      withoutRowId: false,
+      isStrict: false,
+      tableConstraints: ['PRIMARY KEY(occurrence_id)'],
+      columns: [
+        _column_0,
+        _column_129,
+        _column_78,
+        _column_130,
+        _column_131,
+        _column_132,
+        _column_133,
+        _column_134,
+        _column_135,
+        _column_136,
+        _column_137,
+        _column_138,
+        _column_139,
+        _column_140,
+        _column_95,
+        _column_99,
+        _column_103,
+        _column_105,
+        _column_107,
+        _column_110,
+        _column_141,
+        _column_142,
+        _column_143,
+        _column_144,
+        _column_145,
+        _column_30,
+        _column_31,
+      ],
+      attachedDatabase: database,
+    ),
+    alias: null,
+  );
+  final i1.Index platformGamesGameIdIdx = i1.Index(
+    'platform_games_game_id_idx',
+    'CREATE INDEX platform_games_game_id_idx ON platform_games (game_id)',
+  );
+  final i1.Index gameCollectionsUserIdx = i1.Index(
+    'game_collections_user_idx',
+    'CREATE INDEX game_collections_user_idx ON game_collections (user_id)',
+  );
+  final i1.Index gameCollectionsPlatformGameIdIdx = i1.Index(
+    'game_collections_platform_game_id_idx',
+    'CREATE INDEX game_collections_platform_game_id_idx ON game_collections (platform_game_id)',
+  );
+  final i1.Index gameCollectionsUserPgameMediumUniqueIdx = i1.Index(
+    'game_collections_user_pgame_medium_unique_idx',
+    'CREATE UNIQUE INDEX game_collections_user_pgame_medium_unique_idx ON game_collections (user_id, platform_game_id, medium) WHERE deleted_at IS NULL',
+  );
+  final i1.Index householdMembersUserIdx = i1.Index(
+    'household_members_user_idx',
+    'CREATE INDEX household_members_user_idx ON household_members (user_id)',
+  );
+  final i1.Index householdMembersHouseholdUserUniqueIdx = i1.Index(
+    'household_members_household_user_unique_idx',
+    'CREATE UNIQUE INDEX household_members_household_user_unique_idx ON household_members (household_id, user_id)',
+  );
+  final i1.Index syncQueueUserStatusIdx = i1.Index(
+    'sync_queue_user_status_idx',
+    'CREATE INDEX sync_queue_user_status_idx ON sync_queue (user_id, status, created_at)',
+  );
+  final i1.Index gameAccessGameIdIdx = i1.Index(
+    'game_access_game_id_idx',
+    'CREATE INDEX game_access_game_id_idx ON game_access (game_id)',
+  );
+  final i1.Index platformGameAccessPlatformGameIdIdx = i1.Index(
+    'platform_game_access_platform_game_id_idx',
+    'CREATE INDEX platform_game_access_platform_game_id_idx ON platform_game_access (platform_game_id)',
+  );
+  final i1.Index eventOccurrencesEventIdIdx = i1.Index(
+    'event_occurrences_event_id_idx',
+    'CREATE INDEX event_occurrences_event_id_idx ON event_occurrences (event_id)',
+  );
+  final i1.Index eventAttendeesEventIdIdx = i1.Index(
+    'event_attendees_event_id_idx',
+    'CREATE INDEX event_attendees_event_id_idx ON event_attendees (event_id)',
+  );
+  final i1.Index eventAttendeesUserIdIdx = i1.Index(
+    'event_attendees_user_id_idx',
+    'CREATE INDEX event_attendees_user_id_idx ON event_attendees (user_id)',
+  );
+  final i1.Index eventAccessEventIdIdx = i1.Index(
+    'event_access_event_id_idx',
+    'CREATE INDEX event_access_event_id_idx ON event_access (event_id)',
+  );
+  final i1.Index eventOccurrencePoliciesEventIdIdx = i1.Index(
+    'event_occurrence_policies_event_id_idx',
+    'CREATE INDEX event_occurrence_policies_event_id_idx ON event_occurrence_policies (event_id)',
+  );
+}
+
+class Shape30 extends i0.VersionedTable {
+  Shape30({required super.source, required super.alias}) : super.aliased();
+  i1.GeneratedColumn<String> get id =>
+      columnsByName['id']! as i1.GeneratedColumn<String>;
+  i1.GeneratedColumn<String> get eventId =>
+      columnsByName['event_id']! as i1.GeneratedColumn<String>;
+  i1.GeneratedColumn<int> get allowMemberInvites =>
+      columnsByName['allow_member_invites']! as i1.GeneratedColumn<int>;
+  i1.GeneratedColumn<int> get allowGuestInvites =>
+      columnsByName['allow_guest_invites']! as i1.GeneratedColumn<int>;
+  i1.GeneratedColumn<int> get maxAttendees =>
+      columnsByName['max_attendees']! as i1.GeneratedColumn<int>;
+  i1.GeneratedColumn<int> get restrictToGameCategories =>
+      columnsByName['restrict_to_game_categories']! as i1.GeneratedColumn<int>;
+  i1.GeneratedColumn<int> get requireHostApprovalToJoin =>
+      columnsByName['require_host_approval_to_join']!
+          as i1.GeneratedColumn<int>;
+  i1.GeneratedColumn<int> get allowSpectators =>
+      columnsByName['allow_spectators']! as i1.GeneratedColumn<int>;
+  i1.GeneratedColumn<int> get maxTotalParticipants =>
+      columnsByName['max_total_participants']! as i1.GeneratedColumn<int>;
+  i1.GeneratedColumn<int> get strictCapacity =>
+      columnsByName['strict_capacity']! as i1.GeneratedColumn<int>;
+  i1.GeneratedColumn<String> get gameAdditionMode =>
+      columnsByName['game_addition_mode']! as i1.GeneratedColumn<String>;
+  i1.GeneratedColumn<int> get restrictToAttendeePool =>
+      columnsByName['restrict_to_attendee_pool']! as i1.GeneratedColumn<int>;
+  i1.GeneratedColumn<int> get fillerMaxPlayTime =>
+      columnsByName['filler_max_play_time']! as i1.GeneratedColumn<int>;
+  i1.GeneratedColumn<String> get voteThresholdType =>
+      columnsByName['vote_threshold_type']! as i1.GeneratedColumn<String>;
+  i1.GeneratedColumn<int> get voteThresholdValue =>
+      columnsByName['vote_threshold_value']! as i1.GeneratedColumn<int>;
+  i1.GeneratedColumn<String> get voteQuorumType =>
+      columnsByName['vote_quorum_type']! as i1.GeneratedColumn<String>;
+  i1.GeneratedColumn<int> get voteQuorumValue =>
+      columnsByName['vote_quorum_value']! as i1.GeneratedColumn<int>;
+  i1.GeneratedColumn<String> get voteEligibility =>
+      columnsByName['vote_eligibility']! as i1.GeneratedColumn<String>;
+  i1.GeneratedColumn<String> get interestedWeight =>
+      columnsByName['interested_weight']! as i1.GeneratedColumn<String>;
+  i1.GeneratedColumn<int> get votingWindowHours =>
+      columnsByName['voting_window_hours']! as i1.GeneratedColumn<int>;
+  i1.GeneratedColumn<String> get occurrenceOverrideScope =>
+      columnsByName['occurrence_override_scope']! as i1.GeneratedColumn<String>;
+  i1.GeneratedColumn<String> get allowedPlatformTypesJson =>
+      columnsByName['allowed_platform_types_json']!
+          as i1.GeneratedColumn<String>;
+  i1.GeneratedColumn<String> get allowedPlatformIdsJson =>
+      columnsByName['allowed_platform_ids_json']! as i1.GeneratedColumn<String>;
+  i1.GeneratedColumn<String> get allowedCategoryIdsJson =>
+      columnsByName['allowed_category_ids_json']! as i1.GeneratedColumn<String>;
+  i1.GeneratedColumn<int> get occurrencePoliciesRead =>
+      columnsByName['occurrence_policies_read']! as i1.GeneratedColumn<int>;
+  i1.GeneratedColumn<String> get createdAt =>
+      columnsByName['created_at']! as i1.GeneratedColumn<String>;
+  i1.GeneratedColumn<String> get updatedAt =>
+      columnsByName['updated_at']! as i1.GeneratedColumn<String>;
+}
+
+i1.GeneratedColumn<String> _column_124(String aliasedName) =>
+    i1.GeneratedColumn<String>(
+      'occurrence_override_scope',
+      aliasedName,
+      false,
+      type: i1.DriftSqlType.string,
+      $customConstraints: 'NOT NULL DEFAULT \'Any\'',
+      defaultValue: const i1.CustomExpression('\'Any\''),
+    );
+i1.GeneratedColumn<String> _column_125(String aliasedName) =>
+    i1.GeneratedColumn<String>(
+      'allowed_platform_types_json',
+      aliasedName,
+      true,
+      type: i1.DriftSqlType.string,
+      $customConstraints: 'NULL',
+    );
+i1.GeneratedColumn<String> _column_126(String aliasedName) =>
+    i1.GeneratedColumn<String>(
+      'allowed_platform_ids_json',
+      aliasedName,
+      true,
+      type: i1.DriftSqlType.string,
+      $customConstraints: 'NULL',
+    );
+i1.GeneratedColumn<String> _column_127(String aliasedName) =>
+    i1.GeneratedColumn<String>(
+      'allowed_category_ids_json',
+      aliasedName,
+      true,
+      type: i1.DriftSqlType.string,
+      $customConstraints: 'NULL',
+    );
+i1.GeneratedColumn<int> _column_128(String aliasedName) =>
+    i1.GeneratedColumn<int>(
+      'occurrence_policies_read',
+      aliasedName,
+      false,
+      type: i1.DriftSqlType.int,
+      $customConstraints:
+          'NOT NULL DEFAULT 0 CHECK (occurrence_policies_read IN (0, 1))',
+      defaultValue: const i1.CustomExpression('0'),
+    );
+
+class Shape31 extends i0.VersionedTable {
+  Shape31({required super.source, required super.alias}) : super.aliased();
+  i1.GeneratedColumn<String> get id =>
+      columnsByName['id']! as i1.GeneratedColumn<String>;
+  i1.GeneratedColumn<String> get occurrenceId =>
+      columnsByName['occurrence_id']! as i1.GeneratedColumn<String>;
+  i1.GeneratedColumn<String> get eventId =>
+      columnsByName['event_id']! as i1.GeneratedColumn<String>;
+  i1.GeneratedColumn<String> get allowedCategoryIdsJson =>
+      columnsByName['allowed_category_ids_json']! as i1.GeneratedColumn<String>;
+  i1.GeneratedColumn<String> get allowedPlatformIdsJson =>
+      columnsByName['allowed_platform_ids_json']! as i1.GeneratedColumn<String>;
+  i1.GeneratedColumn<String> get allowedPlatformTypesJson =>
+      columnsByName['allowed_platform_types_json']!
+          as i1.GeneratedColumn<String>;
+  i1.GeneratedColumn<int> get platformTypesUnrestricted =>
+      columnsByName['platform_types_unrestricted']! as i1.GeneratedColumn<int>;
+  i1.GeneratedColumn<int> get platformsUnrestricted =>
+      columnsByName['platforms_unrestricted']! as i1.GeneratedColumn<int>;
+  i1.GeneratedColumn<int> get capacityUnrestricted =>
+      columnsByName['capacity_unrestricted']! as i1.GeneratedColumn<int>;
+  i1.GeneratedColumn<int> get restrictToGameCategories =>
+      columnsByName['restrict_to_game_categories']! as i1.GeneratedColumn<int>;
+  i1.GeneratedColumn<int> get strictCapacity =>
+      columnsByName['strict_capacity']! as i1.GeneratedColumn<int>;
+  i1.GeneratedColumn<int> get requireHostApprovalToJoin =>
+      columnsByName['require_host_approval_to_join']!
+          as i1.GeneratedColumn<int>;
+  i1.GeneratedColumn<int> get allowSpectators =>
+      columnsByName['allow_spectators']! as i1.GeneratedColumn<int>;
+  i1.GeneratedColumn<int> get restrictToAttendeePool =>
+      columnsByName['restrict_to_attendee_pool']! as i1.GeneratedColumn<int>;
+  i1.GeneratedColumn<int> get maxAttendees =>
+      columnsByName['max_attendees']! as i1.GeneratedColumn<int>;
+  i1.GeneratedColumn<int> get maxTotalParticipants =>
+      columnsByName['max_total_participants']! as i1.GeneratedColumn<int>;
+  i1.GeneratedColumn<int> get fillerMaxPlayTime =>
+      columnsByName['filler_max_play_time']! as i1.GeneratedColumn<int>;
+  i1.GeneratedColumn<int> get voteThresholdValue =>
+      columnsByName['vote_threshold_value']! as i1.GeneratedColumn<int>;
+  i1.GeneratedColumn<int> get voteQuorumValue =>
+      columnsByName['vote_quorum_value']! as i1.GeneratedColumn<int>;
+  i1.GeneratedColumn<int> get votingWindowHours =>
+      columnsByName['voting_window_hours']! as i1.GeneratedColumn<int>;
+  i1.GeneratedColumn<String> get gameAdditionMode =>
+      columnsByName['game_addition_mode']! as i1.GeneratedColumn<String>;
+  i1.GeneratedColumn<String> get voteThresholdType =>
+      columnsByName['vote_threshold_type']! as i1.GeneratedColumn<String>;
+  i1.GeneratedColumn<String> get voteQuorumType =>
+      columnsByName['vote_quorum_type']! as i1.GeneratedColumn<String>;
+  i1.GeneratedColumn<String> get voteEligibility =>
+      columnsByName['vote_eligibility']! as i1.GeneratedColumn<String>;
+  i1.GeneratedColumn<String> get interestedWeight =>
+      columnsByName['interested_weight']! as i1.GeneratedColumn<String>;
+  i1.GeneratedColumn<String> get createdAt =>
+      columnsByName['created_at']! as i1.GeneratedColumn<String>;
+  i1.GeneratedColumn<String> get updatedAt =>
+      columnsByName['updated_at']! as i1.GeneratedColumn<String>;
+}
+
+i1.GeneratedColumn<String> _column_129(String aliasedName) =>
+    i1.GeneratedColumn<String>(
+      'occurrence_id',
+      aliasedName,
+      false,
+      type: i1.DriftSqlType.string,
+      $customConstraints: 'NOT NULL',
+    );
+i1.GeneratedColumn<String> _column_130(String aliasedName) =>
+    i1.GeneratedColumn<String>(
+      'allowed_category_ids_json',
+      aliasedName,
+      false,
+      type: i1.DriftSqlType.string,
+      $customConstraints: 'NOT NULL DEFAULT \'[]\'',
+      defaultValue: const i1.CustomExpression('\'[]\''),
+    );
+i1.GeneratedColumn<String> _column_131(String aliasedName) =>
+    i1.GeneratedColumn<String>(
+      'allowed_platform_ids_json',
+      aliasedName,
+      false,
+      type: i1.DriftSqlType.string,
+      $customConstraints: 'NOT NULL DEFAULT \'[]\'',
+      defaultValue: const i1.CustomExpression('\'[]\''),
+    );
+i1.GeneratedColumn<String> _column_132(String aliasedName) =>
+    i1.GeneratedColumn<String>(
+      'allowed_platform_types_json',
+      aliasedName,
+      false,
+      type: i1.DriftSqlType.string,
+      $customConstraints: 'NOT NULL DEFAULT \'[]\'',
+      defaultValue: const i1.CustomExpression('\'[]\''),
+    );
+i1.GeneratedColumn<int> _column_133(String aliasedName) =>
+    i1.GeneratedColumn<int>(
+      'platform_types_unrestricted',
+      aliasedName,
+      false,
+      type: i1.DriftSqlType.int,
+      $customConstraints:
+          'NOT NULL CHECK (platform_types_unrestricted IN (0, 1))',
+    );
+i1.GeneratedColumn<int> _column_134(String aliasedName) =>
+    i1.GeneratedColumn<int>(
+      'platforms_unrestricted',
+      aliasedName,
+      false,
+      type: i1.DriftSqlType.int,
+      $customConstraints: 'NOT NULL CHECK (platforms_unrestricted IN (0, 1))',
+    );
+i1.GeneratedColumn<int> _column_135(String aliasedName) =>
+    i1.GeneratedColumn<int>(
+      'capacity_unrestricted',
+      aliasedName,
+      false,
+      type: i1.DriftSqlType.int,
+      $customConstraints: 'NOT NULL CHECK (capacity_unrestricted IN (0, 1))',
+    );
+i1.GeneratedColumn<int> _column_136(String aliasedName) =>
+    i1.GeneratedColumn<int>(
+      'restrict_to_game_categories',
+      aliasedName,
+      true,
+      type: i1.DriftSqlType.int,
+      $customConstraints: 'NULL CHECK (restrict_to_game_categories IN (0, 1))',
+    );
+i1.GeneratedColumn<int> _column_137(String aliasedName) =>
+    i1.GeneratedColumn<int>(
+      'strict_capacity',
+      aliasedName,
+      true,
+      type: i1.DriftSqlType.int,
+      $customConstraints: 'NULL CHECK (strict_capacity IN (0, 1))',
+    );
+i1.GeneratedColumn<int> _column_138(String aliasedName) =>
+    i1.GeneratedColumn<int>(
+      'require_host_approval_to_join',
+      aliasedName,
+      true,
+      type: i1.DriftSqlType.int,
+      $customConstraints:
+          'NULL CHECK (require_host_approval_to_join IN (0, 1))',
+    );
+i1.GeneratedColumn<int> _column_139(String aliasedName) =>
+    i1.GeneratedColumn<int>(
+      'allow_spectators',
+      aliasedName,
+      true,
+      type: i1.DriftSqlType.int,
+      $customConstraints: 'NULL CHECK (allow_spectators IN (0, 1))',
+    );
+i1.GeneratedColumn<int> _column_140(String aliasedName) =>
+    i1.GeneratedColumn<int>(
+      'restrict_to_attendee_pool',
+      aliasedName,
+      true,
+      type: i1.DriftSqlType.int,
+      $customConstraints: 'NULL CHECK (restrict_to_attendee_pool IN (0, 1))',
+    );
+i1.GeneratedColumn<String> _column_141(String aliasedName) =>
+    i1.GeneratedColumn<String>(
+      'game_addition_mode',
+      aliasedName,
+      true,
+      type: i1.DriftSqlType.string,
+      $customConstraints: 'NULL',
+    );
+i1.GeneratedColumn<String> _column_142(String aliasedName) =>
+    i1.GeneratedColumn<String>(
+      'vote_threshold_type',
+      aliasedName,
+      true,
+      type: i1.DriftSqlType.string,
+      $customConstraints: 'NULL',
+    );
+i1.GeneratedColumn<String> _column_143(String aliasedName) =>
+    i1.GeneratedColumn<String>(
+      'vote_quorum_type',
+      aliasedName,
+      true,
+      type: i1.DriftSqlType.string,
+      $customConstraints: 'NULL',
+    );
+i1.GeneratedColumn<String> _column_144(String aliasedName) =>
+    i1.GeneratedColumn<String>(
+      'vote_eligibility',
+      aliasedName,
+      true,
+      type: i1.DriftSqlType.string,
+      $customConstraints: 'NULL',
+    );
+i1.GeneratedColumn<String> _column_145(String aliasedName) =>
+    i1.GeneratedColumn<String>(
+      'interested_weight',
+      aliasedName,
+      true,
+      type: i1.DriftSqlType.string,
+      $customConstraints: 'NULL',
+    );
 i0.MigrationStepWithVersion migrationSteps({
   required Future<void> Function(i1.Migrator m, Schema2 schema) from1To2,
   required Future<void> Function(i1.Migrator m, Schema3 schema) from2To3,
@@ -8565,6 +9393,7 @@ i0.MigrationStepWithVersion migrationSteps({
   required Future<void> Function(i1.Migrator m, Schema16 schema) from15To16,
   required Future<void> Function(i1.Migrator m, Schema17 schema) from16To17,
   required Future<void> Function(i1.Migrator m, Schema18 schema) from17To18,
+  required Future<void> Function(i1.Migrator m, Schema19 schema) from18To19,
 }) {
   return (currentVersion, database) async {
     switch (currentVersion) {
@@ -8653,6 +9482,11 @@ i0.MigrationStepWithVersion migrationSteps({
         final migrator = i1.Migrator(database, schema);
         await from17To18(migrator, schema);
         return 18;
+      case 18:
+        final schema = Schema19(database: database);
+        final migrator = i1.Migrator(database, schema);
+        await from18To19(migrator, schema);
+        return 19;
       default:
         throw ArgumentError.value('Unknown migration from $currentVersion');
     }
@@ -8677,6 +9511,7 @@ i1.OnUpgrade stepByStep({
   required Future<void> Function(i1.Migrator m, Schema16 schema) from15To16,
   required Future<void> Function(i1.Migrator m, Schema17 schema) from16To17,
   required Future<void> Function(i1.Migrator m, Schema18 schema) from17To18,
+  required Future<void> Function(i1.Migrator m, Schema19 schema) from18To19,
 }) => i0.VersionedSchema.stepByStepHelper(
   step: migrationSteps(
     from1To2: from1To2,
@@ -8696,5 +9531,6 @@ i1.OnUpgrade stepByStep({
     from15To16: from15To16,
     from16To17: from16To17,
     from17To18: from17To18,
+    from18To19: from18To19,
   ),
 );

@@ -7,7 +7,7 @@ bespoke migration registry.
 
 ## Current state
 
-`ServerDatabase` is at `schemaVersion == 18`; `MetaDatabase` is at
+`ServerDatabase` is at `schemaVersion == 19`; `MetaDatabase` is at
 `schemaVersion == 2`. Both databases have real forward migrations, so each has
 a generated `<name>_database.steps.dart` and a `test/drift/<name>/**` scaffold
 (schema helpers + migration tests), all **committed** — regenerate them with
@@ -134,6 +134,31 @@ Server schema history:
   creates `games` from the live table (the v1 and later steps that touch it
   use `addColumn`, `renameColumn` and `dropColumn`, and onCreate runs only on a
   fresh database), so none needs to drop the column.
+- **v18 → v19 (#1009):** adds `event_policies.occurrence_override_scope`
+  (`TEXT NOT NULL`, default `'Any'`, the server's default), how far a date's
+  rules may depart from the event's, and nullable
+  `allowed_platform_types_json`, `allowed_platform_ids_json` and
+  `allowed_category_ids_json`, the lists a restriction allows as JSON arrays
+  of strings, and `occurrence_policies_read` (`INTEGER NOT NULL`, default
+  `0`, a boolean), whether a read has carried the event's dates' own rules,
+  by five `addColumn` calls. A policy cached before it holds `'Any'`, null
+  lists, read as not carried, and false, read as the dates' rules not known,
+  until the next read writes them. The lists can't stand in for the flag: a
+  create's answer and a policy edit's carry them without the dates' rules.
+  Also adds `event_occurrence_policies` (`occurrence_id` primary key,
+  `event_id` referencing `events`), each date's own rules, by one
+  `createTable`, and its `event_occurrence_policies_event_id_idx` by one
+  `createIndex`; it starts empty. It doesn't reference `event_occurrences`:
+  every read deletes and reinserts an event's occurrence rows, and with
+  foreign keys enforced a reference would refuse that delete. Additive (a
+  defaulted and three nullable columns, a new table whose foreign key points
+  at an existing one, no rebuild), so #54 stays deferred. The v6 → v7 step
+  creates `event_policies` from the live table, which now has the columns, so
+  it drops all five again right after, from the empty table, and this step
+  adds them back. None is in a key, an index or a CHECK constraint naming
+  another column, which `DROP COLUMN` would refuse; the flag's own boolean
+  CHECK goes with it, as `event_access.roster_shown`'s does. No step between v7 and v18 rebuilds
+  `event_policies`, so none needs to drop them.
 
 Meta schema history:
 
@@ -144,7 +169,7 @@ Meta schema history:
 
 Committed, generated artefacts (never hand-edited):
 
-- `drift_schemas/server/drift_schema_v1.json` … `drift_schema_v18.json`
+- `drift_schemas/server/drift_schema_v1.json` … `drift_schema_v19.json`
 - `drift_schemas/meta/drift_schema_v1.json`, `drift_schema_v2.json`
 
 CI fails if the latest snapshot of either database drifts from the live
