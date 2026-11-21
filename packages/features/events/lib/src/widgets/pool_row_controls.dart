@@ -6,6 +6,8 @@ import 'package:events/src/bloc/event_detail_state.dart';
 import 'package:events/src/bloc/event_games_bloc.dart';
 import 'package:events/src/bloc/event_games_event.dart';
 import 'package:events/src/bloc/event_games_state.dart';
+import 'package:events/src/bloc/event_lineup_bloc.dart';
+import 'package:events/src/bloc/event_lineup_state.dart';
 import 'package:events/src/bloc/event_nominations_bloc.dart';
 import 'package:events/src/bloc/event_nominations_event.dart';
 import 'package:events/src/bloc/event_nominations_state.dart';
@@ -232,7 +234,8 @@ typedef PoolRowGates = ({
 /// where the row is nominated already, or its game in the lineup, for every
 /// choice; and with nothing to say while a detail read runs, the screen is
 /// acting, a nominations write is out, or the nominations aren't known
-/// ([nominationsKnown]).
+/// ([nominationsKnown]). Its game is in the lineup by [lineup] where that is
+/// known ([knownLineup], #519), else by the nominations.
 ///
 /// Take back on the viewer's own row where they may offer games or take
 /// them back ([offerGamesGate]), and on anyone else's where they may take
@@ -249,8 +252,10 @@ PoolRowGates poolRowGates(
   required Map<String, String?> names,
   required bool acting,
   required List<NominateScope> scopes,
+  EventLineupState? lineup,
 }) {
   final viewerId = detail.detail.attendance?.id;
+  final lined = knownLineup(lineup);
   final own = viewerId != null && game.attendeeId == viewerId;
   final nominated = nominations?.nominations ?? const <EventNomination>[];
   final nominating =
@@ -258,7 +263,7 @@ PoolRowGates poolRowGates(
   final already = nominating
       ? alreadyTaken(l10n, [
           for (final each in scopes)
-            nominateTaken(game, nominated, scope: each.scope),
+            nominateTaken(game, nominated, scope: each.scope, lineup: lined),
         ])
       : null;
   final takesBack = own
@@ -424,6 +429,7 @@ Future<bool> nominateGame(
   final detail = context.read<EventDetailBloc>();
   final pool = context.read<EventGamesBloc>();
   final nominations = context.read<EventNominationsBloc>();
+  final lineup = context.read<EventLineupBloc>();
   final controller = EventGamesTabScope.of(context);
   final shown = detail.state;
   if (shown is! EventDetailReady) return false;
@@ -451,6 +457,7 @@ Future<bool> nominateGame(
               game,
               nominations.state.nominations,
               scope: choice.scope,
+              lineup: knownLineup(lineup.state),
             ),
           ),
       ],
@@ -470,7 +477,13 @@ Future<bool> nominateGame(
       !nominationsKnown(nominations.state, controller) ||
       !inPool ||
       !offered ||
-      nominateTaken(game, nominations.state.nominations, scope: scope) !=
+      nominateTaken(
+            game,
+            nominations.state.nominations,
+            scope: scope,
+            // As the lineup stands now, not as the dialog showed it.
+            lineup: knownLineup(lineup.state),
+          ) !=
           NominateTaken.no) {
     nominations.add(
       NominationWriteDropped(

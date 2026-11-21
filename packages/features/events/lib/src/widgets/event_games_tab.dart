@@ -615,6 +615,7 @@ class EventGamesTab extends StatelessWidget {
                   names: names,
                   acting: acting,
                   scopes: scopes,
+                  lineup: lineup,
                 );
                 final buttons = poolRowButtons(
                   context,

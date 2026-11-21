@@ -304,6 +304,7 @@ class _EventGameQuickLookState extends State<EventGameQuickLook> {
                               detail: detail,
                               games: games,
                               nominations: nominations,
+                              lineup: lineup,
                               acting: eventScreenActing(actions),
                             ),
                           NominationEntry(:final nominationId) => _nominationOf(
@@ -381,6 +382,7 @@ class _EventGameQuickLookState extends State<EventGameQuickLook> {
     required EventDetailState detail,
     required EventGamesState games,
     required EventNominationsState nominations,
+    required EventLineupState lineup,
     required bool acting,
   }) {
     final l10n = EventsLocalizations.of(context);
@@ -431,6 +433,7 @@ class _EventGameQuickLookState extends State<EventGameQuickLook> {
       names: names,
       acting: acting,
       scopes: nominateScopes(detail.detail, now: now),
+      lineup: lineup,
     );
     final medium = switch (shown.medium) {
       GameMedium.physical => l10n.eventsGamesMediumPhysical,

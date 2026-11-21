@@ -137,6 +137,11 @@ void main() {
   late FutureOr<List<EventNomination>> Function(String eventId)
   nominationsAnswer;
 
+  /// What each lineup read answers (#519): the read fails, as the fake's
+  /// default does, unless a test says otherwise, so the nominations stand
+  /// in for the lineup.
+  FutureOr<List<LineupGame>> Function(String eventId)? lineupAnswer;
+
   /// What each nominate answers (#517): the nomination as the server holds
   /// it, open for votes, unless a test says otherwise.
   late FutureOr<EventNomination> Function(NominateRequest request)
@@ -263,6 +268,7 @@ void main() {
     offerAnswer = _offeredAll;
     pageAnswer = (_) async => null;
     nominationsAnswer = (_) => const [];
+    lineupAnswer = null;
     nominateAnswer = (request) => EventNomination(
       id: 'n-${request.suppliedFromId}',
       eventId: request.eventId,
@@ -325,6 +331,11 @@ void main() {
       takenBack: (request) => takeBackAnswer(request),
       nominations: (eventId) async =>
           kept.over(await nominationsAnswer(eventId)),
+      lineup: (eventId) async {
+        final answer = lineupAnswer;
+        if (answer == null) throw UnimplementedError('no lineup answer');
+        return answer(eventId);
+      },
       nominated: (request) async => kept.keep(await nominateAnswer(request)),
       withdrawn: (request) async => kept.keep(await withdrawAnswer(request)),
     );
@@ -5484,6 +5495,42 @@ void main() {
       for (final game in [catanMine, root]) {
         expect(onPressed(tester, game.id), isNotNull, reason: game.title);
       }
+      handle.dispose();
+    });
+
+    testWidgets('a game added directly is in the lineup, and Nominate says '
+        'so', (tester) async {
+      final handle = tester.ensureSemantics();
+      // No nomination holds Azul: the lineup does.
+      lineupAnswer = (_) => [
+        LineupGame(
+          id: 'l-1',
+          platformGameId: azul.platformGameId,
+          gameId: azul.gameId,
+          title: 'Azul',
+          platformName: 'Tabletop',
+          role: ScheduledGameRole.primary,
+          sortOrder: 0,
+          suppliedById: azul.id,
+          supplierAttendeeId: azul.attendeeId,
+        ),
+      ];
+      useViewSize(tester, const Size(800, 2400));
+      await showGames(tester);
+
+      await tester.ensureVisible(nominate(azul.id));
+      await tester.pump();
+      expect(onPressed(tester, azul.id), isNull);
+      expect(
+        tester.getSemantics(nominate(azul.id)),
+        matchesSemantics(
+          label: 'Nominated: Azul',
+          hint: 'Already in the lineup',
+          isButton: true,
+          hasEnabledState: true,
+        ),
+      );
+      expect(onPressed(tester, root.id), isNotNull);
       handle.dispose();
     });
 
