@@ -242,4 +242,257 @@ void main() {
       expect(lineupDrawsHeaders(groups, [friday]), isTrue);
     });
   });
+
+  /// The detail as the screen holds it: the event with [dates], the viewer's
+  /// row [attendance], and the [actions] the role table gave them.
+  EventDetailReady ready({
+    Event? event,
+    List<EventOccurrence> dates = const [],
+    Set<EventAction> actions = const {},
+    EventAttendee? attendance,
+  }) => EventDetailReady(
+    detail: EventDetail(
+      snapshot: EventSnapshot(
+        event: event ?? item('e').event,
+        occurrences: dates,
+      ),
+      attendance: attendance,
+    ),
+    actions: actions,
+  );
+
+  final going = attendance(EventParticipationStatus.attending);
+
+  Set<EventAction> actionsOf({
+    EventRole? eventRole,
+    HouseholdRole? householdRole,
+    bool household = false,
+  }) => eventActionsFor(
+    item('e', householdId: household ? 'h-1' : null).event,
+    eventRole: eventRole,
+    householdRole: householdRole,
+  );
+
+  group('lineupAddGate', () {
+    test('a host with a row is offered it under Direct and HostOnly', () {
+      final state = ready(
+        actions: actionsOf(eventRole: EventRole.host),
+        attendance: going,
+      );
+
+      for (final mode in [GameAdditionMode.direct, GameAdditionMode.hostOnly]) {
+        expect(lineupAddGate(state, mode: mode), LineupAddGate.open);
+      }
+    });
+
+    test('a participant has no add, even under HostOnly', () {
+      final state = ready(
+        actions: actionsOf(eventRole: EventRole.participant),
+        attendance: going,
+      );
+
+      expect(
+        lineupAddGate(state, mode: GameAdditionMode.hostOnly),
+        LineupAddGate.hidden,
+      );
+      expect(
+        lineupAddGate(state, mode: GameAdditionMode.direct),
+        LineupAddGate.hidden,
+      );
+    });
+
+    test('a household admin without a roster row has no add', () {
+      final state = ready(
+        event: item('e', householdId: 'h-1').event,
+        actions: actionsOf(
+          householdRole: HouseholdRole.householdAdmin,
+          household: true,
+        ),
+      );
+
+      expect(state.actions, contains(EventAction.addToLineup));
+      expect(
+        lineupAddGate(state, mode: GameAdditionMode.direct),
+        LineupAddGate.hidden,
+      );
+    });
+
+    test('RequiresVote and HostApproval have no add', () {
+      final state = ready(
+        actions: actionsOf(eventRole: EventRole.host),
+        attendance: going,
+      );
+
+      for (final mode in [
+        GameAdditionMode.requiresVote,
+        GameAdditionMode.hostApproval,
+        GameAdditionMode.unknown,
+      ]) {
+        expect(lineupAddGate(state, mode: mode), LineupAddGate.hidden);
+      }
+    });
+
+    test('a cancelled or local-only event has no add', () {
+      final actions = actionsOf(eventRole: EventRole.host);
+
+      for (final event in [
+        item('e').event.copyWith(status: EventStatus.cancelled),
+        item('e').event.copyWith(isLocalOnly: true),
+      ]) {
+        expect(
+          lineupAddGate(
+            ready(event: event, actions: actions, attendance: going),
+            mode: GameAdditionMode.direct,
+          ),
+          LineupAddGate.hidden,
+        );
+      }
+    });
+  });
+
+  group('lineupRemoveGate', () {
+    final now = DateTime(2026, 11, 20, 12);
+    final past = confirmed('d-past', DateTime(2026, 11, 1, 19));
+    final ahead = confirmed('d-ahead', DateTime(2026, 12, 1, 19));
+    final hostActions = actionsOf(eventRole: EventRole.host);
+
+    LineupRemoveGate gate(
+      LineupGame game, {
+      List<EventOccurrence> dates = const [],
+      Set<EventAction>? actions,
+      Event? event,
+    }) => lineupRemoveGate(
+      ready(event: event, dates: dates, actions: actions ?? hostActions),
+      game,
+      now: now,
+    );
+
+    test("a started date's game cannot be removed", () {
+      expect(
+        gate(game('l', occurrenceId: 'd-past'), dates: [past, ahead]),
+        LineupRemoveGate.started,
+      );
+      expect(
+        gate(game('l', occurrenceId: 'd-ahead'), dates: [past, ahead]),
+        LineupRemoveGate.open,
+      );
+    });
+
+    test("a cancelled or declined date's game cannot be removed", () {
+      for (final status in [
+        OccurrenceStatus.cancelled,
+        OccurrenceStatus.declined,
+      ]) {
+        expect(
+          gate(
+            game('l', occurrenceId: 'd-ahead'),
+            dates: [ahead.copyWith(status: status)],
+          ),
+          LineupRemoveGate.started,
+        );
+      }
+    });
+
+    test('a proposed date with no start is still to come', () {
+      final undated = EventOccurrence(
+        id: 'd-open',
+        eventId: 'e',
+        status: OccurrenceStatus.proposed,
+        sortOrder: 0,
+        createdAt: kItemInstant,
+        updatedAt: kItemInstant,
+      );
+
+      expect(
+        gate(game('l', occurrenceId: 'd-open'), dates: [undated]),
+        LineupRemoveGate.open,
+      );
+      expect(gate(game('l'), dates: [past, undated]), LineupRemoveGate.open);
+    });
+
+    test("the event's own game cannot be removed once no date is to come", () {
+      expect(gate(game('l'), dates: [past]), LineupRemoveGate.started);
+      expect(
+        gate(
+          game('l'),
+          dates: [
+            past,
+            ahead.copyWith(status: OccurrenceStatus.cancelled),
+          ],
+        ),
+        LineupRemoveGate.started,
+      );
+      expect(gate(game('l'), dates: [past, ahead]), LineupRemoveGate.open);
+    });
+
+    test('an event with no dates can still have its own games removed', () {
+      expect(gate(game('l')), LineupRemoveGate.open);
+    });
+
+    test("a date the event no longer lists is left to the server's word", () {
+      expect(
+        gate(game('l', occurrenceId: 'd-gone'), dates: [past]),
+        LineupRemoveGate.open,
+      );
+    });
+
+    test('a cancelled event has every game started', () {
+      final event = item('e').event.copyWith(status: EventStatus.cancelled);
+
+      expect(
+        gate(game('l'), event: event, dates: [ahead]),
+        LineupRemoveGate.started,
+      );
+      expect(
+        gate(
+          game('l', occurrenceId: 'd-ahead'),
+          event: event,
+          dates: [ahead],
+        ),
+        LineupRemoveGate.started,
+      );
+    });
+
+    test('an event cancelled and then archived has every game started', () {
+      final event = item('e').event.copyWith(
+        status: EventStatus.archived,
+        cancelledAt: DateTime(2026, 11, 10),
+      );
+
+      expect(
+        gate(game('l'), event: event, dates: [ahead]),
+        LineupRemoveGate.started,
+      );
+      expect(
+        gate(
+          game('l'),
+          event: item('e').event.copyWith(status: EventStatus.archived),
+          dates: [ahead],
+        ),
+        LineupRemoveGate.open,
+      );
+    });
+
+    test('a moderator may remove', () {
+      expect(
+        gate(
+          game('l'),
+          actions: actionsOf(eventRole: EventRole.moderator),
+          dates: [ahead],
+        ),
+        LineupRemoveGate.open,
+      );
+    });
+
+    test('a participant, and a local-only event, have no remove', () {
+      expect(
+        gate(game('l'), actions: actionsOf(eventRole: EventRole.participant)),
+        LineupRemoveGate.hidden,
+      );
+      expect(
+        gate(game('l'), event: item('e').event.copyWith(isLocalOnly: true)),
+        LineupRemoveGate.hidden,
+      );
+    });
+  });
 }

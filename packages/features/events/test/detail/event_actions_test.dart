@@ -46,6 +46,7 @@ void main() {
     EventAction.resolveNomination,
     EventAction.offerGame,
     EventAction.manageOfferedGames,
+    EventAction.removeFromLineup,
   };
 
   const household = {
@@ -61,6 +62,8 @@ void main() {
     EventAction.resolveNomination,
     EventAction.offerGame,
     EventAction.manageOfferedGames,
+    EventAction.addToLineup,
+    EventAction.removeFromLineup,
   };
 
   /// The host holds every action, so a new [EventAction] fails the host and
@@ -90,6 +93,8 @@ void main() {
     EventAction.voteGame,
     EventAction.offerGame,
     EventAction.manageOfferedGames,
+    EventAction.addToLineup,
+    EventAction.removeFromLineup,
   };
 
   /// Every event role's set. A role missing from here fails the test below,

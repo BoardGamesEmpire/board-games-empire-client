@@ -3196,6 +3196,8 @@ class _Dates extends StatelessWidget {
       case EventAction.nominateGame:
       case EventAction.voteGame:
       case EventAction.manageOfferedGames:
+      case EventAction.addToLineup:
+      case EventAction.removeFromLineup:
         return null;
     }
   }
