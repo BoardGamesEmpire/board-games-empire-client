@@ -267,8 +267,12 @@ String _listBody(
   ),
 });
 
-/// A `GET /api/events/:id` body.
-String _detailBody(Map<String, dynamic> event) => jsonEncode({'event': event});
+/// A `GET /api/events/:id` body. The detail read always serves the dates' own
+/// rules, so [event] carries none of its own unless [dateRules] is false.
+String _detailBody(Map<String, dynamic> event, {bool dateRules = true}) =>
+    jsonEncode({
+      'event': {if (dateRules) 'occurrencePolicies': <Object>[], ...event},
+    });
 
 /// A `POST /api/events` body: the message and the event, with the parts the
 /// create reads back.
@@ -1174,10 +1178,20 @@ void main() {
       );
     });
 
-    test('a detail read without date rules carries none', () async {
-      final remote = answering(_detailBody(_eventRow(attendees: [])));
+    test('a detail read whose caller may not read the policy carries the '
+        'date rules as known and empty', () async {
+      final remote = answering(
+        _detailBody(
+          _eventRow(attendees: [])
+            ..['policy'] = null
+            ..['occurrencePolicies'] = <Object>[],
+        ),
+      );
 
-      expect((await remote.fetchEvent('ev_1')).occurrencePolicies, isNull);
+      final snapshot = await remote.fetchEvent('ev_1');
+
+      expect(snapshot.occurrencePolicies, isNotNull);
+      expect(snapshot.occurrencePolicies, isEmpty);
     });
 
     test('reads the event with its roster', () async {
@@ -1622,6 +1636,22 @@ void main() {
     test('date rules that are not a list are a contract break', () async {
       final remote = answering(
         _detailBody(_eventRow(attendees: [])..['occurrencePolicies'] = 'none'),
+      );
+
+      await expectPermanent(remote.fetchEvent('ev_1'));
+    });
+
+    test('a detail read without date rules is a contract break', () async {
+      final remote = answering(
+        _detailBody(_eventRow(attendees: []), dateRules: false),
+      );
+
+      await expectPermanent(remote.fetchEvent('ev_1'));
+    });
+
+    test('a detail read with null date rules is a contract break', () async {
+      final remote = answering(
+        _detailBody(_eventRow(attendees: [])..['occurrencePolicies'] = null),
       );
 
       await expectPermanent(remote.fetchEvent('ev_1'));

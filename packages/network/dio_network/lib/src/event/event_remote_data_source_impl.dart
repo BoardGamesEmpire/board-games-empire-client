@@ -130,7 +130,7 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     );
     return parseRemote(
       failures,
-      () => _mapDetail(_eventObject(response.body)),
+      () => _mapDetail(_eventObject(response.body), servesDateRules: true),
       action: action,
       status: response.status,
     );
@@ -160,7 +160,7 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
       () {
         final event = _eventObject(response.body);
         return (
-          snapshot: _mapDetail(event),
+          snapshot: _mapDetail(event, servesDateRules: false),
           // A repeat of a create whose event was deleted since still answers
           // with it, and says when.
           deletedAt: _dateOrNull(event['deletedAt']),
@@ -1090,24 +1090,30 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
 
   /// Maps the detail's event: the parts of a list row, and the roster.
   ///
-  /// `occurrencePolicies` is the dates' own rules (#1009). The create's answer
-  /// has none, so a missing key is null; a present one must be a list.
+  /// `occurrencePolicies` is the dates' own rules (#1009). The detail read
+  /// always serves them, `[]` when the caller may not read the policy, so with
+  /// [servesDateRules] a missing one is a contract break: read as null, it
+  /// would leave the cached rules standing. The create's answer has none, so
+  /// there a missing key is null; a present one must be a list.
   ///
   /// The roster must be a list. An empty one is a caller who may not read the
   /// roster, and a missing or mistyped one is a contract breach: reading it as
   /// "nobody" would pass a payload this client failed to read off as an event
   /// with no one on it.
-  static EventSnapshot _mapDetail(Map<String, dynamic> json) => EventSnapshot(
+  static EventSnapshot _mapDetail(
+    Map<String, dynamic> json, {
+    required bool servesDateRules,
+  }) => EventSnapshot(
     event: _mapEvent(json),
     occurrences: _mapOccurrences(json['occurrences']),
     policy: _mapPolicy(json['policy'], served: true),
-    occurrencePolicies: json['occurrencePolicies'] == null
-        ? null
-        : _mapObjects(
+    occurrencePolicies: servesDateRules || json['occurrencePolicies'] != null
+        ? _mapObjects(
             json['occurrencePolicies'],
             field: 'occurrencePolicies',
             item: _mapOccurrencePolicy,
-          ),
+          )
+        : null,
     attendees: _mapObjects(
       json['attendees'],
       field: 'attendees',
