@@ -800,6 +800,25 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
   }
 
   @override
+  Future<List<LineupGame>> fetchLineup(String eventId) async {
+    _checkId(eventId, name: 'eventId');
+
+    // The list is ordered by date and then the host's order, and a page is an
+    // offset into it. A game added or removed mid-read shifts the rows after
+    // it, so a page can repeat a row an earlier one held: the first is kept.
+    // The path names one event, so an application 404 is the service saying
+    // it is gone.
+    return _readAllPages(
+      _lineupPath(eventId),
+      action: 'Lineup',
+      key: 'lineup',
+      noun: 'game',
+      item: _mapLineupGame,
+      idOf: (game) => game.id,
+    );
+  }
+
+  @override
   Future<EventNomination> fetchNomination(
     String eventId,
     String nominationId,
@@ -1136,25 +1155,6 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
 
   static String _occurrencesPath(String eventId) =>
       '${_pathOf(eventId)}/occurrences';
-
-  @override
-  Future<List<LineupGame>> fetchLineup(String eventId) async {
-    _checkId(eventId, name: 'eventId');
-
-    // The list is ordered by date and then the host's order, and a page is an
-    // offset into it. A game added or removed mid-read shifts the rows after
-    // it, so a page can repeat a row an earlier one held: the first is kept.
-    // The path names one event, so an application 404 is the service saying
-    // it is gone.
-    return _readAllPages(
-      _lineupPath(eventId),
-      action: 'Lineup',
-      key: 'lineup',
-      noun: 'game',
-      item: _mapLineupGame,
-      idOf: (game) => game.id,
-    );
-  }
 
   static String _occurrencePath(String eventId, String occurrenceId) =>
       '${_occurrencesPath(eventId)}/${Uri.encodeComponent(occurrenceId)}';
@@ -1863,6 +1863,9 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     required String field,
   }) => raw == null ? null : _stringList(raw, field: field);
 
+  /// Reads [raw], the payload's [field], as a list of strings, which it
+  /// must carry: absent, not a list, or holding anything but strings, it is
+  /// a contract break, a [FormatException] naming [field].
   static List<String> _stringList(Object? raw, {required String field}) {
     if (raw is! List) {
       throw FormatException(
@@ -2035,18 +2038,8 @@ final class _EventFailures extends RemoteFailureFamily<EventRemoteException> {
     final body = refusal.body;
     final message = refusal.message;
     final cause = refusal.cause;
-    // The lineup writes' 409s are read from the body's own `code`, with or
-    // without the envelope: a coded refusal is not always enveloped (#1260).
-    if (status == 409 &&
-        (route == _Route.lineupAdd || route == _Route.lineupRemove)) {
-      return EventWriteConflictException(
-        message,
-        cause: cause,
-        statusCode: status,
-        apiMessage: apiErrorField(body, 'message'),
-        code: apiErrorField(body, 'code'),
-      );
-    }
+    // A code is read only from the API's own envelope, which every coded
+    // refusal arrives in (backend#1260): a bare coded body is not the API's.
     if (!refusal.fromApi) return null;
     if (status == 403) {
       return switch (route) {
@@ -2102,11 +2095,14 @@ final class _EventFailures extends RemoteFailureFamily<EventRemoteException> {
     if (status == 409 &&
         (route == _Route.attendeeAdd ||
             route == _Route.gameTakeBack ||
-            route == _Route.nominate)) {
+            route == _Route.nominate ||
+            route == _Route.lineupAdd ||
+            route == _Route.lineupRemove)) {
       // The user is already on the event, the game still supplies a
-      // nomination or a lineup, or a nomination's supplier is not attending.
-      // A 409 asking for a retry never gets here: the shared classifier reads
-      // it as transient first.
+      // nomination or a lineup, a nomination's or a direct add's supplier is
+      // not attending, or a lineup game's lineup has started (its `code`,
+      // `LINEUP_STARTED`). A 409 asking for a retry never gets here: the
+      // shared classifier reads it as transient first.
       return EventWriteConflictException(
         message,
         cause: cause,

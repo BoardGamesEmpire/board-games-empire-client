@@ -202,7 +202,11 @@ Know these limits before trusting a green run.
   row keep the disabled look, which WCAG 1.4.3 exempts, and are measured
   nowhere. Nor the Nominations section's rows (#517): each is one merged
   node, whose tally speaks commas where it draws dots, and each vote choice
-  and Withdraw speaks its game's title beside its drawn word.
+  and Withdraw speaks its game's title beside its drawn word. Nor the Lineup
+  sub-tab's rows (#519): each is one merged node, whose status line (what it
+  is played as, who brings it, and Every date where it shows) speaks commas
+  where it draws dots, and each Remove from lineup, Add to lineup and See in
+  lineup speaks its game's title beside its drawn words.
 
 ---
 
@@ -379,6 +383,58 @@ The same flows as the keyboard tests, plus the screens they don't reach:
    event, check an open nomination has Close vote and one awaiting approval
    has no Approve or Reject. Offline, check each says "Available when
    you're online", and that the reason is drawn once under the row.
+   Then the Lineup sub-tab (#519), with an event that has more than one
+   date and games in the lineup for the whole event and for some of its
+   dates. Check that Games opens on Lineup, the first of the three
+   sub-tabs, that it reads "Loading the lineup" once, and that heading
+   navigation finds "Every date", then each date, then "A date no longer
+   on the event" where a game's date has gone. Each row is one item saying
+   the game, then what it is played as ("Filler, up to 20 minutes"), who
+   brings it, and "Every date" on a whole-event game under one date, read
+   with pauses, not dots. Open a row's quick look: it is read as the game,
+   its lines one item, with "Added from a nomination" where it came from
+   one, and closing it puts you back on the row.
+   Then the row of dates above the sub-tabs (#1042): it is read as
+   "Dates", each date a button saying whether it is selected, Every date
+   first. With the keyboard, Tab reaches each chip, and where the chips
+   outrun the row, the row itself first, ringed; Left and Right on a chip
+   move to the chip beside it, stopping at the ends, each brought into
+   view (in a right-to-left language they swap); Alt+Left on a chip is not
+   taken (on web it is the browser's Back). Choose a date: the lineup and
+   the nominations show that date's first, then the event's own, marked
+   "Every date". On a date that has started, Nominate on each pool row
+   reads as unavailable with "Nominations for this date have closed" as its
+   hint, and the same words are drawn once under it, on its row and in its
+   quick look, where someone not going would have said "Whoever brings it
+   isn't going".
+   Then, as host, Add a game: the list is read as "Pick a game to add",
+   each game one item, and one whose bringer isn't going reads as
+   unavailable, saying why. Pick one: the dialog is read as "Add Catan to
+   the lineup", asks the date where the event has no row of dates, then
+   "Play it as" with Primary and Filler, Filler's "Minutes" with its hint
+   ("The longest it should run…"), and the note. For a date that has
+   started, check "This date has started, so a game added now can't be
+   taken out of the lineup." is read before Play it as, and again as you
+   choose that date in the dialog. Cancel puts you back on Add a game; add
+   one, and the footer reads "Catan is in the lineup." and focus is back on
+   Add a game. Under a host-only date, a pool row's main action is Add to
+   lineup, read "Add Azul to the lineup", which goes back to it the same
+   way. Then Remove from lineup: it reads "Remove Catan from the lineup"
+   and asks first: check the dialog reads "Take Catan out of the lineup?"
+   and its body, that Remove from lineup is drawn as a destructive action,
+   and that Keep it sends nothing and puts you back on Remove. Confirm: the
+   footer reads "Catan is out of the lineup." and the reader lands on the
+   next row. On a game whose date has started, Remove reads as unavailable
+   with "This game's date has started or was called off, so it can't be
+   taken out of the lineup." as its hint, drawn once under it. Then, in the
+   quick look of a nomination that passed, See in lineup reads "See in
+   lineup: Catan" and opens the lineup game's quick look over it, read as
+   the game; an outcome that lands there is read there once, and closing
+   it puts you back on See in lineup without reading that outcome again.
+   Offline, check Add a game, Add to lineup and Remove each say "Available
+   when you're online". At the largest text and 320dp wide, check a long
+   date's chip scales down to fit, and that the add dialog scrolls to its
+   last field.
 8. Game detail from Games, and a cover's quick look from a home row.
 9. Collection: the list in both layouts, a stack's picker, and an entry with
    its edit sheet and remove dialog. Then the header: type in the search and

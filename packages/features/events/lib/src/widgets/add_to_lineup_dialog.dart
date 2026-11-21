@@ -55,6 +55,11 @@ typedef AddToLineupChoice = ({
 ///   Primary it is neither checked nor sent.
 /// - **A note**, which may be left empty.
 ///
+/// Where the scope chosen has started ([startedOf]), a game added to it
+/// can't then be taken out of the lineup (#520), so a line under the date,
+/// ahead of everything else it asks, says so, and a screen reader hears it
+/// as the choice changes it.
+///
 /// Scrollable, since at 2.0 text a long title and the fields can outgrow a
 /// phone's height. Adding takes nothing away, so Add to lineup is drawn as an
 /// ordinary button, not a destructive one.
@@ -64,6 +69,7 @@ Future<AddToLineupChoice?> showAddToLineupDialog(
   required List<NominateScope> scopes,
   required DateTime now,
   int? Function(NominationScope scope)? fillerMaxPlayTimeOf,
+  bool Function(NominationScope scope)? startedOf,
 }) => showDialog<AddToLineupChoice>(
   context: context,
   builder: (_) => _AddToLineupDialog(
@@ -71,6 +77,7 @@ Future<AddToLineupChoice?> showAddToLineupDialog(
     scopes: scopes,
     now: now,
     fillerMaxPlayTimeOf: fillerMaxPlayTimeOf,
+    startedOf: startedOf,
   ),
 );
 
@@ -80,6 +87,7 @@ class _AddToLineupDialog extends StatefulWidget {
     required this.scopes,
     required this.now,
     this.fillerMaxPlayTimeOf,
+    this.startedOf,
   });
 
   final String title;
@@ -88,6 +96,10 @@ class _AddToLineupDialog extends StatefulWidget {
 
   /// The longest a filler should run for a scope, by the rules (#519).
   final int? Function(NominationScope scope)? fillerMaxPlayTimeOf;
+
+  /// Whether a game added for a scope could no longer be taken out of the
+  /// lineup, as its date has started (#520). None has where it is null.
+  final bool Function(NominationScope scope)? startedOf;
 
   @override
   State<_AddToLineupDialog> createState() => _AddToLineupDialogState();
@@ -168,6 +180,14 @@ class _AddToLineupDialogState extends State<_AddToLineupDialog> {
     final theme = Theme.of(context);
     final title = l10n.eventsLineupAddTitle(widget.title);
     final scopes = widget.scopes;
+    final scope = _scope;
+    // What can't then come out of the lineup (#520), said up front.
+    final started = scope != null && (widget.startedOf?.call(scope) ?? false)
+        ? switch (scope) {
+            DateScope() => l10n.eventsLineupAddDateStarted,
+            WholeEventScope() => l10n.eventsLineupAddEventStarted,
+          }
+        : null;
 
     return ReactiveForm(
       formGroup: _form,
@@ -212,6 +232,15 @@ class _AddToLineupDialogState extends State<_AddToLineupDialog> {
                       ),
                   ],
                 ),
+              ),
+              const BgeGap.md(),
+            ],
+            if (started != null) ...[
+              // A live region, as the choice above changes it.
+              Semantics(
+                container: true,
+                liveRegion: true,
+                child: Text(started),
               ),
               const BgeGap.md(),
             ],

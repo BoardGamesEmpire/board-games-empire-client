@@ -51,8 +51,10 @@ enum LineupAddResult {
   /// The server refused the write: a 403.
   refused,
 
-  /// The pool row, or the game's supplier, is gone: a 404.
-  supplierGone,
+  /// Something the add names is gone: a 404. The server's 404s don't say
+  /// which, and it can be the event, the date or the pool row, so the event
+  /// is read again, and with it the pool.
+  gone,
 
   /// The game's supplier isn't attending the event: a 409.
   supplierNotGoing,

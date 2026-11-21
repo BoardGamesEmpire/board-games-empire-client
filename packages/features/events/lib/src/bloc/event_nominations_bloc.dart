@@ -718,7 +718,7 @@ class EventNominationsBloc
           NominationWrite.nominate => NominateOutcome(
             NominateResult.dropped,
             title: title,
-            subtitle: event.subtitle,
+            subtitle: subtitle,
           ),
           NominationWrite.vote => VoteOutcome(
             VoteResult.dropped,

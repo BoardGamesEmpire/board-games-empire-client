@@ -82,7 +82,8 @@ final class LineupGameRemoved extends EventLineupEvent {
 
 /// A [write] the screen's own re-check stopped before it was sent, of the
 /// game titled [title]. Nothing is sent: the outcome says so, since a screen
-/// reader hears nothing happen when a press sends nothing.
+/// reader hears nothing happen when a press sends nothing. The last outcome
+/// is cleared first, so a drop like the one before it is still a new one.
 final class LineupWriteDropped extends EventLineupEvent {
   const LineupWriteDropped(this.write, {required this.title, this.subtitle});
 

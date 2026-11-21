@@ -16,7 +16,8 @@ import 'package:observability/observability.dart';
 /// lineup, one read out at a time. A request while a read is out reads once
 /// more after it, for the latest event id named, however many came in.
 ///
-/// - Answered: the games replace the last ones.
+/// - Answered: the games replace the last ones, less any a removal has
+///   dropped since the read started, which its answer can predate.
 /// - A 403: hidden, with no games.
 /// - A 404: gone, with no games, or failed if the read started gone: the
 ///   event's own read since then didn't settle it.
@@ -61,6 +62,11 @@ class EventLineupBloc extends Bloc<EventLineupEvent, EventLineupState> {
     confirmSession: _confirmSession,
     logger: _logger,
   );
+
+  /// The lineup games removals have dropped from the rows since the read that
+  /// is out started. Its answer can predate them, so they are dropped from
+  /// it again.
+  final Set<String> _droppedSinceRead = {};
 
   Future<void> _onRequested(
     EventLineupRequested event,
@@ -127,8 +133,10 @@ class EventLineupBloc extends Bloc<EventLineupEvent, EventLineupState> {
       );
       return (result: LineupAddResult.supplierNotGoing, sent: true);
     } on EventRemoteNotFoundException catch (error) {
-      _logger.info('Lineup add found the pool row gone', error: error);
-      return (result: LineupAddResult.supplierGone, sent: true);
+      // The event, the date or the pool row: the server's 404s come in
+      // that order, and say nothing the client can tell apart.
+      _logger.info('Lineup add found something gone', error: error);
+      return (result: LineupAddResult.gone, sent: true);
     } on EventWriteRefusedException catch (error) {
       _logger.info('Lineup add refused', error: error);
       return (result: LineupAddResult.refused, sent: true);
@@ -214,6 +222,10 @@ class EventLineupBloc extends Bloc<EventLineupEvent, EventLineupState> {
     Emitter<EventLineupState> emit,
   ) {
     if (_reads.closing || state.busy) return;
+    // Cleared first, so a drop like the last is a state of its own, which a
+    // screen draws, and a screen reader hears, as new. Only when there is
+    // one: Bloc emits a state equal to the initial one if it is the first.
+    if (state.outcome != null) emit(state.copyWith(outcome: () => null));
     final outcome = switch (event.write) {
       LineupWrite.add => LineupAddOutcome(
         LineupAddResult.dropped,
@@ -242,13 +254,15 @@ class EventLineupBloc extends Bloc<EventLineupEvent, EventLineupState> {
       emit(state.copyWith(writing: () => writing, outcome: () => null));
 
   /// Ends the write that is out with [outcome], dropping the game [dropping]
-  /// from the rows when there is one.
+  /// from the rows when there is one, and from the answer of a read that is
+  /// out.
   void _ended(
     EventLineupOutcome outcome,
     Emitter<EventLineupState> emit, {
     String? dropping,
   }) {
     if (_reads.closing) return;
+    if (dropping != null) _droppedSinceRead.add(dropping);
     emit(
       state.copyWith(
         writing: () => null,
@@ -265,6 +279,7 @@ class EventLineupBloc extends Bloc<EventLineupEvent, EventLineupState> {
   /// Reads the lineup of the event [eventId] once the session says yes, and
   /// fails the read when the session says no. Never throws.
   Future<void> _readOnce(String eventId, Emitter<EventLineupState> emit) async {
+    _droppedSinceRead.clear();
     // Only reads change the load, and one is out at a time, so this is the
     // load the read started in.
     final startedGone = state.load == EventLineupLoad.gone;
@@ -318,7 +333,9 @@ class EventLineupBloc extends Bloc<EventLineupEvent, EventLineupState> {
     emit(
       state.copyWith(
         load: EventLineupLoad.loaded,
-        games: List.unmodifiable(games),
+        games: List.unmodifiable(
+          games.where((each) => !_droppedSinceRead.contains(each.id)),
+        ),
         answered: true,
         refreshFailed: false,
         refreshing: _reads.stillRefreshing,

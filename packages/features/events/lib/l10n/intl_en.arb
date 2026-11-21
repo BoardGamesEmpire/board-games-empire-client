@@ -886,7 +886,7 @@
   },
   "eventsLineupAddDateClosed": "This date isn't happening, so games can't be added to it",
   "@eventsLineupAddDateClosed": {
-    "description": "Under the Add a game button (eventsLineupAdd) of an event's Lineup sub-tab, and read to a screen reader as its hint, and as the hint of the Add to lineup button (eventsLineupAddToLineup) of a game in the games pool, neither of which can be pressed: the Games tab shows one of the event's dates, chosen in the row of dates above its sub-tabs (eventsGamesDatesLabel), that was called off, or declined while the date was being chosen. An add from there is for that date alone (#519). A date that has started still takes one, so this says nothing of time. A date in a state the app can't read says eventsLineupAddDateUnavailable instead."
+    "description": "Under the Add a game button (eventsLineupAdd) of an event's Lineup sub-tab, and read to a screen reader as its hint, and under the Add to lineup button (eventsLineupAddToLineup) of a game in the games pool, on its row and in the game's quick look, and as that button's hint, neither of which can be pressed. It comes before whoever brings the game not going (eventsNominateSupplierNotGoingHint): the button says one. Shown where the Games tab shows one of the event's dates, chosen in the row of dates above its sub-tabs (eventsGamesDatesLabel), that was called off, or declined while the date was being chosen. An add from there is for that date alone (#519). A date that has started still takes one, so this says nothing of time. A date in a state the app can't read says eventsLineupAddDateUnavailable instead."
   },
   "eventsLineupAddDateUnavailable": "Games can't be added to this date",
   "@eventsLineupAddDateUnavailable": {
@@ -927,6 +927,14 @@
         "example": "Catan"
       }
     }
+  },
+  "eventsLineupAddDateStarted": "This date has started, so a game added now can't be taken out of the lineup.",
+  "@eventsLineupAddDateStarted": {
+    "description": "Line near the top of the dialog that adds a game straight to an event's lineup (eventsLineupAddTitle), where the add is for one of the event's dates that has started: the server still takes the add, but refuses to take the game out again once its date has started (eventsLineupStartedHint), so the host is told before adding it (#519, #520). It changes with the date chosen in the dialog, where it asks for one, and a screen reader hears it as it does."
+  },
+  "eventsLineupAddEventStarted": "None of this event's dates is still to come, so a game added now can't be taken out of the lineup.",
+  "@eventsLineupAddEventStarted": {
+    "description": "eventsLineupAddDateStarted for an add to the lineup of the event as a whole (eventsNominationWholeEvent), where every one of its dates has started or was called off: the server refuses to take such a game out again (eventsLineupStartedHint) (#519, #520)."
   },
   "eventsLineupRoleLabel": "Play it as",
   "@eventsLineupRoleLabel": {
@@ -1330,7 +1338,7 @@
   },
   "eventsNominateDateClosed": "Nominations for this date have closed",
   "@eventsNominateDateClosed": {
-    "description": "Read to a screen reader as the hint of the Nominate button (eventsNominate) of a game in the games pool, which can't be pressed, while the Games tab shows one of the event's dates, chosen in the row of dates above its sub-tabs (eventsGamesDatesLabel), that can no longer take a nomination: it has started, or it was cancelled. A nomination from there is for that date alone, so there is nothing to nominate for."
+    "description": "Under the Nominate button (eventsNominate) of a game in the games pool, which can't be pressed, on its row and in the game's quick look, and read to a screen reader as the button's hint, while the Games tab shows one of the event's dates, chosen in the row of dates above its sub-tabs (eventsGamesDatesLabel), that can no longer take a nomination: it has started, or it was cancelled. A nomination from there is for that date alone, so there is nothing to nominate for. It comes before every other reason, whoever brings the game not going (eventsNominateSupplierNotGoingHint) included: the button says one."
   },
   "eventsNominateAlready": "Already nominated",
   "@eventsNominateAlready": {
@@ -1346,7 +1354,7 @@
   },
   "eventsNominateUnsettled": "Your last nomination may have gone through. Load the nominations again on the Nominations tab to check.",
   "@eventsNominateUnsettled": {
-    "description": "Read to a screen reader as the hint of the Nominate button (eventsNominate) of a game in the games pool, which can't be pressed: the answer to the user's last nomination was lost, and reading the nominations again to see whether it was saved failed. The copy points to the Nominations sub-tab of the same Games tab, labelled eventsGamesSectionNominations, so the two should match: the nominations' Try again button (eventsRefreshRetry) is there, in the banner eventsNominationsRefreshFailed or under eventsNominationsFailedTitle, and not beside this button, which is on the Pool sub-tab."
+    "description": "Under the Nominate button (eventsNominate) of a game in the games pool, which can't be pressed, on its row and in the game's quick look, and read to a screen reader as the button's hint: the answer to the user's last nomination was lost, and reading the nominations again to see whether it was saved failed. The copy points to the Nominations sub-tab of the same Games tab, labelled eventsGamesSectionNominations, so the two should match: the nominations' Try again button (eventsRefreshRetry) is there, in the banner eventsNominationsRefreshFailed or under eventsNominationsFailedTitle, and not beside this button, which is on the Pool sub-tab."
   },
   "eventsNominateTitle": "Nominate {title}",
   "@eventsNominateTitle": {
@@ -1397,6 +1405,20 @@
   "eventsQuickLookOpenGameNamed": "View game: {title}",
   "@eventsQuickLookOpenGameNamed": {
     "description": "eventsQuickLookOpenGame as a screen reader reads it, naming the game whose page it opens. It starts with the button's visible text.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsQuickLookOpenLineupGame": "See in lineup",
+  "@eventsQuickLookOpenLineupGame": {
+    "description": "Button in the quick look of a nominated game, the pop-up its row opens on the Nominations sub-tab (eventsGamesSectionNominations) of an event's Games tab, once the nomination has put the game in the event's lineup, as a nomination that passed or was approved has: it opens the quick look of that game in the lineup over this one, and closing it comes back here (#519). Lineup names the Lineup sub-tab (eventsGamesSectionLineup), so the two should match. Screen readers hear eventsQuickLookOpenLineupGameNamed instead."
+  },
+  "eventsQuickLookOpenLineupGameNamed": "See in lineup: {title}",
+  "@eventsQuickLookOpenLineupGameNamed": {
+    "description": "eventsQuickLookOpenLineupGame as a screen reader reads it, naming the game. It starts with the button's visible text. The title is the game's title, with its subtitle where it has one (#920).",
     "placeholders": {
       "title": {
         "type": "String",
@@ -1878,11 +1900,11 @@
   },
   "eventsNominationsFailedTitle": "Couldn't load nominations",
   "@eventsNominationsFailedTitle": {
-    "description": "In the Nominations section of an event's Games tab when the nominations couldn't be read and none were read before. Followed by eventsGamesFailedBody and a Try again button (eventsRefreshRetry). Also read to a screen reader as the hint of a game's Nominate button (eventsNominate) in the games pool, which can't be pressed meanwhile."
+    "description": "In the Nominations section of an event's Games tab when the nominations couldn't be read and none were read before. Followed by eventsGamesFailedBody and a Try again button (eventsRefreshRetry). Also under a game's Nominate button (eventsNominate) in the games pool, which can't be pressed meanwhile, on its row and in the game's quick look, and read to a screen reader as that button's hint."
   },
   "eventsNominationsHiddenTitle": "Nominations aren't shown to you",
   "@eventsNominationsHiddenTitle": {
-    "description": "In the Nominations section of an event's Games tab when the server won't show the user the event's nominations. Also read to a screen reader as the hint of a game's Nominate button (eventsNominate) in the games pool, which can't be pressed meanwhile."
+    "description": "In the Nominations section of an event's Games tab when the server won't show the user the event's nominations. Also under a game's Nominate button (eventsNominate) in the games pool, which can't be pressed meanwhile, on its row and in the game's quick look, and read to a screen reader as that button's hint."
   },
   "eventsNominationsEmptyTitle": "Nothing nominated yet",
   "@eventsNominationsEmptyTitle": {
@@ -3685,9 +3707,9 @@
       }
     }
   },
-  "eventsLineupAddSupplierGone": "{title} wasn't added: it isn't in the games pool any more.",
-  "@eventsLineupAddSupplierGone": {
-    "description": "Banner at the foot of an event's screen when a game couldn't be added to the lineup because the pool row, or the person bringing it, is gone (#519, #520). The title is the game's title, with its subtitle where it has one (#920).",
+  "eventsLineupAddGone": "{title} wasn't added: it has left the games pool, or its date or the event is gone.",
+  "@eventsLineupAddGone": {
+    "description": "Banner at the foot of an event's screen when a game couldn't be added to the lineup because something the add named is gone: that copy has left the event's games pool (taken back, or gone with the person bringing it), or the date it was for, or the event itself, was deleted. The server doesn't say which, so the copy names all three (#519, #520). The title is the game's title, with its subtitle where it has one (#920).",
     "placeholders": {
       "title": {
         "type": "String",
@@ -3705,9 +3727,9 @@
       }
     }
   },
-  "eventsLineupAddFailed": "{title} wasn't added. Try again.",
+  "eventsLineupAddFailed": "An error occurred while adding {title} to the lineup. Check the lineup before adding it again.",
   "@eventsLineupAddFailed": {
-    "description": "Banner at the foot of an event's screen when adding a game to the lineup failed for a reason other than a refusal (#519, #520). The title is the game's title, with its subtitle where it has one (#920).",
+    "description": "Banner at the foot of an event's screen when adding a game to the lineup failed for a reason other than a refusal, such as no connection (#519, #520). The answer can be lost after the server added it, and adding it again would put a second copy in the lineup, so the copy asks the user to look at the lineup first, which the screen reads again as the banner shows. It is the Games tab's Lineup sub-tab, labelled eventsGamesSectionLineup. It must not say the game wasn't added. The title is the game's title, with its subtitle where it has one (#920).",
     "placeholders": {
       "title": {
         "type": "String",
@@ -3765,9 +3787,9 @@
       }
     }
   },
-  "eventsLineupRemoveFailed": "{title} wasn't taken out. Try again.",
+  "eventsLineupRemoveFailed": "An error occurred while taking {title} out of the lineup. You may need to try again.",
   "@eventsLineupRemoveFailed": {
-    "description": "Banner at the foot of an event's screen when removing a game from the lineup failed for a reason other than a refusal (#519, #520). The title is the game's title, with its subtitle where it has one (#920).",
+    "description": "Banner at the foot of an event's screen when removing a game from the lineup failed for a reason other than a refusal, such as no connection (#519, #520). The answer can be lost after the server took it out, so it doesn't say the game wasn't taken out: the screen reads the lineup again as the banner shows, and the game's row stays only while it is still in the lineup. The title is the game's title, with its subtitle where it has one (#920).",
     "placeholders": {
       "title": {
         "type": "String",
@@ -3821,9 +3843,9 @@
   "@eventsLineupRemoveConfirmAction": {
     "description": "Confirm button of the dialog that asks before a host takes a game out of the lineup (eventsLineupRemoveConfirm), drawn as a destructive action (#520)."
   },
-  "eventsLineupStartedHint": "This lineup has started or was called off, so it can't be changed.",
+  "eventsLineupStartedHint": "This game's date has started or was called off, so it can't be taken out of the lineup.",
   "@eventsLineupStartedHint": {
-    "description": "The reason Remove from lineup (eventsLineupRemove) is disabled on a game whose date has started or was called off, or whose event was called off, shown under the button and as its hint on the Lineup sub-tab of the Games tab and in the game's quick look (#520)."
+    "description": "The reason Remove from lineup (eventsLineupRemove) is disabled on a game whose date has started or was called off, or whose event was called off; for a game in the lineup of the event as a whole, its date means the event's dates, none of which is still to come. Shown under the button and as its hint on the Lineup sub-tab of the Games tab and in the game's quick look (#520). It is about taking the game out alone: a date that has started still takes a game added to it (eventsLineupAddDateStarted)."
   },
   "eventsGamesStillInLineup": "{title} is in the lineup. A host can take it out of the lineup, then it can come off your games.",
   "@eventsGamesStillInLineup": {

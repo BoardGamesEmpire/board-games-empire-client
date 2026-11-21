@@ -28,19 +28,19 @@ import 'package:models/domain.dart'
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
-/// What the Games tab keeps across the screen's rebuilds (#516): its sub-tabs'
-/// controller (#945), its filter, whether it has been shown, the ids the pool
-/// was last asked with, how the pool's last read ended and how the nominations'
-/// (#517) and the lineup's (#519) did, the nominations' own filter and order
-/// (#517), the focus nodes a control that leaves hands focus on to, what
-/// the tab's quick looks reach the screen by (#957), and which of the event's
-/// dates it shows (#1042).
+/// What the Games tab keeps across the screen's rebuilds (#516): its
+/// sub-tabs' controller (#945), its filter, whether it has been shown, the
+/// ids the pool was last asked with, how the pool's last read ended and how
+/// the nominations' (#517) and the lineup's (#519) did, the nominations' own
+/// filter and order (#517), the focus nodes a control that leaves hands
+/// focus on to, what the tab's quick looks reach the screen by (#957), and
+/// which of the event's dates it shows (#1042).
 ///
 /// It notifies its listeners when the chosen sub-tab changes, once for each
 /// change and as the change starts, and when the sub-tabs' controller is
-/// replaced, so the screen's page, which listens to it, builds on the new one:
-/// as the motion setting changes, and as the sub-tabs shown do (#519). So too
-/// when the date shown changes, or the date the location is to name
+/// replaced, so the screen's page, which listens to it, builds on the new
+/// one: as the motion setting changes, and as the sub-tabs shown do (#519).
+/// So too when the date shown changes, or the date the location is to name
 /// ([dateQuery]), and when the row of dates clears the nominations' filter's
 /// date.
 ///

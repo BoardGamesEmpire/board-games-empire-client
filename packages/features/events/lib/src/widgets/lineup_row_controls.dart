@@ -107,16 +107,16 @@ String lineupAddClosedReason(
   };
 }
 
-/// The longest a filler should run on [s] (#519), for [occurrenceId]'s date
-/// or, where it is null, the event as a whole: the date's own rule where it
-/// sets one (#1009), else the event's, else none.
-int? fillerMaxPlayTimeFor(EventSnapshot s, String? occurrenceId) {
+/// The longest a filler should run on [snapshot] (#519), for
+/// [occurrenceId]'s date or, where it is null, the event as a whole: the
+/// date's own rule where it sets one (#1009), else the event's, else none.
+int? fillerMaxPlayTimeFor(EventSnapshot snapshot, String? occurrenceId) {
   final date = occurrenceId == null
       ? null
-      : s.occurrencePolicies
+      : snapshot.occurrencePolicies
             ?.where((each) => each.occurrenceId == occurrenceId)
             .firstOrNull;
-  return date?.fillerMaxPlayTime ?? s.policy?.fillerMaxPlayTime;
+  return date?.fillerMaxPlayTime ?? snapshot.policy?.fillerMaxPlayTime;
 }
 
 /// The date [scope] names, or null for the whole event.
@@ -136,15 +136,17 @@ String? _occurrenceOf(NominationScope scope) => switch (scope) {
 /// Completes true when the add was sent, and false when nothing was: the
 /// dialog cancelled, or as below.
 ///
-/// It goes once any running detail read has ended ([readEnded]), for the
-/// event as the detail shows it then, whose id a reconcile can have moved
-/// (#499). Nothing is sent if, by then, the viewer isn't offered the add
-/// under the view's mode ([lineupAddGate], [viewMode]), the game has left
-/// the pool, or the choice is no longer offered, as a date called off
-/// meanwhile isn't: the page already shows that, and the footer says the add
-/// was dropped, or a screen reader would hear nothing happen. So too where
-/// the view offers no choice as it is pressed. A date that has started
-/// still takes it (#519). The view is the one it was pressed under,
+/// It goes once any running detail read and any other lineup write have
+/// ended ([_writable]), for the event as the detail shows it then, whose id
+/// a reconcile can have moved (#499). Nothing is sent if, by then, the
+/// viewer isn't offered the add under the view's mode ([lineupAddGate],
+/// [viewMode]), the game has left the pool, or the choice is no longer
+/// offered, as a date called off meanwhile isn't: the page already shows
+/// that, and the footer says the add was dropped, or a screen reader would
+/// hear nothing happen. So too where the view offers no choice as it is
+/// pressed. A date that has started still takes it (#519), and the dialog
+/// says up front that a game added to it can't then be taken out
+/// ([lineupStartedFor], #520). The view is the one it was pressed under,
 /// whatever is chosen meanwhile, and [clock] names the dates the dialog
 /// offers. Whoever brings it not going is the server's to refuse, which the
 /// outcome says.
@@ -184,11 +186,13 @@ Future<bool> addToLineup(
     now: clock(),
     fillerMaxPlayTimeOf: (scope) =>
         fillerMaxPlayTimeFor(snapshot, _occurrenceOf(scope)),
+    startedOf: (scope) =>
+        lineupStartedFor(shown.detail, _occurrenceOf(scope), now: clock()),
   );
   if (chosen == null || lineup.isClosed) return false;
 
-  final state = await readEnded(detail);
-  if (state is! EventDetailReady || lineup.isClosed) return false;
+  final state = await _writable(detail, lineup);
+  if (state is! EventDetailReady) return false;
   final inPool = pool.state.games.any((each) => each.id == game.id);
   // Offered still, under the view's mode, and for the choice made.
   final offered =
@@ -201,8 +205,6 @@ Future<bool> addToLineup(
     dropped();
     return false;
   }
-  // One write at a time; the bloc would ignore this one.
-  if (lineup.state.busy) return false;
   lineup.add(
     LineupGameAdded(
       state.detail.snapshot.event.id,
@@ -237,6 +239,32 @@ Future<bool> pickAndAddToLineup(
   return addToLineup(scope, picked, clock: clock);
 }
 
+/// The detail once no detail read runs ([readEnded]) and no lineup write is
+/// out, both at once, or null once [lineup] has closed. A press confirmed
+/// while another write runs waits for it, since the bloc takes one write at
+/// a time and ignores a drop's announcement meanwhile too. Its checks are
+/// then made on the page as that write left it, and it is sent or said to
+/// be dropped, never lost without a word.
+Future<EventDetailState?> _writable(
+  EventDetailBloc detail,
+  EventLineupBloc lineup,
+) async {
+  while (true) {
+    if (lineup.state.busy) {
+      // The stream ends as the bloc closes, which the next line sees.
+      await lineup.stream.firstWhere(
+        (state) => !state.busy,
+        orElse: () => lineup.state,
+      );
+    }
+    if (lineup.isClosed) return null;
+    final state = await readEnded(detail);
+    if (lineup.isClosed) return null;
+    // A write can have started while the read ran.
+    if (!lineup.state.busy) return state;
+  }
+}
+
 /// What Add to lineup on a pool row is built with (#519):
 /// [AddToLineupButton]'s [AddToLineupButton.closed],
 /// [AddToLineupButton.notGoing], [AddToLineupButton.enabled] and
@@ -250,6 +278,23 @@ typedef AddToLineupGates = ({
   bool runOver,
   bool onRow,
 });
+
+/// Why Add to lineup on a pool row can't be pressed, where anything says
+/// so, in the one order its hint says it and its row and its quick look
+/// draw it (STYLE_GUIDE §4): the date view's date takes no add ([closed],
+/// [lineupAddClosedReason], #1042), else whoever brings the game isn't going
+/// ([notGoing]). Null where neither holds.
+String? lineupAddReason({
+  required String? closed,
+  required String? notGoing,
+}) => closed ?? notGoing;
+
+/// Add to lineup's one reason, from its gates ([lineupAddReason]).
+extension AddToLineupGatesReason on AddToLineupGates {
+  /// What the row and the quick look draw under Add to lineup, as its hint
+  /// says.
+  String? get reason => lineupAddReason(closed: closed, notGoing: notGoing);
+}
 
 /// Add to lineup (#519): a direct write, so disabled offline through
 /// [BgeOnlineOnly], with the connection's reason as its hint. Named for its
@@ -333,7 +378,9 @@ class AddToLineupButtonState extends State<AddToLineupButton>
       disabled: offline || closed != null || notGoing != null,
     );
     // One reason: offline [BgeOnlineOnly] gives its own.
-    final reason = offline ? null : closed ?? notGoing;
+    final reason = offline
+        ? null
+        : lineupAddReason(closed: closed, notGoing: notGoing);
     final game = widget.game;
 
     return BgeOnlineOnly(
@@ -366,11 +413,11 @@ class AddToLineupButtonState extends State<AddToLineupButton>
 }
 
 /// Takes [game] out of the lineup (#520) once the viewer confirms and any
-/// running detail read has ended ([readEnded]), for the event as the detail
-/// shows it then, whose id a reconcile can have moved (#499). Completes true
-/// when the removal was sent, and false when nothing was: Keep it, or as
-/// below. The dialog, the outcome and a drop name the game as its row does,
-/// with its subtitle ([gameName], #851).
+/// running detail read and any other lineup write have ended ([_writable]),
+/// for the event as the detail shows it then, whose id a reconcile can have
+/// moved (#499). Completes true when the removal was sent, and false when
+/// nothing was: Keep it, or as below. The dialog, the outcome and a drop
+/// name the game as its row does, with its subtitle ([gameName], #851).
 ///
 /// Nothing is sent if, by then, the game has left the lineup, or the viewer
 /// isn't offered the removal any more ([lineupRemoveGate], by [clock]): the
@@ -401,8 +448,8 @@ Future<bool> removeFromLineup(
   );
   if (!confirmed || lineup.isClosed) return false;
 
-  final state = await readEnded(detail);
-  if (state is! EventDetailReady || lineup.isClosed) return false;
+  final state = await _writable(detail, lineup);
+  if (state is! EventDetailReady) return false;
   final current = lineup.state.games
       .where((each) => each.id == game.id)
       .firstOrNull;
@@ -417,8 +464,6 @@ Future<bool> removeFromLineup(
     );
     return false;
   }
-  // One write at a time; the bloc would ignore this one.
-  if (lineup.state.busy) return false;
   lineup.add(LineupGameRemoved(state.detail.snapshot.event.id, current));
   return true;
 }

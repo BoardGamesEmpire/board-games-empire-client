@@ -236,6 +236,39 @@ typedef NominateGates = ({
   bool runOver,
 });
 
+/// Why Nominate on a pool row can't be pressed, where anything says so, in
+/// the one order its hint says it and its row and its quick look draw it
+/// (STYLE_GUIDE §4): the date view's date takes no nomination now
+/// ([closed], #1042), else the nominations aren't known ([unread]), else
+/// whoever brings the game isn't going ([notGoing]), else it is nominated
+/// already, or in the lineup, for every choice ([already]). Null where none
+/// holds.
+String? nominateReason({
+  required String? closed,
+  required String? unread,
+  required String? notGoing,
+  required String? already,
+}) => closed ?? unread ?? notGoing ?? already;
+
+/// Nominate's one reason, from its gates ([nominateReason]).
+extension NominateGatesReason on NominateGates {
+  /// What its hint says.
+  String? get reason => nominateReason(
+    closed: closed,
+    unread: unread,
+    notGoing: notGoing,
+    already: already,
+  );
+
+  /// What the row and the quick look draw under Nominate: [reason], but for
+  /// nominated already or in the lineup, which the button's own label,
+  /// Nominated, draws (#947).
+  String? get drawnReason {
+    final reason = this.reason;
+    return reason == already ? null : reason;
+  }
+}
+
 /// What Take back on a pool row is built with (#516): [TakeBackButton]'s
 /// [TakeBackButton.blockedReason] (#905), [TakeBackButton.inert],
 /// [TakeBackButton.enabled] and [TakeBackButton.runOver].
@@ -272,12 +305,12 @@ typedef PoolRowGates = ({
 /// ([scopes] not null, #519), on an event with a nominations' state.
 /// Disabled, saying why, where the date view's date can no longer be
 /// nominated for, started or cancelled, so [scopes] is empty (#1042); where
-/// the nominations
-/// couldn't be read or aren't shown to the viewer, where a nominate's lost
-/// answer couldn't be checked, where whoever brings the game isn't going, or
-/// where the row is nominated already, or its game in the lineup, for every
-/// choice; and with nothing to say while a detail read runs, the screen is
-/// acting, a nominations write is out, or the nominations aren't known
+/// the nominations couldn't be read or aren't shown to the viewer, where a
+/// nominate's lost answer couldn't be checked, where whoever brings the game
+/// isn't going, or where the row is nominated already, or its game in the
+/// lineup, for every choice: one reason, in that order ([nominateReason]).
+/// And with nothing to say while a detail read runs, the screen is acting, a
+/// nominations write is out, or the nominations aren't known
 /// ([nominationsKnown]). Its game is in the lineup by [lineup] where that is
 /// known ([knownLineup], #519), else by the nominations.
 ///
@@ -287,9 +320,10 @@ typedef PoolRowGates = ({
 /// host-only view, in Nominate's place, and otherwise its quick look's alone
 /// ([AddToLineupGates]' `onRow`). Disabled, saying why, where the date view's
 /// date takes no add, so [addScopes] is empty: called off, or in a status
-/// this client can't read ([lineupAddClosedReason]); and where
-/// whoever brings the game isn't going; and with nothing to say while a
-/// detail read runs, the screen is acting, or a lineup write is out.
+/// this client can't read ([lineupAddClosedReason]); and where whoever
+/// brings the game isn't going: one reason, in that order
+/// ([lineupAddReason]). And with nothing to say while a detail read runs,
+/// the screen is acting, or a lineup write is out.
 ///
 /// Take back on the viewer's own row where they may offer games or take
 /// them back ([offerGamesGate]), and on anyone else's where they may take
@@ -315,7 +349,7 @@ PoolRowGates poolRowGates(
   EventLineupState? lineup,
 }) {
   final viewerId = detail.detail.attendance?.id;
-  final lined = knownLineup(lineup);
+  final lineupGames = knownLineup(lineup);
   final own = viewerId != null && game.attendeeId == viewerId;
   final nominated = nominations?.nominations ?? const <EventNomination>[];
   // Nominate's choices where it is built: offered, on an event with a
@@ -325,7 +359,12 @@ PoolRowGates poolRowGates(
       ? null
       : alreadyTaken(l10n, [
           for (final each in choices)
-            nominateTaken(game, nominated, scope: each.scope, lineup: lined),
+            nominateTaken(
+              game,
+              nominated,
+              scope: each.scope,
+              lineup: lineupGames,
+            ),
         ]);
   final takesBack = own
       ? offerGamesGate(detail) != OfferGamesGate.hidden
@@ -340,7 +379,7 @@ PoolRowGates poolRowGates(
       detail.detail,
       game,
       nominations: nominations?.nominations,
-      lineup: lined,
+      lineup: lineupGames,
       now: now,
     ),
     by: stillSuppliedBy(game.id, nominated, viewerId: viewerId),
@@ -795,7 +834,14 @@ class NominateButtonState extends State<NominateButton>
         notGoing == null;
     final inert = held || kept;
     // One reason: offline [BgeOnlineOnly] gives its own.
-    final reason = offline ? null : closed ?? unread ?? notGoing ?? already;
+    final reason = offline
+        ? null
+        : nominateReason(
+            closed: closed,
+            unread: unread,
+            notGoing: notGoing,
+            already: already,
+          );
 
     return Focus(
       canRequestFocus: false,

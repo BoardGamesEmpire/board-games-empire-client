@@ -80,6 +80,7 @@ EventNomination _nomination(
   NominationStatus? pausedFrom,
   DateTime? deadline,
   List<EventNominationVote> votes = const [],
+  LineupLink? elevatedTo,
 }) => EventNomination(
   id: id,
   eventId: 'e-1',
@@ -96,7 +97,23 @@ EventNomination _nomination(
   pausedFrom: pausedFrom,
   votingDeadline: deadline,
   votes: votes,
+  elevatedTo: elevatedTo,
   createdAt: kItemInstant,
+);
+
+/// The lineup game [id] of `e-1`, Ada's Catan (`o-1`) for the whole event,
+/// put there by the nomination [nominationId] where it is given (#519).
+LineupGame _lineupGame(String id, {String? nominationId}) => LineupGame(
+  id: id,
+  platformGameId: 'pg-$id',
+  gameId: 'g-$id',
+  title: 'Catan',
+  platformName: 'Tabletop',
+  role: ScheduledGameRole.primary,
+  sortOrder: 0,
+  suppliedById: 'o-1',
+  supplierAttendeeId: 'att-ada',
+  nominationId: nominationId,
 );
 
 /// `e-1`'s policy, weighing Interested as [weight].
@@ -140,6 +157,10 @@ void main() {
   /// What each nominations read answers.
   late FutureOr<List<EventNomination>> Function(String eventId)
   nominationsAnswer;
+
+  /// What each lineup read answers (#519): nothing faked, so a failed read,
+  /// unless a test says otherwise.
+  late FutureOr<List<LineupGame>> Function(String eventId) lineupAnswer;
 
   /// What each withdrawal answers: the nomination, withdrawn, unless a test
   /// says otherwise.
@@ -236,6 +257,7 @@ void main() {
     when(() => repository.lastWrite(any())).thenAnswer((_) async => 7);
     pool = [catanAdas, azulMine];
     nominationsAnswer = (_) => const [];
+    lineupAnswer = (_) => throw UnimplementedError('no lineup read is faked');
     nominationAnswer = (_) =>
         throw UnimplementedError('no single nomination read is faked');
     withdrawAnswer = (request) => _nomination(
@@ -283,6 +305,7 @@ void main() {
       pool: (_) => pool,
       nominations: (eventId) async =>
           kept.over(await nominationsAnswer(eventId)),
+      lineup: (eventId) => lineupAnswer(eventId),
       nomination: (request) async => kept.keep(await nominationAnswer(request)),
       voteCast: (_) {},
       withdrawn: (request) async => kept.keep(await withdrawAnswer(request)),
@@ -3558,6 +3581,204 @@ void main() {
 
     FocusNode focusOf(WidgetTester tester, Finder button) =>
         tester.widget<ButtonStyleButton>(button).focusNode!;
+
+    group('a nomination that put its game in the lineup (#519)', () {
+      final lineupIn = find.byKey(EventDetailScreen.quickLookOpenLineupKey);
+      const named = 'See in lineup: Catan';
+      final lineupGone = find.text('This game is no longer in the lineup.');
+
+      testWidgets("opens that game's quick look over its own, and focus comes "
+          "back as it closes, a screen reader's activation included", (
+        tester,
+      ) async {
+        final handle = tester.ensureSemantics();
+        nominationsAnswer = (_) => [
+          _nomination(
+            'n-1',
+            status: NominationStatus.passed,
+            elevatedTo: (id: 'l-1', occurrenceId: null),
+          ),
+        ];
+        lineupAnswer = (_) => [_lineupGame('l-1', nominationId: 'n-1')];
+        await showGames(tester);
+        await openQuickLook(tester, 'n-1');
+
+        expect(
+          tester.getSemantics(lineupIn),
+          isSemantics(
+            label: named,
+            isButton: true,
+            isEnabled: true,
+            hasTapAction: true,
+          ),
+        );
+        expect(
+          tester.getSize(lineupIn).height,
+          greaterThanOrEqualTo(kMinInteractiveDimension),
+        );
+        expect(
+          tester.getSize(lineupIn).width,
+          greaterThanOrEqualTo(kMinInteractiveDimension),
+        );
+
+        screenReaderTap(tester, named);
+        await animate(tester);
+
+        // The lineup game's, over the nomination's, which stays.
+        expect(quickLook, findsNWidgets(2));
+        expect(find.text('Added from a nomination'), findsOneWidget);
+        expect(lineupGone, findsNothing);
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await animate(tester);
+        expect(quickLook, findsOneWidget);
+        expect(find.text('Added from a nomination'), findsNothing);
+        expect(focusOf(tester, lineupIn).hasPrimaryFocus, isTrue);
+        handle.dispose();
+      });
+
+      testWidgets("an outcome that lands while the lineup game's is open is "
+          'said there, and not again here as that one closes', (tester) async {
+        final handle = tester.ensureSemantics();
+        nominationsAnswer = (_) => [
+          _nomination(
+            'n-1',
+            status: NominationStatus.passed,
+            elevatedTo: (id: 'l-1', occurrenceId: null),
+          ),
+        ];
+        lineupAnswer = (_) => [_lineupGame('l-1', nominationId: 'n-1')];
+        await showGames(tester);
+        await openQuickLook(tester, 'n-1');
+        await press(tester, lineupIn);
+        await animate(tester);
+        expect(quickLook, findsNWidgets(2));
+
+        blocOf<EventLineupBloc>(tester).add(
+          const LineupWriteDropped(LineupWrite.remove, title: 'Catan'),
+        );
+        await settle(tester);
+        const copy =
+            "Catan wasn't taken out: something changed on this event first.";
+        expect(
+          tester.getSemantics(
+            find.descendant(of: quickLook.last, matching: find.text(copy)),
+          ),
+          isSemantics(isLiveRegion: true),
+        );
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await animate(tester);
+        expect(quickLook, findsOneWidget);
+        // Shown here still, but no live region to be read out again.
+        final here = find.descendant(of: quickLook, matching: find.text(copy));
+        expect(here, findsOneWidget);
+        expect(tester.getSemantics(here), isSemantics(isLiveRegion: false));
+        handle.dispose();
+      });
+
+      // Not offered where the lineup isn't known to hold the game, so the
+      // stacked quick look never says it has gone for a lineup not read.
+      for (final (name, answer) in <(String, List<LineupGame> Function())>[
+        ('no longer holds it', () => [_lineupGame('l-2')]),
+        ("couldn't be read", () => throw _offline),
+      ]) {
+        testWidgets('where the lineup $name, there is no way to it', (
+          tester,
+        ) async {
+          nominationsAnswer = (_) => [
+            _nomination(
+              'n-1',
+              status: NominationStatus.approved,
+              elevatedTo: (id: 'l-1', occurrenceId: 'd-1'),
+            ),
+          ];
+          lineupAnswer = (_) => answer();
+          await showGames(tester);
+          await openQuickLook(tester, 'n-1');
+
+          expect(lineupIn, findsNothing);
+          expect(quickLook, findsOneWidget);
+        });
+      }
+
+      testWidgets('the lineup quick look opened from it offers no View game, '
+          'the nomination under it has one', (tester) async {
+        nominationsAnswer = (_) => [
+          _nomination(
+            'n-1',
+            status: NominationStatus.passed,
+            elevatedTo: (id: 'l-1', occurrenceId: null),
+          ),
+        ];
+        lineupAnswer = (_) => [_lineupGame('l-1', nominationId: 'n-1')];
+        await showGames(tester);
+        await openQuickLook(tester, 'n-1');
+        await press(tester, lineupIn);
+        await animate(tester);
+
+        expect(quickLook, findsNWidgets(2));
+        expect(
+          find.descendant(of: quickLook.first, matching: openGame),
+          findsOneWidget,
+        );
+        expect(
+          find.descendant(of: quickLook.last, matching: openGame),
+          findsNothing,
+        );
+      });
+
+      testWidgets('at 320×640 and 200% text, it lays out beside Who voted '
+          'with no overflow', (tester) async {
+        useViewSize(tester, const Size(320, 640));
+        tester.platformDispatcher.textScaleFactorTestValue =
+            BgeTextScale.maxScaleFactor;
+        addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+        pool = [_game('o-1', 'att-ada', _longTitle), azulMine];
+        nominationsAnswer = (_) => [
+          _nomination(
+            'n-1',
+            title: _longTitle,
+            status: NominationStatus.passed,
+            elevatedTo: (id: 'l-1', occurrenceId: null),
+            votes: [_vote('att-ada', VoteType.forGame)],
+          ),
+        ];
+        lineupAnswer = (_) => [_lineupGame('l-1', nominationId: 'n-1')];
+        await showGames(tester);
+        await openQuickLook(tester, 'n-1');
+
+        expect(tester.takeException(), isNull);
+        for (final control in [votersIn, lineupIn, openGame]) {
+          await tester.ensureVisible(control);
+          await tester.pump();
+          expect(tester.takeException(), isNull, reason: '$control');
+          final rect = tester.getRect(control);
+          expect(rect.left, greaterThanOrEqualTo(0), reason: '$control');
+          expect(rect.right, lessThanOrEqualTo(320), reason: '$control');
+          expect(
+            rect.height,
+            greaterThanOrEqualTo(kMinInteractiveDimension),
+            reason: '$control',
+          );
+        }
+      });
+
+      testWidgets('one not in the lineup has no way there', (tester) async {
+        nominationsAnswer = (_) => [
+          _nomination('n-1', status: NominationStatus.passed),
+          _nomination('n-2', title: 'Azul', from: 'o-2'),
+        ];
+        lineupAnswer = (_) => [_lineupGame('l-1')];
+        await showGames(tester);
+
+        for (final id in ['n-1', 'n-2']) {
+          await openQuickLook(tester, id);
+          expect(lineupIn, findsNothing, reason: id);
+          await closeQuickLook(tester);
+        }
+      });
+    });
 
     testWidgets("a nomination's quick look names a date the event no longer "
         'has as gone, as the filters do', (tester) async {

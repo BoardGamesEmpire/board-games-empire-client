@@ -496,6 +496,44 @@ void main() {
     });
   });
 
+  group('lineupStartedFor (#520)', () {
+    final now = DateTime(2026, 11, 20, 12);
+    final past = confirmed('d-past', DateTime(2026, 11, 1, 19));
+    final ahead = confirmed('d-ahead', DateTime(2026, 12, 1, 19));
+
+    bool started(String? occurrenceId, List<EventOccurrence> dates) =>
+        lineupStartedFor(ready(dates: dates).detail, occurrenceId, now: now);
+
+    test("a date's lineup has started from its start, or once called off", () {
+      expect(started('d-past', [past, ahead]), isTrue);
+      expect(started('d-ahead', [past, ahead]), isFalse);
+      expect(
+        started('d-ahead', [ahead.copyWith(status: OccurrenceStatus.declined)]),
+        isTrue,
+      );
+    });
+
+    test("the event's own has started once no date is still to come, and "
+        'never with no dates', () {
+      expect(started(null, [past]), isTrue);
+      expect(started(null, [past, ahead]), isFalse);
+      expect(started(null, const []), isFalse);
+    });
+
+    test("a date the event doesn't list hasn't, as far as it can tell", () {
+      expect(started('d-gone', [past]), isFalse);
+    });
+
+    test('it asks for no right to take the game out', () {
+      final state = ready(
+        dates: [past],
+        actions: actionsOf(eventRole: EventRole.participant),
+      );
+
+      expect(lineupStartedFor(state.detail, 'd-past', now: now), isTrue);
+    });
+  });
+
   group('lineupGameAhead (#905)', () {
     final now = DateTime(2026, 11, 20, 12);
     final past = confirmed('d-past', DateTime(2026, 11, 1, 19));

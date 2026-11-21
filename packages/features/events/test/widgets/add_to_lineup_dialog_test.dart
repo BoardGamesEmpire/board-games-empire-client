@@ -11,6 +11,9 @@ import 'package:ui_tokens/ui_tokens.dart';
 
 import '../support/event_list_items.dart';
 
+const _eventStarted =
+    "None of this event's dates is still to come, so a game added now can't "
+    'be taken out of the lineup.';
 const _longTitle =
     'Twilight Imperium: Fourth Edition, Prophecy of Kings and the Codex '
     'Volumes';
@@ -36,6 +39,7 @@ void main() {
     required List<NominateScope> scopes,
     String title = 'Catan',
     int? Function(NominationScope scope)? fillerMaxPlayTimeOf,
+    bool Function(NominationScope scope)? startedOf,
     ThemeData? theme,
   }) => MaterialApp(
     theme: theme ?? BgeTheme.light(),
@@ -52,6 +56,7 @@ void main() {
                 scopes: scopes,
                 now: now,
                 fillerMaxPlayTimeOf: fillerMaxPlayTimeOf,
+                startedOf: startedOf,
               ).then((result) {
                 done = true;
                 value = result;
@@ -71,6 +76,7 @@ void main() {
     String title = 'Catan',
     int? fillerMaxPlayTime,
     int? Function(NominationScope scope)? fillerMaxPlayTimeOf,
+    bool Function(NominationScope scope)? startedOf,
     Size size = const Size(400, 800),
   }) async {
     done = false;
@@ -81,6 +87,7 @@ void main() {
         scopes: scopes ?? [wholeEvent],
         title: title,
         fillerMaxPlayTimeOf: fillerMaxPlayTimeOf ?? (_) => fillerMaxPlayTime,
+        startedOf: startedOf,
       ),
     );
     await tester.tap(find.text('Open'));
@@ -265,6 +272,44 @@ void main() {
     expect(value?.maxPlayTime, isNull);
   });
 
+  testWidgets('a date that has started says up front that a game added now '
+      "can't be taken out, as it is chosen", (tester) async {
+    final handle = tester.ensureSemantics();
+    const dateStarted =
+        "This date has started, so a game added now can't be taken out of the "
+        'lineup.';
+    await open(
+      tester,
+      scopes: [wholeEvent, onFriday],
+      startedOf: (scope) => scope is DateScope,
+    );
+    expect(find.text(dateStarted), findsNothing);
+
+    await choose(tester, scope('d-1'));
+    expect(inDialog(find.text(dateStarted)), findsOneWidget);
+    // Heard as it changes with the choice.
+    expect(
+      tester.getSemantics(find.text(dateStarted)),
+      isSemantics(label: dateStarted, isLiveRegion: true),
+    );
+    // Above what it is played as: before anything else is asked.
+    expect(
+      tester.getTopLeft(find.text(dateStarted)).dy,
+      lessThan(tester.getTopLeft(role(ScheduledGameRole.primary)).dy),
+    );
+
+    await choose(tester, scope(null));
+    expect(find.text(dateStarted), findsNothing);
+    handle.dispose();
+  });
+
+  testWidgets('the whole event, none of whose dates is still to come, says '
+      'so as it opens', (tester) async {
+    await open(tester, startedOf: (scope) => scope is WholeEventScope);
+
+    expect(inDialog(find.text(_eventStarted)), findsOneWidget);
+  });
+
   testWidgets('blank notes send none', (tester) async {
     await open(tester);
     await enter(tester, notes, '   ');
@@ -308,6 +353,29 @@ void main() {
       },
     );
 
+    auditScreen(
+      'the add dialog, for a date that has started',
+      pump: (tester, theme) async {
+        await tester.pumpWidget(
+          app(
+            scopes: [wholeEvent, onFriday],
+            title: _longTitle,
+            startedOf: (scope) => scope is DateScope,
+            theme: theme,
+          ),
+        );
+        await tester.tap(find.text('Open'));
+        await tester.pumpAndSettle();
+      },
+      arrange: (tester) async {
+        await choose(tester, scope('d-1'));
+        expect(
+          find.textContaining('This date has started'),
+          findsOneWidget,
+        );
+      },
+    );
+
     testWidgets('at 320×640 and 200% text, it lays out with nothing clipped '
         'and every control reachable', (tester) async {
       tester.platformDispatcher.textScaleFactorTestValue =
@@ -318,6 +386,8 @@ void main() {
         scopes: [wholeEvent, onFriday],
         title: _longTitle,
         fillerMaxPlayTime: 20,
+        // The line that says so, as well.
+        startedOf: (scope) => scope is WholeEventScope,
         size: const Size(320, 640),
       );
       await choose(tester, role(ScheduledGameRole.filler));
@@ -347,6 +417,7 @@ void main() {
         'Add $_longTitle to the lineup',
         'For the whole event',
         'For Fri, Nov 6 · 7:00 PM',
+        _eventStarted,
         'Play it as',
         'Primary',
         'Filler',
