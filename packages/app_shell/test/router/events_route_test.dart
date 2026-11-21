@@ -31,7 +31,13 @@ Key _createKey([String? householdId]) => Key(
 void main() {
   late _MockAppBootstrapCubit cubit;
 
-  setUp(() => cubit = _MockAppBootstrapCubit());
+  /// The tab and the date each build of the detail was handed (#856, #1042).
+  late List<({String? tab, String? date})> detailBuilds;
+
+  setUp(() {
+    cubit = _MockAppBootstrapCubit();
+    detailBuilds = [];
+  });
 
   Future<GoRouter> pumpRouter(
     WidgetTester tester, {
@@ -60,8 +66,10 @@ void main() {
                 Scaffold(body: SizedBox(key: _createKey(householdId)))
           : null,
       eventDetailBuilder: withBuilders && withDetailBuilder
-          ? (_, eventId, _) =>
-                Scaffold(body: SizedBox(key: _detailKey(eventId)))
+          ? (_, eventId, tab, date) {
+              detailBuilds.add((tab: tab, date: date));
+              return Scaffold(body: SizedBox(key: _detailKey(eventId)));
+            }
           : null,
       eventAvailabilityBuilder: withBuilders && withAvailabilityBuilder
           ? (_, eventId) =>
@@ -174,6 +182,30 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byKey(_detailKey('a/b')), findsOneWidget);
+    });
+
+    testWidgets('eventDetailOf puts the date beside the tab, encoded, and '
+        'the builder gets both', (tester) async {
+      final router = await pumpRouter(tester);
+
+      // Unencoded, `&` and `#` would end the value early, and `+` would read
+      // back as a space.
+      const date = 'a b&c=d#e+f';
+      router.go(AppRoutes.eventDetailOf('e-1', tab: 'pool', date: date));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(_detailKey('e-1')), findsOneWidget);
+      expect(detailBuilds.last, (tab: 'pool', date: date));
+      // Either one alone, and neither.
+      expect(
+        AppRoutes.eventDetailOf('e-1', date: 'occ-2'),
+        '/events/e-1?${AppRoutes.eventDateParam}=occ-2',
+      );
+      expect(
+        AppRoutes.eventDetailOf('e-1', tab: 'pool'),
+        '/events/e-1?${AppRoutes.eventTabParam}=pool',
+      );
+      expect(AppRoutes.eventDetailOf('e-1'), '/events/e-1');
     });
 
     testWidgets('/events/create is the form, not an event called create', (

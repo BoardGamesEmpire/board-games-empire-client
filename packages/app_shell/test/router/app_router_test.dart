@@ -227,19 +227,23 @@ void main() {
       );
     });
 
-    testWidgets('the reserved event link keeps the tab it names, and drops '
-        "a parameter the detail doesn't read", (tester) async {
+    testWidgets('the reserved event link keeps tab and date, and drops the '
+        'rest', (tester) async {
       final router = await pumpRouter(
         tester,
         initialState: const AppBootstrapReady(),
       );
 
-      router.go('/server/srv-1/event/ev-1?tab=pool&utm=x');
+      router.go('/server/srv-1/event/ev-1?tab=pool&date=occ-2&utm=x');
       await tester.pumpAndSettle();
 
       expect(
         router.routerDelegate.currentConfiguration.uri.toString(),
-        AppRoutes.eventDetailOf('ev-1', tab: AppRoutes.eventPoolTab),
+        AppRoutes.eventDetailOf('ev-1', tab: 'pool', date: 'occ-2'),
+      );
+      expect(
+        router.routerDelegate.currentConfiguration.uri.queryParameters,
+        {AppRoutes.eventTabParam: 'pool', AppRoutes.eventDateParam: 'occ-2'},
       );
     });
 

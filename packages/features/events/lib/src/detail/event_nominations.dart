@@ -1,7 +1,7 @@
-/// The rules the nominations section draws from: the tally, the filter and
-/// sort, when a deadline's line turns, who is offered Nominate, which pool
-/// rows supply a live nomination, and which dates can be nominated for
-/// (#517).
+/// The rules the nominations section draws from: the tally, which of them the
+/// row of dates' choice shows (#1042), the filter and sort, when a deadline's
+/// line turns, who is offered Nominate, which pool rows supply a live
+/// nomination, and which dates can be nominated for (#517).
 ///
 /// Nothing here reads the network or a bloc. The widgets and the nominations
 /// bloc hold the data and ask these what it means.
@@ -11,6 +11,7 @@ import 'package:equatable/equatable.dart';
 import 'package:events/src/bloc/event_detail_state.dart';
 import 'package:events/src/detail/event_actions.dart';
 import 'package:events/src/detail/event_date_actions.dart';
+import 'package:events/src/detail/games_date_view.dart';
 import 'package:models/domain.dart';
 
 /// How many of a nomination's counting votes are For, Against and Interested.
@@ -160,6 +161,66 @@ enum NominationSort {
   soonestDeadline,
 }
 
+/// The nominations in [all] that [view], the row of dates' choice, shows
+/// (#1042), before any filter narrows them: under one date, that date's,
+/// then the whole event's, which the date's attendees vote on too; under
+/// Every date, the whole event's alone; with no view, as on an event with no
+/// row, every one. Each in their order in [all].
+List<EventNomination> nominationsInView(
+  GamesDateView? view,
+  List<EventNomination> all,
+) => switch (view) {
+  null => all,
+  EveryDateView() => _wholeEvent(all),
+  OneDateView(:final occurrenceId) => [
+    ..._onDate(all, occurrenceId),
+    ..._wholeEvent(all),
+  ],
+};
+
+/// The nominations in [all] for the whole event, in their order.
+List<EventNomination> _wholeEvent(List<EventNomination> all) => [
+  for (final n in all)
+    if (n.occurrenceId == null) n,
+];
+
+/// The nominations in [all] for the date [occurrenceId] alone, in their
+/// order.
+List<EventNomination> _onDate(
+  List<EventNomination> all,
+  String occurrenceId,
+) => [
+  for (final n in all)
+    if (n.occurrenceId == occurrenceId) n,
+];
+
+/// The nominations the Nominations section shows (#517): those [view] shows
+/// ([nominationsInView], #1042) that [filter] keeps ([filterNominations]),
+/// ordered by [sort] ([sortNominations]). Under one date, the date's own
+/// first, then the whole event's, each ordered apart, so the whole event's
+/// stay together after the date's whatever the order chosen; otherwise one
+/// list. The section's rows and the focus hand-off that follows them are
+/// both these, so the two can't disagree.
+List<EventNomination> shownNominations(
+  List<EventNomination> all, {
+  required GamesDateView? view,
+  required NominationFilter filter,
+  required NominationSort sort,
+  required String? viewerId,
+}) {
+  List<EventNomination> ordered(List<EventNomination> part) => sortNominations(
+    filterNominations(part, filter, viewerId: viewerId),
+    sort,
+  );
+  return switch (view) {
+    OneDateView(:final occurrenceId) => [
+      ...ordered(_onDate(all, occurrenceId)),
+      ...ordered(_wholeEvent(all)),
+    ],
+    EveryDateView() || null => ordered(nominationsInView(view, all)),
+  };
+}
+
 /// The nominations in [all] that meet every criterion of [f], in their order.
 ///
 /// [viewerId] is the viewer's roster row id. With none, [NominationFilter.mine]
@@ -266,17 +327,18 @@ enum NominateGate {
 /// [NominateGate.hidden] unless the viewer's actions hold
 /// [EventAction.nominateGame], the detail has a row for them on the roster,
 /// the event isn't local-only, it takes writes at all ([takesDateWrites]), and
-/// the event's mode isn't host-only. An event with no policy, or none the
-/// viewer may read, counts as not host-only: the server decides.
-NominateGate nominateGate(EventDetailReady state) {
+/// the mode isn't host-only: [mode], the mode of the view in use where it is
+/// given (#519, `viewMode`), else the event's own. An event with no policy,
+/// or none the viewer may read, counts as not host-only: the server decides.
+NominateGate nominateGate(EventDetailReady state, {GameAdditionMode? mode}) {
   final event = state.detail.snapshot.event;
-  final mode = state.detail.snapshot.policy?.gameAdditionMode;
+  final shown = mode ?? state.detail.snapshot.policy?.gameAdditionMode;
 
   if (!state.actions.contains(EventAction.nominateGame) ||
       state.detail.attendance == null ||
       event.isLocalOnly ||
       !takesDateWrites(event) ||
-      mode == GameAdditionMode.hostOnly) {
+      shown == GameAdditionMode.hostOnly) {
     return NominateGate.hidden;
   }
 

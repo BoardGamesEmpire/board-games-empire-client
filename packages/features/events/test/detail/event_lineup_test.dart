@@ -127,6 +127,86 @@ void main() {
     });
   });
 
+  // The lineup as the date row's choice shows it (#1042).
+  group('lineupGroupsFor (#1042)', () {
+    /// The event's own games, Friday's and Saturday's, and one for a date
+    /// the event no longer lists, in the server's order.
+    final lineup = [
+      game('l-1'),
+      game('l-2', occurrenceId: 'd-1'),
+      game('l-3', occurrenceId: 'd-2'),
+      game('l-4'),
+      game('l-5', occurrenceId: 'd-gone'),
+    ];
+    final dates = [friday, saturday];
+
+    test("Every date lists only the event's own lineup", () {
+      const view = EveryDateView();
+      final listed = [
+        for (final each in lineup)
+          if (each.occurrenceId != 'd-gone') each,
+      ];
+      final groups = lineupGroupsFor(view, listed, dates);
+
+      expect(shape(groups), [
+        [everyDate, null, 'l-1', 'l-4'],
+      ]);
+      // The view names it: no headings, and no row says it again.
+      expect(lineupDrawsHeaders(groups, dates, view: view), isFalse);
+      expect(lineupMarksEveryDate(view, headers: false), isFalse);
+    });
+
+    test('Every date keeps a game for a date the event no longer lists, '
+        'under its heading', () {
+      const view = EveryDateView();
+      final groups = lineupGroupsFor(view, lineup, dates);
+
+      // Never hidden: no date's view holds it.
+      expect(shape(groups), [
+        [everyDate, null, 'l-1', 'l-4'],
+        [goneDate, null, 'l-5'],
+      ]);
+      expect(lineupDrawsHeaders(groups, dates, view: view), isTrue);
+      expect(lineupMarksEveryDate(view, headers: true), isFalse);
+    });
+
+    test("a date lists its games, then the event's own marked every date", () {
+      const view = OneDateView('d-2');
+      final groups = lineupGroupsFor(view, lineup, dates);
+
+      expect(shape(groups), [
+        [onDate, 'd-2', 'l-3'],
+        [everyDate, null, 'l-1', 'l-4'],
+      ]);
+      expect(groups.first.date, saturday);
+      // No headings: the event's own rows say they are for every date.
+      expect(lineupDrawsHeaders(groups, dates, view: view), isFalse);
+      expect(lineupMarksEveryDate(view, headers: false), isTrue);
+    });
+
+    test("a date with no games of its own lists the event's own", () {
+      final groups = lineupGroupsFor(const OneDateView('d-3'), lineup, [
+        ...dates,
+        sunday,
+      ]);
+
+      expect(shape(groups), [
+        [everyDate, null, 'l-1', 'l-4'],
+      ]);
+    });
+
+    test('with no view, the lineup groups as it does with no row', () {
+      expect(
+        shape(lineupGroupsFor(null, lineup, [friday])),
+        shape(lineupGroups(lineup, [friday])),
+      );
+      final groups = lineupGroupsFor(null, lineup.take(2).toList(), [friday]);
+      expect(lineupDrawsHeaders(groups, [friday]), isFalse);
+      expect(lineupMarksEveryDate(null, headers: false), isTrue);
+      expect(lineupMarksEveryDate(null, headers: true), isFalse);
+    });
+  });
+
   group('lineupDrawsHeaders', () {
     test('an event of two or more dates draws them', () {
       final groups = lineupGroups([game('l-1')], [friday, saturday]);

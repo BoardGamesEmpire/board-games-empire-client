@@ -14,11 +14,13 @@ import 'package:events/src/detail/event_game_offers.dart';
 import 'package:events/src/detail/event_games_pool.dart';
 import 'package:events/src/detail/event_lineup.dart';
 import 'package:events/src/detail/event_nominations.dart';
+import 'package:events/src/detail/games_date_view.dart';
 import 'package:events/src/screens/event_detail_screen.dart';
 import 'package:events/src/widgets/event_detail_tabs.dart';
 import 'package:events/src/widgets/event_game_filter_options.dart';
 import 'package:events/src/widgets/event_game_quick_look.dart';
 import 'package:events/src/widgets/event_game_row_head.dart';
+import 'package:events/src/widgets/event_games_date_row.dart';
 import 'package:events/src/widgets/event_games_footer.dart';
 import 'package:events/src/widgets/event_games_row_lines.dart';
 import 'package:events/src/widgets/event_games_tab_scope.dart';
@@ -80,11 +82,13 @@ enum _Body {
 }
 
 /// What the Nominations section shows: its body, the rows when it shows
-/// rows, filtered and sorted, and the nominations' state it was worked out
-/// from.
+/// rows, in the date view, filtered and sorted, how many the date view
+/// holds whatever the filter keeps (#1042), and the nominations' state it
+/// was worked out from.
 typedef _NominationsShown = ({
   EventNominationsBody body,
   List<EventNomination> rows,
+  int total,
   EventNominationsState state,
 });
 
@@ -105,11 +109,14 @@ typedef _LineupShown = ({
 /// shown (#945), that sub-tab's body and rows, and the roster's names that
 /// the lists name people from. Only the sub-tab shown is worked out: the
 /// Lineup sub-tab's (#519) or the Nominations section's where it is chosen,
-/// else the pool's. The pool's and the nominations' rows are the ones their
-/// filters keep, the nominations' in the order chosen; the lineup's are all
-/// its games, grouped by date ([lineupGroups]). The screen counts them for
-/// the page's `semanticChildCount`, and the tab draws the same value, so the
-/// two can't disagree.
+/// else the pool's. The lineup and the nominations follow the date view
+/// (#1042): the lineup's rows are its games in the view, grouped by date
+/// ([lineupGroupsFor]), and the nominations' those in the view that their
+/// filter keeps, in the order chosen, a date's own before the whole event's
+/// ([shownNominations]). The
+/// pool's are the ones its filter keeps, the same in every view. The screen
+/// counts them for the page's `semanticChildCount`, and the tab draws the
+/// same value, so the two can't disagree.
 final class _GamesBody {
   const _GamesBody({
     required this.names,
@@ -168,7 +175,11 @@ final class _GamesBody {
   /// the tab (#945). The lineup's are every group's (#519).
   int get rowCount => switch ((pool, nominations, lineup)) {
     ((body: _Body.rows, :final rows), _, _) => rows.length,
-    (_, (body: EventNominationsBody.rows, :final rows, state: _), _) =>
+    (
+      _,
+      (body: EventNominationsBody.rows, :final rows, total: _, state: _),
+      _,
+    ) =>
       rows.length,
     (_, _, (body: EventLineupBody.rows, :final groups, state: _)) =>
       groups.fold(0, (count, group) => count + group.games.length),
@@ -219,11 +230,12 @@ final class _GamesBody {
   }
 
   /// What the Nominations section shows for [state] on [detail] (#517):
-  /// the nominations the [controller]'s filter keeps, in the order it holds
-  /// ([filterNominations], then [sortNominations]), or no match, else the
-  /// state their read is drawn in
-  /// ([EventGamesTabController.drawnNominationsLoad]). They need no roster,
-  /// so they show wherever the pool can't.
+  /// the nominations in the [controller]'s date view ([nominationsInView],
+  /// #1042) that its filter keeps, in the order it holds, a date's own
+  /// before the whole event's ([shownNominations]), or no match; nothing
+  /// nominated where some are held and none is in the view; else the state
+  /// their read is drawn in ([EventGamesTabController.drawnNominationsLoad]).
+  /// They need no roster, so they show wherever the pool can't.
   static _NominationsShown _nominationsOf(
     EventDetailReady detail,
     EventNominationsState state,
@@ -231,19 +243,22 @@ final class _GamesBody {
   ) {
     final load = controller.drawnNominationsLoad(state);
     if (load != EventNominationsLoad.hidden && state.nominations.isNotEmpty) {
-      final rows = sortNominations(
-        filterNominations(
-          state.nominations,
-          controller.nominationFilter,
-          viewerId: detail.detail.attendance?.id,
-        ),
-        controller.nominationSort,
+      final inView = nominationsInView(controller.dateView, state.nominations);
+      final rows = shownNominations(
+        state.nominations,
+        view: controller.dateView,
+        filter: controller.nominationFilter,
+        sort: controller.nominationSort,
+        viewerId: detail.detail.attendance?.id,
       );
       return (
-        body: rows.isEmpty
+        body: inView.isEmpty
+            ? EventNominationsBody.empty
+            : rows.isEmpty
             ? EventNominationsBody.noMatches
             : EventNominationsBody.rows,
         rows: rows,
+        total: inView.length,
         state: state,
       );
     }
@@ -257,13 +272,15 @@ final class _GamesBody {
       EventNominationsLoad.loaded => EventNominationsBody.empty,
       EventNominationsLoad.hidden => EventNominationsBody.hidden,
     };
-    return (body: body, rows: const [], state: state);
+    return (body: body, rows: const [], total: 0, state: state);
   }
 
   /// What the Lineup sub-tab shows for [state] on [detail] (#519): the
-  /// lineup's games grouped by date ([lineupGroups]), else the state their
-  /// read is drawn in ([EventGamesTabController.drawnLineupLoad]). They
-  /// need no roster, as the nominations don't.
+  /// lineup's games in the [controller]'s date view, grouped by date
+  /// ([lineupGroupsFor], #1042); empty where some are held and none is in
+  /// the view; else the state their read is drawn in
+  /// ([EventGamesTabController.drawnLineupLoad]). They need no roster, as
+  /// the nominations don't.
   static _LineupShown _lineupOf(
     EventDetailReady detail,
     EventLineupState state,
@@ -271,9 +288,14 @@ final class _GamesBody {
   ) {
     final load = controller.drawnLineupLoad(state);
     if (load != EventLineupLoad.hidden && state.games.isNotEmpty) {
+      final groups = lineupGroupsFor(
+        controller.dateView,
+        state.games,
+        detail.detail.snapshot.occurrences,
+      );
       return (
-        body: EventLineupBody.rows,
-        groups: lineupGroups(state.games, detail.detail.snapshot.occurrences),
+        body: groups.isEmpty ? EventLineupBody.empty : EventLineupBody.rows,
+        groups: groups,
         state: state,
       );
     }
@@ -313,13 +335,28 @@ final class _GamesBody {
 /// back, the dialogs Take back and Nominate ask with, and their outcomes name
 /// the game as the row does.
 ///
-/// Its slivers, as one group under the tab bar: first the sub-tabs' bar
-/// ([EventGamesSectionBar]), Material's secondary [TabBar], whose controller is
-/// the [controller]'s [EventGamesTabController.sections]; then the chosen
-/// sub-tab's slivers alone, which the bar swaps, keeping its own place, so
-/// focus stays on the sub-tab chosen. Games opens on Lineup. Where there
-/// is no nominations' or lineup's state, the tab is the pool alone, with no
-/// bar.
+/// Its slivers, as one group under the tab bar: first, on an event of two or
+/// more dates, the row of dates ([EventGamesDateRow], #1042), whose choice,
+/// the [controller]'s [EventGamesTabController.dateView], every sub-tab
+/// follows; then the sub-tabs' bar ([EventGamesSectionBar]), Material's
+/// secondary [TabBar], whose controller is the [controller]'s
+/// [EventGamesTabController.sections]; then the chosen sub-tab's slivers
+/// alone, which the bar swaps, keeping its own place, so focus stays on the
+/// sub-tab chosen. Games opens on Lineup. Where there is no nominations' or
+/// lineup's state, the tab is the pool alone, with no bar.
+///
+/// The view decides what each sub-tab holds, and its mode
+/// ([viewMode], #519) which sub-tabs there are. Lineup holds the view's
+/// lineup games ([lineupGroupsFor]), and Nominations its nominations
+/// ([nominationsInView]): under a date, that date's, then the event's own,
+/// each of which says on its status line that it is for every date; under
+/// Every date, the event's own, and on Lineup any whose date the event no
+/// longer lists, under a heading of their own. Under a host-only view,
+/// where nothing can be nominated, the bar has no Nominations while the
+/// view has no nominations ([visibleSections]); one chosen as it goes gives
+/// way to Lineup. Pool holds the same games in every view, and each row's
+/// Nominate follows the view: under its mode ([nominateGate]), and for its
+/// scope ([nominateScopes]).
 ///
 /// Lineup is the Lineup section, and Nominations the Nominations section.
 /// Pool is the pool's header, then its rows ([EventGamesRowLines], keyed by
@@ -382,13 +419,14 @@ final class _GamesBody {
 /// everything it could be; and with nothing to say while a detail read runs,
 /// the screen's own request is out, a nominations write is out, or the
 /// nominations' first read is out, before which nothing says what a row
-/// supplies. On an
-/// event of more than one date it asks first whether the nomination is for
-/// the whole event or for one date still to come; otherwise it is for the
-/// whole event. It sends as Take back does, once any running detail read
-/// has ended, and only if it still may ([nominateGame]). It is held, inert,
-/// from its press through its nomination, as Offer games is through its
-/// run ([NominateButton]).
+/// supplies. Its scope is the date view's (#1042): under a date, for that
+/// date, and under Every date, or on an event with no row of dates, for the
+/// whole event, asking nothing. Under a date that can no longer be
+/// nominated for, started or cancelled, it is disabled, saying so. It sends
+/// as Take back does, once any
+/// running detail read has ended, and only if it still may ([nominateGame]).
+/// It is held, inert, from its press through its nomination, as Offer games
+/// is through its run ([NominateButton]).
 ///
 /// ## The filter
 ///
@@ -448,6 +486,9 @@ class EventGamesTab extends StatelessWidget {
   /// Key on the sliver that holds the sub-tabs' bar (#945).
   static const _sectionBarKey = ValueKey<String>('event_games.section_bar');
 
+  /// Key on the sliver that holds the row of dates (#1042).
+  static const _dateRowKey = ValueKey<String>('event_games.date_row');
+
   /// Key on the Nominations section, so the pool's slivers never take its
   /// place as the sub-tabs swap (#945).
   static const _nominationsKey = ValueKey<String>('event_games.nominations');
@@ -468,8 +509,13 @@ class EventGamesTab extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = EventsLocalizations.of(context);
     final now = this.now();
-    // Nominate's choices, the same for every row.
-    final scopes = nominateScopes(detail.detail, now: now);
+    // Nominate's choices, the same for every row: the date view's, none
+    // offered where its mode offers no Nominate (#1042, #519).
+    final scopes = nominateChoicesIn(
+      detail,
+      view: controller.dateView,
+      now: now,
+    );
     final names = _body.names;
     final gate = offerGamesGate(detail);
     // Take back on someone else's row (#518), where the viewer may take
@@ -484,6 +530,31 @@ class EventGamesTab extends StatelessWidget {
 
     return SliverMainAxisGroup(
       slivers: [
+        // The row of dates (#1042) above the sub-tabs it chooses for, where
+        // the event has one ([EventGamesTabController.dateView]). A date
+        // chosen builds the page again, which listens to the controller.
+        if (nominations != null && lineup != null)
+          SliverToBoxAdapter(
+            key: _dateRowKey,
+            child: ListenableBuilder(
+              listenable: controller,
+              builder: (context, _) => switch (controller.dateView) {
+                final view? => Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    EventGamesDateRow(
+                      dates: detail.detail.snapshot.occurrences,
+                      selected: view,
+                      onSelected: controller.chooseDate,
+                      now: now,
+                    ),
+                    const BgeGap.md(),
+                  ],
+                ),
+                null => const SizedBox.shrink(),
+              },
+            ),
+          ),
         // The sub-tabs' bar (#945), where there are sub-tabs to show: with no
         // nominations' or lineup's state the pool shows alone, with no bar.
         // Keyed, so it keeps its place, and the sub-tab chosen its focus, as
@@ -497,6 +568,7 @@ class EventGamesTab extends StatelessWidget {
               children: [
                 EventGamesSectionBar(
                   key: EventDetailScreen.sectionBarKey,
+                  sections: controller.visibleSections,
                   controller: controller.sections,
                 ),
                 const BgeGap.lg(),
@@ -519,6 +591,7 @@ class EventGamesTab extends StatelessWidget {
             key: _nominationsKey,
             body: shown.body,
             rows: shown.rows,
+            total: shown.total,
             detail: detail,
             state: shown.state,
             controller: controller,

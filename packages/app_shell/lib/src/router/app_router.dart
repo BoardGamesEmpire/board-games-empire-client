@@ -242,17 +242,26 @@ abstract final class AppRoutes {
   /// games is (#856).
   static const eventPoolTab = 'pool';
 
+  /// The query parameter of [eventDetail] that names the date the Games tab
+  /// is on (#1042), beside [eventTabParam]: one of the event's dates, by its
+  /// id, or `all` for every date. The screen reads it, so the router passes
+  /// any value on as it came.
+  static const eventDateParam = 'date';
+
   /// The location of one event's detail screen, on the tab [tab] names as
-  /// its [eventTabParam] (#856). Null leaves the parameter out, which is
+  /// its [eventTabParam] (#856), and the date [date] names as its
+  /// [eventDateParam] (#1042). Null leaves that parameter out, and no tab is
   /// Details.
   ///
   /// Ids are path-safe in practice, as [householdDetailOf]'s are; the encode
   /// is here for the id that one day is not.
-  static String eventDetailOf(String eventId, {String? tab}) {
+  static String eventDetailOf(String eventId, {String? tab, String? date}) {
     final location = '$events/${Uri.encodeComponent(eventId)}';
-    return tab == null
-        ? location
-        : '$location?$eventTabParam=${Uri.encodeQueryComponent(tab)}';
+    final query = [
+      if (tab != null) '$eventTabParam=${Uri.encodeQueryComponent(tab)}',
+      if (date != null) '$eventDateParam=${Uri.encodeQueryComponent(date)}',
+    ];
+    return query.isEmpty ? location : '$location?${query.join('&')}';
   }
 
   /// Who answered one event's availability poll (#507), beneath its detail.
@@ -773,17 +782,19 @@ typedef EventCreateScreenBuilder = Widget? Function(
 );
 
 /// Builds one event's detail screen (#498) for the [AppRoutes.eventDetail]
-/// route, given the `:eventId` the path carried and the tab its
-/// [AppRoutes.eventTabParam] names (#856), or null where it names none.
+/// route, given the `:eventId` the path carried, the tab its
+/// [AppRoutes.eventTabParam] names (#856) and the date its
+/// [AppRoutes.eventDateParam] names (#1042), each null where it names none.
 /// Same null contract as [EventOverviewScreenBuilder].
 ///
 /// The id reaches the builder unvalidated. The screen answers one that names
-/// no event with its not-found state. The tab reaches it unvalidated too,
-/// and the screen opens Details for a value it doesn't know.
+/// no event with its not-found state. The tab and the date reach it
+/// unvalidated too, and the screen opens Details for a tab it doesn't know.
 typedef EventDetailScreenBuilder = Widget? Function(
   BuildContext context,
   String eventId,
   String? tab,
+  String? date,
 );
 
 /// Builds the page of who answered one event's availability poll (#507) for
@@ -1599,15 +1610,18 @@ GoRouter buildAppRouter({
                     // screen anew, blocs and all, on every change. The
                     // screen's own tab changes come back here as a replace
                     // that keeps this page and its key (see
-                    // [EventDetailScreenBuilder]).
+                    // [EventDetailScreenBuilder]). #1042: the Games tab's
+                    // date is its `date` parameter, beside the tab, for the
+                    // same reason, and comes back the same way.
                     pageBuilder: (context, state) {
                       final id =
                           state.pathParameters[AppRoutes.eventIdParam] ?? '';
-                      final tab =
-                          state.uri.queryParameters[AppRoutes.eventTabParam];
+                      final query = state.uri.queryParameters;
+                      final tab = query[AppRoutes.eventTabParam];
+                      final date = query[AppRoutes.eventDateParam];
                       return _materialPage(
                         state,
-                        eventDetailBuilder?.call(context, id, tab) ??
+                        eventDetailBuilder?.call(context, id, tab, date) ??
                             const NotYetAvailableScreen(),
                       );
                     },
@@ -1863,13 +1877,15 @@ GoRouter buildAppRouter({
         ),
       ),
       // The reserved event link opens the event itself (#82), on the tab
-      // the link names, as the detail's own location does (#856). Path
+      // and the date the link names, as the detail's own location does
+      // (#856, #1042), and drops any other parameter. Path and query
       // parameters arrive decoded, and eventDetailOf encodes again.
       GoRoute(
         path: _eventDeepLinkPathPattern,
         redirect: (_, state) => AppRoutes.eventDetailOf(
           state.pathParameters['eventId']!,
           tab: state.uri.queryParameters[AppRoutes.eventTabParam],
+          date: state.uri.queryParameters[AppRoutes.eventDateParam],
         ),
       ),
       for (final pattern in reservedDeepLinkPathPatterns)
@@ -1972,7 +1988,8 @@ class _LeaveForEvent extends StatefulWidget {
   /// The tab the `go` opens the event on, as its [AppRoutes.eventTabParam]
   /// (#856): the Offer games route's is the pool, where the page was opened
   /// from. Null opens Details. A pop leaves the event on the tab it was left
-  /// on.
+  /// on, and on the date (#1042). The `go` names no date, as the page's own
+  /// location carries none.
   final String? tab;
 
   @override

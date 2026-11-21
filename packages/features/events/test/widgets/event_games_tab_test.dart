@@ -5,6 +5,7 @@ import 'package:bge_test_support/widgets.dart';
 import 'package:events/events.dart';
 import 'package:events/l10n/events_localizations.dart';
 import 'package:events/src/widgets/event_games_footer.dart';
+import 'package:events/src/widgets/event_games_tab_scope.dart';
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -4357,6 +4358,9 @@ void main() {
 
         final answer = Completer<void>();
         takeBackAnswer = (_) => answer.future;
+        // One nominated before the rules went host-only keeps the
+        // Nominations sub-tab (#519).
+        nominationsAnswer = (_) => [nominationOf('n-1', root)];
         await showGames(tester, detail: detailOf(viewer: host));
         served = [catanMine, catanAdas, root];
 
@@ -5132,13 +5136,23 @@ void main() {
       EventDetailScreen.poolNominatedKey(id),
       skipOffstage: false,
     );
-    Finder scope(String? occurrenceId) =>
-        find.byKey(EventDetailScreen.nominateScopeKey(occurrenceId));
-    Finder confirm() => find.byKey(EventDetailScreen.nominateConfirmKey);
     Finder nominationsOutcome() =>
         find.byKey(EventDetailScreen.nominationsOutcomeKey);
     VoidCallback? onPressed(WidgetTester tester, String id) =>
         tester.widget<ButtonStyleButton>(nominate(id)).onPressed;
+
+    /// Chooses the date [id] from the row of dates (#1042), Every date where
+    /// it is null.
+    Future<void> chooseDate(WidgetTester tester, String? id) async {
+      final chip = find.byKey(
+        EventDetailScreen.dateChipKey(id),
+        skipOffstage: false,
+      );
+      await tester.ensureVisible(chip);
+      await tester.pump();
+      await tester.tap(chip);
+      await animate(tester);
+    }
 
     testWidgets('Nominate on a single-date event sends a whole-event '
         'nomination', (tester) async {
@@ -5175,56 +5189,23 @@ void main() {
       );
     });
 
-    testWidgets('Nominate on a multi-date event asks for the scope', (
-      tester,
-    ) async {
+    // A multi-date event has a row of dates (#1042): Nominate's scope is the
+    // view's, and nothing is asked. The dialog's own suite has the choices.
+    testWidgets('Nominate on a multi-date event asks nothing: it nominates '
+        'for the view shown', (tester) async {
       await showGames(tester, detail: detailOf(occurrences: twoDates));
 
+      // Friday, the next date still to come.
       await press(tester, nominate(azul.id));
       await animate(tester);
 
-      expect(find.text('Nominate Azul'), findsOneWidget);
-      expect(
-        find.descendant(
-          of: scope(null),
-          matching: find.text('For the whole event'),
-        ),
-        findsOneWidget,
-      );
-      expect(
-        find.descendant(
-          of: scope('d-1'),
-          matching: find.text('For Fri, Nov 6 · 7:00 PM'),
-        ),
-        findsOneWidget,
-      );
-      expect(
-        find.descendant(
-          of: scope('d-2'),
-          matching: find.text('For Sat, Nov 7 · 7:00 PM'),
-        ),
-        findsOneWidget,
-      );
-
-      // Cancel sends nothing.
-      await tester.tap(find.text('Cancel'));
-      await animate(tester);
       expect(find.byType(AlertDialog), findsNothing);
-      expect(remote.nominates, isEmpty);
-
-      await press(tester, nominate(azul.id));
-      await animate(tester);
-      await tester.tap(scope('d-2'));
-      await tester.pump();
-      await tester.tap(confirm());
-      await animate(tester);
-
       expect(remote.nominates, [
         (
           eventId: 'e-1',
           platformGameId: 'pg-o-2',
           suppliedFromId: 'o-2',
-          occurrenceId: 'd-2',
+          occurrenceId: 'd-1',
         ),
       ]);
     });
@@ -5253,20 +5234,11 @@ void main() {
         handle.dispose();
       });
 
-      testWidgets('the scope dialog and the outcome name the subtitle', (
-        tester,
-      ) async {
+      testWidgets('the outcome names the subtitle', (tester) async {
         served = [catanMine, seafarers];
         await showGames(tester, detail: detailOf(occurrences: twoDates));
 
         await press(tester, nominate(seafarers.id));
-        await animate(tester);
-
-        expect(find.text('Nominate Catan: Seafarers'), findsOneWidget);
-
-        await tester.tap(scope(null));
-        await tester.pump();
-        await tester.tap(confirm());
         await animate(tester);
 
         expect(
@@ -5293,13 +5265,10 @@ void main() {
           detail: detailOf(occurrences: [soon, twoDates.last]),
         );
 
-        await press(tester, nominate(seafarers.id));
-        await animate(tester);
-        // The date starts while the dialog is open.
+        // The date shown, the next to come, starts before the press, which
+        // the page hasn't built again for.
         clock = now.add(const Duration(minutes: 2));
-        await tester.tap(scope('d-1'));
-        await tester.pump();
-        await tester.tap(confirm());
+        await press(tester, nominate(seafarers.id));
         await animate(tester);
 
         expect(remote.nominates, isEmpty);
@@ -5316,34 +5285,9 @@ void main() {
       });
     });
 
-    testWidgets('a date already past, or cancelled, is not offered', (
+    testWidgets('a date that starts before the press is dropped', (
       tester,
     ) async {
-      await showGames(
-        tester,
-        detail: detailOf(
-          occurrences: [
-            confirmed(
-              'd-0',
-              DateTime(2026, 10, 2, 19),
-            ).copyWith(eventId: 'e-1'),
-            twoDates.first,
-            twoDates.last.copyWith(status: OccurrenceStatus.cancelled),
-          ],
-        ),
-      );
-
-      await press(tester, nominate(azul.id));
-      await animate(tester);
-
-      expect(scope(null), findsOneWidget);
-      expect(scope('d-1'), findsOneWidget);
-      expect(scope('d-0'), findsNothing);
-      expect(scope('d-2'), findsNothing);
-    });
-
-    testWidgets('a date that starts while the scope dialog is open is '
-        'dropped', (tester) async {
       final soon = confirmed(
         'd-1',
         now.add(const Duration(minutes: 1)),
@@ -5352,17 +5296,12 @@ void main() {
         tester,
         detail: detailOf(occurrences: [soon, twoDates.last]),
       );
+      expect(onPressed(tester, azul.id), isNotNull);
 
-      await press(tester, nominate(azul.id));
-      await animate(tester);
-      expect(scope('d-1'), findsOneWidget);
-
-      // The date starts while the dialog is open, and the server would
-      // still take a nomination for it.
+      // The date shown starts before the page is built again, and the
+      // server would still take a nomination for it.
       clock = now.add(const Duration(minutes: 2));
-      await tester.tap(scope('d-1'));
-      await tester.pump();
-      await tester.tap(confirm());
+      await press(tester, nominate(azul.id));
       await animate(tester);
 
       expect(remote.nominates, isEmpty);
@@ -5396,36 +5335,37 @@ void main() {
       expect(remote.nominates.single.occurrenceId, isNull);
     });
 
-    testWidgets('a scope already nominated is disabled in the dialog', (
-      tester,
-    ) async {
+    testWidgets('a scope already nominated is taken in its view, and not in '
+        "another's", (tester) async {
+      final handle = tester.ensureSemantics();
       nominationsAnswer = (_) => [nominationOf('n-1', azul)];
       await showGames(tester, detail: detailOf(occurrences: twoDates));
 
-      // The whole event is taken, and the dates are left.
+      // Friday's view: the whole event's nomination leaves Friday to
+      // nominate for.
       expect(onPressed(tester, azul.id), isNotNull);
+
+      await chooseDate(tester, null);
+      await tester.ensureVisible(nominate(azul.id));
+      await tester.pump();
+      expect(onPressed(tester, azul.id), isNull);
+      expect(
+        tester.getSemantics(nominate(azul.id)),
+        matchesSemantics(
+          label: 'Nominated: Azul',
+          hint: 'Already nominated',
+          isButton: true,
+          hasEnabledState: true,
+        ),
+      );
+
+      await chooseDate(tester, 'd-1');
       await press(tester, nominate(azul.id));
       await animate(tester);
 
-      expect(
-        tester.widget<RadioListTile<NominationScope>>(scope(null)).enabled,
-        isFalse,
-      );
-      expect(
-        find.descendant(
-          of: scope(null),
-          matching: find.text('Already nominated'),
-        ),
-        findsOneWidget,
-      );
-      // Pressing it chooses nothing; the first date, chosen as it opened,
-      // goes.
-      await tester.tap(scope(null));
-      await tester.pump();
-      await tester.tap(confirm());
-      await animate(tester);
-
+      expect(find.byType(AlertDialog), findsNothing);
       expect(remote.nominates.single.occurrenceId, 'd-1');
+      handle.dispose();
     });
 
     testWidgets('with every scope taken, Nominate is disabled and says so', (
@@ -5534,8 +5474,9 @@ void main() {
       handle.dispose();
     });
 
-    testWidgets('a game in the lineup for one date leaves the others in the '
-        'dialog', (tester) async {
+    testWidgets('a game in the lineup for one date is taken in its view, and '
+        "not in another's", (tester) async {
+      final handle = tester.ensureSemantics();
       nominationsAnswer = (_) => [
         nominationOf(
           'n-1',
@@ -5546,27 +5487,25 @@ void main() {
       ];
       await showGames(tester, detail: detailOf(occurrences: twoDates));
 
-      await press(tester, nominate(azul.id));
-      await animate(tester);
-
+      // Friday's view.
+      await tester.ensureVisible(nominate(azul.id));
+      await tester.pump();
+      expect(onPressed(tester, azul.id), isNull);
       expect(
-        tester.widget<RadioListTile<NominationScope>>(scope('d-1')).enabled,
-        isFalse,
-      );
-      expect(
-        find.descendant(
-          of: scope('d-1'),
-          matching: find.text('Already in the lineup'),
+        tester.getSemantics(nominate(azul.id)),
+        matchesSemantics(
+          label: 'Nominated: Azul',
+          hint: 'Already in the lineup',
+          isButton: true,
+          hasEnabledState: true,
         ),
-        findsOneWidget,
       );
+
       for (final id in [null, 'd-2']) {
-        expect(
-          tester.widget<RadioListTile<NominationScope>>(scope(id)).enabled,
-          isTrue,
-          reason: '$id',
-        );
+        await chooseDate(tester, id);
+        expect(onPressed(tester, azul.id), isNotNull, reason: '$id');
       }
+      handle.dispose();
     });
 
     testWidgets('a nominate whose answer was lost holds Nominate until a read '
@@ -6181,9 +6120,8 @@ void main() {
       handle.dispose();
     });
 
-    testWidgets('keeps focus through the dialog and the nominate it sends', (
-      tester,
-    ) async {
+    testWidgets('keeps focus through the nominate it sends under a date, '
+        'and after it', (tester) async {
       final held = Completer<EventNomination>();
       nominateAnswer = (_) => held.future;
       await showGames(tester, detail: detailOf(occurrences: twoDates));
@@ -6196,13 +6134,10 @@ void main() {
 
       await tester.sendKeyEvent(LogicalKeyboardKey.enter);
       await animate(tester);
-      expect(find.byType(AlertDialog), findsOneWidget);
-      await tester.tap(confirm());
-      await animate(tester);
 
-      // The dialog hands focus back, and the nomination going out keeps it.
-      expect(remote.nominates.single.occurrenceId, isNull);
+      // Nothing asked: the nomination going out, for Friday, keeps focus.
       expect(find.byType(AlertDialog), findsNothing);
+      expect(remote.nominates.single.occurrenceId, 'd-1');
       expect(focus.hasPrimaryFocus, isTrue);
       expect(
         find.descendant(
@@ -6212,12 +6147,18 @@ void main() {
         findsOneWidget,
       );
 
-      held.complete(nominationOf('n-1', azul));
+      held.complete(nominationOf('n-1', azul, occurrenceId: 'd-1'));
       await animate(tester);
 
-      // The dates are left: available again, and still focused.
+      // Nominated for the view's one choice, it says so and keeps focus.
       expect(focus.hasPrimaryFocus, isTrue);
-      expect(onPressed(tester, azul.id), isNotNull);
+      expect(
+        find.descendant(
+          of: nominate(azul.id),
+          matching: find.text('Nominated'),
+        ),
+        findsOneWidget,
+      );
     });
 
     testWidgets('a nominate re-check that fails says so in the footer', (
@@ -6335,6 +6276,279 @@ void main() {
         ),
         findsOneWidget,
       );
+    });
+  });
+
+  // The Pool under the row of dates (#1042): the same games in every view,
+  // with each row's Nominate under the view's rules and for its scope.
+  group('the date view (#1042)', () {
+    /// Friday the 6th and Saturday the 7th, at seven.
+    final friday = confirmed(
+      'd-1',
+      DateTime(2026, 11, 6, 19),
+    ).copyWith(eventId: 'e-1');
+    final saturday = confirmed(
+      'd-2',
+      DateTime(2026, 11, 7, 19),
+      sortOrder: 1,
+    ).copyWith(eventId: 'e-1');
+
+    /// [occurrenceId]'s own rules (#1009): only the hosts add games.
+    EventOccurrencePolicy hostOnlyOn(String occurrenceId) =>
+        EventOccurrencePolicy(
+          id: 'op-$occurrenceId',
+          occurrenceId: occurrenceId,
+          allowedCategoryIds: const [],
+          allowedPlatformIds: const [],
+          allowedPlatformTypes: const [],
+          platformTypesUnrestricted: false,
+          platformsUnrestricted: false,
+          capacityUnrestricted: false,
+          gameAdditionMode: GameAdditionMode.hostOnly,
+          createdAt: kItemInstant,
+          updatedAt: kItemInstant,
+        );
+
+    /// `e-1` on Friday and Saturday, its games needing a vote, with the
+    /// dates' own rules [overrides].
+    EventDetail twoDated({List<EventOccurrencePolicy> overrides = const []}) {
+      final detail = detailOf(
+        occurrences: [friday, saturday],
+        policy: policyOf(GameAdditionMode.requiresVote),
+      );
+      return detail.copyWith(
+        snapshot: detail.snapshot.copyWith(occurrencePolicies: overrides),
+      );
+    }
+
+    /// Chooses the date [id] from the row, Every date where it is null.
+    Future<void> chooseDate(WidgetTester tester, String? id) async {
+      final chip = find.byKey(
+        EventDetailScreen.dateChipKey(id),
+        skipOffstage: false,
+      );
+      await tester.ensureVisible(chip);
+      await tester.pump();
+      await tester.tap(chip);
+      await animate(tester);
+    }
+
+    testWidgets('Nominate under a date nominates for that date without '
+        'asking', (tester) async {
+      await showGames(tester, detail: twoDated());
+
+      // Friday, the next date still to come, opens.
+      await press(tester, nominateOn(azul.id));
+      await animate(tester);
+
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(remote.nominates, [
+        (
+          eventId: 'e-1',
+          platformGameId: 'pg-o-2',
+          suppliedFromId: 'o-2',
+          occurrenceId: 'd-1',
+        ),
+      ]);
+
+      // Under Every date, for the whole event.
+      await chooseDate(tester, null);
+      await press(tester, nominateOn(root.id));
+      await animate(tester);
+
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(remote.nominates.last.occurrenceId, isNull);
+      expect(remote.nominates.last.suppliedFromId, root.id);
+    });
+
+    testWidgets('a pool row under a HostOnly date offers no Nominate', (
+      tester,
+    ) async {
+      await showGames(
+        tester,
+        detail: twoDated(overrides: [hostOnlyOn('d-2')]),
+      );
+      // Friday needs a vote.
+      expect(nominateOn(azul.id), findsOneWidget);
+
+      await chooseDate(tester, 'd-2');
+
+      for (final game in [catanMine, azul, catanAdas, root]) {
+        expect(nominateOn(game.id), findsNothing, reason: game.id);
+      }
+      // The viewer's own rows keep Take back as their one main action.
+      expect(takeBack(catanMine.id), findsOneWidget);
+
+      await chooseDate(tester, 'd-1');
+      expect(nominateOn(azul.id), findsOneWidget);
+    });
+
+    testWidgets("an open quick look's Nominate follows a date the location "
+        'names meanwhile', (tester) async {
+      final quickLook = find.byKey(EventDetailScreen.quickLookKey);
+      final nominateIn = find.descendant(
+        of: quickLook,
+        matching: find.byKey(EventDetailScreen.quickLookNominateKey),
+      );
+      await showGames(
+        tester,
+        detail: twoDated(overrides: [hostOnlyOn('d-2')]),
+      );
+      // Friday, which needs a vote.
+      await press(tester, head(azul.id));
+      await animate(tester);
+      expect(nominateIn, findsOneWidget);
+
+      // Back or Forward names Saturday, where only the hosts add games, with
+      // no bloc changing.
+      final controller = EventGamesTabScope.of(tester.element(quickLook));
+      controller.takeDate('d-2', now: controller.clock());
+      await animate(tester);
+
+      expect(quickLook, findsOneWidget);
+      expect(nominateIn, findsNothing);
+    });
+
+    testWidgets('a date started, or cancelled, has Nominate disabled, saying '
+        'why', (tester) async {
+      final handle = tester.ensureSemantics();
+      final started = confirmed(
+        'd-0',
+        DateTime(2026, 10, 2, 19),
+      ).copyWith(eventId: 'e-1');
+      await showGames(
+        tester,
+        detail: detailOf(
+          occurrences: [
+            started,
+            friday,
+            saturday.copyWith(status: OccurrenceStatus.cancelled),
+          ],
+          policy: policyOf(GameAdditionMode.requiresVote),
+        ),
+      );
+      VoidCallback? onPressed() =>
+          tester.widget<ButtonStyleButton>(nominateOn(azul.id)).onPressed;
+      expect(onPressed(), isNotNull);
+
+      for (final id in ['d-0', 'd-2']) {
+        await chooseDate(tester, id);
+        await tester.ensureVisible(nominateOn(azul.id));
+        await tester.pump();
+
+        expect(onPressed(), isNull, reason: id);
+        expect(
+          tester.getSemantics(nominateOn(azul.id)),
+          matchesSemantics(
+            label: 'Nominate Azul',
+            hint: 'Nominations for this date have closed',
+            isButton: true,
+            hasEnabledState: true,
+          ),
+          reason: id,
+        );
+      }
+
+      // Every date still takes one, for the whole event.
+      await chooseDate(tester, null);
+      expect(onPressed(), isNotNull);
+      handle.dispose();
+    });
+
+    testWidgets('the pool lists the same games in every view', (tester) async {
+      useViewSize(tester, const Size(800, 2400));
+      await showGames(
+        tester,
+        detail: twoDated(overrides: [hostOnlyOn('d-2')]),
+      );
+      final all = rowsShown(tester);
+      expect(all, [catanMine.id, azul.id, catanAdas.id, root.id]);
+
+      for (final id in [null, 'd-2', 'd-1']) {
+        await chooseDate(tester, id);
+        expect(rowsShown(tester), all, reason: '$id');
+      }
+    });
+
+    testWidgets('a one-date event has no row, and the lists are as before', (
+      tester,
+    ) async {
+      useViewSize(tester, const Size(800, 2400));
+      lineupAnswer = (_) => [
+        LineupGame(
+          id: 'l-2',
+          occurrenceId: 'o-1',
+          platformGameId: root.platformGameId,
+          gameId: root.gameId,
+          title: 'Root',
+          platformName: 'Tabletop',
+          role: ScheduledGameRole.primary,
+          sortOrder: 0,
+          suppliedById: root.id,
+          supplierAttendeeId: root.attendeeId,
+        ),
+        LineupGame(
+          id: 'l-1',
+          platformGameId: catanAdas.platformGameId,
+          gameId: catanAdas.gameId,
+          title: 'Catan',
+          platformName: 'Board Game Arena',
+          role: ScheduledGameRole.primary,
+          sortOrder: 0,
+          suppliedById: catanAdas.id,
+          supplierAttendeeId: catanAdas.attendeeId,
+        ),
+      ];
+      nominationsAnswer = (_) => [
+        nominationOf('n-1', azul),
+        nominationOf('n-2', wingspanMine).copyWith(occurrenceId: 'o-1'),
+      ];
+      await show(
+        tester,
+        detail: detailOf(policy: policyOf(GameAdditionMode.requiresVote)),
+      );
+      await tester.tap(tab(EventDetailTab.games));
+      await animate(tester);
+
+      // No row of dates over the three sub-tabs.
+      expect(find.byKey(EventDetailScreen.dateChipKey(null)), findsNothing);
+      expect(sectionTab(EventGamesSection.nominations), findsOneWidget);
+
+      // Lineup: one list, the event's own first, marked, with no headings.
+      Finder lineupRow(String id) =>
+          find.byKey(EventDetailScreen.lineupRowKey(id), skipOffstage: false);
+      expect(
+        tester.getTopLeft(lineupRow('l-1')).dy,
+        lessThan(tester.getTopLeft(lineupRow('l-2')).dy),
+      );
+      expect(
+        find.descendant(
+          of: lineupRow('l-1'),
+          matching: find.text(
+            'Primary · Ada is bringing this · Every date',
+            skipOffstage: false,
+          ),
+          skipOffstage: false,
+        ),
+        findsOneWidget,
+      );
+
+      // Nominations: every one, whatever it is for, none marked.
+      await chooseSection(tester, EventGamesSection.nominations);
+      expect(nomination('n-1'), findsOneWidget);
+      expect(nomination('n-2'), findsOneWidget);
+      expect(
+        find.textContaining('Every date', skipOffstage: false),
+        findsNothing,
+      );
+
+      // Pool: every game, and Nominate for the whole event, asking nothing.
+      await chooseSection(tester, EventGamesSection.pool);
+      expect(rowsShown(tester), [catanMine.id, azul.id, catanAdas.id, root.id]);
+      await press(tester, nominateOn(root.id));
+      await animate(tester);
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(remote.nominates.single.occurrenceId, isNull);
     });
   });
 
@@ -6697,12 +6911,13 @@ void main() {
       expect(searchFocus(tester).hasPrimaryFocus, isTrue);
     });
 
-    testWidgets("it moves on with the page's clock: a date starting while it "
-        'is open leaves Nominate nothing to offer, with no reopen', (
+    testWidgets("it moves on with the page's clock: the date shown starting "
+        'while it is open closes Nominate, saying so, with no reopen', (
       tester,
     ) async {
-      // The event's first date starts in a minute: one of the page's time
-      // boundaries.
+      final handle = tester.ensureSemantics();
+      // The event's first date, the one its row of dates opens on (#1042),
+      // starts in a minute: one of the page's time boundaries.
       final soon = confirmed(
         'd-1',
         now.add(const Duration(minutes: 1)),
@@ -6712,12 +6927,6 @@ void main() {
         DateTime(2026, 11, 7, 19),
         sortOrder: 1,
       ).copyWith(eventId: 'e-1');
-      // Nominated for the whole event and for Saturday: the date starting
-      // soon is the one choice left.
-      nominationsAnswer = (_) => [
-        nominationOf('n-1', azul),
-        nominationOf('n-2', azul).copyWith(occurrenceId: 'd-2'),
-      ];
       await showGames(tester, detail: detailOf(occurrences: [soon, saturday]));
       await openQuickLook(tester, azul.id);
       expect(
@@ -6732,11 +6941,17 @@ void main() {
       await tester.pump();
 
       expect(quickLook, findsOneWidget);
-      expect(
-        find.descendant(of: nominate, matching: find.text('Nominated')),
-        findsOneWidget,
-      );
       expect(tester.widget<ButtonStyleButton>(nominate).onPressed, isNull);
+      expect(
+        tester.getSemantics(nominate),
+        matchesSemantics(
+          label: 'Nominate Azul',
+          hint: 'Nominations for this date have closed',
+          isButton: true,
+          hasEnabledState: true,
+        ),
+      );
+      handle.dispose();
     });
 
     testWidgets('a write from it says its outcome inside the pop-up, once; an '

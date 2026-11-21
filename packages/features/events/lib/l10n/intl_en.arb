@@ -182,7 +182,7 @@
   },
   "eventsDetailSeparator": " · ",
   "@eventsDetailSeparator": {
-    "description": "Shown between the parts of one line about an event, for example 'Back room · The Smiths · Going' on its row, 'Strategy night · Scheduled' on its screen, or 'Host · Going' beside a person coming to it. Also between the parts of a game's status line on the Lineup sub-tab of an event's Games tab, for example 'Filler, up to 20 minutes · Ada is bringing this · Every date' (eventsLineupRolePrimary, eventsLineupRoleFiller or eventsLineupRoleFillerUpTo, then eventsLineupYouBring or eventsLineupBrings, then eventsGamesEveryDateMark). Keep or drop the surrounding spaces as your language's punctuation needs."
+    "description": "Shown between the parts of one line about an event, for example 'Back room · The Smiths · Going' on its row, 'Strategy night · Scheduled' on its screen, or 'Host · Going' beside a person coming to it. Also between the parts of a game's status line on the Lineup sub-tab of an event's Games tab, for example 'Filler, up to 20 minutes · Ada is bringing this · Every date' (eventsLineupRolePrimary, eventsLineupRoleFiller or eventsLineupRoleFillerUpTo, then eventsLineupYouBring or eventsLineupBrings, then eventsGamesEveryDateMark), and before eventsGamesEveryDateMark at the end of a nomination's status line on the Nominations sub-tab (eventsNominationStatusLine). Keep or drop the surrounding spaces as your language's punctuation needs."
   },
   "eventsDetailSpokenSeparator": ", ",
   "@eventsDetailSpokenSeparator": {
@@ -594,11 +594,19 @@
   },
   "eventsGamesSectionNominations": "Nominations",
   "@eventsGamesSectionNominations": {
-    "description": "Label of the second sub-tab in the second row of tabs under the Games tab of an event's screen (eventsDetailGames), after the Lineup sub-tab (eventsGamesSectionLineup), before the Pool sub-tab (eventsGamesSectionPool). The sub-tab lists the games nominated for the event's lineup; it has no heading of its own, so this label names the list. Keep it short: three sub-tabs share the width of a phone."
+    "description": "Label of the second sub-tab in the second row of tabs under the Games tab of an event's screen (eventsDetailGames), after the Lineup sub-tab (eventsGamesSectionLineup), before the Pool sub-tab (eventsGamesSectionPool). The sub-tab lists the games nominated for the event's lineup; it has no heading of its own, so this label names the list. It is left out where only the event's hosts may add games, for the date chosen in the row of dates above the sub-tabs (eventsGamesDatesLabel) or for the event, and nothing is nominated there. Keep it short: three sub-tabs share the width of a phone."
   },
   "eventsGamesSectionPool": "Pool",
   "@eventsGamesSectionPool": {
-    "description": "Label of the third sub-tab in the second row of tabs under the Games tab of an event's screen (eventsDetailGames), after the Nominations sub-tab (eventsGamesSectionNominations). The sub-tab lists the games pool, the games the people coming offer to bring; it has no heading of its own, so this label names the list. Keep it short: three sub-tabs share the width of a phone."
+    "description": "Label of the last sub-tab in the second row of tabs under the Games tab of an event's screen (eventsDetailGames), after the Nominations sub-tab (eventsGamesSectionNominations), or after the Lineup sub-tab (eventsGamesSectionLineup) where Nominations is left out. The sub-tab lists the games pool, the games the people coming offer to bring; it has no heading of its own, so this label names the list. Keep it short: three sub-tabs share the width of a phone."
+  },
+  "eventsGamesDatesLabel": "Dates",
+  "@eventsGamesDatesLabel": {
+    "description": "Name of the row of date chips above the sub-tabs of the Games tab of an event's screen, on an event with two dates or more, read by a screen reader as it enters the row. The row chooses which date the Lineup and Nominations sub-tabs show. The Pool sub-tab lists the same games whichever is chosen; the date decides only what a game in the pool can be nominated for, and under which rules."
+  },
+  "eventsGamesEveryDate": "Every date",
+  "@eventsGamesEveryDate": {
+    "description": "Label of the first chip in the row of dates above the sub-tabs of the Games tab of an event's screen (eventsGamesDatesLabel), before a chip for each of the event's dates. It shows the event's own lineup games and nominations, which belong to every date, under the event's rules."
   },
   "eventsGamesSearchLabel": "Search the games",
   "@eventsGamesSearchLabel": {
@@ -804,7 +812,7 @@
   },
   "eventsLineupEmptyTitle": "Nothing in the lineup yet",
   "@eventsLineupEmptyTitle": {
-    "description": "On the Lineup sub-tab (eventsGamesSectionLineup) of an event's Games tab when no game is in the event's lineup, the games it will play, for the event or any of its dates."
+    "description": "On the Lineup sub-tab (eventsGamesSectionLineup) of an event's Games tab when no game is in the event's lineup, the games it will play, for the event or any of its dates; or, on an event with a row of dates above the sub-tabs (eventsGamesDatesLabel), none is in the lineup of the date chosen there, or of the event as a whole (eventsGamesEveryDate)."
   },
   "eventsLineupEmptyBody": "Games join the lineup when a nomination passes, or when a host adds one.",
   "@eventsLineupEmptyBody": {
@@ -816,15 +824,15 @@
   },
   "eventsLineupEveryDate": "Every date",
   "@eventsLineupEveryDate": {
-    "description": "On the Lineup sub-tab (eventsGamesSectionLineup) of an event of two or more dates, the heading over the games lined up for the event as a whole, which are played whichever date it is, above the headings of each date's own games (named as the event's dates are). Also a line of such a game's quick look, the pop-up its row opens, saying which date it is on."
+    "description": "On the Lineup sub-tab (eventsGamesSectionLineup), the heading over the games lined up for the event as a whole, which are played whichever date it is, where some game is lined up for a date the event no longer has (eventsLineupDateGone): above the one date's games (named as the event's dates are) on an event of one date, and alone above those under Every date (eventsGamesEveryDate) in the row of dates of an event of two or more. Also a line of such a game's quick look, the pop-up its row opens, saying which date it is on."
   },
   "eventsLineupDateGone": "A date no longer on the event",
   "@eventsLineupDateGone": {
-    "description": "On the Lineup sub-tab (eventsGamesSectionLineup) of an event's Games tab, the heading over the games lined up for a date the event no longer has, as when the date was taken off, listed last, after eventsLineupEveryDate and each date's games. Also a line of such a game's quick look, the pop-up its row opens, in place of the date's name."
+    "description": "On the Lineup sub-tab (eventsGamesSectionLineup) of an event's Games tab, the heading over the games lined up for a date the event no longer has, as when the date was taken off, listed last, after eventsLineupEveryDate and the date's games; on an event with a row of dates above the sub-tabs (eventsGamesDatesLabel), under Every date (eventsGamesEveryDate). Also a line of such a game's quick look, the pop-up its row opens, in place of the date's name."
   },
   "eventsGamesEveryDateMark": "Every date",
   "@eventsGamesEveryDateMark": {
-    "description": "The last part of a game's status line on the Lineup sub-tab (eventsGamesSectionLineup) of an event of one date or none, where the rows have no headings, after who brings it and joined to it by eventsDetailSeparator: the game is lined up for the event as a whole, played whichever date it is, rather than for the one date. The rows of the date's own games have no such part."
+    "description": "The last part of a game's status line, joined to the part before it by eventsDetailSeparator, saying it is for the event as a whole, whichever date it is, rather than for the one date shown. On the Lineup sub-tab (eventsGamesSectionLineup), after who brings it: on an event of one date or none, where the rows have no headings, and on one date chosen in the row of dates above the sub-tabs (eventsGamesDatesLabel), where the event's own games follow the date's. On the Nominations sub-tab (eventsGamesSectionNominations), after a whole-event nomination's tally (eventsNominationStatusLine), on one date chosen in that row. The rows of the date's own games and nominations have no such part."
   },
   "eventsLineupRolePrimary": "Primary",
   "@eventsLineupRolePrimary": {
@@ -1210,7 +1218,7 @@
   },
   "eventsNominate": "Nominate",
   "@eventsNominate": {
-    "description": "Button under a game in the games pool on the Games tab of an event's screen, the games people offer to bring: it puts the game forward for the event's lineup, for everyone to vote on or a host to approve. On an event of more than one date it first asks which (eventsNominateTitle). Screen readers hear eventsNominateNamed instead."
+    "description": "Button under a game in the games pool on the Games tab of an event's screen, the games people offer to bring: it puts the game forward for the event's lineup, for everyone to vote on or a host to approve. On an event of more than one date it nominates for the date chosen in the row of dates above the sub-tabs (eventsGamesDatesLabel), or for the whole event under Every date (eventsGamesEveryDate), without asking. Screen readers hear eventsNominateNamed instead."
   },
   "eventsNominatedNamed": "Nominated: {title}",
   "@eventsNominatedNamed": {
@@ -1239,6 +1247,10 @@
   "eventsNominateYouNotGoingHint": "You aren't going",
   "@eventsNominateYouNotGoingHint": {
     "description": "eventsNominateSupplierNotGoingHint on the user's own games: under the Nominate button (eventsNominate) of a game the user offered to bring, which can't be pressed, and read to a screen reader as the button's hint. The user answered Not going to the event, so their games can't be nominated."
+  },
+  "eventsNominateDateClosed": "Nominations for this date have closed",
+  "@eventsNominateDateClosed": {
+    "description": "Read to a screen reader as the hint of the Nominate button (eventsNominate) of a game in the games pool, which can't be pressed, while the Games tab shows one of the event's dates, chosen in the row of dates above its sub-tabs (eventsGamesDatesLabel), that can no longer take a nomination: it has started, or it was cancelled. A nomination from there is for that date alone, so there is nothing to nominate for."
   },
   "eventsNominateAlready": "Already nominated",
   "@eventsNominateAlready": {
@@ -1772,7 +1784,7 @@
   },
   "eventsNominationsCount": "{count, plural, =1{1 nomination} other{{count} nominations}}",
   "@eventsNominationsCount": {
-    "description": "Under the Nominations section's Filters and Sort (eventsNominationsFilters, eventsNominationsSort) on the Games tab of an event's screen, while no filter narrows the list: how many nominations there are. While one does, eventsNominationsShown takes its place.",
+    "description": "Under the Nominations section's Filters and Sort (eventsNominationsFilters, eventsNominationsSort) on the Games tab of an event's screen, while no filter narrows the list: how many nominations there are, for the date chosen in the row of dates above the sub-tabs (eventsGamesDatesLabel) where the event has one. While one does, eventsNominationsShown takes its place.",
     "placeholders": {
       "count": {
         "type": "int",
@@ -1794,11 +1806,11 @@
   },
   "eventsNominationsEmptyTitle": "Nothing nominated yet",
   "@eventsNominationsEmptyTitle": {
-    "description": "In the Nominations section of an event's Games tab when nobody has nominated a game for the event's lineup."
+    "description": "In the Nominations section of an event's Games tab when nobody has nominated a game for the event's lineup; or, on an event with a row of dates above the sub-tabs (eventsGamesDatesLabel), nobody has for the date chosen there, nor for the whole event."
   },
   "eventsNominationsEmptyBody": "Nominate a game from the Pool tab.",
   "@eventsNominationsEmptyBody": {
-    "description": "Under eventsNominationsEmptyTitle on the Nominations sub-tab of an event's Games tab, shown only to someone who can nominate a game there. The Pool tab is the sub-tab beside it, labelled eventsGamesSectionPool, so the two should match: it lists the games pool, the games people offer to bring, and a game is nominated from its row there (eventsNominate)."
+    "description": "Under eventsNominationsEmptyTitle on the Nominations sub-tab of an event's Games tab, shown only to someone who can nominate a game there, for the date chosen in the row of dates above the sub-tabs (eventsGamesDatesLabel) where the event has one. The Pool tab is the sub-tab beside it, labelled eventsGamesSectionPool, so the two should match: it lists the games pool, the games people offer to bring, and a game is nominated from its row there (eventsNominate)."
   },
   "eventsNominationsFilters": "Filters",
   "@eventsNominationsFilters": {
@@ -1832,7 +1844,7 @@
   },
   "eventsNominationsShown": "{shown} of {total, plural, =1{1 nomination} other{{total} nominations}}",
   "@eventsNominationsShown": {
-    "description": "Under the Nominations section's Filters and Sort on the Games tab of an event's screen while a filter narrows the list, and read out as it changes: how many nominations the filters keep, of all the event's nominations. In place of eventsNominationsCount.",
+    "description": "Under the Nominations section's Filters and Sort on the Games tab of an event's screen while a filter narrows the list, and read out as it changes: how many nominations the filters keep, of all the event's nominations, or of those for the date chosen in the row of dates above the sub-tabs (eventsGamesDatesLabel) where the event has one. In place of eventsNominationsCount.",
     "placeholders": {
       "shown": {
         "type": "int",
@@ -1862,7 +1874,7 @@
   },
   "eventsNominationsDate": "Date",
   "@eventsNominationsDate": {
-    "description": "Heading in the nominations' filters (eventsNominationsFilters) over a choice of which nominations to show by what they are for: any date (eventsNominationsAnyDate), the whole event (eventsNominationWholeEvent), or one of the event's dates (eventsNominationForDate)."
+    "description": "Heading in the nominations' filters (eventsNominationsFilters) over a choice of which nominations to show by what they are for: any date (eventsNominationsAnyDate), the whole event (eventsNominationWholeEvent), or one of the event's dates (eventsNominationForDate). Only on an event of one date or none: with two or more, the row of dates above the sub-tabs (eventsGamesDatesLabel) makes that choice."
   },
   "eventsNominationsAnyDate": "Any date",
   "@eventsNominationsAnyDate": {
@@ -1978,7 +1990,7 @@
   },
   "eventsNominationStatusLine": "{status} · {forCount} for · {againstCount} against · {interestedCount} interested",
   "@eventsNominationStatusLine": {
-    "description": "The status line of a nominated game's row in the Nominations section of an event's Games tab: where it stands, then how many of the votes that count are for it, against it, and interested in it, as eventsNominationTally says them. {status} is one of the statuses, such as eventsNominationStatusVoting. Screen readers hear eventsNominationStatusLineSpoken instead.",
+    "description": "The status line of a nominated game's row in the Nominations section of an event's Games tab: where it stands, then how many of the votes that count are for it, against it, and interested in it, as eventsNominationTally says them. {status} is one of the statuses, such as eventsNominationStatusVoting. On one date chosen in the row of dates above the sub-tabs (eventsGamesDatesLabel), a nomination for the whole event has eventsGamesEveryDateMark after it, joined by eventsDetailSeparator. Screen readers hear eventsNominationStatusLineSpoken instead.",
     "placeholders": {
       "status": {
         "type": "String",
