@@ -92,13 +92,17 @@ typedef CreatedEvent = ({EventSnapshot snapshot, DateTime? deletedAt});
 ///   its `policy`, an object or null, and the caller's own `attendance`, an
 ///   object or null (#667). No row carries a roster, so every snapshot from
 ///   [fetchEvents] has `attendees: null`. That says nothing about who is on the
-///   event.
+///   event. Nor does a row carry the policy's rule lists or the dates' own
+///   rules (#1009): `allowedPlatformTypes`, `allowedPlatformIds` and
+///   `allowedCategoryIds` read null, and `occurrencePolicies` is null.
 /// - **The detail** serves the event with its `occurrences`, `attendees` and
 ///   `policy`. Each of the three is read under its own permission
 ///   (backend#560): a caller who may not read the roster is served
 ///   `attendees: []`, and one who may not read the policy `null`. So the
 ///   snapshot from [fetchEvent] always has a roster, and an empty one is not
-///   proof that nobody is on the event.
+///   proof that nobody is on the event. It also carries the policy's rule
+///   lists and `occurrencePolicies`, each date's own rules (#1009). The create
+///   and the policy update answer with the lists but no `occurrencePolicies`.
 ///
 /// Both reads serve every occurrence of an event, unbounded until backend#404.
 ///

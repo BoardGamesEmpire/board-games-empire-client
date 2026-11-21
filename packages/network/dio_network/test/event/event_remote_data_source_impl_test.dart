@@ -73,6 +73,49 @@ Map<String, dynamic> _policyRow([Map<String, dynamic> overrides = const {}]) =>
       ...overrides,
     };
 
+/// The three rule lists a policy read may carry (#1009), as the backend's
+/// policy view serves them: plain lists, sorted.
+Map<String, dynamic> _policyLists() => {
+  'allowedPlatformTypes': ['Tabletop'],
+  'allowedPlatformIds': ['plat_1', 'plat_2'],
+  'allowedCategoryIds': ['cat_1'],
+  'occurrenceOverrideScope': 'TightenOnly',
+};
+
+/// A date's own policy as the backend's occurrence policy view serves it: the
+/// columns, with the keys any of them overrides.
+Map<String, dynamic> _occurrencePolicyRow([
+  Map<String, dynamic> overrides = const {},
+]) => {
+  'id': 'opol_1',
+  'occurrenceId': 'occ_1',
+  'allowedCategoryIds': <String>[],
+  'allowedPlatformIds': <String>[],
+  'allowedPlatformTypes': ['Tabletop'],
+  'platformTypesUnrestricted': false,
+  'platformsUnrestricted': true,
+  'capacityUnrestricted': false,
+  'restrictToGameCategories': null,
+  'strictCapacity': null,
+  'requireHostApprovalToJoin': null,
+  'allowSpectators': null,
+  'restrictToAttendeePool': null,
+  'maxAttendees': 6,
+  'maxTotalParticipants': null,
+  'fillerMaxPlayTime': null,
+  'voteThresholdValue': null,
+  'voteQuorumValue': null,
+  'votingWindowHours': null,
+  'gameAdditionMode': 'HostOnly',
+  'voteThresholdType': null,
+  'voteQuorumType': null,
+  'voteEligibility': null,
+  'interestedWeight': null,
+  'createdAt': '2026-10-03T10:30:00.000Z',
+  'updatedAt': '2026-10-04T08:00:00.000Z',
+  ...overrides,
+};
+
 /// The `user` an attendee embeds, by name and avatar:
 /// `{ id, username, profile: { avatarUrl, displayName } | null }`.
 Map<String, dynamic> _userRow({
@@ -501,6 +544,21 @@ void main() {
         expect(page.meta.total, 7);
       },
     );
+
+    test('a list row carries no lists and no date rules', () async {
+      final remote = answering(_listBody([_eventRow()]));
+
+      final snapshot = (await remote.fetchEvents()).items.single;
+
+      expect(snapshot.policy!.allowedPlatformTypes, isNull);
+      expect(snapshot.policy!.allowedPlatformIds, isNull);
+      expect(snapshot.policy!.allowedCategoryIds, isNull);
+      expect(
+        snapshot.policy!.occurrenceOverrideScope,
+        OccurrenceOverrideScope.any,
+      );
+      expect(snapshot.occurrencePolicies, isNull);
+    });
 
     test(
       'maps every field of the event, its occurrences and its policy',
@@ -1042,6 +1100,62 @@ void main() {
   });
 
   group('fetchEvent', () {
+    test(
+      "the detail read carries the rule lists and each date's rules",
+      () async {
+        final remote = answering(
+          _detailBody(
+            _eventRow(attendees: [])
+              ..['policy'] = _policyRow(_policyLists())
+              ..['occurrencePolicies'] = [_occurrencePolicyRow()],
+          ),
+        );
+
+        final snapshot = await remote.fetchEvent('ev_1');
+
+        final policy = snapshot.policy!;
+        expect(policy.allowedPlatformTypes, [PlatformType.tabletop]);
+        expect(policy.allowedPlatformIds, ['plat_1', 'plat_2']);
+        expect(policy.allowedCategoryIds, ['cat_1']);
+        expect(
+          policy.occurrenceOverrideScope,
+          OccurrenceOverrideScope.tightenOnly,
+        );
+        final rule = snapshot.occurrencePolicies!.single;
+        expect(rule.occurrenceId, 'occ_1');
+        expect(rule.gameAdditionMode, GameAdditionMode.hostOnly);
+        expect(rule.allowedPlatformTypes, [PlatformType.tabletop]);
+        expect(rule.platformsUnrestricted, isTrue);
+        expect(rule.maxAttendees, 6);
+        expect(rule.strictCapacity, isNull);
+        expect(rule.voteThresholdType, isNull);
+      },
+    );
+
+    test('a date rule with an unknown mode reads as unknown', () async {
+      final remote = answering(
+        _detailBody(
+          _eventRow(attendees: [])
+            ..['occurrencePolicies'] = [
+              _occurrencePolicyRow({'gameAdditionMode': 'Telepathy'}),
+            ],
+        ),
+      );
+
+      final snapshot = await remote.fetchEvent('ev_1');
+
+      expect(
+        snapshot.occurrencePolicies!.single.gameAdditionMode,
+        GameAdditionMode.unknown,
+      );
+    });
+
+    test('a detail read without date rules carries none', () async {
+      final remote = answering(_detailBody(_eventRow(attendees: [])));
+
+      expect((await remote.fetchEvent('ev_1')).occurrencePolicies, isNull);
+    });
+
     test('reads the event with its roster', () async {
       final remote = answering(
         _detailBody(
@@ -1388,6 +1502,48 @@ void main() {
       await expectPermanent(remote.fetchEvents());
     });
 
+    test('a list that is not a list is a contract break', () async {
+      for (final key in [
+        'allowedPlatformTypes',
+        'allowedPlatformIds',
+        'allowedCategoryIds',
+      ]) {
+        for (final bad in [
+          'Tabletop',
+          [1],
+        ]) {
+          final remote = answering(
+            _detailBody(
+              _eventRow(attendees: [])..['policy'] = _policyRow({key: bad}),
+            ),
+          );
+
+          await expectPermanent(remote.fetchEvent('ev_1'));
+        }
+      }
+    });
+
+    test('a date rule missing a required flag is a contract break', () async {
+      final remote = answering(
+        _detailBody(
+          _eventRow(attendees: [])
+            ..['occurrencePolicies'] = [
+              _occurrencePolicyRow()..remove('capacityUnrestricted'),
+            ],
+        ),
+      );
+
+      await expectPermanent(remote.fetchEvent('ev_1'));
+    });
+
+    test('date rules that are not a list are a contract break', () async {
+      final remote = answering(
+        _detailBody(_eventRow(attendees: [])..['occurrencePolicies'] = 'none'),
+      );
+
+      await expectPermanent(remote.fetchEvent('ev_1'));
+    });
+
     test('a detail body with no event object', () async {
       // The list envelope is what a path that fell through to the list route
       // answers with.
@@ -1541,6 +1697,20 @@ void main() {
         'policy': {'gameAdditionMode': 'RequiresVote', 'votingWindowHours': 48},
         'inviteUserIds': ['u-2'],
       });
+    });
+
+    test('a created event has lists but no date rules', () async {
+      final remote = answering(
+        _createdBody(
+          created()..['policy'] = _policyRow(_policyLists()),
+        ),
+        status: 201,
+      );
+
+      final snapshot = (await create(remote)).snapshot;
+
+      expect(snapshot.occurrencePolicies, isNull);
+      expect(snapshot.policy!.allowedPlatformIds, ['plat_1', 'plat_2']);
     });
 
     test('sends every field the draft sets, in UTC', () async {
@@ -2180,6 +2350,24 @@ void main() {
     String policyBody() => jsonEncode({
       'message': 'Done',
       'policy': _policyRow({'voteThresholdValue': 75}),
+    });
+
+    test('updateEventPolicy reads the rule lists of the answer', () async {
+      final remote = answering(
+        jsonEncode({'message': 'Done', 'policy': _policyRow(_policyLists())}),
+      );
+
+      final policy = await remote.updateEventPolicy(
+        'e1',
+        EventPolicyUpdate(voteThresholdValue: 75),
+      );
+
+      expect(policy!.allowedPlatformTypes, [PlatformType.tabletop]);
+      expect(policy.allowedCategoryIds, ['cat_1']);
+      expect(
+        policy.occurrenceOverrideScope,
+        OccurrenceOverrideScope.tightenOnly,
+      );
     });
 
     test('updateEvent sends only the given fields', () async {

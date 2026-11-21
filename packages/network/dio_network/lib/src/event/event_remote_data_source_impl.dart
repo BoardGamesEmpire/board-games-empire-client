@@ -1090,6 +1090,9 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
 
   /// Maps the detail's event: the parts of a list row, and the roster.
   ///
+  /// `occurrencePolicies` is the dates' own rules (#1009). The create's answer
+  /// has none, so a missing key is null; a present one must be a list.
+  ///
   /// The roster must be a list. An empty one is a caller who may not read the
   /// roster, and a missing or mistyped one is a contract breach: reading it as
   /// "nobody" would pass a payload this client failed to read off as an event
@@ -1098,6 +1101,13 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     event: _mapEvent(json),
     occurrences: _mapOccurrences(json['occurrences']),
     policy: _mapPolicy(json['policy']),
+    occurrencePolicies: json['occurrencePolicies'] == null
+        ? null
+        : _mapObjects(
+            json['occurrencePolicies'],
+            field: 'occurrencePolicies',
+            item: _mapOccurrencePolicy,
+          ),
     attendees: _mapObjects(
       json['attendees'],
       field: 'attendees',
@@ -1351,10 +1361,88 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
         raw['interestedWeight'] as String,
       ),
       votingWindowHours: raw['votingWindowHours'] as int?,
+      allowedPlatformTypes: _stringListOrNull(
+        raw['allowedPlatformTypes'],
+        field: 'allowedPlatformTypes',
+      )?.map(PlatformType.fromWire).toList(growable: false),
+      allowedPlatformIds: _stringListOrNull(
+        raw['allowedPlatformIds'],
+        field: 'allowedPlatformIds',
+      ),
+      allowedCategoryIds: _stringListOrNull(
+        raw['allowedCategoryIds'],
+        field: 'allowedCategoryIds',
+      ),
+      occurrenceOverrideScope: raw['occurrenceOverrideScope'] == null
+          ? OccurrenceOverrideScope.any
+          : OccurrenceOverrideScope.fromWire(
+              raw['occurrenceOverrideScope'] as String,
+            ),
       createdAt: DateTime.parse(raw['createdAt'] as String),
       updatedAt: DateTime.parse(raw['updatedAt'] as String),
     );
   }
+
+  /// Maps one date's own rules (#1009). The nullable fields are overrides, and
+  /// null means the event's. The lists and `*Unrestricted` flags are never null
+  /// on the wire, so a missing or mistyped one throws.
+  static EventOccurrencePolicy _mapOccurrencePolicy(
+    Map<String, dynamic> json,
+  ) => EventOccurrencePolicy(
+    id: json['id'] as String,
+    occurrenceId: json['occurrenceId'] as String,
+    allowedCategoryIds: _stringList(
+      json['allowedCategoryIds'],
+      field: 'allowedCategoryIds',
+    ),
+    allowedPlatformIds: _stringList(
+      json['allowedPlatformIds'],
+      field: 'allowedPlatformIds',
+    ),
+    allowedPlatformTypes: _stringList(
+      json['allowedPlatformTypes'],
+      field: 'allowedPlatformTypes',
+    ).map(PlatformType.fromWire).toList(growable: false),
+    platformTypesUnrestricted: json['platformTypesUnrestricted'] as bool,
+    platformsUnrestricted: json['platformsUnrestricted'] as bool,
+    capacityUnrestricted: json['capacityUnrestricted'] as bool,
+    createdAt: DateTime.parse(json['createdAt'] as String),
+    updatedAt: DateTime.parse(json['updatedAt'] as String),
+    restrictToGameCategories: json['restrictToGameCategories'] as bool?,
+    strictCapacity: json['strictCapacity'] as bool?,
+    requireHostApprovalToJoin: json['requireHostApprovalToJoin'] as bool?,
+    allowSpectators: json['allowSpectators'] as bool?,
+    restrictToAttendeePool: json['restrictToAttendeePool'] as bool?,
+    maxAttendees: json['maxAttendees'] as int?,
+    maxTotalParticipants: json['maxTotalParticipants'] as int?,
+    fillerMaxPlayTime: json['fillerMaxPlayTime'] as int?,
+    voteThresholdValue: json['voteThresholdValue'] as int?,
+    voteQuorumValue: json['voteQuorumValue'] as int?,
+    votingWindowHours: json['votingWindowHours'] as int?,
+    gameAdditionMode: _wireOrNull(
+      json['gameAdditionMode'],
+      GameAdditionMode.fromWire,
+    ),
+    voteThresholdType: _wireOrNull(
+      json['voteThresholdType'],
+      VoteThresholdType.fromWire,
+    ),
+    voteQuorumType: _wireOrNull(
+      json['voteQuorumType'],
+      VoteQuorumType.fromWire,
+    ),
+    voteEligibility: _wireOrNull(
+      json['voteEligibility'],
+      VoteEligibility.fromWire,
+    ),
+    interestedWeight: _wireOrNull(
+      json['interestedWeight'],
+      InterestedWeight.fromWire,
+    ),
+  );
+
+  static T? _wireOrNull<T>(Object? value, T Function(String) fromWire) =>
+      value == null ? null : fromWire(value as String);
 
   static EventAttendee _mapAttendee(Map<String, dynamic> json) {
     final user = readUserProjection(json['user'], row: 'attendee');
@@ -1598,6 +1686,35 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
             );
           }
           return item(entry);
+        })
+        .toList(growable: false);
+  }
+
+  /// Reads [raw] as a list of strings. Absent is null: the read didn't carry
+  /// it. Present, it must be a list of strings, or the payload is a contract
+  /// break rather than an empty list.
+  static List<String>? _stringListOrNull(
+    Object? raw, {
+    required String field,
+  }) => raw == null ? null : _stringList(raw, field: field);
+
+  static List<String> _stringList(Object? raw, {required String field}) {
+    if (raw is! List) {
+      throw FormatException(
+        raw == null
+            ? '"$field" is missing, expected a list'
+            : '"$field" is ${raw.runtimeType}, expected a list',
+      );
+    }
+    return raw
+        .map((entry) {
+          if (entry is! String) {
+            throw FormatException(
+              'an entry in "$field" is ${entry.runtimeType}, expected a '
+              'string',
+            );
+          }
+          return entry;
         })
         .toList(growable: false);
   }
