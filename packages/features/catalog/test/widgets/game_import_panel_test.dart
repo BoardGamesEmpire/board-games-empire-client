@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:bge_test_support/widgets.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -395,6 +396,62 @@ void main() {
       handle.dispose();
     }
   });
+
+  testWidgets(
+    'a mouse press on Import leaves the status focused and unringed, and a '
+    'key press brings the ring back (#1039)',
+    (tester) async {
+      remote.onFetchExpansions = (_) async => _expansions(2);
+      final start = Completer<GameImportReceipt>();
+      remote.onStartImport = (_, _, _) => start.future;
+      await openQuickLook(tester, panel());
+      await tester.ensureVisible(importButton);
+      await tester.pumpAndSettle();
+      // At a desktop: a key press puts the highlight mode at the keyboard's,
+      // where the opener's touch left it at touch's.
+      await tester.sendKeyEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.pump();
+
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      final at = tester.getCenter(importButton);
+      await mouse.addPointer(location: at);
+      addTearDown(mouse.removePointer);
+      await mouse.down(at);
+      await mouse.up();
+      await tester.pump();
+      await tester.pump();
+
+      // A mouse leaves the highlight mode as it was, the keyboard's, so only
+      // the app's pointer flag can keep the ring hidden (#758).
+      expect(
+        FocusManager.instance.highlightMode,
+        FocusHighlightMode.traditional,
+      );
+      final status = Focus.of(
+        tester.element(find.byKey(GameImportProgress.statusKey)),
+      );
+      expect(status.hasPrimaryFocus, isTrue);
+
+      bool ringDrawn() {
+        final ring = find.ancestor(
+          of: find.byKey(GameImportProgress.statusKey),
+          matching: find.byType(BgeFocusRing),
+        );
+        final drawn = tester.widget<DecoratedBox>(
+          find.descendant(of: ring, matching: find.byType(DecoratedBox)).first,
+        );
+        return (drawn.decoration as BoxDecoration).border != null;
+      }
+
+      expect(ringDrawn(), isFalse, reason: 'no ring after a click');
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.pump();
+
+      expect(status.hasPrimaryFocus, isTrue);
+      expect(ringDrawn(), isTrue, reason: 'the keyboard is back');
+    },
+  );
 
   testWidgets('closing the quick look stops the import and opens nothing', (
     tester,
