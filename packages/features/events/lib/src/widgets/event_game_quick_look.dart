@@ -543,7 +543,9 @@ class _EventGameQuickLookState extends State<EventGameQuickLook> {
     if (shown == null || detail is! EventDetailReady) {
       return _QuickLookFrame(
         thumbnail: nomination?.thumbnail,
-        name: nomination?.title ?? widget.title,
+        name: nomination == null
+            ? widget.title
+            : gameName(l10n, nomination.title, nomination.subtitle),
         gone: l10n.eventsQuickLookNominationGone,
         outcomes: outcomes,
       );
@@ -821,7 +823,7 @@ class _NominationLookState extends State<_NominationLook>
       onPressed: () => _pressed(write, send),
       onPointerDown: notePointerPress,
     );
-    final title = nomination.title;
+    final title = gameName(l10n, nomination.title, nomination.subtitle);
     // Withdraw, then a host's decisions (#518).
     final buttons = [
       if (offersWithdraw(nomination, writes, viewerId: viewerId))

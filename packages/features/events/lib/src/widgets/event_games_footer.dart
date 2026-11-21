@@ -522,22 +522,15 @@ class EventNominationsOutcomeBanner extends StatelessWidget {
       };
 
   /// A nominations write's copy (#517), naming its game: a nominate's as its
-  /// pool row names it, with its subtitle ([gameName], #851), and every
-  /// other write's by the nomination's title. A nominate that went through
+  /// pool row names it and every other write's by the nomination, each with
+  /// its subtitle ([gameName], #851, #920). A nominate that went through
   /// says what the server made of it, and a host's close of a vote how the
   /// vote came out (#518).
   static String _nominationsMessage(
     EventsLocalizations l10n,
     EventNominationsOutcome outcome,
   ) {
-    final title = switch (outcome) {
-      NominateOutcome(:final subtitle) => gameName(
-        l10n,
-        outcome.title,
-        subtitle,
-      ),
-      _ => outcome.title,
-    };
+    final title = gameName(l10n, outcome.title, outcome.subtitle);
     return switch (outcome) {
       NominateOutcome(:final result) => switch (result) {
         NominateResult.open => l10n.eventsNominatedOpen(title),

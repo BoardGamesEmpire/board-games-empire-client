@@ -125,9 +125,9 @@ ResolveResult _resolved(_Decided decided) => switch (decided) {
 /// As each starts it clears the last outcome, and
 /// [EventNominationsState.writing] names it until its outcome comes in, in
 /// the same state as any row its answer changes. So the outcome never lands
-/// beside the row as it was. The outcome carries the game's title: the pool
-/// row's for a nominate, with its subtitle (#851), and the nomination's for
-/// every other write.
+/// beside the row as it was. The outcome carries the game's title and
+/// subtitle: the pool row's for a nominate (#851), and the nomination's for
+/// every other write (#920).
 ///
 /// A row's change is kept over a read that was out as the write ended, whose
 /// answer can predate the write: the change is made again on that answer. A
@@ -207,7 +207,7 @@ ResolveResult _resolved(_Decided decided) => switch (decided) {
 ///
 /// [NominationWriteDropped] is a write the screen's own re-check stopped. It
 /// sends nothing and sets an outcome of dropped for that write, with the
-/// title, and a nominate's subtitle (#851), since a screen reader hears
+/// title and subtitle (#851, #920), since a screen reader hears
 /// nothing happen when a press sends nothing. It clears the last outcome
 /// first, as a write starting does, so a drop like the one before it is
 /// still a new outcome. It is ignored while a write is out, whose own
@@ -391,6 +391,7 @@ class EventNominationsBloc
     final outcome = VoteOutcome(
       result,
       title: nomination.title,
+      subtitle: nomination.subtitle,
       voteType: result == VoteResult.done ? event.voteType : null,
     );
     switch (result) {
@@ -461,7 +462,11 @@ class EventNominationsBloc
     await _endedDeciding(
       nomination.id,
       result,
-      WithdrawOutcome(_withdrawn(result), title: nomination.title),
+      WithdrawOutcome(
+        _withdrawn(result),
+        title: nomination.title,
+        subtitle: nomination.subtitle,
+      ),
       emit,
       answer: answer,
       sent: sent,
@@ -517,6 +522,7 @@ class EventNominationsBloc
         _hostDecision(result),
         write: write,
         title: nomination.title,
+        subtitle: nomination.subtitle,
       ),
       emit,
       answer: answer,
@@ -547,6 +553,7 @@ class EventNominationsBloc
       ResolveOutcome(
         _resolved(result),
         title: nomination.title,
+        subtitle: nomination.subtitle,
         resolution: answer?.resolution,
       ),
       emit,
@@ -703,6 +710,7 @@ class EventNominationsBloc
     // one: Bloc emits a state equal to the initial one if it is the first.
     if (state.outcome != null) emit(state.copyWith(outcome: () => null));
     final title = event.title;
+    final subtitle = event.subtitle;
     final write = event.write;
     emit(
       state.copyWith(
@@ -712,20 +720,27 @@ class EventNominationsBloc
             title: title,
             subtitle: event.subtitle,
           ),
-          NominationWrite.vote => VoteOutcome(VoteResult.dropped, title: title),
+          NominationWrite.vote => VoteOutcome(
+            VoteResult.dropped,
+            title: title,
+            subtitle: subtitle,
+          ),
           NominationWrite.withdraw => WithdrawOutcome(
             WithdrawResult.dropped,
             title: title,
+            subtitle: subtitle,
           ),
           NominationWrite.approve ||
           NominationWrite.reject => HostDecisionOutcome(
             HostDecisionResult.dropped,
             write: write,
             title: title,
+            subtitle: subtitle,
           ),
           NominationWrite.resolve => ResolveOutcome(
             ResolveResult.dropped,
             title: title,
+            subtitle: subtitle,
           ),
         },
       ),

@@ -187,23 +187,26 @@ enum ResolveResult {
 /// host's approval and rejection sharing one. [title] names the game it was
 /// about.
 sealed class EventNominationsOutcome extends Equatable {
-  const EventNominationsOutcome({required this.title});
+  const EventNominationsOutcome({required this.title, this.subtitle});
 
-  /// The game's title: the pool row's for a nominate, whose subtitle
-  /// [NominateOutcome.subtitle] carries (#851), and the nomination's for
-  /// every other write, as the event carried it.
+  /// The game's title: the pool row's for a nominate, and the nomination's
+  /// for every other write, as the event carried it.
   final String title;
+
+  /// The game's subtitle, where it has one, which the screen names the game
+  /// with after its title, as the row does (#851, #920).
+  final String? subtitle;
 }
 
 /// How a nominate ended.
 final class NominateOutcome extends EventNominationsOutcome {
-  const NominateOutcome(this.result, {required super.title, this.subtitle});
+  const NominateOutcome(
+    this.result, {
+    required super.title,
+    super.subtitle,
+  });
 
   final NominateResult result;
-
-  /// The pool row's subtitle, which the screen names the game with after
-  /// its title, as the row does (#851). Null where it has none.
-  final String? subtitle;
 
   @override
   List<Object?> get props => [result, title, subtitle];
@@ -212,7 +215,12 @@ final class NominateOutcome extends EventNominationsOutcome {
 /// How a vote ended. [voteType] is the vote recorded, on a done, and null
 /// otherwise.
 final class VoteOutcome extends EventNominationsOutcome {
-  const VoteOutcome(this.result, {required super.title, this.voteType});
+  const VoteOutcome(
+    this.result, {
+    required super.title,
+    super.subtitle,
+    this.voteType,
+  });
 
   final VoteResult result;
 
@@ -220,17 +228,17 @@ final class VoteOutcome extends EventNominationsOutcome {
   final VoteType? voteType;
 
   @override
-  List<Object?> get props => [result, title, voteType];
+  List<Object?> get props => [result, title, subtitle, voteType];
 }
 
 /// How a withdrawal ended.
 final class WithdrawOutcome extends EventNominationsOutcome {
-  const WithdrawOutcome(this.result, {required super.title});
+  const WithdrawOutcome(this.result, {required super.title, super.subtitle});
 
   final WithdrawResult result;
 
   @override
-  List<Object?> get props => [result, title];
+  List<Object?> get props => [result, title, subtitle];
 }
 
 /// How a host's approval or rejection ended (#518). [write] says which:
@@ -240,6 +248,7 @@ final class HostDecisionOutcome extends EventNominationsOutcome {
     this.result, {
     required this.write,
     required super.title,
+    super.subtitle,
   }) : assert(
          write == NominationWrite.approve || write == NominationWrite.reject,
          'a host decision is an approval or a rejection',
@@ -252,17 +261,21 @@ final class HostDecisionOutcome extends EventNominationsOutcome {
   final NominationWrite write;
 
   @override
-  List<Object?> get props => [result, write, title];
+  List<Object?> get props => [result, write, title, subtitle];
 }
 
 /// How a host's close of a vote ended (#518). [resolution] is the server's
 /// count on a decided, and null otherwise.
 final class ResolveOutcome extends EventNominationsOutcome {
-  const ResolveOutcome(this.result, {required super.title, this.resolution})
-    : assert(
-        resolution == null || result == ResolveResult.decided,
-        'only a decided resolve carries a resolution',
-      );
+  const ResolveOutcome(
+    this.result, {
+    required super.title,
+    super.subtitle,
+    this.resolution,
+  }) : assert(
+         resolution == null || result == ResolveResult.decided,
+         'only a decided resolve carries a resolution',
+       );
 
   final ResolveResult result;
 
@@ -273,7 +286,7 @@ final class ResolveOutcome extends EventNominationsOutcome {
   final NominationResolution? resolution;
 
   @override
-  List<Object?> get props => [result, title, resolution];
+  List<Object?> get props => [result, title, subtitle, resolution];
 }
 
 /// The nominations on one event's Games tab, and the viewer's write that is

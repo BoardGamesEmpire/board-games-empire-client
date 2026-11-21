@@ -1150,7 +1150,7 @@
   },
   "eventsNominateRefused": "{title} can't be nominated here.",
   "@eventsNominateRefused": {
-    "description": "Banner at the foot of an event's screen when the server refused to let the user nominate a game for the event. The title is the game's.",
+    "description": "Banner at the foot of an event's screen when the server refused to let the user nominate a game for the event. The title is the game's title, with its subtitle where it has one (#920).",
     "placeholders": {
       "title": {
         "type": "String",
@@ -1160,7 +1160,7 @@
   },
   "eventsNominateSupplierNotGoing": "{title} can't be nominated: whoever brings it isn't going.",
   "@eventsNominateSupplierNotGoing": {
-    "description": "Banner at the foot of an event's screen when a game couldn't be nominated because the person who offered to bring it has answered Not going to the event. The title is the game's.",
+    "description": "Banner at the foot of an event's screen when a game couldn't be nominated because the person who offered to bring it has answered Not going to the event. The title is the game's title, with its subtitle where it has one (#920).",
     "placeholders": {
       "title": {
         "type": "String",
@@ -1170,7 +1170,7 @@
   },
   "eventsNominateNotSupplied": "{title} isn't on their games any more, so it can't be nominated.",
   "@eventsNominateNotSupplied": {
-    "description": "Banner at the foot of an event's screen when a game couldn't be nominated because the person who offered to bring it no longer offers that game: 'their' is that person. The title is the game's.",
+    "description": "Banner at the foot of an event's screen when a game couldn't be nominated because the person who offered to bring it no longer offers that game: 'their' is that person. The title is the game's title, with its subtitle where it has one (#920).",
     "placeholders": {
       "title": {
         "type": "String",
@@ -1180,7 +1180,7 @@
   },
   "eventsNominateGone": "{title} isn't in the games pool any more.",
   "@eventsNominateGone": {
-    "description": "Banner at the foot of an event's screen when a game couldn't be nominated because it is no longer among the games people offer to bring (the games pool), or the date it was nominated for is gone. The title is the game's.",
+    "description": "Banner at the foot of an event's screen when a game couldn't be nominated because it is no longer among the games people offer to bring (the games pool), or the date it was nominated for is gone. The title is the game's title, with its subtitle where it has one (#920).",
     "placeholders": {
       "title": {
         "type": "String",
@@ -1190,7 +1190,7 @@
   },
   "eventsNominateFailed": "An error occurred while nominating {title}. Check the Nominations tab before nominating it again.",
   "@eventsNominateFailed": {
-    "description": "Banner at the foot of an event's screen when nominating a game failed for any other reason, such as no connection. It may have gone through all the same, and nominating it again would nominate it twice, so the copy asks the user to look at the nominations first, which the screen reads again as the banner shows. They are on the Games tab's Nominations sub-tab, labelled eventsGamesSectionNominations, so the two should match; a game is nominated from the Pool sub-tab beside it. It must not say the game wasn't nominated. The title is the game's.",
+    "description": "Banner at the foot of an event's screen when nominating a game failed for any other reason, such as no connection. It may have gone through all the same, and nominating it again would nominate it twice, so the copy asks the user to look at the nominations first, which the screen reads again as the banner shows. They are on the Games tab's Nominations sub-tab, labelled eventsGamesSectionNominations, so the two should match; a game is nominated from the Pool sub-tab beside it. It must not say the game wasn't nominated. The title is the game's title, with its subtitle where it has one (#920).",
     "placeholders": {
       "title": {
         "type": "String",
@@ -1200,7 +1200,7 @@
   },
   "eventsNominateDropped": "{title} wasn't nominated: something changed on this event first.",
   "@eventsNominateDropped": {
-    "description": "Banner at the foot of an event's screen when a nomination was not sent at all, because the event changed between the user's press and the moment it would have gone: for example the game left the games pool, or the event was cancelled. The title is the game's.",
+    "description": "Banner at the foot of an event's screen when a nomination was not sent at all, because the event changed between the user's press and the moment it would have gone: for example the game left the games pool, or the event was cancelled. The title is the game's title, with its subtitle where it has one (#920).",
     "placeholders": {
       "title": {
         "type": "String",
@@ -1258,7 +1258,7 @@
   },
   "eventsNominateTitle": "Nominate {title}",
   "@eventsNominateTitle": {
-    "description": "Title of the dialog opened by the Nominate button (eventsNominate) on an event of more than one date. It asks whether the game is nominated for the whole event (eventsNominationWholeEvent) or for one of its dates still to come (eventsNominationForDate), one choice each. {title} is the game's.",
+    "description": "Title of the dialog opened by the Nominate button (eventsNominate) on an event of more than one date. It asks whether the game is nominated for the whole event (eventsNominationWholeEvent) or for one of its dates still to come (eventsNominationForDate), one choice each. {title} is the game's title, with its subtitle where it has one (#920).",
     "placeholders": {
       "title": {
         "type": "String",
@@ -1366,7 +1366,7 @@
   },
   "eventsVoteGone": "{title} isn't nominated any more.",
   "@eventsVoteGone": {
-    "description": "Banner at the foot of an event's screen when the user voted on a nominated game whose nomination is gone, or, as a host, approved, rejected or closed the vote on one that is gone. The title is the game's.",
+    "description": "Banner at the foot of an event's screen when the user voted on a nominated game whose nomination is gone, or, as a host, approved, rejected or closed the vote on one that is gone. The title is the game's title, with its subtitle where it has one (#920).",
     "placeholders": {
       "title": {
         "type": "String",
@@ -1410,7 +1410,7 @@
   },
   "eventsWithdrawConfirmTitle": "Withdraw {title}?",
   "@eventsWithdrawConfirmTitle": {
-    "description": "Title of the dialog that asks before the user withdraws a game they nominated (eventsWithdraw). The title is the game's.",
+    "description": "Title of the dialog that asks before the user withdraws a game they nominated (eventsWithdraw). The title is the game's title, with its subtitle where it has one (#920).",
     "placeholders": {
       "title": {
         "type": "String",
@@ -1432,7 +1432,7 @@
   },
   "eventsWithdrawDone": "You withdrew {title}.",
   "@eventsWithdrawDone": {
-    "description": "Banner at the foot of an event's screen once the user withdrew a game they nominated: it is no longer up for a vote, and its votes are lost. The title is the game's.",
+    "description": "Banner at the foot of an event's screen once the user withdrew a game they nominated: it is no longer up for a vote, and its votes are lost. The title is the game's title, with its subtitle where it has one (#920).",
     "placeholders": {
       "title": {
         "type": "String",
@@ -1442,7 +1442,7 @@
   },
   "eventsWithdrawNotWithdrawable": "{title} can't be withdrawn now: it has been decided.",
   "@eventsWithdrawNotWithdrawable": {
-    "description": "Banner at the foot of an event's screen when the user tried to withdraw a game they nominated after its nomination was decided: by the vote, or by a host approving or rejecting it. The title is the game's.",
+    "description": "Banner at the foot of an event's screen when the user tried to withdraw a game they nominated after its nomination was decided: by the vote, or by a host approving or rejecting it. The title is the game's title, with its subtitle where it has one (#920).",
     "placeholders": {
       "title": {
         "type": "String",
@@ -1462,7 +1462,7 @@
   },
   "eventsWithdrawGone": "{title} isn't nominated any more.",
   "@eventsWithdrawGone": {
-    "description": "Banner at the foot of an event's screen when the user tried to withdraw a nomination that is already gone. The title is the game's.",
+    "description": "Banner at the foot of an event's screen when the user tried to withdraw a nomination that is already gone. The title is the game's title, with its subtitle where it has one (#920).",
     "placeholders": {
       "title": {
         "type": "String",
@@ -1538,7 +1538,7 @@
   },
   "eventsApproveConfirmTitle": "Approve {title}?",
   "@eventsApproveConfirmTitle": {
-    "description": "Title of the dialog that asks before a host approves a nominated game (eventsApprove). The title is the game's.",
+    "description": "Title of the dialog that asks before a host approves a nominated game (eventsApprove). The title is the game's title, with its subtitle where it has one (#920).",
     "placeholders": {
       "title": {
         "type": "String",
@@ -1556,7 +1556,7 @@
   },
   "eventsRejectConfirmTitle": "Reject {title}?",
   "@eventsRejectConfirmTitle": {
-    "description": "Title of the dialog that asks before a host rejects a nominated game (eventsReject). The title is the game's.",
+    "description": "Title of the dialog that asks before a host rejects a nominated game (eventsReject). The title is the game's title, with its subtitle where it has one (#920).",
     "placeholders": {
       "title": {
         "type": "String",
@@ -1574,7 +1574,7 @@
   },
   "eventsCloseVoteConfirmTitle": "Close the vote on {title}?",
   "@eventsCloseVoteConfirmTitle": {
-    "description": "Title of the dialog that asks before a host closes the vote on a nominated game (eventsCloseVote). The title is the game's.",
+    "description": "Title of the dialog that asks before a host closes the vote on a nominated game (eventsCloseVote). The title is the game's title, with its subtitle where it has one (#920).",
     "placeholders": {
       "title": {
         "type": "String",
@@ -1628,7 +1628,7 @@
   },
   "eventsApproved": "{title} is approved and in the lineup.",
   "@eventsApproved": {
-    "description": "Banner at the foot of an event's screen once a host approved a nominated game: it is in the lineup, the games to be played. The title is the game's.",
+    "description": "Banner at the foot of an event's screen once a host approved a nominated game: it is in the lineup, the games to be played. The title is the game's title, with its subtitle where it has one (#920).",
     "placeholders": {
       "title": {
         "type": "String",
@@ -1638,7 +1638,7 @@
   },
   "eventsRejected": "{title} is rejected.",
   "@eventsRejected": {
-    "description": "Banner at the foot of an event's screen once a host rejected a nominated game. The title is the game's.",
+    "description": "Banner at the foot of an event's screen once a host rejected a nominated game. The title is the game's title, with its subtitle where it has one (#920).",
     "placeholders": {
       "title": {
         "type": "String",
@@ -1648,7 +1648,7 @@
   },
   "eventsResolvedPassed": "{title} passed: {forCount} for, {againstCount} against. {totalVotes} of {eligibleVoterCount} counted.",
   "@eventsResolvedPassed": {
-    "description": "Banner at the foot of an event's screen once a host closed the vote on a nominated game and it passed, so it is in the lineup: the counts the server gave as it settled the vote, which nothing shows later. {forCount} and {againstCount} are the votes that counted for and against it, interested votes included where the event's rules count them as one or the other. {totalVotes} is how many votes counted towards the result: those for and against, with interested votes folded into one or the other, or left out, as the event's rules weigh them (eventsNominationInterestedAsFor, eventsNominationInterestedAsAgainst, eventsNominationInterestedNotCounted). {eligibleVoterCount} is how many people could vote. The title is the game's.",
+    "description": "Banner at the foot of an event's screen once a host closed the vote on a nominated game and it passed, so it is in the lineup: the counts the server gave as it settled the vote, which nothing shows later. {forCount} and {againstCount} are the votes that counted for and against it, interested votes included where the event's rules count them as one or the other. {totalVotes} is how many votes counted towards the result: those for and against, with interested votes folded into one or the other, or left out, as the event's rules weigh them (eventsNominationInterestedAsFor, eventsNominationInterestedAsAgainst, eventsNominationInterestedNotCounted). {eligibleVoterCount} is how many people could vote. The title is the game's title, with its subtitle where it has one (#920).",
     "placeholders": {
       "title": {
         "type": "String",
@@ -1674,7 +1674,7 @@
   },
   "eventsResolvedFailed": "{title} didn't pass: {forCount} for, {againstCount} against. {totalVotes} of {eligibleVoterCount} counted.",
   "@eventsResolvedFailed": {
-    "description": "Banner at the foot of an event's screen once a host closed the vote on a nominated game and it didn't get the votes for it that the event's rules ask: the counts the server gave as it settled the vote, which nothing shows later. {forCount} and {againstCount} are the votes that counted for and against it, interested votes included where the event's rules count them as one or the other. {totalVotes} is how many votes counted towards the result: those for and against, with interested votes folded into one or the other, or left out, as the event's rules weigh them (eventsNominationInterestedAsFor, eventsNominationInterestedAsAgainst, eventsNominationInterestedNotCounted). {eligibleVoterCount} is how many people could vote. The title is the game's.",
+    "description": "Banner at the foot of an event's screen once a host closed the vote on a nominated game and it didn't get the votes for it that the event's rules ask: the counts the server gave as it settled the vote, which nothing shows later. {forCount} and {againstCount} are the votes that counted for and against it, interested votes included where the event's rules count them as one or the other. {totalVotes} is how many votes counted towards the result: those for and against, with interested votes folded into one or the other, or left out, as the event's rules weigh them (eventsNominationInterestedAsFor, eventsNominationInterestedAsAgainst, eventsNominationInterestedNotCounted). {eligibleVoterCount} is how many people could vote. The title is the game's title, with its subtitle where it has one (#920).",
     "placeholders": {
       "title": {
         "type": "String",
@@ -1700,7 +1700,7 @@
   },
   "eventsResolvedQuorumNotMet": "{title} didn't get enough votes: {totalVotes} of {eligibleVoterCount} counted.",
   "@eventsResolvedQuorumNotMet": {
-    "description": "Banner at the foot of an event's screen once a host closed the vote on a nominated game and too few votes counted for the vote to count under the event's rules (its quorum). {totalVotes} is how many votes counted towards the result: those for and against, with interested votes folded into one or the other, or left out, as the event's rules weigh them (eventsNominationInterestedAsFor, eventsNominationInterestedAsAgainst, eventsNominationInterestedNotCounted). {eligibleVoterCount} is how many people could vote. The title is the game's.",
+    "description": "Banner at the foot of an event's screen once a host closed the vote on a nominated game and too few votes counted for the vote to count under the event's rules (its quorum). {totalVotes} is how many votes counted towards the result: those for and against, with interested votes folded into one or the other, or left out, as the event's rules weigh them (eventsNominationInterestedAsFor, eventsNominationInterestedAsAgainst, eventsNominationInterestedNotCounted). {eligibleVoterCount} is how many people could vote. The title is the game's title, with its subtitle where it has one (#920).",
     "placeholders": {
       "title": {
         "type": "String",
@@ -1718,7 +1718,7 @@
   },
   "eventsResolvedSettled": "The vote on {title} is closed.",
   "@eventsResolvedSettled": {
-    "description": "Banner at the foot of an event's screen once a host closed the vote on a nominated game and the server settled it in a way this version of the app can't name: it says only that the vote is over. The title is the game's.",
+    "description": "Banner at the foot of an event's screen once a host closed the vote on a nominated game and the server settled it in a way this version of the app can't name: it says only that the vote is over. The title is the game's title, with its subtitle where it has one (#920).",
     "placeholders": {
       "title": {
         "type": "String",
@@ -1728,7 +1728,7 @@
   },
   "eventsHostDecisionChanged": "{title} changed before your decision reached it.",
   "@eventsHostDecisionChanged": {
-    "description": "Banner at the foot of an event's screen when a host approved, rejected, or closed the vote on a nominated game that was no longer waiting for that decision when it reached the server, as when another host decided first. The nomination is read again and shows where it stands now. The title is the game's.",
+    "description": "Banner at the foot of an event's screen when a host approved, rejected, or closed the vote on a nominated game that was no longer waiting for that decision when it reached the server, as when another host decided first. The nomination is read again and shows where it stands now. The title is the game's title, with its subtitle where it has one (#920).",
     "placeholders": {
       "title": {
         "type": "String",
@@ -1738,7 +1738,7 @@
   },
   "eventsHostDecisionRefused": "You can't decide on {title}.",
   "@eventsHostDecisionRefused": {
-    "description": "Banner at the foot of an event's screen when the server refused to let the user approve, reject, or close the vote on a nominated game. The title is the game's.",
+    "description": "Banner at the foot of an event's screen when the server refused to let the user approve, reject, or close the vote on a nominated game. The title is the game's title, with its subtitle where it has one (#920).",
     "placeholders": {
       "title": {
         "type": "String",
@@ -1748,7 +1748,7 @@
   },
   "eventsHostDecisionFailed": "An error occurred while sending your decision on {title}. You may need to try again.",
   "@eventsHostDecisionFailed": {
-    "description": "Banner at the foot of an event's screen when a host's approval, rejection or close of the vote on a nominated game failed for any other reason, such as no connection. The answer can be lost after the server applied it, so it doesn't say the decision wasn't made. The title is the game's.",
+    "description": "Banner at the foot of an event's screen when a host's approval, rejection or close of the vote on a nominated game failed for any other reason, such as no connection. The answer can be lost after the server applied it, so it doesn't say the decision wasn't made. The title is the game's title, with its subtitle where it has one (#920).",
     "placeholders": {
       "title": {
         "type": "String",
@@ -1758,7 +1758,7 @@
   },
   "eventsHostDecisionDropped": "Your decision on {title} wasn't sent: something changed on this event first.",
   "@eventsHostDecisionDropped": {
-    "description": "Banner at the foot of an event's screen when a host's approval, rejection or close of the vote on a nominated game was not sent at all, because the event changed between the press and the moment it would have gone. The title is the game's.",
+    "description": "Banner at the foot of an event's screen when a host's approval, rejection or close of the vote on a nominated game was not sent at all, because the event changed between the press and the moment it would have gone. The title is the game's title, with its subtitle where it has one (#920).",
     "placeholders": {
       "title": {
         "type": "String",
@@ -2240,7 +2240,7 @@
   },
   "eventsVoteNoteTitle": "Your note on {title}",
   "@eventsVoteNoteTitle": {
-    "description": "Title of the dialog, opened from eventsVoteAddNote or eventsVoteEditNote, where the user writes, changes or removes the short note that goes with their vote on a nominated game. {title} is the game's.",
+    "description": "Title of the dialog, opened from eventsVoteAddNote or eventsVoteEditNote, where the user writes, changes or removes the short note that goes with their vote on a nominated game. {title} is the game's title, with its subtitle where it has one (#920).",
     "placeholders": {
       "title": {
         "type": "String",
@@ -2290,7 +2290,7 @@
   },
   "eventsVotersTitle": "Who voted on {title}",
   "@eventsVotersTitle": {
-    "description": "Heading of the list, opened from eventsVotersOpen, of each vote on a nominated game: who cast it and how, with the note they left under it. Also the list's name to a screen reader as it opens. {title} is the game's.",
+    "description": "Heading of the list, opened from eventsVotersOpen, of each vote on a nominated game: who cast it and how, with the note they left under it. Also the list's name to a screen reader as it opens. {title} is the game's title, with its subtitle where it has one (#920).",
     "placeholders": {
       "title": {
         "type": "String",

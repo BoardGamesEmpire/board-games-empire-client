@@ -13,6 +13,7 @@ import 'package:events/src/detail/event_nominations.dart';
 import 'package:events/src/screens/event_detail_screen.dart';
 import 'package:events/src/widgets/confirm_dialog.dart';
 import 'package:events/src/widgets/event_labels.dart';
+import 'package:events/src/widgets/game_name.dart';
 import 'package:events/src/widgets/held_press.dart';
 import 'package:events/src/widgets/held_spinner.dart';
 import 'package:events/src/widgets/nomination_filters_sheet.dart';
@@ -539,7 +540,7 @@ Future<bool> withdrawNomination(
   final l10n = EventsLocalizations.of(context);
   final detail = context.read<EventDetailBloc>();
   final nominations = context.read<EventNominationsBloc>();
-  final title = nomination.title;
+  final title = gameName(l10n, nomination.title, nomination.subtitle);
   final confirmed = await showConfirmDialog(
     context,
     title: l10n.eventsWithdrawConfirmTitle(title),
@@ -565,7 +566,11 @@ Future<bool> withdrawNomination(
       current.nominatedById != viewer.id ||
       !current.status.isLive) {
     nominations.add(
-      NominationWriteDropped(NominationWrite.withdraw, title: title),
+      NominationWriteDropped(
+        NominationWrite.withdraw,
+        title: nomination.title,
+        subtitle: nomination.subtitle,
+      ),
     );
     return false;
   }
@@ -609,7 +614,7 @@ Future<bool> decideNomination(
   final l10n = EventsLocalizations.of(context);
   final detail = context.read<EventDetailBloc>();
   final nominations = context.read<EventNominationsBloc>();
-  final title = nomination.title;
+  final title = gameName(l10n, nomination.title, nomination.subtitle);
   final tally = tallyOf(nomination);
   final interested = interestedLine(l10n, interestedWeight);
   final confirmed = await showConfirmDialog(
@@ -657,7 +662,13 @@ Future<bool> decideNomination(
           (tallyOf(current) != tally ||
               state.detail.snapshot.policy?.interestedWeight !=
                   interestedWeight))) {
-    nominations.add(NominationWriteDropped(decision.write, title: title));
+    nominations.add(
+      NominationWriteDropped(
+        decision.write,
+        title: nomination.title,
+        subtitle: nomination.subtitle,
+      ),
+    );
     return false;
   }
   // One write at a time; the bloc would ignore this one.
@@ -732,7 +743,11 @@ Future<bool> editVoteNote(
   final nominations = context.read<EventNominationsBloc>();
   final written = await showNominationNoteDialog(
     context,
-    title: nomination.title,
+    title: gameName(
+      EventsLocalizations.of(context),
+      nomination.title,
+      nomination.subtitle,
+    ),
     note: note,
   );
   if (written == null || nominations.isClosed) return false;
@@ -778,7 +793,11 @@ Future<bool> sendVote(
       voteType == null ||
       voteType == VoteType.unknown) {
     nominations.add(
-      NominationWriteDropped(NominationWrite.vote, title: nomination.title),
+      NominationWriteDropped(
+        NominationWrite.vote,
+        title: nomination.title,
+        subtitle: nomination.subtitle,
+      ),
     );
     return false;
   }
@@ -857,7 +876,10 @@ class WhoVotedButtonState extends State<WhoVotedButton> {
       icon: const Icon(Icons.how_to_vote_outlined),
       label: Text(
         l10n.eventsVotersOpen(count),
-        semanticsLabel: l10n.eventsVotersOpenNamed(count, nomination.title),
+        semanticsLabel: l10n.eventsVotersOpenNamed(
+          count,
+          gameName(l10n, nomination.title, nomination.subtitle),
+        ),
       ),
     );
   }
