@@ -699,6 +699,57 @@ class EventDetailScreen extends StatelessWidget {
   /// Key on the nominate dialog's Nominate button (#517).
   static const Key nominateConfirmKey = Key('event_detail.nominate_confirm');
 
+  /// Key on a pool row's Add to lineup (#519), its main action under a
+  /// host-only view, by the offered game's id.
+  static Key poolAddToLineupKey(String offeredGameId) =>
+      Key('event_detail.pool_add_to_lineup_$offeredGameId');
+
+  /// Key on the Add to lineup in an offered copy's quick look (#519).
+  static const Key quickLookAddToLineupKey = Key(
+    'event_detail.quick_look_add_to_lineup',
+  );
+
+  /// Key on the Lineup sub-tab's Add a game (#519).
+  static const Key lineupAddKey = Key('event_detail.lineup_add');
+
+  /// Key on the pop-up Add a game opens, which picks a game from the pool
+  /// (#519).
+  static const Key lineupPickerKey = Key('event_detail.lineup_picker');
+
+  /// Key on that pop-up's Try again, where the pool couldn't be read (#519).
+  static const Key lineupPickerRetryKey = Key(
+    'event_detail.lineup_picker_retry',
+  );
+
+  /// Key on one game of that pop-up, by the offered game's id (#519).
+  static Key lineupPickKey(String offeredGameId) =>
+      Key('event_detail.lineup_pick_$offeredGameId');
+
+  /// Key on one choice of the add dialog's date (#519): the date's id, or
+  /// null for the whole event.
+  static Key addToLineupScopeKey(String? occurrenceId) =>
+      Key('event_detail.add_to_lineup_scope_${occurrenceId ?? 'event'}');
+
+  /// Key on one choice of the add dialog's role (#519): on the choice's
+  /// label, inside its segment.
+  static Key addToLineupRoleKey(ScheduledGameRole role) =>
+      Key('event_detail.add_to_lineup_role_${role.name}');
+
+  /// Key on the add dialog's field for a Filler's longest play (#519).
+  static const Key addToLineupMinutesKey = Key(
+    'event_detail.add_to_lineup_minutes',
+  );
+
+  /// Key on the add dialog's note field (#519).
+  static const Key addToLineupNotesKey = Key(
+    'event_detail.add_to_lineup_notes',
+  );
+
+  /// Key on the add dialog's Add to lineup button (#519).
+  static const Key addToLineupConfirmKey = Key(
+    'event_detail.add_to_lineup_confirm',
+  );
+
   /// Key on the count of the games the filter keeps.
   static const Key poolCountKey = Key('event_detail.pool_count');
 

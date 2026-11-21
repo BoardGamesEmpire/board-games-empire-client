@@ -692,11 +692,11 @@
   },
   "eventsGamesYours": "You're bringing this",
   "@eventsGamesYours": {
-    "description": "The status line of a game's row in the games pool on the Games tab of an event's screen, and a line of its quick look, the pop-up the row opens: the user offered to bring it. Where the row also says the game is nominated, eventsPoolStatusNominated takes its place."
+    "description": "The status line of a game's row in the games pool on the Games tab of an event's screen, and a line of its quick look, the pop-up the row opens: the user offered to bring it. Where the row also says the game is nominated, eventsPoolStatusNominated takes its place. Also under the game's name in the list Add a game opens on the Lineup sub-tab (eventsLineupPickTitle)."
   },
   "eventsGamesTheirs": "{name} is bringing this",
   "@eventsGamesTheirs": {
-    "description": "The status line of a game's row in the games pool on the Games tab of an event's screen, and a line of its quick look, the pop-up the row opens: someone else offered to bring it. Where the row also says the game is nominated, eventsPoolStatusNominated takes its place. {name} is the person's name, or eventsAttendeeSomeoneStart for someone with none.",
+    "description": "The status line of a game's row in the games pool on the Games tab of an event's screen, and a line of its quick look, the pop-up the row opens: someone else offered to bring it. Where the row also says the game is nominated, eventsPoolStatusNominated takes its place. Also under the game's name in the list Add a game opens on the Lineup sub-tab (eventsLineupPickTitle). {name} is the person's name, or eventsAttendeeSomeoneStart for someone with none.",
     "placeholders": {
       "name": {
         "type": "String",
@@ -764,7 +764,7 @@
   },
   "eventsGamesEmptyTitle": "No games offered yet",
   "@eventsGamesEmptyTitle": {
-    "description": "On the Games tab of an event's screen when nobody has offered to bring a game."
+    "description": "On the Games tab of an event's screen when nobody has offered to bring a game. Also in the list the Lineup sub-tab's Add a game opens (eventsLineupPickTitle), in place of the games, for the same reason (#519). There eventsLineupPickEmpty follows it."
   },
   "eventsGamesEmptyBody": "Games people offer to bring will show here.",
   "@eventsGamesEmptyBody": {
@@ -780,19 +780,19 @@
   },
   "eventsGamesHiddenTitle": "The games aren't shown to you",
   "@eventsGamesHiddenTitle": {
-    "description": "On the Games tab of an event's screen when the server won't show the user the games people offer to bring."
+    "description": "On the Games tab of an event's screen when the server won't show the user the games people offer to bring. Also in the list the Lineup sub-tab's Add a game opens (eventsLineupPickTitle), in place of the games, for the same reason (#519)."
   },
   "eventsGamesLoading": "Loading the games",
   "@eventsGamesLoading": {
-    "description": "Read by a screen reader, never drawn, while the Games tab of an event's screen waits for the games people offer to bring."
+    "description": "Read by a screen reader, never drawn, while the Games tab of an event's screen waits for the games people offer to bring. Also in the list the Lineup sub-tab's Add a game opens (eventsLineupPickTitle), in place of the games, for the same reason (#519)."
   },
   "eventsGamesFailedTitle": "Couldn't load the games",
   "@eventsGamesFailedTitle": {
-    "description": "On the Games tab of an event's screen when the games people offer to bring couldn't be read and none were read before."
+    "description": "On the Games tab of an event's screen when the games people offer to bring couldn't be read and none were read before. Also in the list the Lineup sub-tab's Add a game opens (eventsLineupPickTitle), in place of the games, for the same reason (#519). Try again (eventsRefreshRetry) is under it in both places."
   },
   "eventsGamesFailedBody": "Check your connection and try again.",
   "@eventsGamesFailedBody": {
-    "description": "Under eventsGamesFailedTitle, above the Try again button (eventsRefreshRetry). Also under eventsNominationsFailedTitle, on the Nominations sub-tab of the same Games tab, and under eventsLineupFailedTitle, on its Lineup sub-tab."
+    "description": "Under eventsGamesFailedTitle, above the Try again button (eventsRefreshRetry). Also under eventsNominationsFailedTitle, on the Nominations sub-tab of the same Games tab, and under eventsLineupFailedTitle, on its Lineup sub-tab; and in the list the Lineup sub-tab's Add a game opens (eventsLineupPickTitle), under eventsGamesFailedTitle (#519)."
   },
   "eventsGamesRefreshFailed": "Couldn't update the games. These may be out of date.",
   "@eventsGamesRefreshFailed": {
@@ -879,6 +879,86 @@
   "eventsLineupFromNomination": "Added from a nomination",
   "@eventsLineupFromNomination": {
     "description": "A line of the quick look of a game in the event's lineup, the pop-up its row opens on the Lineup sub-tab (eventsGamesSectionLineup) of an event's Games tab: the game joined the lineup when its nomination passed or was approved, rather than being added by a host directly. Nominations are on the Nominations sub-tab beside it (eventsGamesSectionNominations)."
+  },
+  "eventsLineupAdd": "Add a game",
+  "@eventsLineupAdd": {
+    "description": "Button at the top of the Lineup sub-tab (eventsGamesSectionLineup) of an event's Games tab, for a host: it opens a list of the games people offer to bring (eventsLineupPickTitle), and the game picked is then added straight to the lineup, with no vote (eventsLineupAddTitle). On one date chosen in the row of dates above the sub-tabs (eventsGamesDatesLabel), it adds to that date; under Every date (eventsGamesEveryDate), to the event as a whole (#519)."
+  },
+  "eventsLineupAddDateClosed": "This date isn't happening, so games can't be added to it",
+  "@eventsLineupAddDateClosed": {
+    "description": "Under the Add a game button (eventsLineupAdd) of an event's Lineup sub-tab, and read to a screen reader as its hint, and as the hint of the Add to lineup button (eventsLineupAddToLineup) of a game in the games pool, neither of which can be pressed: the Games tab shows one of the event's dates, chosen in the row of dates above its sub-tabs (eventsGamesDatesLabel), that was called off, or declined while the date was being chosen. An add from there is for that date alone (#519). A date that has started still takes one, so this says nothing of time. A date in a state the app can't read says eventsLineupAddDateUnavailable instead."
+  },
+  "eventsLineupAddDateUnavailable": "Games can't be added to this date",
+  "@eventsLineupAddDateUnavailable": {
+    "description": "eventsLineupAddDateClosed in its place, as the same hint and under the same buttons, where the date shown in the row of dates (eventsGamesDatesLabel) is in a state this version of the app can't read, so it can't say whether the date is happening; it only says no game can be added to it. Says nothing of time: a date that has started still takes a game (#519)."
+  },
+  "eventsLineupPickUnavailable": "This event can't be shown right now, so there's nothing to pick from.",
+  "@eventsLineupPickUnavailable": {
+    "description": "In the pop-up the Add a game button (eventsLineupAdd) opens on an event's Lineup sub-tab (eventsLineupPickTitle), in place of its list, when the event can no longer be shown on the screen beneath it while the pop-up is open, as when it can't be read again (#519). Where the server no longer shows the event, eventsDetailNotFoundTitle and eventsDetailNotFoundBody say so instead."
+  },
+  "eventsLineupPickTitle": "Pick a game to add",
+  "@eventsLineupPickTitle": {
+    "description": "Heading of the pop-up the Add a game button (eventsLineupAdd) opens on an event's Lineup sub-tab, and its name to a screen reader: it lists every game people offer to bring to the event, each with who brings it (eventsGamesYours, eventsGamesTheirs), and the one picked is then added to the lineup (eventsLineupAddTitle) (#519)."
+  },
+  "eventsLineupPickEmpty": "Once someone offers to bring a game, it can be added to the lineup from here.",
+  "@eventsLineupPickEmpty": {
+    "description": "In the pop-up the Add a game button (eventsLineupAdd) opens on an event's Lineup sub-tab (eventsLineupPickTitle), under eventsGamesEmptyTitle, in place of its list, when nobody has offered to bring a game, so there is nothing to add to the lineup yet (#519)."
+  },
+  "eventsLineupAddToLineup": "Add to lineup",
+  "@eventsLineupAddToLineup": {
+    "description": "Button that adds a game straight to an event's lineup, with no vote, for a host (#519). On a game's row in the games pool (the Pool sub-tab of an event's Games tab), where only the hosts add games, in place of Nominate (eventsNominate); and in the quick look, the pop-up the row opens, wherever the event's rules let a host add games directly. It first opens the add dialog (eventsLineupAddTitle). Also that dialog's button that adds the game. Screen readers hear eventsLineupAddToLineupNamed on the row and the quick look."
+  },
+  "eventsLineupAddToLineupNamed": "Add {title} to the lineup",
+  "@eventsLineupAddToLineupNamed": {
+    "description": "eventsLineupAddToLineup as a screen reader reads it on a game's row in the games pool and in its quick look, naming the game, so each game's button says which it adds (#519). {title} is the game's title, with its subtitle where it has one (#920).",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsLineupAddTitle": "Add {title} to the lineup",
+  "@eventsLineupAddTitle": {
+    "description": "Title of the dialog that adds a game straight to an event's lineup, opened by Add to lineup (eventsLineupAddToLineup) or after a game is picked under Add a game (eventsLineupAdd) (#519). It asks, where the event has one date and no row of dates, whether the game is for the whole event (eventsNominationWholeEvent) or that date (eventsNominationForDate); then what it is played as (eventsLineupRoleLabel); a filler's longest play (eventsLineupMaxMinutesLabel); and a note (eventsLineupNotesLabel). {title} is the game's title, with its subtitle where it has one (#920).",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsLineupRoleLabel": "Play it as",
+  "@eventsLineupRoleLabel": {
+    "description": "Label over the two choices in the add dialog (eventsLineupAddTitle) of what a game added to an event's lineup is played as: one of the main games (eventsLineupRolePrimaryChoice) or a short one between them (eventsLineupRoleFillerChoice) (#519)."
+  },
+  "eventsLineupRolePrimaryChoice": "Primary",
+  "@eventsLineupRolePrimaryChoice": {
+    "description": "One of the two choices under eventsLineupRoleLabel in the add dialog (eventsLineupAddTitle): the game is one of the main games played. Chosen as the dialog opens. The lineup's rows then say eventsLineupRolePrimary, so the two should match (#519)."
+  },
+  "eventsLineupRoleFillerChoice": "Filler",
+  "@eventsLineupRoleFillerChoice": {
+    "description": "One of the two choices under eventsLineupRoleLabel in the add dialog (eventsLineupAddTitle): the game is a short one played between the main games or while waiting. Choosing it shows the field for its longest play (eventsLineupMaxMinutesLabel). The lineup's rows then say eventsLineupRoleFiller, so the two should match (#519)."
+  },
+  "eventsLineupMaxMinutesLabel": "Minutes",
+  "@eventsLineupMaxMinutesLabel": {
+    "description": "Label of the field in the add dialog (eventsLineupAddTitle) for the longest a filler should run, a whole number of minutes, shown only once Filler (eventsLineupRoleFillerChoice) is chosen, with eventsLineupMaxMinutesNote under it. Filled in with the event's rules' longest filler where they set one, and may be left empty for none. The lineup's row then says eventsLineupRoleFillerUpTo (#519). Keep it short: a field's label is one line, and is cut short where it doesn't fit."
+  },
+  "eventsLineupMaxMinutesNote": "The longest it should run. Leave it empty for no limit.",
+  "@eventsLineupMaxMinutesNote": {
+    "description": "Under the minutes field (eventsLineupMaxMinutesLabel) of the add dialog (eventsLineupAddTitle), and read to a screen reader as the field's hint: what the number is, and that it may be left empty (#519)."
+  },
+  "eventsLineupMaxMinutesInvalid": "Enter a whole number of minutes, at least 1.",
+  "@eventsLineupMaxMinutesInvalid": {
+    "description": "Error under the minutes field (eventsLineupMaxMinutesLabel) of the add dialog (eventsLineupAddTitle) when what is typed isn't a whole number of minutes of at least one, or is too large to keep (#519)."
+  },
+  "eventsLineupNotesLabel": "Note",
+  "@eventsLineupNotesLabel": {
+    "description": "Label of the field in the add dialog (eventsLineupAddTitle) for a note on the game added to the lineup, which may be left empty. The game's quick look then shows it (eventsLineupNote) (#519)."
+  },
+  "eventsLineupAddCancel": "Cancel",
+  "@eventsLineupAddCancel": {
+    "description": "Button in the add dialog (eventsLineupAddTitle) that closes it and adds nothing (#519)."
   },
   "eventsQuickLookLineupGone": "This game is no longer in the lineup.",
   "@eventsQuickLookLineupGone": {
@@ -1242,11 +1322,11 @@
   },
   "eventsNominateSupplierNotGoingHint": "Whoever brings it isn't going",
   "@eventsNominateSupplierNotGoingHint": {
-    "description": "Under the Nominate button (eventsNominate) of a game in the games pool, which can't be pressed, and read to a screen reader as the button's hint: the person who offered to bring the game has answered Not going to the event, so it can't be nominated. Someone else's games only: the user's own say eventsNominateYouNotGoingHint."
+    "description": "Under the Nominate button (eventsNominate) of a game in the games pool, which can't be pressed, and read to a screen reader as the button's hint: the person who offered to bring the game has answered Not going to the event, so it can't be nominated. Likewise under the Add to lineup button (eventsLineupAddToLineup) of such a game, and under its name in the list Add a game opens on the Lineup sub-tab (eventsLineupPickTitle), where it can't be picked: the server refuses to add it to the lineup (#519). Someone else's games only: the user's own say eventsNominateYouNotGoingHint."
   },
   "eventsNominateYouNotGoingHint": "You aren't going",
   "@eventsNominateYouNotGoingHint": {
-    "description": "eventsNominateSupplierNotGoingHint on the user's own games: under the Nominate button (eventsNominate) of a game the user offered to bring, which can't be pressed, and read to a screen reader as the button's hint. The user answered Not going to the event, so their games can't be nominated."
+    "description": "eventsNominateSupplierNotGoingHint on the user's own games: under the Nominate button (eventsNominate) of a game the user offered to bring, which can't be pressed, and read to a screen reader as the button's hint. The user answered Not going to the event, so their games can't be nominated. Likewise under the Add to lineup button (eventsLineupAddToLineup) of such a game, and under its name in the list Add a game opens (eventsLineupPickTitle), where it can't be picked (#519)."
   },
   "eventsNominateDateClosed": "Nominations for this date have closed",
   "@eventsNominateDateClosed": {
@@ -1936,11 +2016,11 @@
   },
   "eventsNominationWholeEvent": "For the whole event",
   "@eventsNominationWholeEvent": {
-    "description": "Line of a nominated game's quick look, the pop-up its row opens in the Nominations section of an event's Games tab: the game is nominated for the event as a whole, not for one of its dates (eventsNominationForDate). Also the first choice in the nominate dialog (eventsNominateTitle), a choice in the nominations' date filter (eventsNominationsDate), and the chip naming it while it narrows the list."
+    "description": "Line of a nominated game's quick look, the pop-up its row opens in the Nominations section of an event's Games tab: the game is nominated for the event as a whole, not for one of its dates (eventsNominationForDate). Also the first choice in the nominate dialog (eventsNominateTitle) and in the add dialog (eventsLineupAddTitle), a choice in the nominations' date filter (eventsNominationsDate), and the chip naming it while it narrows the list."
   },
   "eventsNominationForDate": "For {date}",
   "@eventsNominationForDate": {
-    "description": "Line of a nominated game's quick look, the pop-up its row opens in the Nominations section of an event's Games tab: the game is nominated for one date of the event. Also a choice in the nominate dialog (eventsNominateTitle), one per date still to come, a choice in the nominations' date filter (eventsNominationsDate), one per date, and the chip naming it while it narrows the list. {date} is the date's own label, or when it starts, for example 'Fri, Nov 6 · 7:30 PM'.",
+    "description": "Line of a nominated game's quick look, the pop-up its row opens in the Nominations section of an event's Games tab: the game is nominated for one date of the event. Also a choice in the nominate dialog (eventsNominateTitle), one per date still to come, and in the add dialog (eventsLineupAddTitle), a choice in the nominations' date filter (eventsNominationsDate), one per date, and the chip naming it while it narrows the list. {date} is the date's own label, or when it starts, for example 'Fri, Nov 6 · 7:30 PM'.",
     "placeholders": {
       "date": {
         "type": "String",
@@ -2466,11 +2546,11 @@
   },
   "eventsDetailNotFoundTitle": "We couldn't find this event",
   "@eventsDetailNotFoundTitle": {
-    "description": "Heading shown in place of an event the server no longer shows this user: it was deleted, or they may no longer see it. The server does not say which."
+    "description": "Heading shown in place of an event the server no longer shows this user: it was deleted, or they may no longer see it. The server does not say which. Also in the pop-up the Lineup sub-tab's Add a game opens (eventsLineupPickTitle), in place of its list, where that happens while it is open (#519)."
   },
   "eventsDetailNotFoundBody": "It may have been deleted, or you may no longer be able to see it.",
   "@eventsDetailNotFoundBody": {
-    "description": "Under eventsDetailNotFoundTitle. Gives both reasons, because the app cannot tell them apart."
+    "description": "Under eventsDetailNotFoundTitle, wherever it shows. Gives both reasons, because the app cannot tell them apart."
   },
   "eventsDetailNotFoundAction": "Back to events",
   "@eventsDetailNotFoundAction": {

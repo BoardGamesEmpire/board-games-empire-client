@@ -30,6 +30,7 @@ import 'package:events/src/widgets/event_pool_people_sheet.dart';
 import 'package:events/src/widgets/game_name.dart';
 import 'package:events/src/widgets/held_press.dart';
 import 'package:events/src/widgets/held_spinner.dart';
+import 'package:events/src/widgets/lineup_row_controls.dart';
 import 'package:events/src/widgets/pool_row_controls.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -52,8 +53,10 @@ typedef OpenOfferGames = Future<List<OfferPick>?> Function(
   OfferGamesArgs args,
 );
 
-/// What the pool shows under its header, if it has one.
-enum _Body {
+/// What the games pool shows under its header, if it has one: on the Pool
+/// sub-tab, and in the list the Lineup sub-tab's Add a game picks from
+/// (#519), which has no filter and so never shows [noMatches].
+enum EventPoolBody {
   /// The games aren't shown to this viewer, or the roster was read and
   /// withheld with no row of theirs on it, so there is nobody to read them
   /// for. No header.
@@ -94,7 +97,7 @@ typedef _NominationsShown = ({
 
 /// What the pool shows: its body, and the games the filter keeps when it
 /// shows rows, none otherwise.
-typedef _PoolShown = ({_Body body, List<OfferedGame> rows});
+typedef _PoolShown = ({EventPoolBody body, List<OfferedGame> rows});
 
 /// What the Lineup sub-tab shows (#519): its body, the lineup's games by
 /// date when it shows rows, none otherwise, and the lineup's state it was
@@ -174,7 +177,7 @@ final class _GamesBody {
   /// while it shows a state: the page's `semanticChildCount` while it shows
   /// the tab (#945). The lineup's are every group's (#519).
   int get rowCount => switch ((pool, nominations, lineup)) {
-    ((body: _Body.rows, :final rows), _, _) => rows.length,
+    ((body: EventPoolBody.rows, :final rows), _, _) => rows.length,
     (
       _,
       (body: EventNominationsBody.rows, :final rows, total: _, state: _),
@@ -187,46 +190,19 @@ final class _GamesBody {
   };
 
   /// What the pool shows for [games] on [detail], and the rows when it shows
-  /// rows.
+  /// rows: those its filter keeps, or no match.
   static _PoolShown _poolOf(
     EventDetailReady detail,
     EventGamesState games,
     EventGamesTabController controller,
   ) {
-    final load = controller.drawnLoad(games);
-    if (poolAttendeeIds(detail.detail).isEmpty) {
-      // A roster read and withheld ([]) leaves this viewer nobody to read
-      // for. One not read (null), as an event cached from the list has, says
-      // nothing about the games: the event's read brings it. A read that
-      // succeeded has ended a beat before the roster it wrote reaches the
-      // screen, so only one that failed draws the failure.
-      final body = detail.detail.snapshot.attendees != null
-          ? _Body.hidden
-          : detail.refreshFailed && !detail.reading
-          ? _Body.rosterFailed
-          : _Body.loading;
-      return (body: body, rows: const []);
-    }
-    if (load == EventGamesLoad.hidden) {
-      return (body: _Body.hidden, rows: const []);
-    }
-    if (games.games.isEmpty) {
-      final body = switch (load) {
-        // Gone makes no claim of its own: the screen reads the event again,
-        // and that read's end reads the pool, which settles it. A 404 can
-        // mean only that the roster read was stale, so "no games" could be
-        // false.
-        EventGamesLoad.idle ||
-        EventGamesLoad.loading ||
-        EventGamesLoad.gone => _Body.loading,
-        EventGamesLoad.failed => _Body.failed,
-        EventGamesLoad.loaded => _Body.empty,
-        EventGamesLoad.hidden => _Body.hidden,
-      };
-      return (body: body, rows: const []);
-    }
+    final body = eventPoolBody(detail, games, controller);
+    if (body != EventPoolBody.rows) return (body: body, rows: const []);
     final rows = filterPool(games.games, controller.filter);
-    return (body: rows.isEmpty ? _Body.noMatches : _Body.rows, rows: rows);
+    return (
+      body: rows.isEmpty ? EventPoolBody.noMatches : EventPoolBody.rows,
+      rows: rows,
+    );
   }
 
   /// What the Nominations section shows for [state] on [detail] (#517):
@@ -313,6 +289,45 @@ final class _GamesBody {
   }
 }
 
+/// What the games pool shows for [games] on [detail], whatever its filter
+/// keeps (#516): [EventPoolBody.rows] wherever it holds games, else the state
+/// its read is drawn in ([EventGamesTabController.drawnLoad]), and the
+/// roster's where there is nobody to read the games for. One rule for the
+/// Pool sub-tab and the list Add a game picks from (#519), which never
+/// filters.
+EventPoolBody eventPoolBody(
+  EventDetailReady detail,
+  EventGamesState games,
+  EventGamesTabController controller,
+) {
+  final load = controller.drawnLoad(games);
+  if (poolAttendeeIds(detail.detail).isEmpty) {
+    // A roster read and withheld ([]) leaves this viewer nobody to read
+    // for. One not read (null), as an event cached from the list has, says
+    // nothing about the games: the event's read brings it. A read that
+    // succeeded has ended a beat before the roster it wrote reaches the
+    // screen, so only one that failed draws the failure.
+    return detail.detail.snapshot.attendees != null
+        ? EventPoolBody.hidden
+        : detail.refreshFailed && !detail.reading
+        ? EventPoolBody.rosterFailed
+        : EventPoolBody.loading;
+  }
+  if (load == EventGamesLoad.hidden) return EventPoolBody.hidden;
+  if (games.games.isNotEmpty) return EventPoolBody.rows;
+  return switch (load) {
+    // Gone makes no claim of its own: the screen reads the event again, and
+    // that read's end reads the pool, which settles it. A 404 can mean only
+    // that the roster read was stale, so "no games" could be false.
+    EventGamesLoad.idle ||
+    EventGamesLoad.loading ||
+    EventGamesLoad.gone => EventPoolBody.loading,
+    EventGamesLoad.failed => EventPoolBody.failed,
+    EventGamesLoad.loaded => EventPoolBody.empty,
+    EventGamesLoad.hidden => EventPoolBody.hidden,
+  };
+}
+
 /// The Games tab of an event's screen (#516), in three sub-tabs (#945):
 /// Lineup, the games the event will play ([EventLineupSection], #519), grouped
 /// by date; Nominations, the games nominated for the lineup
@@ -326,14 +341,18 @@ final class _GamesBody {
 /// where it has one ([gameName], #851), one status line, and one main action.
 /// The line says who brings it, and "Nominated" after that where the copy
 /// supplies a live nomination and Nominate can't say it (#517, #947). The main
-/// action is Nominate where the viewer is offered it ([nominateGate]), else
-/// Take back on the viewer's own rows ([offerGamesGate]), and on every other
-/// row where they may take back anyone's game ([canTakeBackAnyGame], #518).
-/// The cover and the line are one button, which opens the copy's quick look
-/// ([EventGameRowHead], #957): where it is played, what it supplies, Nominate
-/// and Take back under the row's rules ([poolRowGates]), and View game. Take
-/// back, the dialogs Take back and Nominate ask with, and their outcomes name
-/// the game as the row does.
+/// action is Nominate where the viewer is offered it ([nominateGate]); under
+/// a host-only view, where nothing can be nominated, Add to lineup in its
+/// place, on anyone's copy, for a viewer offered a direct add
+/// ([lineupAddGate], #519); else Take back on the viewer's own rows
+/// ([offerGamesGate]), and on every other row where they may take back
+/// anyone's game ([canTakeBackAnyGame], #518). The cover and the line are one
+/// button, which opens the copy's quick look ([EventGameRowHead], #957):
+/// where it is played, what it supplies, Nominate, Add to lineup, under any
+/// mode that takes a direct add, and Take back under the row's rules
+/// ([poolRowGates]), and View game. Take back, the dialogs Take back,
+/// Nominate and Add to lineup ask with, and their outcomes name the game as
+/// the row does.
 ///
 /// Its slivers, as one group under the tab bar: first, on an event of two or
 /// more dates, the row of dates ([EventGamesDateRow], #1042), whose choice,
@@ -346,7 +365,8 @@ final class _GamesBody {
 /// lineup's state, the tab is the pool alone, with no bar.
 ///
 /// The view decides what each sub-tab holds, and its mode
-/// ([viewMode], #519) which sub-tabs there are. Lineup holds the view's
+/// ([viewMode], #519) which sub-tabs there are, and whether a host adds from
+/// the Pool's rows or their quick looks. Lineup holds the view's
 /// lineup games ([lineupGroupsFor]), and Nominations its nominations
 /// ([nominationsInView]): under a date, that date's, then the event's own,
 /// each of which says on its status line that it is for every date; under
@@ -427,6 +447,14 @@ final class _GamesBody {
 /// running detail read has ended, and only if it still may ([nominateGame]).
 /// It is held, inert, from its press through its nomination, as Offer games
 /// is through its run ([NominateButton]).
+///
+/// Add to lineup (#519) is a direct write to the lineup, on anyone's copy,
+/// disabled offline the same way, and where whoever brings the game isn't
+/// going, saying why. Its scope is the date view's, as Nominate's is; with
+/// no row of dates, its dialog asks whether it is for the whole event or
+/// the one date, and, always, what it is played as. It
+/// sends as Nominate does, and is held the same way ([addToLineup],
+/// [AddToLineupButton]).
 ///
 /// ## The filter
 ///
@@ -516,6 +544,12 @@ class EventGamesTab extends StatelessWidget {
       view: controller.dateView,
       now: now,
     );
+    // Add to lineup's (#519), the same for every row and for Lineup's Add a
+    // game: none where the view's mode takes no direct add from this viewer,
+    // or there is no lineup to add to.
+    final addScopes = lineup == null
+        ? null
+        : lineupAddChoicesIn(detail, view: controller.dateView);
     final names = _body.names;
     final gate = offerGamesGate(detail);
     // Take back on someone else's row (#518), where the viewer may take
@@ -585,6 +619,9 @@ class EventGamesTab extends StatelessWidget {
             controller: controller,
             now: now,
             names: names,
+            addScopes: addScopes,
+            acting: acting,
+            clock: this.now,
           ),
         if (_body.nominations case final shown?)
           EventNominationsSection(
@@ -601,7 +638,7 @@ class EventGamesTab extends StatelessWidget {
             now: now,
           ),
         if (_body.pool case (:final body, :final rows)) ...[
-          if (body != _Body.hidden && body != _Body.loading)
+          if (body != EventPoolBody.hidden && body != EventPoolBody.loading)
             SliverToBoxAdapter(
               key: _headerKey,
               child: _PoolHeader(
@@ -617,16 +654,16 @@ class EventGamesTab extends StatelessWidget {
               ),
             ),
           switch (body) {
-            _Body.hidden => BgeStateSliver(
+            EventPoolBody.hidden => BgeStateSliver(
               child: BgeEmptyState(
                 icon: Icons.visibility_off_outlined,
                 title: l10n.eventsGamesHiddenTitle,
               ),
             ),
-            _Body.loading => BgeStateSliver(
+            EventPoolBody.loading => BgeStateSliver(
               child: BgeLoadingState(label: l10n.eventsGamesLoading),
             ),
-            _Body.failed => BgeStateSliver(
+            EventPoolBody.failed => BgeStateSliver(
               child: BgeErrorState(
                 icon: Icons.cloud_off_outlined,
                 title: l10n.eventsGamesFailedTitle,
@@ -638,7 +675,7 @@ class EventGamesTab extends StatelessWidget {
                 onRetry: () => retryEventGamesPool(context),
               ),
             ),
-            _Body.rosterFailed => BgeStateSliver(
+            EventPoolBody.rosterFailed => BgeStateSliver(
               child: BgeErrorState(
                 icon: Icons.cloud_off_outlined,
                 title: l10n.eventsGamesFailedTitle,
@@ -653,14 +690,14 @@ class EventGamesTab extends StatelessWidget {
                 ),
               ),
             ),
-            _Body.empty => BgeStateSliver(
+            EventPoolBody.empty => BgeStateSliver(
               child: BgeEmptyState(
                 icon: Icons.casino_outlined,
                 title: l10n.eventsGamesEmptyTitle,
                 body: l10n.eventsGamesEmptyBody,
               ),
             ),
-            _Body.noMatches => BgeStateSliver(
+            EventPoolBody.noMatches => BgeStateSliver(
               child: BgeEmptyState(
                 icon: Icons.search_off_outlined,
                 title: l10n.eventsGamesNoMatchesTitle,
@@ -672,7 +709,7 @@ class EventGamesTab extends StatelessWidget {
                 ),
               ),
             ),
-            _Body.rows => EventGamesRowLines<OfferedGame>(
+            EventPoolBody.rows => EventGamesRowLines<OfferedGame>(
               items: rows,
               keyOf: (game) => EventDetailScreen.poolRowKey(game.id),
               identityOf: (game) => OfferedCopyEntry(game.id),
@@ -688,6 +725,7 @@ class EventGamesTab extends StatelessWidget {
                   names: names,
                   acting: acting,
                   scopes: scopes,
+                  addScopes: addScopes,
                   lineup: lineup,
                 );
                 final buttons = poolRowButtons(
@@ -699,17 +737,25 @@ class EventGamesTab extends StatelessWidget {
                   names: names,
                   clock: this.now,
                 );
+                // Under a host-only view, Add to lineup takes Nominate's
+                // place (#519).
+                final add = gates.addToLineup?.onRow ?? false
+                    ? buttons.addToLineup
+                    : null;
                 return _PoolRow(
                   game: game,
                   area: controller.poolRowArea(game.id),
                   head: controller.rowHeadFocus(OfferedCopyEntry(game.id)),
                   who: gates.who,
                   nominated: gates.nominatedLine,
-                  note: gates.nominate?.notGoing,
+                  note: add != null
+                      ? gates.addToLineup?.notGoing
+                      : gates.nominate?.notGoing,
                   // One main action (#946): Nominate where the viewer is
-                  // offered it, else Take back where they may take it back.
-                  // Take back beside Nominate is the quick look's.
-                  action: buttons.nominate ?? buttons.takeBack,
+                  // offered it, or Add to lineup in its place, else Take back
+                  // where they may take it back. Take back beside either is
+                  // the quick look's.
+                  action: add ?? buttons.nominate ?? buttons.takeBack,
                 );
               },
             ),
@@ -1146,11 +1192,13 @@ class _OfferGamesButtonState extends State<_OfferGamesButton>
 /// "Nominated" after it (#947), spoken with a comma; as one button, which
 /// opens the copy's quick look (#957, [EventGameRowHead]), focused through
 /// [head]. Then its one main action, a node of its own ([action]): Nominate
-/// where the viewer is offered it, else Take back where they may take it
-/// back. Then [note], why Nominate can't be pressed, which its hint already
-/// says. Where it is played, what it supplies, and Take back beside
-/// Nominate, are the quick look's. The whole row is held by [area], so a row
-/// that leaves can say it held focus ([EventGamesTabController.poolChanged]).
+/// where the viewer is offered it, or Add to lineup in its place under a
+/// host-only view (#519), else Take back where they may take it back. Then
+/// [note], why that action can't be pressed, which its hint already says.
+/// Where it is played, what it supplies, and Take back beside Nominate or
+/// Add to lineup, are the quick look's. The whole row is held by [area], so a
+/// row that leaves can say it held focus
+/// ([EventGamesTabController.poolChanged]).
 class _PoolRow extends StatelessWidget {
   const _PoolRow({
     required this.game,
@@ -1181,7 +1229,8 @@ class _PoolRow extends StatelessWidget {
   /// Drawn under the main action, and left out of the semantics tree.
   final String? note;
 
-  /// Its main action, Nominate or Take back, where it has one.
+  /// Its main action, Nominate, Add to lineup or Take back, where it has
+  /// one.
   final Widget? action;
 
   @override
@@ -1234,7 +1283,7 @@ class _PoolRow extends StatelessWidget {
                 children: [
                   ?action,
                   if (note != null)
-                    // Nominate's hint already says it.
+                    // The action's hint already says it.
                     ExcludeSemantics(
                       child: Text(
                         note,
