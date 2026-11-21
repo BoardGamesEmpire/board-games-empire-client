@@ -277,12 +277,17 @@ class _EventGameQuickLookState extends State<EventGameQuickLook> {
   }
 
   @override
-  Widget build(BuildContext context) => ListenableBuilder(
-    // Built again as the screen's clock passes a boundary, which no bloc
-    // says: a date starting, a deadline passing (#957).
-    listenable: EventGamesTabScope.of(context).clockTicks,
-    builder: (context, _) => _entryForm(context),
-  );
+  Widget build(BuildContext context) {
+    final controller = EventGamesTabScope.of(context);
+    return ListenableBuilder(
+      // Built again as the screen's clock passes a boundary, which no bloc
+      // says: a date starting, a deadline passing (#957). And as the tab's
+      // state changes, its date view among it, which Nominate follows: the
+      // location can name another date while the quick look is open (#1042).
+      listenable: Listenable.merge([controller.clockTicks, controller]),
+      builder: (context, _) => _entryForm(context),
+    );
+  }
 
   /// The form [EventGameQuickLook.entry] takes, built from the blocs as they
   /// stand.
@@ -432,7 +437,11 @@ class _EventGameQuickLookState extends State<EventGameQuickLook> {
       controller: controller,
       names: names,
       acting: acting,
-      scopes: nominateScopes(detail.detail, now: now),
+      scopes: nominateChoicesIn(
+        detail,
+        view: controller.dateView,
+        now: now,
+      ),
       lineup: lineup,
     );
     final medium = switch (shown.medium) {

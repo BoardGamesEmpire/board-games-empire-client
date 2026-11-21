@@ -11604,7 +11604,18 @@ void main() {
       }
 
       await tester.pumpWidget(screen(remote: nominating)(BgeTheme.light()));
-      await showing(tester, host);
+      // On the host's last date alone, the one with an end, so the filters
+      // offer a date: with two or more, the row of dates chooses it in their
+      // place (#1042).
+      await showing(
+        tester,
+        EventDetail(
+          snapshot: host.snapshot.copyWith(
+            occurrences: [host.snapshot.occurrences.last],
+          ),
+          attendance: host.attendance,
+        ),
+      );
       await tester.tap(
         find.byKey(EventDetailScreen.tabKey(EventDetailTab.games)),
       );

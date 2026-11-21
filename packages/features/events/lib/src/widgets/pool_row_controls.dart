@@ -15,6 +15,7 @@ import 'package:events/src/detail/event_detail_write.dart';
 import 'package:events/src/detail/event_game_offers.dart';
 import 'package:events/src/detail/event_games_pool.dart';
 import 'package:events/src/detail/event_nominations.dart';
+import 'package:events/src/detail/games_date_view.dart';
 import 'package:events/src/screens/event_detail_screen.dart';
 import 'package:events/src/widgets/confirm_dialog.dart';
 import 'package:events/src/widgets/event_games_tab_scope.dart';
@@ -129,19 +130,48 @@ Future<bool> takeBackGame(
 /// date it names, or null for the whole event.
 typedef NominateScope = ({NominationScope scope, EventOccurrence? date});
 
-/// What Nominate offers on [detail] as of [now] (#517): the whole event,
+/// What Nominate offers on [detail] as of [now] (#517), in [view], the row
+/// of dates' choice (#1042), from which a nomination takes its scope: under
+/// one date, that date, while a game can still be nominated for it
+/// ([nominatableDates]), and nothing once it can't; under Every date, the
+/// whole event. With no view, as on an event with no row, the whole event,
 /// then, on an event of more than one date, each date a game can still be
-/// nominated for ([nominatableDates]), in their order. With one choice,
-/// Nominate nominates for it; with more, it asks.
+/// nominated for, in their order. With one choice, Nominate nominates for
+/// it; with more, it asks; with none, it isn't offered.
 List<NominateScope> nominateScopes(
   EventDetail detail, {
   required DateTime now,
-}) => [
-  (scope: const WholeEventScope(), date: null),
-  if (detail.snapshot.occurrences.length > 1)
+  GamesDateView? view,
+}) => switch (view) {
+  OneDateView(:final occurrenceId) => [
     for (final date in nominatableDates(detail, now: now))
-      (scope: DateScope(date.id), date: date),
-];
+      if (date.id == occurrenceId) (scope: DateScope(date.id), date: date),
+  ],
+  EveryDateView() => const [(scope: WholeEventScope(), date: null)],
+  null => [
+    (scope: const WholeEventScope(), date: null),
+    if (detail.snapshot.occurrences.length > 1)
+      for (final date in nominatableDates(detail, now: now))
+        (scope: DateScope(date.id), date: date),
+  ],
+};
+
+/// What Nominate is in [view], the date view in use (#1042), on [detail] as
+/// of [now]: null where the viewer isn't offered it under that view's mode
+/// ([nominateGate], [viewMode], #519); otherwise the choices it nominates
+/// for ([nominateScopes]), none where the view's date can no longer be
+/// nominated for, which leaves it offered but with nothing to nominate.
+/// One rule for the pool's rows, their quick looks, a press's re-check
+/// ([nominateGame]) and the Nominations sub-tab's pointer to the Pool.
+List<NominateScope>? nominateChoicesIn(
+  EventDetailReady detail, {
+  required GamesDateView? view,
+  required DateTime now,
+}) =>
+    nominateGate(detail, mode: viewMode(detail.detail.snapshot, view)) ==
+        NominateGate.open
+    ? nominateScopes(detail.detail, now: now, view: view)
+    : null;
 
 /// Whether whoever brings [game] has answered Not going (#517), which the
 /// server refuses a nomination for: the viewer, by their own answer on
@@ -191,10 +221,11 @@ String? alreadyTaken(
 }
 
 /// What Nominate on a pool row is built with (#517): [NominateButton]'s
-/// [NominateButton.unread], [NominateButton.notGoing],
-/// [NominateButton.already], [NominateButton.enabled] and
-/// [NominateButton.runOver].
+/// [NominateButton.closed], [NominateButton.unread],
+/// [NominateButton.notGoing], [NominateButton.already],
+/// [NominateButton.enabled] and [NominateButton.runOver].
 typedef NominateGates = ({
+  String? closed,
   String? unread,
   String? notGoing,
   String? already,
@@ -222,13 +253,16 @@ typedef PoolRowGates = ({
 /// What the row of [game] says and builds (#957), from the detail, the
 /// pool's and the nominations' states, the tab's [controller], the
 /// roster's [names], whether the screen is [acting]
-/// (`eventScreenActing`), and Nominate's [scopes] as of the clock
-/// ([nominateScopes]), the same for every row, so a list makes them once:
-/// one place, so the row and its quick look build the same controls under
-/// the same rules.
+/// (`eventScreenActing`), and Nominate's [scopes] as of the clock in the
+/// date view ([nominateChoicesIn], #1042), the same for every row, so a
+/// list makes them once: one place, so the row and its quick look build the
+/// same controls under the same rules.
 ///
-/// Nominate, where the viewer is offered it ([nominateGate]), on an event
-/// with a nominations' state. Disabled, saying why, where the nominations
+/// Nominate, where the viewer is offered it under the mode of the date view
+/// ([scopes] not null, #519), on an event with a nominations' state.
+/// Disabled, saying why, where the date view's date can no longer be
+/// nominated for, started or cancelled, so [scopes] is empty (#1042); where
+/// the nominations
 /// couldn't be read or aren't shown to the viewer, where a nominate's lost
 /// answer couldn't be checked, where whoever brings the game isn't going, or
 /// where the row is nominated already, or its game in the lineup, for every
@@ -251,21 +285,22 @@ PoolRowGates poolRowGates(
   required EventGamesTabController controller,
   required Map<String, String?> names,
   required bool acting,
-  required List<NominateScope> scopes,
+  required List<NominateScope>? scopes,
   EventLineupState? lineup,
 }) {
   final viewerId = detail.detail.attendance?.id;
   final lined = knownLineup(lineup);
   final own = viewerId != null && game.attendeeId == viewerId;
   final nominated = nominations?.nominations ?? const <EventNomination>[];
-  final nominating =
-      nominations != null && nominateGate(detail) == NominateGate.open;
-  final already = nominating
-      ? alreadyTaken(l10n, [
-          for (final each in scopes)
+  // Nominate's choices where it is built: offered, on an event with a
+  // nominations' state.
+  final choices = nominations == null ? null : scopes;
+  final already = choices == null
+      ? null
+      : alreadyTaken(l10n, [
+          for (final each in choices)
             nominateTaken(game, nominated, scope: each.scope, lineup: lined),
-        ])
-      : null;
+        ]);
   final takesBack = own
       ? offerGamesGate(detail) != OfferGamesGate.hidden
       : canTakeBackAnyGame(detail);
@@ -279,10 +314,12 @@ PoolRowGates poolRowGates(
     // Nominate says it where it can't be pressed for any choice; otherwise
     // the row's status line does (#947).
     nominatedLine:
-        suppliesLive(game, nominated) && (!nominating || already == null),
-    nominate: nominations == null || !nominating
+        suppliesLive(game, nominated) && (choices == null || already == null),
+    nominate: nominations == null || choices == null
         ? null
         : (
+            // A date view whose date takes no nomination now (#1042).
+            closed: choices.isEmpty ? l10n.eventsNominateDateClosed : null,
             unread: _nominateUnread(l10n, nominations, controller),
             // In the second person on the viewer's own rows, as the row's
             // line is.
@@ -344,6 +381,7 @@ PoolRowGates poolRowGates(
         : NominateButton(
             buttonKey: nominateKey,
             game: game,
+            closed: nominate.closed,
             unread: nominate.unread,
             notGoing: nominate.notGoing,
             already: nominate.already,
@@ -399,25 +437,29 @@ String? _nominateUnread(
   };
 }
 
-/// Nominates [game] (#517): for the whole event, or where there is more
-/// than one choice ([nominateScopes]), for the one chosen in
-/// [showNominateScopeDialog], where a choice the row already supplies a
-/// live nomination for, or its game is in the lineup for, can't be chosen.
-/// The dialog, the nomination's outcome and a drop name the game as the row
-/// does, with its subtitle ([gameName], #851). Completes true when the
-/// nomination was sent, and false when nothing was: the dialog cancelled,
-/// or as below.
+/// Nominates [game] (#517): for the one choice the date view in use as it
+/// is pressed offers ([nominateScopes], #1042), its date or the whole
+/// event; or where there is more than one, as with no view, for the one
+/// chosen in [showNominateScopeDialog], where a choice the row already
+/// supplies a live nomination for, or its game is in the lineup for, can't
+/// be chosen. The dialog, the nomination's outcome and a drop name the game
+/// as the row does, with its subtitle ([gameName], #851). Completes true
+/// when the nomination was sent, and false when nothing was: the dialog
+/// cancelled, or as below.
 ///
 /// It goes once any running detail read has ended ([readEnded]), for the
 /// event as the detail shows it then, whose id a reconcile can have moved
-/// (#499). Nothing is sent if, by then, the viewer isn't offered Nominate,
-/// the game has left the pool, the choice is no longer offered, as a date
-/// cancelled meanwhile isn't, or one that started meanwhile isn't, or the
-/// row supplies a live nomination for it, or its game is in the lineup for
-/// it: the page already shows that, and
-/// the footer says the nomination was dropped, or a screen reader would hear
-/// nothing happen. So [clock] is read as it is pressed and again then: the
-/// server takes a nomination for a date that has started.
+/// (#499). Nothing is sent if, by then, the viewer isn't offered Nominate
+/// under the view's mode ([viewMode], #519), the game has left the pool,
+/// the choice is no longer offered, as a date cancelled meanwhile isn't, or
+/// one that started meanwhile isn't, or the row supplies a live nomination
+/// for it, or its game is in the lineup for it: the page already shows
+/// that, and the footer says the nomination was dropped, or a screen reader
+/// would hear nothing happen. So too where the view offers no choice as it
+/// is pressed, its date having started since the row was built. So [clock]
+/// is read as it is pressed and again then: the server takes a nomination
+/// for a date that has started. The view is the one it was pressed under,
+/// whatever is chosen meanwhile.
 Future<bool> nominateGame(
   BuildContext context,
   OfferedGame game, {
@@ -431,13 +473,25 @@ Future<bool> nominateGame(
   final nominations = context.read<EventNominationsBloc>();
   final lineup = context.read<EventLineupBloc>();
   final controller = EventGamesTabScope.of(context);
+  final view = controller.dateView;
   final shown = detail.state;
   if (shown is! EventDetailReady) return false;
 
+  void dropped() => nominations.add(
+    NominationWriteDropped(
+      NominationWrite.nominate,
+      title: game.title,
+      subtitle: game.subtitle,
+    ),
+  );
+
   final now = clock();
-  final choices = nominateScopes(shown.detail, now: now);
+  final choices = nominateScopes(shown.detail, now: now, view: view);
   final NominationScope scope;
-  if (choices.length == 1) {
+  if (choices.isEmpty) {
+    dropped();
+    return false;
+  } else if (choices.length == 1) {
     scope = choices.single.scope;
   } else {
     final chosen = await showNominateScopeDialog(
@@ -469,12 +523,15 @@ Future<bool> nominateGame(
   final state = await readEnded(detail);
   if (state is! EventDetailReady || nominations.isClosed) return false;
   final inPool = pool.state.games.any((shown) => shown.id == game.id);
-  final offered = nominateScopes(
-    state.detail,
-    now: clock(),
-  ).any((each) => each.scope == scope);
-  if (nominateGate(state) != NominateGate.open ||
-      !nominationsKnown(nominations.state, controller) ||
+  // Offered still, under the view's mode, and for the choice made.
+  final offered =
+      nominateChoicesIn(
+        state,
+        view: view,
+        now: clock(),
+      )?.any((each) => each.scope == scope) ??
+      false;
+  if (!nominationsKnown(nominations.state, controller) ||
       !inPool ||
       !offered ||
       nominateTaken(
@@ -485,13 +542,7 @@ Future<bool> nominateGame(
             lineup: knownLineup(lineup.state),
           ) !=
           NominateTaken.no) {
-    nominations.add(
-      NominationWriteDropped(
-        NominationWrite.nominate,
-        title: game.title,
-        subtitle: game.subtitle,
-      ),
-    );
+    dropped();
     return false;
   }
   // One write at a time; the bloc would ignore this one.
@@ -518,13 +569,14 @@ Future<bool> nominateGame(
 /// named "Nominated: " the game, so the row has one control, not a marker
 /// and a button that say the same thing (#947).
 ///
-/// Online it is disabled, with the reason as its hint, while the nominations
-/// couldn't be read or aren't shown to the viewer ([unread]), else while
-/// whoever brings the game isn't going ([notGoing]), else while the row is
-/// nominated already, or its game in the lineup, for everything Nominate
-/// offers ([already]): a hint says
-/// one thing, and those come in that order. It is disabled with no hint
-/// while it may not be pressed for a while ([enabled]).
+/// Online it is disabled, with the reason as its hint, while the date view's
+/// date can no longer be nominated for ([closed], #1042), else while the
+/// nominations couldn't be read or aren't shown to the viewer ([unread]),
+/// else while whoever brings the game isn't going ([notGoing]), else while
+/// the row is nominated already, or its game in the lineup, for everything
+/// Nominate offers ([already]): a hint says one thing, and those come in
+/// that order. It is disabled with no hint while it may not be pressed for
+/// a while ([enabled]).
 ///
 /// Its press can open the nominate dialog, which hands focus back to it as
 /// it closes, just before the nomination goes out, and a disabled button
@@ -539,6 +591,7 @@ Future<bool> nominateGame(
 class NominateButton extends StatefulWidget {
   const NominateButton({
     required this.game,
+    required this.closed,
     required this.unread,
     required this.notGoing,
     required this.already,
@@ -554,6 +607,11 @@ class NominateButton extends StatefulWidget {
   /// Key on the button itself: the row's ([EventDetailScreen.poolNominateKey])
   /// where null, or the quick look's (#957).
   final Key? buttonKey;
+
+  /// Why it can't be pressed in the date view in use, where its date can no
+  /// longer be nominated for: it has started, or it was cancelled (#1042).
+  /// Null otherwise.
+  final String? closed;
 
   /// Why there are no nominations to go on, where waiting won't bring them:
   /// a first read that failed, or nominations not shown to the viewer. Null
@@ -615,21 +673,23 @@ class NominateButtonState extends State<NominateButton>
   Widget build(BuildContext context) {
     final l10n = EventsLocalizations.of(context);
     final offline = BgeConnectivityScope.offlineOf(context);
+    final closed = widget.closed;
     final unread = widget.unread;
     final notGoing = widget.notGoing;
     final already = widget.already;
     final available =
         widget.enabled &&
         !offline &&
+        closed == null &&
         unread == null &&
         notGoing == null &&
         already == null;
     if (available) _nominated = false;
-    // Offline, with no nominations to go on, or not going, it is disabled,
-    // pressed or not: no press made it so (#49).
+    // Offline, with its date closed, with no nominations to go on, or not
+    // going, it is disabled, pressed or not: no press made it so (#49).
     final held = heldInert(
       available: available,
-      disabled: offline || unread != null || notGoing != null,
+      disabled: offline || closed != null || unread != null || notGoing != null,
     );
     // Nominated already by its own press, which is all that keeps it from
     // being pressed, and holding focus: inert, not disabled, or focus would
@@ -641,11 +701,12 @@ class NominateButtonState extends State<NominateButton>
         already != null &&
         widget.enabled &&
         !offline &&
+        closed == null &&
         unread == null &&
         notGoing == null;
     final inert = held || kept;
     // One reason: offline [BgeOnlineOnly] gives its own.
-    final reason = offline ? null : unread ?? notGoing ?? already;
+    final reason = offline ? null : closed ?? unread ?? notGoing ?? already;
 
     return Focus(
       canRequestFocus: false,

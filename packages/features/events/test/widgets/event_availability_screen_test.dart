@@ -755,11 +755,11 @@ void main() {
     await tester.sendKeyEvent(LogicalKeyboardKey.tab);
     await tester.pumpAndSettle();
     var tabs = 1;
-    while (primaryFocus?.debugLabel != 'Who answered dates' && tabs++ < 5) {
+    while (primaryFocus?.debugLabel != 'Dates scroller' && tabs++ < 5) {
       await tester.sendKeyEvent(LogicalKeyboardKey.tab);
       await tester.pumpAndSettle();
     }
-    expect(primaryFocus?.debugLabel, 'Who answered dates');
+    expect(primaryFocus?.debugLabel, 'Dates scroller');
 
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
     await tester.pumpAndSettle();
@@ -782,7 +782,7 @@ void main() {
     for (var tab = 0; tab < 5; tab++) {
       await tester.sendKeyEvent(LogicalKeyboardKey.tab);
       await tester.pumpAndSettle();
-      expect(primaryFocus?.debugLabel, isNot('Who answered dates'));
+      expect(primaryFocus?.debugLabel, isNot('Dates scroller'));
     }
   });
 

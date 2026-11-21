@@ -2419,13 +2419,15 @@ class _BgeAppState extends State<BgeApp> {
   /// and goes once the page has arrived.
   ///
   /// The screen opens on the tab its location's [AppRoutes.eventTabParam]
-  /// names, [tab], and each tab it settles on replaces the location
-  /// (#856): see [_replaceEventTab], which replaces it only while the
-  /// router's top location is still this event's detail.
+  /// names, [tab], with the date its [AppRoutes.eventDateParam] names,
+  /// [date], and each tab it settles on replaces the location, with the date
+  /// beside it (#856, #1042): see [_replaceEventLocation], which replaces it
+  /// only while the router's top location is still this event's detail.
   Widget? _buildEventDetailRoute(
     BuildContext context,
     String eventId,
     String? tab,
+    String? date,
   ) {
     final container = _eventsContainer();
     if (container == null) return null;
@@ -2433,7 +2435,9 @@ class _BgeAppState extends State<BgeApp> {
     return EventDetailScreen(
       eventId: eventId,
       tab: tab,
-      onTabChanged: (ctx, chosen) => _replaceEventTab(ctx, eventId, chosen),
+      date: date,
+      onLocationChanged: (ctx, chosen, chosenDate) =>
+          _replaceEventLocation(ctx, eventId, chosen, chosenDate),
       repository: container.get<EventRepository>(),
       session: _sessionLease(container),
       remote: _eventRemote(container),
@@ -4859,7 +4863,9 @@ void _replaceSpentForm(BuildContext context, String location) =>
     Router.neglect(context, () => context.pushReplacement(location));
 
 /// Puts [tab], the tab the screen of the event [eventId] at [context] has
-/// settled on, in the event's location in place of the one it has (#856).
+/// settled on, and [date], the date beside it, in the event's location in
+/// place of the ones it has (#856, #1042). A change of either keeps the
+/// other, since the screen tells both each time.
 ///
 /// A replace keeps the event's page and its key, so the screen, its blocs
 /// and the stack beneath it stay, and Back still returns to wherever the
@@ -4877,10 +4883,11 @@ void _replaceSpentForm(BuildContext context, String location) =>
 /// location in place of wherever the app went. The top is read from the
 /// router's current configuration: [GoRouterState.of] at [context] is the
 /// event's own route's, not the top one's.
-void _replaceEventTab(
+void _replaceEventLocation(
   BuildContext context,
   String eventId,
   EventScreenTab tab,
+  String? date,
 ) {
   final router = GoRouter.of(context);
   // The not-found page matches no route, so there is no top to read.
@@ -4892,7 +4899,9 @@ void _replaceEventTab(
   }
   Router.neglect(
     context,
-    () => context.replace(AppRoutes.eventDetailOf(eventId, tab: tab.query)),
+    () => context.replace(
+      AppRoutes.eventDetailOf(eventId, tab: tab.query, date: date),
+    ),
   );
 }
 

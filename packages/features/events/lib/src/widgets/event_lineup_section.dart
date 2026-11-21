@@ -69,19 +69,23 @@ String lineupSupplierLine(
       );
 
 /// The Lineup sub-tab of an event's Games tab (#519, #945): the games the
-/// event will play, for the event as a whole and for each of its dates, as
-/// [groups] holds them ([lineupGroups]): the event's own first, then each
-/// date in order, then any whose date the event no longer lists. None is
+/// event will play, for the event as a whole and for its dates, as [groups]
+/// holds them in the date view the row of dates chose ([lineupGroupsFor],
+/// #1042). Under a date, that date's, then the event's own; under Every
+/// date, the event's own, then any whose date the event no longer lists,
+/// which no date's view holds; on an event with no row, the event's own
+/// first, then its date's, then any whose date it no longer lists. None is
 /// left out, whatever its date.
 ///
 /// Its slivers, as one group under the sub-tabs' bar, with no heading of
-/// their own, as the sub-tab's label names the list (#946). Where the event
-/// has two or more dates, or a game's date is no longer among them
-/// ([lineupDrawsHeaders]), each group is headed by what it is for: "Every
-/// date", the date's name ([eventDateName]), or that the date is no longer on
-/// the event. Each heading is a header to a screen reader. Otherwise the
-/// lineup is one list with no headings, and each of the event's own games
-/// says on its row that it is for every date.
+/// their own, as the sub-tab's label names the list (#946). Where a game's
+/// date is no longer among the event's ([lineupDrawsHeaders]), each group is
+/// headed by what it is for: "Every date", the date's name
+/// ([eventDateName]), or that the date is no longer on the event. Each
+/// heading is a header to a screen reader. Otherwise the lineup is one list
+/// with no headings, and, where the view doesn't say it, under a date or
+/// with no row, each of the event's own games says on its row that it is
+/// for every date ([lineupMarksEveryDate]).
 ///
 /// The rows are [EventGamesRowLines], one per group, keyed by the lineup
 /// game's id, two to a line in an expanded window (#949), and numbered among
@@ -123,7 +127,8 @@ class EventLineupSection extends StatelessWidget {
   final EventDetailReady detail;
   final EventLineupState state;
 
-  /// The tab's own state: the focus nodes of each row.
+  /// The tab's own state: the focus nodes of each row, and the date view
+  /// (#1042), which decides the headings and the marks.
   final EventGamesTabController controller;
 
   /// The screen's clock, which names each date.
@@ -170,7 +175,9 @@ class EventLineupSection extends StatelessWidget {
   /// Each group's rows, under its heading where the lineup draws them.
   Widget _rows(BuildContext context, EventsLocalizations l10n) {
     final dates = detail.detail.snapshot.occurrences;
-    final headers = lineupDrawsHeaders(groups, dates);
+    final view = controller.dateView;
+    final headers = lineupDrawsHeaders(groups, dates, view: view);
+    final marks = lineupMarksEveryDate(view, headers: headers);
     final viewerId = detail.detail.attendance?.id;
     final slivers = <Widget>[];
     // The rows above each group's, which its rows are numbered on from.
@@ -214,9 +221,9 @@ class EventLineupSection extends StatelessWidget {
               viewerId: viewerId,
               names: names,
             ),
-            // With no headings to say it, the event's own games say they are
-            // for every date (#519).
-            everyDate: !headers && game.occurrenceId == null,
+            // Where nothing else says it, the event's own games say they are
+            // for every date (#519, #1042).
+            everyDate: marks && game.occurrenceId == null,
           ),
         ),
       );

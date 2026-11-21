@@ -188,10 +188,18 @@ void main() {
     DateTime(2026, 11, 6, 19),
   ).copyWith(eventId: 'e-1');
 
+  /// `e-1`'s second date, where a test gives it one: Saturday the 7th.
+  final saturday = confirmed(
+    'd-2',
+    DateTime(2026, 11, 7, 19),
+    sortOrder: 1,
+  ).copyWith(eventId: 'e-1');
+
   /// Event `e-1` as the viewer sees it, with [roster] (the viewer, Ada, Bo
   /// and someone unnamed by default) and [policy] on it, and on the
   /// household [householdId]'s events where it is given. Scheduled unless
-  /// [status] says otherwise.
+  /// [status] says otherwise, on [dates], Friday alone unless a test gives
+  /// others.
   EventDetail detailOf({
     List<EventAttendee>? roster,
     EventPolicy? policy,
@@ -199,13 +207,14 @@ void main() {
     bool viewerGiven = true,
     String? householdId,
     EventStatus status = EventStatus.scheduled,
+    List<EventOccurrence>? dates,
   }) => EventDetail(
     snapshot: EventSnapshot(
       event: item('e-1', title: 'Catan night').event.copyWith(
         status: status,
         householdId: householdId,
       ),
-      occurrences: [friday],
+      occurrences: dates ?? [friday],
       attendees: roster ?? [me, ada, bo, unnamed],
       policy: policy,
     ),
@@ -264,11 +273,17 @@ void main() {
     unawaited(cache.close());
   });
 
+  /// The date the screen's location names (#1042), which a test moves as
+  /// Back or Forward would.
+  late ValueNotifier<String?> location;
+
   Widget harness(
     EventDetail detail, {
     ValueListenable<bool>? offline,
     Future<HouseholdRole?> Function(String householdId)? householdRole,
   }) {
+    location = ValueNotifier(null);
+    addTearDown(location.dispose);
     remote = FakeEventRemote.detail(
       (_) => heldRead?.future ?? detail.snapshot,
       pool: (_) => pool,
@@ -308,16 +323,20 @@ void main() {
           ),
         );
       },
-      home: EventDetailScreen(
-        eventId: 'e-1',
-        repository: repository,
-        session: FakeSessionLease(),
-        remote: remote,
-        householdRole: householdRole,
-        onBack: (_) {},
-        onOpenGame: (context, gameId) =>
-            openedGames.add((ModalRoute.of(context), gameId)),
-        now: () => now,
+      home: ValueListenableBuilder(
+        valueListenable: location,
+        builder: (context, date, _) => EventDetailScreen(
+          eventId: 'e-1',
+          repository: repository,
+          session: FakeSessionLease(),
+          remote: remote,
+          householdRole: householdRole,
+          date: date,
+          onBack: (_) {},
+          onOpenGame: (context, gameId) =>
+              openedGames.add((ModalRoute.of(context), gameId)),
+          now: () => now,
+        ),
       ),
     );
   }
@@ -1015,15 +1034,10 @@ void main() {
 
     testWidgets("none nominated, for a viewer who can't nominate, says so "
         'and points nowhere', (tester) async {
-      // Only the hosts add games.
-      await showGames(
-        tester,
-        detail: detailOf(
-          policy: _policy(
-            InterestedWeight.asFor,
-          ).copyWith(gameAdditionMode: GameAdditionMode.hostOnly),
-        ),
-      );
+      // No row of their own on the roster, so no Nominate. (Where only the
+      // hosts add games, a view with none nominated has no Nominations
+      // sub-tab at all, #519.)
+      await showGames(tester, detail: detailOf(viewerGiven: false));
 
       expect(find.text('Nothing nominated yet'), findsOneWidget);
       expect(
@@ -3203,6 +3217,349 @@ void main() {
       expect(filters(), findsNothing);
       expect(sort(), findsNothing);
       expect(count(), findsNothing);
+    });
+  });
+
+  // The nominations as the row of dates chooses (#1042): a date's, then
+  // the whole event's, marked, or the whole event's alone under Every date.
+  group('the date view (#1042)', () {
+    /// One for the whole event, one for Friday and one for Saturday.
+    List<EventNomination> spread() => [
+      _nomination('n-1'),
+      _nomination('n-2', title: 'Azul', from: 'o-2', occurrenceId: 'd-1'),
+      _nomination('n-3', title: 'Root', from: 'o-3', occurrenceId: 'd-2'),
+    ];
+
+    /// The nominations shown, by id, in order down the page.
+    List<String> rowsShown(WidgetTester tester) =>
+        [
+          for (final id in ['n-1', 'n-2', 'n-3'])
+            if (row(id).evaluate().isNotEmpty) id,
+        ]..sort(
+          (a, b) => tester
+              .getTopLeft(row(a))
+              .dy
+              .compareTo(tester.getTopLeft(row(b)).dy),
+        );
+
+    /// Chooses the date [id] from the row, Every date where it is null.
+    Future<void> chooseDate(WidgetTester tester, String? id) async {
+      final chip = find.byKey(
+        EventDetailScreen.dateChipKey(id),
+        skipOffstage: false,
+      );
+      await tester.ensureVisible(chip);
+      await tester.pump();
+      await tester.tap(chip);
+      await animate(tester);
+    }
+
+    Finder count() =>
+        find.byKey(EventDetailScreen.nominationsCountKey, skipOffstage: false);
+    Finder filters() => find.byKey(
+      EventDetailScreen.nominationsFiltersKey,
+      skipOffstage: false,
+    );
+    Finder inUse(String id) => find.byKey(
+      EventDetailScreen.nominationsInUseKey(id),
+      skipOffstage: false,
+    );
+
+    /// Opens Filters, presses each of [keys] in it, and closes it.
+    Future<void> filterBy(WidgetTester tester, List<Key> keys) async {
+      await press(tester, filters());
+      await animate(tester);
+      for (final key in keys) {
+        await tester.tap(find.byKey(key));
+        await tester.pump();
+      }
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await animate(tester);
+    }
+
+    testWidgets('a date lists its nominations and the whole-event ones, '
+        'marked', (tester) async {
+      final handle = tester.ensureSemantics();
+      useViewSize(tester, const Size(800, 2400));
+      nominationsAnswer = (_) => spread();
+
+      await showGames(tester, detail: detailOf(dates: [friday, saturday]));
+
+      // Friday, the next date still to come: its own, then the whole
+      // event's, each in the order chosen.
+      expect(rowsShown(tester), ['n-2', 'n-1']);
+      // The whole event's says it is for every date, last on its status
+      // line, and spoken with commas; Friday's own doesn't.
+      expect(
+        inRow('n-1', 'Voting · 0 for · 0 against · 0 interested · Every date'),
+        findsOneWidget,
+      );
+      expect(
+        tester.getSemantics(inRow('n-1', 'Catan')).label,
+        'Catan\nVoting, 0 for, 0 against, 0 interested, Every date',
+      );
+      expect(
+        inRow('n-2', 'Voting · 0 for · 0 against · 0 interested'),
+        findsOneWidget,
+      );
+      // The count is of the view's.
+      expect(
+        find.descendant(of: count(), matching: find.text('2 nominations')),
+        findsOneWidget,
+      );
+
+      await chooseDate(tester, 'd-2');
+
+      expect(rowsShown(tester), ['n-3', 'n-1']);
+      handle.dispose();
+    });
+
+    testWidgets("a date's own come first, then the whole event's, each in "
+        'the order chosen', (tester) async {
+      useViewSize(tester, const Size(800, 2400));
+      // Two of each, the less supported first as the server orders them.
+      nominationsAnswer = (_) => [
+        _nomination('n-1'),
+        _nomination(
+          'n-4',
+          title: 'Brass',
+          from: 'o-4',
+          votes: [_vote('att-ada', VoteType.forGame)],
+        ),
+        _nomination('n-2', title: 'Azul', from: 'o-2', occurrenceId: 'd-1'),
+        _nomination(
+          'n-5',
+          title: 'Wingspan',
+          from: 'o-5',
+          occurrenceId: 'd-1',
+          votes: [_vote('att-ada', VoteType.forGame)],
+        ),
+      ];
+      await showGames(tester, detail: detailOf(dates: [friday, saturday]));
+      List<String> shown() =>
+          [
+            for (final id in ['n-1', 'n-2', 'n-4', 'n-5'])
+              if (row(id).evaluate().isNotEmpty) id,
+          ]..sort(
+            (a, b) => tester
+                .getTopLeft(row(a))
+                .dy
+                .compareTo(tester.getTopLeft(row(b)).dy),
+          );
+      expect(shown(), ['n-2', 'n-5', 'n-1', 'n-4']);
+
+      await press(
+        tester,
+        find.byKey(
+          EventDetailScreen.nominationsSortKey,
+          skipOffstage: false,
+        ),
+      );
+      await animate(tester);
+      await tester.tap(
+        find.byKey(
+          EventDetailScreen.nominationsSortItemKey(NominationSort.mostSupport),
+        ),
+      );
+      await tester.pump();
+      await animate(tester);
+
+      expect(shown(), ['n-5', 'n-2', 'n-4', 'n-1']);
+    });
+
+    // The hand-off follows the rows as shown: the date's own, then the
+    // whole event's.
+    testWidgets("a row that leaves a date's view hands focus to the next row "
+        'shown there', (tester) async {
+      useViewSize(tester, const Size(800, 2400));
+      // In the server's order the whole event's comes first; shown, Friday's
+      // two come first.
+      final whole = _nomination('n-1');
+      final first = _nomination(
+        'n-2',
+        title: 'Azul',
+        from: 'o-2',
+        occurrenceId: 'd-1',
+      );
+      final second = _nomination(
+        'n-9',
+        title: 'Root',
+        from: 'o-9',
+        occurrenceId: 'd-1',
+      );
+      nominationsAnswer = (_) => [whole, first, second];
+      await showGames(tester, detail: detailOf(dates: [friday, saturday]));
+      expect(rowsShown(tester), ['n-2', 'n-1']);
+      headFocus(tester, 'n-9').requestFocus();
+      await tester.pump();
+
+      // Someone else took it away: a read finds it gone.
+      nominationsAnswer = (_) => [whole, first];
+      blocOf<EventNominationsBloc>(
+        tester,
+      ).add(const EventNominationsRequested('e-1'));
+      await animate(tester);
+
+      expect(row('n-9'), findsNothing);
+      expect(headFocus(tester, 'n-1').hasPrimaryFocus, isTrue);
+    });
+
+    // A view that leaves the focused row out hands focus on as a read
+    // that takes the row away does.
+    testWidgets("a row the location's date leaves out, as Back or Forward "
+        "names another, hands focus to the next row's head", (tester) async {
+      useViewSize(tester, const Size(800, 2400));
+      nominationsAnswer = (_) => spread();
+      await showGames(tester, detail: detailOf(dates: [friday, saturday]));
+      expect(rowsShown(tester), ['n-2', 'n-1']);
+      headFocus(tester, 'n-2').requestFocus();
+      await tester.pump();
+
+      location.value = 'd-2';
+      await animate(tester);
+
+      // Saturday's own takes the place of Friday's.
+      expect(rowsShown(tester), ['n-3', 'n-1']);
+      expect(headFocus(tester, 'n-3').hasPrimaryFocus, isTrue);
+    });
+
+    testWidgets('Every date lists only whole-event nominations', (
+      tester,
+    ) async {
+      useViewSize(tester, const Size(800, 2400));
+      nominationsAnswer = (_) => spread();
+      await showGames(tester, detail: detailOf(dates: [friday, saturday]));
+
+      await chooseDate(tester, null);
+
+      expect(rowsShown(tester), ['n-1']);
+      // The view says it: the row doesn't.
+      expect(
+        inRow('n-1', 'Voting · 0 for · 0 against · 0 interested'),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: count(), matching: find.text('1 nomination')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a date with none in view says nothing is nominated', (
+      tester,
+    ) async {
+      nominationsAnswer = (_) => [spread()[1]];
+      await showGames(tester, detail: detailOf(dates: [friday, saturday]));
+
+      await chooseDate(tester, 'd-2');
+
+      expect(row('n-2'), findsNothing);
+      expect(find.text('Nothing nominated yet'), findsOneWidget);
+    });
+
+    testWidgets("none in a started date's view points nowhere, as Nominate "
+        "isn't offered there", (tester) async {
+      final started = confirmed(
+        'd-0',
+        DateTime(2026, 10, 2, 19),
+      ).copyWith(eventId: 'e-1');
+      await showGames(tester, detail: detailOf(dates: [started, friday]));
+
+      await chooseDate(tester, 'd-0');
+      expect(find.text('Nothing nominated yet'), findsOneWidget);
+      expect(find.text('Nominate a game from the Pool tab.'), findsNothing);
+
+      await chooseDate(tester, 'd-1');
+      expect(find.text('Nominate a game from the Pool tab.'), findsOneWidget);
+    });
+
+    testWidgets('the Filters sheet has no date choice while the row shows', (
+      tester,
+    ) async {
+      nominationsAnswer = (_) => spread();
+      await showGames(tester, detail: detailOf(dates: [friday, saturday]));
+
+      await press(tester, filters());
+      await animate(tester);
+
+      // The statuses are offered, and no date: the row chooses that.
+      expect(
+        find.byKey(
+          EventDetailScreen.nominationsStatusKey(NominationStatusGroup.voting),
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Date'), findsNothing);
+      for (final scope in <NominationScope?>[
+        null,
+        const WholeEventScope(),
+        const DateScope('d-1'),
+        const DateScope('d-2'),
+      ]) {
+        expect(
+          find.byKey(EventDetailScreen.nominationsDateKey(scope)),
+          findsNothing,
+          reason: '$scope',
+        );
+      }
+    });
+
+    // The row takes the date facet's place: a date filter set while there
+    // was no row is cleared as the row appears, and isn't set back when the
+    // row goes, as the row's choice isn't carried into the filter.
+    testWidgets('a date filter set before the row appears is cleared, and '
+        'stays cleared as the row goes', (tester) async {
+      useViewSize(tester, const Size(800, 2400));
+      nominationsAnswer = (_) => spread();
+      final oneDate = detailOf();
+      await showGames(tester, detail: oneDate);
+      await filterBy(tester, [
+        EventDetailScreen.nominationsDateKey(const DateScope('d-1')),
+      ]);
+      expect(rowsShown(tester), ['n-2']);
+      expect(inUse('date'), findsOneWidget);
+
+      // A second date is added.
+      cache.add(detailOf(dates: [friday, saturday]));
+      await animate(tester);
+
+      expect(inUse('date'), findsNothing);
+      expect(rowsShown(tester), ['n-2', 'n-1']);
+
+      // It is removed again.
+      cache.add(oneDate);
+      await animate(tester);
+
+      expect(inUse('date'), findsNothing);
+      expect(rowsShown(tester), ['n-1', 'n-2', 'n-3']);
+    });
+
+    testWidgets('a one-date event has no row, and the nominations are as '
+        'before', (tester) async {
+      useViewSize(tester, const Size(800, 2400));
+      nominationsAnswer = (_) => spread();
+      await showGames(tester);
+
+      expect(find.byKey(EventDetailScreen.dateChipKey(null)), findsNothing);
+      // Every nomination, whatever it is for, none of them marked.
+      expect(rowsShown(tester), ['n-1', 'n-2', 'n-3']);
+      expect(
+        inRow('n-1', 'Voting · 0 for · 0 against · 0 interested'),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: count(), matching: find.text('3 nominations')),
+        findsOneWidget,
+      );
+      // And the date facet is offered.
+      await press(tester, filters());
+      await animate(tester);
+      expect(find.text('Date'), findsOneWidget);
+      expect(
+        find.byKey(
+          EventDetailScreen.nominationsDateKey(const DateScope('d-1')),
+        ),
+        findsOneWidget,
+      );
     });
   });
 
