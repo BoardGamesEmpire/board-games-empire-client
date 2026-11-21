@@ -873,7 +873,7 @@ Fixed after the run, so no longer in the findings table:
 - #812, fixed 2026-11-20, found in PR #809's review rather than this run: a
   one-tone ring could vanish on cover art close to `primary`. The cover's
   and the badge's rings now draw two tones 9:1 apart, which keeps one 3:1
-  from any artwork (`bge_cover_tile_test.dart`).
+  from any one colour beside them (`bge_cover_tile_test.dart`).
 - #802, fixed 2026-11-19: `CollectionEntryScreen`'s
   Edit and Remove, `primary` text on the app bar's scrolled-under tint,
   measured 4.39:1 in light. The scrolled-under app bar no longer tints, so

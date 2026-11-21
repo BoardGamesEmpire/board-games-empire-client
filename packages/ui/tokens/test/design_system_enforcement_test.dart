@@ -144,6 +144,7 @@ void main() {
         // A bracket in a string is text: the tile's own arguments run past it.
         "SwitchListTile(title: Text('Hi :)'), onChanged: s)":
             'tile-without-ring',
+        '$_urlTileOpen$_urlTileClose': 'tile-without-ring',
         // The shared extended FAB carries the ring (#760).
         'FloatingActionButton.extended(onPressed: f, label: Text(l))':
             'raw-extended-fab',
@@ -197,6 +198,9 @@ void main() {
         // the arguments after it.
         "SwitchListTile(title: Text('Hi :)'), onChanged: s, onFocusChange: f)",
         "RadioListTile<String>(value: '(', onFocusChange: f)",
+        // A `//` in a string starts no comment, so the string's line keeps
+        // the bracket that closes `Text`.
+        '$_urlTileOpen      onFocusChange: row.onFocusChange,\n$_urlTileClose',
       ];
 
       shouldFire.forEach((source, ruleId) {
@@ -286,6 +290,15 @@ void main() {
 /// Files exempted from specific rules, each with the reason it is exempt.
 ///
 /// Keyed by workspace-relative path; the value lists the exempt rule ids.
+/// A tappable tile with a URL in its title, inside a call of its own: the
+/// fixtures put the tile's `onFocusChange`, or nothing, between these two.
+/// The enclosing call matters. With none, a tile whose `)` is lost runs to
+/// the source's end and is skipped, not flagged.
+const _urlTileOpen =
+    'Column(\n  children: [\n    ListTile(\n      onTap: open,\n'
+    "      title: Text('https://example.test'),\n";
+const _urlTileClose = '    ),\n  ],\n)';
+
 const Map<String, List<String>> _allowlist = {
   // The generated scheme table: these `Color(0x…)` values ARE the palette
   // every other file consumes through `colorScheme`, so they are definitions
@@ -629,9 +642,8 @@ int _closingParen(String source, int open) {
 /// none opens there: single or double quotes, tripled or not, raw or not.
 ///
 /// A literal that is not tripled ends at its line's end at the latest. Dart
-/// allows no newline in one, and the comment stripping in [_scanSource]
-/// blanks a line from a `//` inside a string, so `Text('https://…')` reaches
-/// here unterminated; it must not run on into the lines after it.
+/// allows no newline in one, so a quote left open by a mistake, or by a
+/// literal this scanner misreads, must not run on into the lines after it.
 ///
 /// Not interpolation-aware: a quote of the same kind inside `${…}` ends the
 /// literal early, which splits it in two, both skipped.
@@ -752,16 +764,7 @@ List<_Violation> _scanSource(
   // constantly ("no literal colors", "16dp gap"), and a scanner that flags its
   // own documentation gets switched off. Done by blanking the comment rather
   // than deleting the line, so line numbers survive.
-  final stripped = source
-      .split('\n')
-      .map((l) {
-        final i = l.indexOf('//');
-        // Not string-aware — a `//` inside a string literal blanks the rest of
-        // the line. Acceptable: the cost is a missed violation, never a false
-        // one, and URLs in strings are the common case.
-        return i == -1 ? l : l.substring(0, i);
-      })
-      .join('\n');
+  final stripped = _stripLineComments(source);
 
   final found = <_Violation>[
     for (final v in [
@@ -782,6 +785,31 @@ List<_Violation> _scanSource(
     }
   }
   return found;
+}
+
+/// [source] with each line comment cut from its `//` to the line's end.
+///
+/// A `//` in a string literal is text, `Text('https://…')`. Cutting there
+/// would take the string's closing quote and the brackets after it, and a
+/// tile's arguments would then run on past its own `)`, so the tile rule
+/// would flag a tile that does pass `onFocusChange`.
+String _stripLineComments(String source) {
+  final out = StringBuffer();
+  var i = 0;
+  while (i < source.length) {
+    final string = _stringEnd(source, i);
+    if (string != -1) {
+      out.write(source.substring(i, string));
+      i = string;
+    } else if (source.startsWith('//', i)) {
+      final eol = source.indexOf('\n', i);
+      i = eol == -1 ? source.length : eol;
+    } else {
+      out.write(source[i]);
+      i++;
+    }
+  }
+  return out.toString();
 }
 
 /// Walks up from the test's working directory to the pub workspace root.
