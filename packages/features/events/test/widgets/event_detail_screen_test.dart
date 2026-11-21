@@ -2809,6 +2809,32 @@ void main() {
       expect(remote.lineupRequests, ['e-1', 'e-1']);
     });
 
+    testWidgets('a removal that failed once sent re-reads the pool', (
+      tester,
+    ) async {
+      // The server may have taken the game out before its answer was lost:
+      // the lineup's read can then show it gone, and a pool row still
+      // counting it would keep Take back's reason (#905).
+      final remote = serving(lineupRemoved: (_) => throw _offline);
+      await showTabbed(tester, remote);
+      await choose(tester, games);
+      final pools = remote.poolRequests.length;
+
+      lineupOf(tester).add(const LineupGameRemoved('e-1', catanLined));
+      await animate(tester);
+
+      expect(
+        lineupOf(tester).state.outcome,
+        isA<LineupRemoveOutcome>().having(
+          (outcome) => outcome.result,
+          'result',
+          LineupRemoveResult.failed,
+        ),
+      );
+      expect(remote.poolRequests, hasLength(pools + 1));
+      expect(remote.lineupRequests, ['e-1', 'e-1']);
+    });
+
     testWidgets(
       'a lineup write says how it went in the footer, and dismisses',
       (

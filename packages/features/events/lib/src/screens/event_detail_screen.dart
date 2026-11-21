@@ -2079,7 +2079,11 @@ void _readLineupAfterNominationWrite(
 /// (#905): a nominations write that went through, bar a vote, which changes
 /// no row's supply, or a lineup write that put a game in the lineup or found
 /// it out of it, or an add that found its pool row may be gone. A rejection
-/// counts: it ends a live nomination.
+/// counts: it ends a live nomination. So does a removal that failed: the
+/// server may have taken the game out before its answer was lost, and the
+/// lineup's read after it can show the game gone while the pool row still
+/// counts it, which keeps Take back's reason ([stillSupplies]). A failed add
+/// needs no such read: the lineup's read alone says the row supplies it.
 bool _changesPoolRow(Object? outcome) => switch (outcome) {
   NominateOutcome(:final result) => switch (result) {
     NominateResult.open ||
@@ -2094,7 +2098,9 @@ bool _changesPoolRow(Object? outcome) => switch (outcome) {
   LineupAddOutcome(result: LineupAddResult.done || LineupAddResult.gone) =>
     true,
   LineupRemoveOutcome(
-    result: LineupRemoveResult.done || LineupRemoveResult.alreadyGone,
+    result: LineupRemoveResult.done ||
+        LineupRemoveResult.alreadyGone ||
+        LineupRemoveResult.failed,
   ) =>
     true,
   _ => false,
