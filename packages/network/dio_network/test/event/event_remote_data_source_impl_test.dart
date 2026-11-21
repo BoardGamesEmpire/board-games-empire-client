@@ -44,7 +44,7 @@ Map<String, dynamic> _occurrenceRow({
   'updatedAt': '2026-10-01T10:45:00.000Z',
 };
 
-/// An event's policy as the backend serializes the Prisma model: the 18 policy
+/// An event's policy as the backend serializes the Prisma model: the 19 policy
 /// columns, with the keys any of them overrides.
 Map<String, dynamic> _policyRow([Map<String, dynamic> overrides = const {}]) =>
     {
@@ -68,13 +68,26 @@ Map<String, dynamic> _policyRow([Map<String, dynamic> overrides = const {}]) =>
       'voteEligibility': 'ConfirmedOnly',
       'interestedWeight': 'AsAbstain',
       'votingWindowHours': 24,
+      'occurrenceOverrideScope': 'Any',
       'createdAt': '2026-10-01T10:30:00.000Z',
       'updatedAt': '2026-10-02T08:00:00.000Z',
       ...overrides,
     };
 
+/// An event's policy as the backend's policy view serves it beside a detail
+/// read, a create or a policy update (#1009): the row, with its three rule
+/// lists, here restricting nothing.
+Map<String, dynamic> _policyView([Map<String, dynamic> overrides = const {}]) =>
+    _policyRow({
+      'allowedPlatformTypes': <String>[],
+      'allowedPlatformIds': <String>[],
+      'allowedCategoryIds': <String>[],
+      ...overrides,
+    });
+
 /// The three rule lists a policy read may carry (#1009), as the backend's
-/// policy view serves them: plain lists, sorted.
+/// policy view serves them: plain lists, sorted. With a scope other than
+/// [_policyRow]'s, so a test sees the read's own.
 Map<String, dynamic> _policyLists() => {
   'allowedPlatformTypes': ['Tabletop'],
   'allowedPlatformIds': ['plat_1', 'plat_2'],
@@ -167,7 +180,8 @@ Map<String, dynamic> _attendeeRow({
 /// An event as the backend serializes it: every scalar column of the Prisma
 /// model, the ones the data layer does not model included, with its embedded
 /// occurrences and policy. [attendees] is added for the detail read alone,
-/// because the list serves no roster.
+/// because the list serves no roster, and makes the policy the view the detail
+/// read serves, with its rule lists, where a list row's is the bare row.
 Map<String, dynamic> _eventRow({
   String id = 'ev_1',
   String title = 'Friday Night Brass',
@@ -218,7 +232,7 @@ Map<String, dynamic> _eventRow({
           sortOrder: 1,
         ),
       ],
-  'policy': _policyRow(),
+  'policy': attendees == null ? _policyRow() : _policyView(),
   'attendees': ?attendees,
 };
 
@@ -253,8 +267,12 @@ String _listBody(
   ),
 });
 
-/// A `GET /api/events/:id` body.
-String _detailBody(Map<String, dynamic> event) => jsonEncode({'event': event});
+/// A `GET /api/events/:id` body. The detail read always serves the dates' own
+/// rules, so [event] carries none of its own unless [dateRules] is false.
+String _detailBody(Map<String, dynamic> event, {bool dateRules = true}) =>
+    jsonEncode({
+      'event': {if (dateRules) 'occurrencePolicies': <Object>[], ...event},
+    });
 
 /// A `POST /api/events` body: the message and the event, with the parts the
 /// create reads back.
@@ -595,20 +613,30 @@ void main() {
       },
     );
 
-    test('a list row carries no lists and no date rules', () async {
-      final remote = answering(_listBody([_eventRow()]));
+    test(
+      'a list row carries its scope but no lists and no date rules',
+      () async {
+        final remote = answering(
+          _listBody([
+            _eventRow()
+              ..['policy'] = _policyRow({
+                'occurrenceOverrideScope': 'TightenOnly',
+              }),
+          ]),
+        );
 
-      final snapshot = (await remote.fetchEvents()).items.single;
+        final snapshot = (await remote.fetchEvents()).items.single;
 
-      expect(snapshot.policy!.allowedPlatformTypes, isNull);
-      expect(snapshot.policy!.allowedPlatformIds, isNull);
-      expect(snapshot.policy!.allowedCategoryIds, isNull);
-      expect(
-        snapshot.policy!.occurrenceOverrideScope,
-        OccurrenceOverrideScope.any,
-      );
-      expect(snapshot.occurrencePolicies, isNull);
-    });
+        expect(snapshot.policy!.allowedPlatformTypes, isNull);
+        expect(snapshot.policy!.allowedPlatformIds, isNull);
+        expect(snapshot.policy!.allowedCategoryIds, isNull);
+        expect(
+          snapshot.policy!.occurrenceOverrideScope,
+          OccurrenceOverrideScope.tightenOnly,
+        );
+        expect(snapshot.occurrencePolicies, isNull);
+      },
+    );
 
     test(
       'maps every field of the event, its occurrences and its policy',
@@ -1200,10 +1228,20 @@ void main() {
       );
     });
 
-    test('a detail read without date rules carries none', () async {
-      final remote = answering(_detailBody(_eventRow(attendees: [])));
+    test('a detail read whose caller may not read the policy carries the '
+        'date rules as known and empty', () async {
+      final remote = answering(
+        _detailBody(
+          _eventRow(attendees: [])
+            ..['policy'] = null
+            ..['occurrencePolicies'] = <Object>[],
+        ),
+      );
 
-      expect((await remote.fetchEvent('ev_1')).occurrencePolicies, isNull);
+      final snapshot = await remote.fetchEvent('ev_1');
+
+      expect(snapshot.occurrencePolicies, isNotNull);
+      expect(snapshot.occurrencePolicies, isEmpty);
     });
 
     test('reads the event with its roster', () async {
@@ -1412,7 +1450,7 @@ void main() {
                 ),
               ],
             )
-            ..['policy'] = _policyRow({
+            ..['policy'] = _policyView({
               'gameAdditionMode': 'Auction',
               'voteThresholdType': 'Quadratic',
               'voteQuorumType': 'Weighted',
@@ -1546,6 +1584,17 @@ void main() {
       await expectPermanent(remote.fetchEvents());
     });
 
+    test('a policy without its override scope', () async {
+      final remote = answering(
+        _listBody([
+          _eventRow()
+            ..['policy'] = (_policyRow()..remove('occurrenceOverrideScope')),
+        ]),
+      );
+
+      await expectPermanent(remote.fetchEvents());
+    });
+
     test('a policy that is neither an object nor null', () async {
       final remote = answering(_listBody([_eventRow()..['policy'] = 'strict']));
 
@@ -1564,13 +1613,61 @@ void main() {
         ]) {
           final remote = answering(
             _detailBody(
-              _eventRow(attendees: [])..['policy'] = _policyRow({key: bad}),
+              _eventRow(attendees: [])..['policy'] = _policyView({key: bad}),
             ),
           );
 
           await expectPermanent(remote.fetchEvent('ev_1'));
         }
       }
+    });
+
+    // The detail read, the create and the policy update serve the policy view,
+    // whose lists are never null (#1009).
+    for (final key in [
+      'allowedPlatformTypes',
+      'allowedPlatformIds',
+      'allowedCategoryIds',
+    ]) {
+      final shapes = <String, Map<String, dynamic> Function()>{
+        'missing': () => _policyView()..remove(key),
+        'null': () => _policyView({key: null}),
+      };
+      for (final MapEntry(key: shape, value: policy) in shapes.entries) {
+        test('a served policy whose $key is $shape', () async {
+          await expectPermanent(
+            answering(
+              _detailBody(_eventRow(attendees: [])..['policy'] = policy()),
+            ).fetchEvent('ev_1'),
+          );
+          // The create answers 201.
+          await expectLater(
+            answering(
+              _createdBody(_eventRow(attendees: [])..['policy'] = policy()),
+              status: 201,
+            ).createEvent(const EventDraft(title: 'T'), clientRequestId: 'k'),
+            throwsA(isA<EventRemotePermanentException>()),
+          );
+          await expectPermanent(
+            answering(
+              jsonEncode({'message': 'Done', 'policy': policy()}),
+            ).updateEventPolicy('e1', EventPolicyUpdate(votingWindowHours: 2)),
+          );
+        });
+      }
+    }
+
+    test('a list row whose policy holds a null rule list reads it as not '
+        'carried', () async {
+      final remote = answering(
+        _listBody([
+          _eventRow()..['policy'] = _policyRow({'allowedPlatformIds': null}),
+        ]),
+      );
+
+      final policy = (await remote.fetchEvents()).items.single.policy!;
+
+      expect(policy.allowedPlatformIds, isNull);
     });
 
     test('a date rule missing a required flag is a contract break', () async {
@@ -1589,6 +1686,22 @@ void main() {
     test('date rules that are not a list are a contract break', () async {
       final remote = answering(
         _detailBody(_eventRow(attendees: [])..['occurrencePolicies'] = 'none'),
+      );
+
+      await expectPermanent(remote.fetchEvent('ev_1'));
+    });
+
+    test('a detail read without date rules is a contract break', () async {
+      final remote = answering(
+        _detailBody(_eventRow(attendees: []), dateRules: false),
+      );
+
+      await expectPermanent(remote.fetchEvent('ev_1'));
+    });
+
+    test('a detail read with null date rules is a contract break', () async {
+      final remote = answering(
+        _detailBody(_eventRow(attendees: [])..['occurrencePolicies'] = null),
       );
 
       await expectPermanent(remote.fetchEvent('ev_1'));
@@ -2399,7 +2512,7 @@ void main() {
 
     String policyBody() => jsonEncode({
       'message': 'Done',
-      'policy': _policyRow({'voteThresholdValue': 75}),
+      'policy': _policyView({'voteThresholdValue': 75}),
     });
 
     test('updateEventPolicy reads the rule lists of the answer', () async {

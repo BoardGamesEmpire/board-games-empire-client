@@ -72,7 +72,9 @@ class EventPoliciesTable extends Table {
   /// replaces them. The lists above can't say it: a create's answer and a
   /// policy edit's carry the lists without the dates' rules. A policy written
   /// any other way, or cached before v19, holds false, read as the dates'
-  /// rules not known, until a detail read.
+  /// rules not known, until a detail read. So does one whose event gains a
+  /// date any other way, as from a list read, since no read has carried that
+  /// date's rules.
   BoolColumn get occurrencePoliciesRead =>
       boolean().withDefault(const Constant(false))();
 

@@ -173,6 +173,50 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
       );
   }
 
+  /// Which of [byEvent]'s events have their dates' rules read, and would gain
+  /// a date the cache doesn't hold from these [EventOccurrence]s (#1009).
+  ///
+  /// The rules a detail read caches cover the dates it served, and every date
+  /// cached beside them while the flag holds is one of those. A date that
+  /// arrives any other way has rules no read has carried.
+  Future<Set<String>> _gainingUncoveredDates(
+    Map<String, List<EventOccurrence>> byEvent,
+  ) async {
+    if (byEvent.isEmpty) return const {};
+    final policies = _db.eventPoliciesTable;
+    final read = {
+      for (final row
+          in await (_db.selectOnly(policies)
+                ..addColumns([policies.eventId])
+                ..where(
+                  policies.eventId.isIn(byEvent.keys) &
+                      policies.occurrencePoliciesRead,
+                ))
+              .get())
+        row.read(policies.eventId)!,
+    };
+    if (read.isEmpty) return const {};
+
+    final dates = _db.eventOccurrencesTable;
+    final cached = <String, Set<String>>{};
+    for (final row
+        in await (_db.selectOnly(dates)
+              ..addColumns([dates.eventId, dates.id])
+              ..where(dates.eventId.isIn(read)))
+            .get()) {
+      cached
+          .putIfAbsent(row.read(dates.eventId)!, () => <String>{})
+          .add(row.read(dates.id)!);
+    }
+    return {
+      for (final eventId in read)
+        if (byEvent[eventId]!.any(
+          (date) => !(cached[eventId]?.contains(date.id) ?? false),
+        ))
+          eventId,
+    };
+  }
+
   /// Which of [eventIds] are cached with local changes the server has not
   /// acknowledged: `isDirty` or `isLocalOnly`.
   Future<Set<String>> _queueOwnedIds(Iterable<String> eventIds) async {
@@ -221,6 +265,14 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
       for (final s in written)
         if (s.policy != null) s.event.id: ?s.occurrencePolicies,
     };
+    // A snapshot without them may still bring a date the cache doesn't hold,
+    // whose rules no read has carried. The cached rules then no longer cover
+    // every date, so they read as not known until the next detail read. One
+    // that only keeps or drops dates leaves them known.
+    final unreadDates = await _gainingUncoveredDates({
+      for (final s in written)
+        if (!dateRules.containsKey(s.event.id)) s.event.id: s.occurrences,
+    });
 
     await _db.batch((b) {
       // The events first, since the other tables reference them and foreign
@@ -275,6 +327,16 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
             ),
             where: (t) => t.eventId.isIn(dateRules.keys),
           );
+      }
+      if (unreadDates.isNotEmpty) {
+        // After the policy upsert above, which leaves the flag alone.
+        b.update(
+          _db.eventPoliciesTable,
+          const EventPoliciesTableCompanion(
+            occurrencePoliciesRead: Value(false),
+          ),
+          where: (t) => t.eventId.isIn(unreadDates),
+        );
       }
 
       if (rosters.isNotEmpty) {
@@ -1002,9 +1064,24 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
       // transaction, which starts after the lock, so they hold for the write.
       if (!await _isCachedAndServerOwned(eventId)) return false;
 
+      // A date new to the cache arrives without its rules, which the answer
+      // carries and this client doesn't read, so the cached rules no longer
+      // cover every date (#1009).
+      final uncovered = await _gainingUncoveredDates({
+        eventId: [occurrence],
+      });
       await _db
           .into(_db.eventOccurrencesTable)
           .insertOnConflictUpdate(_occurrenceToCompanion(occurrence));
+      if (uncovered.isNotEmpty) {
+        await (_db.update(
+          _db.eventPoliciesTable,
+        )..where((t) => t.eventId.equals(eventId))).write(
+          const EventPoliciesTableCompanion(
+            occurrencePoliciesRead: Value(false),
+          ),
+        );
+      }
       await _db.batch((b) => _stampGeneration(b, [eventId]));
       return true;
     });

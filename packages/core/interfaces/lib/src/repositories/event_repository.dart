@@ -112,7 +112,10 @@ enum EventAccessSource {
 ///   does: it serves the rules of every date it serves that has any. A
 ///   snapshot without them keeps the cached ones, and so does one without a
 ///   policy: a caller who may not read the policy is served an empty list
-///   beside its null, which says nothing of the dates' rules (#1009).
+///   beside its null, which says nothing of the dates' rules (#1009). But
+///   one that brings a date the cache doesn't hold, as a list read may, or
+///   [cacheOccurrence] with a new date, makes them not known again until the
+///   next detail read: no read has carried that date's rules.
 /// - **The user's own answer** is kept on their `attending` and `household`
 ///   access and on their row of a cached roster, and each read writes all
 ///   three where it can, so a later read of any kind replaces it (#667, #589,
@@ -313,7 +316,9 @@ abstract class EventRepository {
   /// which only the detail read does: not known, which is not none. A
   /// create's answer and [cacheEventPolicy] carry the lists without them, so
   /// they leave it null. After, it is the rules of each date that has its
-  /// own, in the dates' order, and empty where none has. A rules row whose
+  /// own, in the dates' order, and empty where none has, until a write
+  /// brings a date the detail read didn't serve, which makes it null again.
+  /// A rules row whose
   /// date is no longer cached, as after a list read drops a date the server
   /// deleted, is left out.
   ///
@@ -428,6 +433,10 @@ abstract class EventRepository {
   ///
   /// Like the other writes of a server answer, this is last-write-wins
   /// (#589): a detail read in flight may still write the event over it.
+  ///
+  /// A date new to the cache arrives without its own rules, so the event's
+  /// cached dates' rules read as not known after it, until the next detail
+  /// read (#1009).
   Future<bool> cacheOccurrence(EventOccurrence occurrence);
 
   /// Writes [attendee], which an RSVP answered, over the cached roster row

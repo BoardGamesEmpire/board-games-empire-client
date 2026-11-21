@@ -102,8 +102,12 @@ typedef CreatedEvent = ({EventSnapshot snapshot, DateTime? deletedAt});
 ///   `attendees: []`, and one who may not read the policy `null`. So the
 ///   snapshot from [fetchEvent] always has a roster, and an empty one is not
 ///   proof that nobody is on the event. It also carries the policy's rule
-///   lists and `occurrencePolicies`, each date's own rules (#1009). The create
-///   and the policy update answer with the lists but no `occurrencePolicies`.
+///   lists and `occurrencePolicies`, each date's own rules (#1009), always
+///   served, `[]` when the caller may not read the policy, so a missing one
+///   is a contract break. The create and the policy update answer with the
+///   lists but no `occurrencePolicies`.
+///   Beside a policy, those three answers always serve the lists, never null,
+///   so a missing or null one is a contract break, not a list left out.
 ///
 /// Both reads serve every occurrence of an event, unbounded until backend#404.
 ///
