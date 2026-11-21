@@ -12,8 +12,15 @@ abstract final class Wcag {
   /// SC 1.4.3 — minimum for normal text (AA).
   static const double aaNormalText = 4.5;
 
-  /// SC 1.4.3 — minimum for large text and SC 1.4.11 non-text (AA).
+  /// SC 1.4.3 — minimum for large text (AA).
   static const double aaLargeText = 3;
+
+  /// SC 1.4.11 — minimum for non-text (AA): a focus indicator, a control's
+  /// edge, an icon.
+  ///
+  /// Numerically equal to [aaLargeText], and named apart for the reason
+  /// [aaaLargeText] is.
+  static const double aaNonText = 3;
 
   /// SC 1.4.6 — minimum for normal text (AAA); the bar the
   /// high-contrast schemes are held to.

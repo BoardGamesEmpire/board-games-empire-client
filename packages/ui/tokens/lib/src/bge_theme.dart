@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 
 import 'package:ui_tokens/src/accessibility/bge_button_focus_ring.dart';
+import 'package:ui_tokens/src/accessibility/bge_chip_focus.dart';
+import 'package:ui_tokens/src/accessibility/bge_focus_lease.dart';
 import 'package:ui_tokens/src/accessibility/bge_navigation_focus.dart';
 import 'package:ui_tokens/src/accessibility/bge_pointer_pressed.dart';
+import 'package:ui_tokens/src/accessibility/bge_segment_focus.dart';
 import 'package:ui_tokens/src/accessibility/bge_selection.dart';
 import 'package:ui_tokens/src/bge_line_colors.dart';
 import 'package:ui_tokens/src/bge_palette.dart';
@@ -80,8 +83,14 @@ ButtonStyle _buttonStyle(BgeButtonFocusRingPlacement placement) => ButtonStyle(
 ///   row's box with `radiusMd` corners (#758), and an extended floating
 ///   action button is a `BgeExtendedFab`, ringed inside its edge (#760).
 ///   Every ring hides after a mouse press until the next key press
-///   ([BgePointerPressed]). Segmented buttons don't get one yet; see
-///   [BgeButtonFocusRing].
+///   ([BgePointerPressed]); fills follow the highlight mode alone. A
+///   segmented button's segment can't take a ring from the theme, so its
+///   `backgroundColor` is a fill 3:1 from rest while focused, and its label
+///   changes with it, an inverse chip look ([BgeSegmentFocus], #759). A
+///   chip's ring is its side, which the theme sets ([BgeChipFocus], #761).
+///   A bar or rail destination is a fill solved by [BgeNavigationFocus]
+///   (#644, #909). Drawer destinations and the date and time pickers keep
+///   Material's focus fill, which is open on #761.
 /// - **Two-family typography** — the bundled display face on
 ///   display/headline/title, the platform face on body/label. See
 ///   [BgeTypography] for why the split falls there.
@@ -156,7 +165,11 @@ abstract final class BgeTheme {
 
   static ThemeData _build(ColorScheme scheme, {required bool highContrast}) {
     const tokens = BgeTokens.standard;
-    return ThemeData(
+    final segmentFocus = (
+      selected: BgeSegmentFocus.selected(scheme),
+      unselected: BgeSegmentFocus.unselected(scheme),
+    );
+    final theme = ThemeData(
       useMaterial3: true,
       colorScheme: scheme,
       textTheme: BgeTypography.textTheme(),
@@ -218,6 +231,21 @@ abstract final class BgeTheme {
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: _buttonStyle(BgeButtonFocusRingPlacement.inside),
       ),
+      // #759: a segment builds its style without the buttons' ring builder,
+      // and Material's focus overlay stands about 1.2:1 from rest. So a
+      // focused segment paints a fill that stands 3:1 as its background, and
+      // its label changes with it, since a selected segment's own label
+      // can't be read on any fill that does. Both read the same gate in the
+      // same build, so they can't come apart. Every other state is
+      // Material's, restated: the theme's property replaces the default
+      // whole. See [BgeSegmentFocus].
+      segmentedButtonTheme: SegmentedButtonThemeData(
+        style: ButtonStyle(
+          backgroundColor: _SegmentBackground(scheme, segmentFocus),
+          foregroundColor: _SegmentLabel(scheme, segmentFocus),
+          overlayColor: _SegmentOverlay(scheme, segmentFocus),
+        ),
+      ),
       // #644: a focused bar destination is a fill alone, and Flutter's own
       // focus tint stands about 1.3:1 from the bar. The unselected icon is
       // `onSurface`, so it stands 3:1 from that fill. The rail takes both
@@ -259,6 +287,20 @@ abstract final class BgeTheme {
         BgeStatusColors.forScheme(scheme),
         BgeLineColors.forScheme(scheme, highContrast: highContrast),
       ],
+    );
+    // #761: a chip shows focus by a `focusOutlineWidth` ring its side draws,
+    // which hides after a mouse press as every ring does. Set after the
+    // theme is built, since a selected chip's ring is chosen against the
+    // theme's own focus tint. See [BgeChipFocus].
+    return theme.copyWith(
+      chipTheme: ChipThemeData(
+        side: _ChipFocusSide(
+          unselected: BgeChipFocus.ringColor(theme, selected: false),
+          selected: BgeChipFocus.ringColor(theme, selected: true),
+          ringWidth: tokens.focusOutlineWidth,
+          atRest: scheme.outlineVariant,
+        ),
+      ),
     );
   }
 }
@@ -332,4 +374,189 @@ class _NavigationIcon implements WidgetStateProperty<IconThemeData?> {
 
   @override
   int get hashCode => Object.hash(selected, unselected);
+}
+
+/// [color] at [opacity], as Material's `withOpacity` rounds it, so a state
+/// the theme restates resolves to the very colour Material's default does.
+Color _materialOpacity(Color color, double opacity) =>
+    color.withAlpha((255 * opacity).round());
+
+/// A segment's focus fills and labels, selected and not.
+typedef _SegmentFocus = ({
+  BgeSegmentFocus selected,
+  BgeSegmentFocus unselected,
+});
+
+/// A segment's colour for one part by state (#759), with value equality, so
+/// two themes built from one palette compare equal.
+@immutable
+abstract class _SegmentProperty implements WidgetStateProperty<Color?> {
+  const _SegmentProperty(this.scheme, this.focus);
+
+  final ColorScheme scheme;
+  final _SegmentFocus focus;
+
+  /// Whether a segment in [states] shows keyboard focus.
+  ///
+  /// `WidgetState.focused` holds whenever the segment has focus, but the
+  /// ink well shows focus only while the highlight mode is the keyboard's.
+  /// The fill and the label both ask here, in the same build, so a label
+  /// never sits on the rest colour without its fill.
+  ///
+  /// A segment resolves its colours again only when its states change, and
+  /// a touch or a key press that changes the highlight mode changes none of
+  /// them. The app root's [BgeFocusLease] rebuilds the focused segment as
+  /// the mode changes, so the fill shows and goes with it.
+  static bool showsFocus(Set<WidgetState> states) =>
+      states.contains(WidgetState.focused) &&
+      FocusManager.instance.highlightMode == FocusHighlightMode.traditional;
+
+  /// [focus]'s selected or unselected half, for [states].
+  BgeSegmentFocus focusFor(Set<WidgetState> states) =>
+      states.contains(WidgetState.selected) ? focus.selected : focus.unselected;
+
+  @override
+  bool operator ==(Object other) =>
+      other.runtimeType == runtimeType &&
+      other is _SegmentProperty &&
+      other.scheme == scheme &&
+      other.focus == focus;
+
+  @override
+  int get hashCode => Object.hash(runtimeType, scheme, focus);
+}
+
+/// A segment's background: Material's, or the focus fill while it shows
+/// focus.
+class _SegmentBackground extends _SegmentProperty {
+  const _SegmentBackground(super.scheme, super.focus);
+
+  @override
+  Color? resolve(Set<WidgetState> states) {
+    if (states.contains(WidgetState.disabled)) return null;
+    if (_SegmentProperty.showsFocus(states)) {
+      return focusFor(states).background;
+    }
+    return states.contains(WidgetState.selected)
+        ? scheme.secondaryContainer
+        : null;
+  }
+}
+
+/// A segment's label and icon colour: Material's, or the label solved with
+/// the focus fill while it shows focus.
+class _SegmentLabel extends _SegmentProperty {
+  const _SegmentLabel(super.scheme, super.focus);
+
+  @override
+  Color? resolve(Set<WidgetState> states) {
+    if (states.contains(WidgetState.disabled)) {
+      return _materialOpacity(scheme.onSurface, 0.38);
+    }
+    if (_SegmentProperty.showsFocus(states)) return focusFor(states).label;
+    return states.contains(WidgetState.selected)
+        ? scheme.onSecondaryContainer
+        : scheme.onSurface;
+  }
+}
+
+/// A segment's overlay: Material's press and hover tints, and no focus tint,
+/// since the background shows focus.
+///
+/// Focus alone gets Material's tint colour at no strength, not null, which
+/// would fall through to the text button's own focus tint. The colour
+/// matters though it draws nothing: an ink well creates its focus
+/// highlight with every state the segment is in, so focus that arrives
+/// under a resting mouse fixes the highlight's strength at the hover's 8%,
+/// and then paints it in this colour. In Material's tint, that is one more
+/// hover tint, which the fill is solved to carry the label under.
+class _SegmentOverlay extends _SegmentProperty {
+  const _SegmentOverlay(super.scheme, super.focus);
+
+  @override
+  Color? resolve(Set<WidgetState> states) {
+    final tint = states.contains(WidgetState.selected)
+        ? scheme.onSecondaryContainer
+        : scheme.onSurface;
+    if (states.contains(WidgetState.pressed)) {
+      return _materialOpacity(tint, 0.1);
+    }
+    if (states.contains(WidgetState.hovered)) {
+      return BgeSegmentFocus.hoverTint(tint);
+    }
+    if (states.contains(WidgetState.focused)) return tint.withAlpha(0);
+    return null;
+  }
+}
+
+/// A chip's side (#761): a ring while it shows keyboard focus, and
+/// Material's otherwise.
+///
+/// Every other state resolves to null, and the chip falls back to its own
+/// default side, which differs by chip type and variant. With no state at
+/// all, it is [atRest], Material's flat chip at rest, spelled out: a theme
+/// animation lerps the two themes' sides resolved with no state, and throws
+/// where both are null. An elevated chip, which has none in this app, would
+/// take that outline at rest too. So would a chip that sets its own
+/// `shape:` with a side: a chip takes the theme's side over its shape's
+/// whenever the side resolves to one (`RawChip`'s `_getShape`), so with no
+/// state the shape's side is lost. No chip in the app sets one.
+///
+/// That lerp flattens the side to a plain [BorderSide] for the animation's
+/// length, about 200 ms, so every chip draws the [atRest] outline then: a
+/// chip focused while the theme changes, light to dark, loses its ring, and
+/// a selected or disabled chip, which has no outline of its own, draws one,
+/// until the animation ends.
+@immutable
+class _ChipFocusSide extends WidgetStateBorderSide {
+  const _ChipFocusSide({
+    required this.unselected,
+    required this.selected,
+    required this.ringWidth,
+    required this.atRest,
+  });
+
+  /// The ring on an unselected chip.
+  final Color unselected;
+
+  /// The ring on a selected chip.
+  final Color selected;
+
+  /// The ring's width.
+  final double ringWidth;
+
+  /// Material's side on a flat chip with no state.
+  final Color atRest;
+
+  /// Where the ring sits on the chip's edge: its inset matches the 1px side
+  /// Material draws at rest, half the ring inside the edge and half outside
+  /// when it is 2 wide.
+  ///
+  /// A chip pads its content by its side's inset (`ShapeDecoration`'s
+  /// padding), so a ring wholly inside the edge would grow the chip as it
+  /// takes focus, and move whatever sits beside it.
+  double get _strokeAlign => 1 - 2 * const BorderSide().width / ringWidth;
+
+  @override
+  BorderSide? resolve(Set<WidgetState> states) {
+    if (BgeChipFocus.showsRing(states)) {
+      return BorderSide(
+        color: states.contains(WidgetState.selected) ? selected : unselected,
+        width: ringWidth,
+        strokeAlign: _strokeAlign,
+      );
+    }
+    return states.isEmpty ? BorderSide(color: atRest) : null;
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is _ChipFocusSide &&
+      other.unselected == unselected &&
+      other.selected == selected &&
+      other.ringWidth == ringWidth &&
+      other.atRest == atRest;
+
+  @override
+  int get hashCode => Object.hash(unselected, selected, ringWidth, atRest);
 }

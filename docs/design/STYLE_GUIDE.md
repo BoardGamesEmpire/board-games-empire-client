@@ -830,13 +830,49 @@ These are not aspirations; each is enforced somewhere.
   Alt or Meta held (`BgePointerPressed`, #758). Focus a dialog hands back
   after a click, or that code moves, stays unringed. **Fills don't read
   that flag**: a focus fill follows `FocusManager.highlightMode` alone, as
-  Material's do.
+  Material's do, showing and going as the mode changes while the control
+  keeps focus. A navigation destination's fill is its ink well's focus
+  highlight, which follows the mode by itself. A segment's fill and label
+  are its theme's colours, which it resolves again only as its own states
+  change, so the app root's lease (`BgeFocusLease`) rebuilds the focused
+  segment as the mode changes: a touch takes the fill away, and a key
+  press brings it back.
 - **A navigation destination's focus is a fill alone**, so the fill stands
   3:1 clear of the bar behind it (#644), and the destination's unselected
   icon, set to `onSurface`, stands 3:1 clear of the fill (WCAG 1.4.11):
-  `BgeNavigationFocus` holds both. The bar takes them from the theme. The rail
-  reads the nearest `focusColor`, which the theme leaves alone so that no
-  other ink well changes, and `NavigationShell` sets it around the rail only.
+  `BgeNavigationFocus` holds both, solved by `BgeFocusFill`. The bar takes
+  them from the theme. The rail reads the nearest `focusColor`, which the
+  theme leaves alone so that no other ink well changes, and `NavigationShell`
+  sets it around the rail only. A palette where no fill passes reports it
+  instead of leaving the icon on a fill of its own colour. A focused
+  *selected* destination is still under 3:1: the fill paints over its
+  indicator, and no colour stands clear of that while carrying both icons
+  (#909).
+- **A focused segment is filled, and its label changes with the fill.** A
+  `SegmentedButton` segment can't take a ring from the theme, so the theme
+  paints the segment's `backgroundColor` with a fill 3:1 from its rest and
+  sets the label 4.5:1 on it, in one build, so they can't come apart. The
+  look is an inverse chip: `onInverseSurface` on the fill in all four themes.
+  A selected segment can't keep `onSecondaryContainer`, since no fill stands
+  clear of `secondaryContainer` and keeps that label readable. The fill holds
+  over the page, a sheet and a dialog, and under a resting mouse (#759).
+- **A chip's focus is a ring its theme's side draws**, `focusOutlineWidth`
+  wide (#761). It is `primary` on an unselected chip. On a selected chip it
+  is `primary` only where that holds 3:1 under the chip's focus and hover
+  tints, and otherwise `onSecondaryContainer`: light, dark and
+  high-contrast dark take `onSecondaryContainer`, high-contrast light keeps
+  `primary`. A side has no lifecycle, so the app root holds the pointer flag
+  and rebuilds the focused chip when it changes, and the ring hides after a
+  mouse press like every other. Under a resting mouse every ring still
+  stands 3:1 on its chip's fill. #761 fixes the unselected ring to
+  `primary`; in a dialog in dark, the ring's outer half stands 4.77:1 on
+  the dialog, and its inner half 3.52:1 on the hovered chip (see #761).
+- **Still open.** Drawer destinations show focus by a fill alone, since no
+  fill passes on both the drawer and a selected entry: the decision goes
+  back to #414, and #761 holds the numbers. The date and time pickers stay
+  as Material draws them, because no passing fill exists for the day grid
+  and the time dial never reports focus: also #761. The drawer's button
+  entries are ringed (#758).
 - **The release-time audit script** is
   [`ACCESSIBILITY_AUDIT.md`](ACCESSIBILITY_AUDIT.md): what the automated checks
   cover, and the manual screen-reader walk for each platform.

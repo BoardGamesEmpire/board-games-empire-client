@@ -449,6 +449,12 @@ class _BgeAppState extends State<BgeApp> {
   @override
   void initState() {
     super.initState();
+    // #761, #759: a chip's ring and a segment's focus fill come from the
+    // theme, which has no lifecycle to watch for a mouse press or a change
+    // of highlight mode, so the app holds the lease for its lifetime. A
+    // press then hides a chip's ring even where no other ring was built to
+    // see it, and the focused chip or segment rebuilds as the mode changes.
+    BgeFocusLease.attach();
     // See [_selectable]: the region must not mount on the first frame.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || _selectionRegionReady) return;
@@ -3254,6 +3260,7 @@ class _BgeAppState extends State<BgeApp> {
     }
     final teardown = widget.teardown;
     if (teardown != null) unawaited(teardown());
+    BgeFocusLease.detach();
     super.dispose();
   }
 

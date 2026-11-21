@@ -1701,4 +1701,64 @@ void main() {
       });
     }
   });
+
+  // The selected destination too (#909). The focus fill paints over the
+  // indicator, and the selected icon keeps its colour whatever the focus.
+  // No fill stands 3:1 from the indicator and carries both icons at 3:1 in
+  // any theme, so this stays skipped until the issue settles another way.
+  group(
+    'a focused selected rail destination differs from rest-selected by 3:1 '
+    'over its icon',
+    skip: '#909: no fill meets it; see the issue',
+    () {
+      final themes = {
+        'light': BgeTheme.light,
+        'dark': BgeTheme.dark,
+        'highContrastLight': BgeTheme.highContrastLight,
+        'highContrastDark': BgeTheme.highContrastDark,
+      };
+
+      for (final MapEntry(key: name, value: build) in themes.entries) {
+        testWidgets(name, (tester) async {
+          // A focus fill shows in keyboard mode only.
+          FocusManager.instance.highlightStrategy =
+              FocusHighlightStrategy.alwaysTraditional;
+          addTearDown(
+            () => FocusManager.instance.highlightStrategy =
+                FocusHighlightStrategy.automatic,
+          );
+          final boundary = GlobalKey();
+          await _pump(
+            tester,
+            size: const Size(700, 800),
+            themeData: build(),
+            boundary: boundary,
+          );
+
+          // The first destination, the selected one, on its indicator.
+          final icon = tester.getRect(_destination('home'));
+          final area = icon.inflate(8);
+          final atRest = await capturePixels(tester, boundary);
+
+          _destinationNode(tester, 'home').requestFocus();
+          await tester.pumpAndSettle();
+          final focused = await capturePixels(tester, boundary);
+
+          // Around the icon only, so the icon can't stand in for the fill.
+          final strongest = strongestContrast(
+            area,
+            atRest,
+            focused,
+            skip: icon.contains,
+          );
+          expect(strongest, greaterThanOrEqualTo(3.0), reason: 'the fill');
+
+          // The icon against the fill beside it.
+          final fill = focused(Offset(icon.left - 4, icon.center.dy));
+          final iconRatio = strongestContrast(icon, focused, (_) => fill);
+          expect(iconRatio, greaterThanOrEqualTo(3.0), reason: 'the icon');
+        });
+      }
+    },
+  );
 }

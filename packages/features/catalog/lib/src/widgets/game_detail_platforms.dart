@@ -304,6 +304,8 @@ class _GameDetailPlatformsState extends State<GameDetailPlatforms> {
         ),
         labelStyle: TextStyle(color: scheme.onPrimary),
         backgroundColor: scheme.primary,
+        // Its own side keeps the theme's chip ring (#761) off a chip
+        // `_ChipSlot` already rings (#708).
         side: BorderSide.none,
         onPressed: () => collection.onOpenOwned(context, [
           for (final entry in owned)
@@ -330,6 +332,8 @@ class _GameDetailPlatformsState extends State<GameDetailPlatforms> {
         semanticsLabel: l10n.catalogDetailPlatformNotOwnedSpoken(name),
       ),
       labelStyle: TextStyle(color: scheme.primary),
+      // Its own side keeps the theme's chip ring (#761) off a chip
+      // `_ChipSlot` already rings (#708).
       side: BorderSide(color: scheme.primary),
       onPressed: () => collection.onAdd(
         context,
