@@ -84,19 +84,26 @@ void main() {
       await tester.pump();
 
       // A chip in the app's own overlay, so it takes the app's theme and
-      // nothing but the app holds the flag or rebuilds it.
+      // nothing but the app holds the flag or rebuilds it. The entry takes
+      // every press beside the chip, so none reaches what lies below: where
+      // the theme says desktop, that is the app's selection region (#322),
+      // which takes focus on a press, and whether the region is built
+      // depends on which test first built the cached theme.
       const chipKey = Key('chip');
       final node = FocusNode();
       addTearDown(node.dispose);
       final entry = OverlayEntry(
-        builder: (_) => Material(
-          type: MaterialType.transparency,
-          child: Center(
-            child: FilterChip(
-              key: chipKey,
-              focusNode: node,
-              label: const Text('Entry'),
-              onSelected: (_) {},
+        builder: (_) => Listener(
+          behavior: HitTestBehavior.opaque,
+          child: Material(
+            type: MaterialType.transparency,
+            child: Center(
+              child: FilterChip(
+                key: chipKey,
+                focusNode: node,
+                label: const Text('Entry'),
+                onSelected: (_) {},
+              ),
             ),
           ),
         ),
