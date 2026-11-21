@@ -1,6 +1,9 @@
 import 'package:events/l10n/events_localizations.dart';
 import 'package:events/src/screens/event_detail_screen.dart';
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
+import 'package:models/domain.dart' show GameAdditionMode;
+import 'package:ui/ui.dart' show focusIsFree;
 
 /// The event screen's tabs (#516), in the order its bar shows them. Each
 /// one's [index] is its place in the bar's [TabController].
@@ -13,7 +16,9 @@ enum EventDetailTab {
 }
 
 /// The Games tab's sub-tabs (#945), in the order its second bar shows them.
-/// Each one's `index` is its place in the sub-tabs' [TabController].
+/// The bar shows those [visibleSections] gives, in this order, so a
+/// sub-tab's place in the sub-tabs' [TabController] is its place among
+/// those.
 enum EventGamesSection {
   /// The games lined up for the event (#519).
   lineup,
@@ -24,6 +29,22 @@ enum EventGamesSection {
   /// The games the people coming offer to bring.
   pool,
 }
+
+/// The sub-tabs the Games tab's bar shows (#945) under [mode], the
+/// game-addition mode of the view in use (`viewMode`, #519): all three, but
+/// for Nominations under a host-only mode, where nothing can be nominated,
+/// while no nomination is in the view ([nominationsInViewExist]). One made
+/// before the mode turned host-only keeps it, so it stays reachable.
+List<EventGamesSection> visibleSections({
+  required GameAdditionMode mode,
+  required bool nominationsInViewExist,
+}) => [
+  for (final section in EventGamesSection.values)
+    if (section != EventGamesSection.nominations ||
+        mode != GameAdditionMode.hostOnly ||
+        nominationsInViewExist)
+      section,
+];
 
 /// Where the event screen stands, as its location names it (#856): Details,
 /// or one of the Games tab's sub-tabs. Each one's [name] is its value of the
@@ -131,30 +152,113 @@ class EventDetailTabBar extends StatelessWidget {
 }
 
 /// The Games tab's sub-tab bar (#945): Lineup, then Nominations, then Pool,
-/// under the screen's own bar.
+/// under the screen's own bar, each that [sections] holds ([visibleSections],
+/// #519).
 ///
 /// Material's secondary [TabBar], not scrollable, so each sub-tab has the
-/// tab role, says whether it is selected and where it stands, and takes a
-/// third of the bar. Its labels scale down as the screen's own bar's do,
-/// rather than being cut.
+/// tab role, says whether it is selected and where it stands among those
+/// shown, and takes an equal share of the bar. Its labels scale down as the
+/// screen's own bar's do, rather than being cut.
 ///
 /// Choosing a sub-tab moves no focus: the Games tab swaps what is under the
 /// bar and keeps the bar, so focus stays on the sub-tab pressed.
-class EventGamesSectionBar extends StatelessWidget {
-  const EventGamesSectionBar({required this.controller, super.key});
+///
+/// As [sections] changes, focus on one of its sub-tabs stays on that
+/// sub-tab where it is still shown, and goes to the one chosen where it has
+/// gone: the bar's tabs are built by their place, so without this focus
+/// would stay with the place, now another sub-tab's, or be lost with a
+/// place that went. Focus in what a chosen sub-tab that has gone showed,
+/// lost with it, goes to the one chosen in its place too. Once the frame
+/// that changes them has ended, and only while focus is still where the
+/// change left it: on the place it was in, or, for a control that went, on
+/// nothing or the page.
+class EventGamesSectionBar extends StatefulWidget {
+  const EventGamesSectionBar({
+    required this.sections,
+    required this.controller,
+    super.key,
+  });
 
-  /// Length 3: [EventGamesSection.lineup], [EventGamesSection.nominations],
-  /// then [EventGamesSection.pool].
+  /// The sub-tabs shown, in their order ([visibleSections]).
+  final List<EventGamesSection> sections;
+
+  /// As long as [sections], each tab at its place among them.
   final TabController controller;
+
+  @override
+  State<EventGamesSectionBar> createState() => _EventGamesSectionBarState();
+}
+
+class _EventGamesSectionBarState extends State<EventGamesSectionBar> {
+  @override
+  void didUpdateWidget(EventGamesSectionBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (listEquals(oldWidget.sections, widget.sections)) return;
+    final held = FocusManager.instance.primaryFocus;
+    if (held == null || held is FocusScopeNode) return;
+    // The sub-tab whose tab holds focus, if one does, else whether the
+    // sub-tab chosen, and so what it showed, has gone.
+    final onTab = [
+      for (final section in oldWidget.sections)
+        if (_tabFocus(section) == held) section,
+    ].firstOrNull;
+    final chosen = oldWidget.sections[oldWidget.controller.index];
+    if (onTab == null && widget.sections.contains(chosen)) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final focus = FocusManager.instance.primaryFocus;
+      if (onTab == null) {
+        // Only where the control went with what the sub-tab showed.
+        if ((held.context?.mounted ?? false) ||
+            !focusIsFree(context, untouched: held)) {
+          return;
+        }
+      } else if (focus != null && focus != held) {
+        // Moved meanwhile.
+        return;
+      }
+      final target = onTab != null && widget.sections.contains(onTab)
+          ? onTab
+          : widget.sections[widget.controller.index];
+      _tabFocus(target)?.requestFocus();
+    });
+  }
+
+  /// The focus of [section]'s tab, where the bar shows it: its ink well's,
+  /// the nearest focus above its label.
+  // This leans on how Material's TabBar builds its tabs: one InkWell each,
+  // with no key, so reused by place as the tabs change, each with a focus
+  // node of its own, and the label we give inside it. Should a Flutter
+  // upgrade change that, these tests in event_detail_tabs_test.dart fail
+  // first: 'focus on Nominations as it leaves goes to Lineup, the sub-tab
+  // chosen', 'focus on Pool stays on Pool as Nominations leaves and comes
+  // back', 'focus in the Nominations list as it leaves goes to Lineup', and
+  // 'focus elsewhere stays where it is as Nominations leaves'.
+  FocusNode? _tabFocus(EventGamesSection section) {
+    final key = EventDetailScreen.sectionTabKey(section);
+    Element? tab;
+    void visit(Element element) {
+      if (tab != null) return;
+      if (element.widget.key == key) {
+        tab = element;
+        return;
+      }
+      element.visitChildren(visit);
+    }
+
+    (context as Element).visitChildren(visit);
+    final found = tab;
+    return found == null ? null : Focus.maybeOf(found, createDependency: false);
+  }
 
   @override
   Widget build(BuildContext context) {
     final l10n = EventsLocalizations.of(context);
 
     return TabBar.secondary(
-      controller: controller,
+      controller: widget.controller,
       tabs: [
-        for (final section in EventGamesSection.values)
+        for (final section in widget.sections)
           Tab(
             key: EventDetailScreen.sectionTabKey(section),
             child: _TabLabel(switch (section) {

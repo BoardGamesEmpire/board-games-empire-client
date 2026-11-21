@@ -11,9 +11,11 @@ import 'package:ui_tokens/ui_tokens.dart';
 
 /// Opens the nominations' filters over the Games tab (#517): a chip per
 /// status, to keep only the nominations in those; a choice of any date, the
-/// whole event, or one of the event's [dates], named as a row names them;
-/// then, where [offersMine], a switch keeping the viewer's own, and where
-/// [offersNotVoted], one keeping the open nominations they haven't voted on.
+/// whole event, or one of the event's [dates], named as a row names them,
+/// but for while a row of dates shows ([EventGamesTabController.dateView],
+/// #1042), which chooses that in its place; then, where [offersMine], a
+/// switch keeping the viewer's own, and where [offersNotVoted], one keeping
+/// the open nominations they haven't voted on.
 ///
 /// A pop-up ([showBgePopup]), named by its heading. Each change is made to
 /// [controller]'s filter as it is made, so the nominations behind it are
@@ -161,49 +163,52 @@ class _FiltersSheet extends StatelessWidget {
                       ),
                   ],
                 ),
-                const BgeGap.md(),
-                _Heading(l10n.eventsNominationsDate),
-                RadioGroup<NominationScope?>(
-                  groupValue: filter.scope,
-                  onChanged: (scope) => _change(
-                    (filter) => scope == null
-                        ? filter.copyWith(clearScope: true)
-                        : filter.copyWith(scope: scope),
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      for (final scope in <NominationScope?>[
-                        null,
-                        const WholeEventScope(),
-                        for (final date in dates) DateScope(date.id),
-                      ])
-                        BgeRowFocusRing(
-                          outsideSides: true,
-                          builder: (context, tile) =>
-                              RadioListTile<NominationScope?>(
-                                key: EventDetailScreen.nominationsDateKey(
-                                  scope,
+                // The row of dates chooses the date while it shows (#1042).
+                if (controller.dateView == null) ...[
+                  const BgeGap.md(),
+                  _Heading(l10n.eventsNominationsDate),
+                  RadioGroup<NominationScope?>(
+                    groupValue: filter.scope,
+                    onChanged: (scope) => _change(
+                      (filter) => scope == null
+                          ? filter.copyWith(clearScope: true)
+                          : filter.copyWith(scope: scope),
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        for (final scope in <NominationScope?>[
+                          null,
+                          const WholeEventScope(),
+                          for (final date in dates) DateScope(date.id),
+                        ])
+                          BgeRowFocusRing(
+                            outsideSides: true,
+                            builder: (context, tile) =>
+                                RadioListTile<NominationScope?>(
+                                  key: EventDetailScreen.nominationsDateKey(
+                                    scope,
+                                  ),
+                                  focusNode: tile.focusNode,
+                                  onFocusChange: tile.onFocusChange,
+                                  value: scope,
+                                  contentPadding: EdgeInsets.zero,
+                                  title: Text(
+                                    scope == null
+                                        ? l10n.eventsNominationsAnyDate
+                                        : nominationScopeLabel(
+                                            context,
+                                            scope,
+                                            dates: dates,
+                                            now: now,
+                                          ),
+                                  ),
                                 ),
-                                focusNode: tile.focusNode,
-                                onFocusChange: tile.onFocusChange,
-                                value: scope,
-                                contentPadding: EdgeInsets.zero,
-                                title: Text(
-                                  scope == null
-                                      ? l10n.eventsNominationsAnyDate
-                                      : nominationScopeLabel(
-                                          context,
-                                          scope,
-                                          dates: dates,
-                                          now: now,
-                                        ),
-                                ),
-                              ),
-                        ),
-                    ],
+                          ),
+                      ],
+                    ),
                   ),
-                ),
+                ],
                 if (offersMine)
                   BgeRowFocusRing(
                     outsideSides: true,

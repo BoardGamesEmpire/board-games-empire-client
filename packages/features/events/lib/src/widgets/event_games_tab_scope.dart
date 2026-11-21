@@ -15,6 +15,7 @@ import 'package:events/src/detail/games_date_view.dart';
 import 'package:events/src/screens/event_detail_screen.dart';
 import 'package:events/src/widgets/event_detail_tabs.dart';
 import 'package:events/src/widgets/event_game_quick_look.dart';
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:models/domain.dart'
@@ -37,9 +38,11 @@ import 'package:ui_tokens/ui_tokens.dart';
 ///
 /// It notifies its listeners when the chosen sub-tab changes, once for each
 /// change and as the change starts, and when the sub-tabs' controller is
-/// replaced, so the screen's page, which listens to it, builds on the new one.
-/// So too when the date shown changes, or the date the location is to name
-/// ([dateQuery]).
+/// replaced, so the screen's page, which listens to it, builds on the new one:
+/// as the motion setting changes, and as the sub-tabs shown do (#519). So too
+/// when the date shown changes, or the date the location is to name
+/// ([dateQuery]), and when the row of dates clears the nominations' filter's
+/// date.
 ///
 /// One per screen, held by [EventGamesTabScope] above the detail's builder,
 /// beside the tab controller, so no read, write, clock tick or switch to the
@@ -91,29 +94,58 @@ class EventGamesTabController extends ChangeNotifier {
     _openGame = openGame;
   }
 
-  /// The Games tab's sub-tabs' controller (#945), one tab for each
-  /// [EventGamesSection]. [EventGamesTabScope] makes it before the first
-  /// build and replaces it when the motion duration changes, so read it from
-  /// here each build rather than keeping it.
+  /// The Games tab's sub-tabs' controller (#945), one tab for each of
+  /// [visibleSections]. [EventGamesTabScope] makes it before the first build
+  /// and replaces it when the motion duration changes, and when the
+  /// sub-tabs shown do (#519), so read it from here each build rather than
+  /// keeping it.
   TabController get sections => _sections;
 
+  /// The sub-tabs the bar shows, in their order ([visibleSections], #519):
+  /// each one's place among them is its index in [sections]. All three
+  /// until a ready detail says otherwise.
+  List<EventGamesSection> get visibleSections => _visible;
+  List<EventGamesSection> _visible = EventGamesSection.values;
+
   /// The sub-tab chosen.
-  EventGamesSection get section => EventGamesSection.values[sections.index];
+  EventGamesSection get section => _visible[sections.index];
 
-  /// Starts the controller's life with [sections]. For the scope only.
-  // A setter would pair with the `sections` getter and read as anyone's to
-  // set; the scope's verbs, attach and replace, say which one tells the
-  // listeners.
-  // ignore: use_setters_to_change_properties
-  void attachSections(TabController sections) => _sections = sections;
+  /// The place of [section] in the bar, its index in [sections], or null
+  /// where the bar doesn't show it (#519).
+  int? sectionIndex(EventGamesSection section) {
+    final index = _visible.indexOf(section);
+    return index < 0 ? null : index;
+  }
 
-  /// Moves to [sections], which takes the place of the old controller at the
-  /// same index, and tells the listeners once so the page builds on it. For
-  /// the scope only.
-  void replaceSections(TabController sections) {
+  /// Starts the controller's life with [sections], one tab for each of
+  /// [visible]. For the scope only.
+  void attachSections(
+    TabController sections,
+    List<EventGamesSection> visible,
+  ) {
     _sections = sections;
+    _visible = visible;
+  }
+
+  /// Moves to [sections], one tab for each of [visible], which takes the
+  /// place of the old controller on the sub-tab chosen, where it is still
+  /// shown, and tells the listeners once so the page builds on it. For the
+  /// scope only.
+  void replaceSections(
+    TabController sections,
+    List<EventGamesSection> visible,
+  ) {
+    _sections = sections;
+    _visible = visible;
     notifyListeners();
   }
+
+  /// Whether any nomination [state] holds is in the date view
+  /// ([nominationsInView], #519): only those the client knows. None read
+  /// yet, hidden, or a first read that failed, counts as none.
+  bool nominationsInViewExist(EventNominationsState state) =>
+      drawnNominationsLoad(state) != EventNominationsLoad.hidden &&
+      nominationsInView(_dateView, state.nominations).isNotEmpty;
 
   /// Tells the listeners the chosen sub-tab changed. For the scope only,
   /// which calls it once for each change, as the change starts, the way the
@@ -272,28 +304,44 @@ class EventGamesTabController extends ChangeNotifier {
   }
 
   /// Makes the date changes [update] makes, and tells the listeners where
-  /// they change the view or [dateQuery].
+  /// they change the view or [dateQuery]. Where a row of dates shows, it
+  /// clears any date in the nominations' filter, as the row takes its place
+  /// (#1042), and tells them so too. A row that goes again doesn't set it
+  /// back: the row's choice isn't carried into the filter.
   void _updateDates(void Function() update) {
     final view = _dateView;
     final query = dateQuery;
+    final filter = _nominationFilter;
     update();
-    if (_dateView != view || dateQuery != query) notifyListeners();
+    if (_dateView != null && _nominationFilter.scope != null) {
+      _nominationFilter = _nominationFilter.copyWith(clearScope: true);
+    }
+    if (_dateView != view ||
+        dateQuery != query ||
+        _nominationFilter != filter) {
+      notifyListeners();
+    }
   }
 
   /// What the tab narrows the pool to.
   PoolFilter get filter => _filter;
 
-  /// What the Nominations section narrows the nominations to (#517).
+  /// What the Nominations section narrows the nominations to (#517). Never
+  /// by date while a row of dates shows (#1042): the row chooses that.
   NominationFilter get nominationFilter => _nominationFilter;
 
   /// How the Nominations section orders the nominations it shows (#517).
   NominationSort get nominationSort => _nominationSort;
 
   /// Narrows the nominations to [filter], as each change in the Filters
-  /// pop-up or a chip's removal makes it.
+  /// pop-up or a chip's removal makes it: without its date while a row of
+  /// dates shows (#1042).
   void setNominationFilter(NominationFilter filter) {
-    if (filter == _nominationFilter) return;
-    _nominationFilter = filter;
+    final kept = _dateView != null && filter.scope != null
+        ? filter.copyWith(clearScope: true)
+        : filter;
+    if (kept == _nominationFilter) return;
+    _nominationFilter = kept;
     notifyListeners();
   }
 
@@ -792,8 +840,8 @@ class EventGamesTabController extends ChangeNotifier {
 
   /// Answers the lineup going from [previous] to [current], as the bloc
   /// emits it and before the frame that builds it (#519), from [context],
-  /// the scope's, with [dates] the event's dates, which order its rows
-  /// ([lineupGroups]).
+  /// the scope's, with [dates] the event's dates, which order its rows in
+  /// the date view ([lineupGroupsFor], #1042).
   ///
   /// A row that leaves while focus is in it hands focus on once that frame
   /// has ended, as a nominations row does ([nominationsChanged]): to the
@@ -811,7 +859,7 @@ class EventGamesTabController extends ChangeNotifier {
   }) {
     if (identical(previous.games, current.games)) return;
     List<String> shown(List<LineupGame> games) => [
-      for (final group in lineupGroups(games, dates))
+      for (final group in lineupGroupsFor(_dateView, games, dates))
         for (final game in group.games) game.id,
     ];
     _rowsLeft(
@@ -897,18 +945,19 @@ class EventGamesTabController extends ChangeNotifier {
   /// bloc emits them and before the frame that builds them (#517), from
   /// [context], the scope's, for the viewer [viewerId].
   ///
-  /// A row that leaves the rows shown, filtered and sorted, while it holds
-  /// focus, or as the write on it that was out ends, or as the whole list's
-  /// read after that write does, where the write's own read of the row
-  /// failed ([_readsWhole]), hands focus on once that frame has ended, as a
-  /// pool row does ([poolChanged]): to the next row shown, else the one
-  /// before it, in the same place among its controls (#946), its head from
-  /// a head and the same choice of its vote from a choice, so the rows are
-  /// worked through one after another; its head where it has no control
-  /// there that can take focus. Where the write ended with focus outside
-  /// the row, as a screen reader's activation leaves it, to the first of
-  /// its controls past its head (#957), else its head. Where no row is
-  /// left, to Filters, where it is built.
+  /// A row that leaves the rows shown, in the date view (#1042), filtered
+  /// and sorted, while it holds focus, or as the write on it that was out
+  /// ends, or as the whole list's read after that write does, where the
+  /// write's own read of the row failed ([_readsWhole]), hands focus on once
+  /// that frame has ended, as a pool row does ([poolChanged]): to the next
+  /// row shown, else the one before it, in the same place among its
+  /// controls (#946), its head from a head and the same choice of its vote
+  /// from a choice, so the rows are worked through one after another; its
+  /// head where it has no control there that can take focus. Where the
+  /// write ended with focus outside the row, as a screen reader's
+  /// activation leaves it, to the first of its controls past its head
+  /// (#957), else its head. Where no row is left, to Filters, where it is
+  /// built.
   /// The writes that can take their row away are a vote, as one voted on
   /// under "Not voted yet" leaves, a withdrawal, and a host's approval,
   /// rejection or close of a vote (#518), each of which changes the row's
@@ -955,9 +1004,13 @@ class EventGamesTabController extends ChangeNotifier {
     }
     final written = ended ?? _unreadWrite;
     _unreadWrite = null;
-    List<EventNomination> shown(List<EventNomination> all) => sortNominations(
-      filterNominations(all, _nominationFilter, viewerId: viewerId),
-      _nominationSort,
+    // As the section shows them, in the same order.
+    List<EventNomination> shown(List<EventNomination> all) => shownNominations(
+      all,
+      view: _dateView,
+      filter: _nominationFilter,
+      sort: _nominationSort,
+      viewerId: viewerId,
     );
     _rowsLeft(
       context,
@@ -1156,6 +1209,16 @@ class EventGamesTabController extends ChangeNotifier {
 /// dates, where the event is one the server knows, so the date view follows
 /// them ([EventGamesTabController.syncDates], #1042).
 ///
+/// The sub-tabs' bar shows those [visibleSections] gives under the mode of
+/// the date view in use ([viewMode], #519), with the nominations it has
+/// heard: all three, but for Nominations under a host-only view with none
+/// of its nominations read. As the detail, the nominations or the date view
+/// change that, the scope makes the sub-tabs' controller anew, one tab for
+/// each shown, on the sub-tab chosen where it is still shown, else the
+/// first, and lets the old one go after the frame, as it does for the
+/// motion setting. One mid-change ends where it was going: a new controller
+/// is never mid-change, and its index is always among the sub-tabs shown.
+///
 /// ## A pool row's hand-off
 ///
 /// It hears each change of the pool before the frame that builds it, while
@@ -1288,11 +1351,16 @@ class _EventGamesTabScopeState extends State<EventGamesTabScope>
   void initState() {
     super.initState();
     _useScreen();
-    _controller.takeDate(widget.initialDate, now: widget.now());
+    _controller
+      ..takeDate(widget.initialDate, now: widget.now())
+      // A date chosen, or taken from the location, can change the sub-tabs
+      // shown (#519), as the detail and the nominations can.
+      ..addListener(_syncSections);
     // The screen can open on Games (#856), with no tab change to say so, and
     // on a detail already ready.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_detailBloc case final detail?) _syncDates(detail.state);
+      _syncSections();
       _firstShowing();
     });
   }
@@ -1314,9 +1382,6 @@ class _EventGamesTabScopeState extends State<EventGamesTabScope>
       _tabs?.removeListener(_firstShowing);
       _tabs = tabs..addListener(_firstShowing);
     }
-    _useSections(
-      BgeMotion.durationOf(context, BgeTokens.of(context).motionMedium),
-    );
     final detail = context.read<EventDetailBloc>();
     if (detail != _detailBloc) {
       unawaited(_detail?.cancel());
@@ -1359,30 +1424,80 @@ class _EventGamesTabScopeState extends State<EventGamesTabScope>
       // still built.
       _lineup = lineup.stream.listen(_lineupChanged);
     }
+    // Once the blocs are read: the sub-tabs shown follow the detail, the
+    // nominations and the date view (#519). A detail already ready as the
+    // scope is made has its dates now, so the first controller is made for
+    // the date the location names, not the event's own rules. The screen's
+    // own bloc is never ready yet, since it is made in this build, and a
+    // bloc only changes state after it.
+    if (_sections == null) _syncDates(detail.state);
+    _useSections(
+      duration: BgeMotion.durationOf(
+        context,
+        BgeTokens.of(context).motionMedium,
+      ),
+    );
   }
 
-  /// Makes the sub-tabs' controller, and when [duration] differs from the
-  /// one it has, replaces it by one at the same index, as
-  /// `DefaultTabController` does, and lets the old one go after the frame.
-  void _useSections(Duration duration) {
+  /// Makes the sub-tabs' controller, one tab for each sub-tab the tab shows
+  /// ([_shownSections], #519), on [EventGamesTabScope.initialSection] where
+  /// it is shown, else the first. Where [duration], the motion's, differs
+  /// from the one it has, or the sub-tabs shown do, replaces it, as
+  /// `DefaultTabController` does, by one on the sub-tab chosen where that is
+  /// still shown, else the first, as where Nominations leaves while chosen,
+  /// and lets the old one go after the frame. With no [duration], the one it
+  /// has. A new controller is never mid-change, so one replaced while its
+  /// indicator moves ends that move where it was going.
+  void _useSections({Duration? duration}) {
     final old = _sections;
-    if (old != null && old.animationDuration == duration) return;
+    final motion = duration ?? old!.animationDuration;
+    final shown = _shownSections();
+    if (old != null &&
+        old.animationDuration == motion &&
+        listEquals(shown, _controller.visibleSections)) {
+      return;
+    }
+    final kept = shown.indexOf(
+      old == null ? widget.initialSection : _controller.section,
+    );
     final sections = TabController(
-      length: EventGamesSection.values.length,
-      initialIndex: old?.index ?? widget.initialSection.index,
-      animationDuration: duration,
+      length: shown.length,
+      initialIndex: kept < 0 ? 0 : kept,
+      animationDuration: motion,
       vsync: this,
     );
     _sections = sections;
     _notifiedSection = sections.index;
     sections.addListener(_sectionChanged);
     if (old == null) {
-      _controller.attachSections(sections);
+      _controller.attachSections(sections, shown);
       return;
     }
     old.removeListener(_sectionChanged);
-    _controller.replaceSections(sections);
+    _controller.replaceSections(sections, shown);
     WidgetsBinding.instance.addPostFrameCallback((_) => old.dispose());
+  }
+
+  /// The sub-tabs the tab shows ([visibleSections], #519), under the mode of
+  /// the date view in use ([viewMode]), with the nominations as last
+  /// emitted: those shown already while the detail isn't ready.
+  List<EventGamesSection> _shownSections() {
+    final detail = _detailBloc?.state;
+    if (detail is! EventDetailReady) return _controller.visibleSections;
+    return visibleSections(
+      mode: viewMode(detail.detail.snapshot, _controller.dateView),
+      nominationsInViewExist: _controller.nominationsInViewExist(
+        _lastNominations,
+      ),
+    );
+  }
+
+  /// Replaces the sub-tabs' controller where the sub-tabs shown have
+  /// changed ([_useSections]): as the detail, the nominations or the date
+  /// view do.
+  void _syncSections() {
+    if (!mounted || _sections == null) return;
+    _useSections();
   }
 
   void _sectionChanged() {
@@ -1394,6 +1509,7 @@ class _EventGamesTabScopeState extends State<EventGamesTabScope>
 
   void _detailChanged(EventDetailState state) {
     _syncDates(state);
+    _syncSections();
     _firstShowing();
   }
 
@@ -1444,6 +1560,8 @@ class _EventGamesTabScopeState extends State<EventGamesTabScope>
       ..nominationsEmitted(state)
       ..nominationsOutcomeLanded(previous.outcome, state.outcome);
     if (!mounted) return;
+    // Nominations read into, or out of, a host-only view (#519).
+    _syncSections();
     final detail = context.read<EventDetailBloc>().state;
     _controller.nominationsChanged(
       context,
@@ -1474,6 +1592,7 @@ class _EventGamesTabScopeState extends State<EventGamesTabScope>
   @override
   void dispose() {
     _tabs?.removeListener(_firstShowing);
+    _controller.removeListener(_syncSections);
     _sections?.dispose();
     unawaited(_detail?.cancel());
     unawaited(_pool?.cancel());

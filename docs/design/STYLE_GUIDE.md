@@ -436,9 +436,28 @@ switch a mode: a `SegmentedButton` is for that, such as a layout or a filter.
   parameter, not a path segment, because go_router keys a page by its
   route, and a route per tab would build the screen anew on every change
   (#856).
+- **A choice that a tab's content follows is in the location beside it.**
+  Where a tab's sub-tabs all follow one choice above their bar, as the
+  Games tab's follow its row of dates (#1042), the location names it in a
+  `date` parameter beside `tab`: `all` for every date, or the date's id. A
+  tab change keeps the `date`, and a date chosen keeps the `tab` where it
+  still shows (see the next rule); each replaces the location under
+  `Router.neglect`, as a tab change does. A `date` naming nothing the
+  screen can show opens the default, the next date still to come, or Every
+  date where none is, and the location is told the date shown; a location
+  with none goes on naming none while the default shows. The sub-tab stays
+  as the row comes and goes.
 - **A screen that can't show a tab shows none.** Where one tab would have
   nothing to hold, the page is the other alone, with no bar, rather than a
-  bar with one tab or a dead one.
+  bar with one tab or a dead one. So too a sub-tab: where the choice in use
+  leaves one nothing it could hold, as Nominations under a date only the
+  hosts add games to, with none nominated for it (#519), the second bar
+  leaves it out, and the rest say where they stand among those shown. A
+  location naming it opens the bar's first sub-tab, and the location is
+  told that one, as a tab chosen is. One that leaves while chosen gives way
+  to the first, and one still shown stays chosen as another comes or goes;
+  focus on a sub-tab stays on it, and focus on one that left goes to the
+  sub-tab chosen.
 - **A tab of two or more destinations of its own takes a second bar.** Its
   first sliver is a `TabBar.secondary` under the screen's own bar, as the
   event's Games tab holds Lineup, Nominations and Pool (#945, #519). The same

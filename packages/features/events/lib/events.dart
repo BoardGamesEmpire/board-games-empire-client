@@ -55,5 +55,6 @@ export 'src/widgets/event_detail_tabs.dart'
         EventDetailTab,
         EventGamesSection,
         EventLocationChanged,
-        EventScreenTab;
+        EventScreenTab,
+        visibleSections;
 export 'src/widgets/event_row.dart';

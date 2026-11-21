@@ -10,6 +10,7 @@ import 'package:flutter/foundation.dart'
     show SynchronousFuture, ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:game_filters/game_filters.dart' show GameFiltersLocalizations;
 import 'package:interfaces/repositories.dart';
@@ -603,6 +604,31 @@ void main() {
     });
   });
 
+  // Nothing can be nominated under a host-only view (#519), so its
+  // Nominations sub-tab shows only while that view has nominations.
+  group('visibleSections (#519)', () {
+    const all = EventGamesSection.values;
+    const withoutNominations = [
+      EventGamesSection.lineup,
+      EventGamesSection.pool,
+    ];
+
+    for (final mode in GameAdditionMode.values) {
+      final hostOnly = mode == GameAdditionMode.hostOnly;
+      test('under ${mode.name}, with no nominations in view, '
+          '${hostOnly ? 'Nominations is left out' : 'all three show'}', () {
+        expect(
+          visibleSections(mode: mode, nominationsInViewExist: false),
+          hostOnly ? withoutNominations : all,
+        );
+      });
+
+      test('under ${mode.name}, with nominations in view, all three show', () {
+        expect(visibleSections(mode: mode, nominationsInViewExist: true), all);
+      });
+    }
+  });
+
   group('the location (#856)', () {
     late ValueNotifier<String?> location;
     late ValueNotifier<String?> dateLocation;
@@ -659,14 +685,20 @@ void main() {
         )
         .controller!;
 
-    /// The tab the bars stand on, and under Games the sub-tab.
+    /// The Games tab's controller, which holds the date view (#1042).
+    EventGamesTabController games(WidgetTester tester) => EventGamesTabScope.of(
+      tester.element(find.byKey(EventDetailScreen.tabBarKey)),
+    );
+
+    /// The tab the bars stand on, and under Games the sub-tab: the one at the
+    /// sub-tabs' index among those the bar shows (#519).
     EventScreenTab shown(WidgetTester tester) {
       final tab = EventDetailTab.values[tabs(tester).index];
       return EventScreenTab.of(
         tab,
         // The sub-tabs' bar is built on Games alone.
         tab == EventDetailTab.games
-            ? EventGamesSection.values[sections(tester).index]
+            ? games(tester).visibleSections[sections(tester).index]
             : EventGamesSection.nominations,
       );
     }
@@ -686,11 +718,6 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byKey(EventDetailScreen.tabBarKey), findsOneWidget);
     }
-
-    /// The Games tab's controller, which holds the date view (#1042).
-    EventGamesTabController games(WidgetTester tester) => EventGamesTabScope.of(
-      tester.element(find.byKey(EventDetailScreen.tabBarKey)),
-    );
 
     /// Taps [control], then lets one frame and a third of the indicator's
     /// move run: mid-change.
@@ -1334,6 +1361,416 @@ void main() {
       expect(shown(tester), EventScreenTab.pool);
       expect(reports, [EventScreenTab.pool]);
       expect(reportedDates, [null]);
+    });
+
+    // Nothing can be nominated under a host-only view (#519): its
+    // Nominations sub-tab shows only while that view has nominations, and a
+    // location naming it there opens the first sub-tab, Lineup.
+    group('Nominations under a host-only view (#519)', () {
+      /// `e-1`'s rules, adding games as [mode] says.
+      EventPolicy policyOf(GameAdditionMode mode) => EventPolicy(
+        id: 'p-1',
+        eventId: 'e-1',
+        allowMemberInvites: true,
+        allowGuestInvites: false,
+        restrictToGameCategories: false,
+        requireHostApprovalToJoin: false,
+        allowSpectators: false,
+        strictCapacity: false,
+        gameAdditionMode: mode,
+        restrictToAttendeePool: false,
+        voteThresholdType: VoteThresholdType.unknown,
+        voteQuorumType: VoteQuorumType.unknown,
+        voteEligibility: VoteEligibility.allAttendees,
+        interestedWeight: InterestedWeight.asFor,
+        createdAt: kItemInstant,
+        updatedAt: kItemInstant,
+      );
+
+      /// The second date's own rules (#1009): only the hosts add games.
+      final secondHostOnly = EventOccurrencePolicy(
+        id: 'op-o-2',
+        occurrenceId: 'o-2',
+        allowedCategoryIds: const [],
+        allowedPlatformIds: const [],
+        allowedPlatformTypes: const [],
+        platformTypesUnrestricted: false,
+        platformsUnrestricted: false,
+        capacityUnrestricted: false,
+        gameAdditionMode: GameAdditionMode.hostOnly,
+        createdAt: kItemInstant,
+        updatedAt: kItemInstant,
+      );
+
+      /// [twoDated], whose games need a vote, but on its second date, `o-2`,
+      /// only the hosts add them.
+      final dated = twoDated.copyWith(
+        snapshot: twoDated.snapshot.copyWith(
+          policy: policyOf(GameAdditionMode.requiresVote),
+          occurrencePolicies: [secondHostOnly],
+        ),
+      );
+
+      /// [hosted], on its one date, where only the hosts add games.
+      final hostOnly = hosted.copyWith(
+        snapshot: hosted.snapshot.copyWith(
+          policy: policyOf(GameAdditionMode.hostOnly),
+        ),
+      );
+
+      /// Ada's open nomination of Azul, for the date [occurrenceId], or for
+      /// the whole event where it is null.
+      EventNomination nominationFor(String? occurrenceId) => EventNomination(
+        id: 'n-${occurrenceId ?? 'all'}',
+        eventId: 'e-1',
+        occurrenceId: occurrenceId,
+        platformGameId: azul.platformGameId,
+        gameId: azul.gameId,
+        title: azul.title,
+        platformName: azul.platformName,
+        status: NominationStatus.open,
+        nominatedById: 'att-2',
+        suppliedFromId: azul.id,
+        createdAt: kItemInstant,
+      );
+
+      /// Opens the screen on the location's [tab] and [date], with a server
+      /// that serves [detail], which the cache shows, and [nominations], and
+      /// lets the reads the Games tab makes end.
+      Future<void> openOn(
+        WidgetTester tester,
+        EventDetail detail,
+        String? tab, {
+        String? date,
+        List<EventNomination> nominations = const [],
+      }) async {
+        await open(
+          tester,
+          tab,
+          date: date,
+          remote: FakeEventRemote.detail(
+            (_) => detail.snapshot,
+            pool: (_) => const [],
+            nominations: (_) => nominations,
+          ),
+        );
+        cache.add(detail);
+        await tester.pumpAndSettle();
+      }
+
+      /// Chooses the date [id] from the row, Every date where it is null.
+      Future<void> chooseDate(WidgetTester tester, String? id) async {
+        final chip = find.byKey(EventDetailScreen.dateChipKey(id));
+        await tester.ensureVisible(chip);
+        await tester.tap(chip);
+        await tester.pumpAndSettle();
+      }
+
+      /// The focus of [which]'s sub-tab: its ink well's, the nearest above
+      /// its label.
+      FocusNode tabFocus(WidgetTester tester, EventGamesSection which) =>
+          Focus.of(tester.element(section(which)));
+
+      testWidgets('a HostOnly date hides Nominations when none are in view', (
+        tester,
+      ) async {
+        final handle = tester.ensureSemantics();
+        try {
+          await openOn(tester, dated, 'lineup', date: 'o-1');
+          expect(section(EventGamesSection.nominations), findsOneWidget);
+          expect(sections(tester).length, 3);
+
+          await chooseDate(tester, 'o-2');
+
+          expect(section(EventGamesSection.nominations), findsNothing);
+          expect(sections(tester).length, 2);
+          expect(shown(tester), EventScreenTab.lineup);
+          // Each says where it stands among the two the bar shows.
+          for (final (index, which) in [
+            (1, EventGamesSection.lineup),
+            (2, EventGamesSection.pool),
+          ]) {
+            expect(
+              tester.getSemantics(section(which)).label,
+              contains('$index of 2'),
+              reason: which.name,
+            );
+          }
+
+          // Every date is under the event's rules, which need a vote.
+          await chooseDate(tester, null);
+          expect(section(EventGamesSection.nominations), findsOneWidget);
+          expect(sections(tester).length, 3);
+          expect(shown(tester), EventScreenTab.lineup);
+        } finally {
+          handle.dispose();
+        }
+      });
+
+      testWidgets('a HostOnly date keeps Nominations while one made before '
+          'the switch is in view', (tester) async {
+        // One for the date, made before its rules went host-only.
+        await openOn(
+          tester,
+          dated,
+          'lineup',
+          date: 'o-1',
+          nominations: [nominationFor('o-2')],
+        );
+
+        await chooseDate(tester, 'o-2');
+
+        expect(section(EventGamesSection.nominations), findsOneWidget);
+        expect(sections(tester).length, 3);
+      });
+
+      testWidgets('a HostOnly date keeps Nominations for a whole-event one, '
+          "which is in every date's view", (tester) async {
+        await openOn(
+          tester,
+          dated,
+          'lineup',
+          date: 'o-2',
+          nominations: [nominationFor(null)],
+        );
+
+        expect(section(EventGamesSection.nominations), findsOneWidget);
+      });
+
+      testWidgets("another date's nomination doesn't keep Nominations on a "
+          'HostOnly date', (tester) async {
+        await openOn(
+          tester,
+          dated,
+          'lineup',
+          date: 'o-1',
+          nominations: [nominationFor('o-1')],
+        );
+
+        await chooseDate(tester, 'o-2');
+
+        expect(section(EventGamesSection.nominations), findsNothing);
+      });
+
+      testWidgets('choosing a host-only date while on Nominations moves to '
+          'Lineup', (tester) async {
+        await openOn(tester, dated, 'nominations', date: 'o-1');
+        expect(shown(tester), EventScreenTab.nominations);
+        expect(reports, isEmpty);
+
+        await chooseDate(tester, 'o-2');
+
+        expect(tester.takeException(), isNull);
+        expect(section(EventGamesSection.nominations), findsNothing);
+        expect(sections(tester).index, 0);
+        expect(shown(tester), EventScreenTab.lineup);
+        expect(
+          tester.getSemantics(section(EventGamesSection.lineup)),
+          isSemantics(isSelected: true),
+        );
+        // Told as a sub-tab chosen is, with the date beside it.
+        expect(reports, [EventScreenTab.lineup]);
+        expect(reportedDates, ['o-2']);
+      });
+
+      testWidgets('a host-only date chosen while the change to Nominations '
+          'runs lands on Lineup, with no error', (tester) async {
+        await openOn(tester, dated, 'lineup', date: 'o-1');
+
+        await tapAndHold(tester, section(EventGamesSection.nominations));
+        expect(sections(tester).indexIsChanging, isTrue);
+        games(tester).chooseDate(const OneDateView('o-2'));
+        await tester.pump();
+        expect(tester.takeException(), isNull);
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(tester.takeException(), isNull);
+        await tester.pumpAndSettle();
+
+        expect(tester.takeException(), isNull);
+        expect(shown(tester), EventScreenTab.lineup);
+        expect(sections(tester).length, 2);
+        expect(reports, [EventScreenTab.lineup]);
+        expect(reportedDates, ['o-2']);
+      });
+
+      testWidgets('a sub-tab still shown stays chosen as Nominations leaves, '
+          'mid-change too, and as it comes back', (tester) async {
+        await openOn(tester, dated, 'nominations', date: 'o-1');
+
+        // From Nominations to Pool, and the date changes on the way.
+        await tapAndHold(tester, section(EventGamesSection.pool));
+        games(tester).chooseDate(const OneDateView('o-2'));
+        await tester.pumpAndSettle();
+
+        expect(tester.takeException(), isNull);
+        expect(shown(tester), EventScreenTab.pool);
+        expect(sections(tester).index, 1);
+        expect(reports, [EventScreenTab.pool]);
+        expect(reportedDates, ['o-2']);
+
+        await chooseDate(tester, 'o-1');
+
+        expect(section(EventGamesSection.nominations), findsOneWidget);
+        expect(shown(tester), EventScreenTab.pool);
+        expect(sections(tester).index, 2);
+        expect(reports, [EventScreenTab.pool, EventScreenTab.pool]);
+        expect(reportedDates, ['o-2', 'o-1']);
+      });
+
+      testWidgets('tab=nominations on a host-only event opens Lineup', (
+        tester,
+      ) async {
+        await openOn(tester, hostOnly, 'nominations');
+
+        expect(section(EventGamesSection.nominations), findsNothing);
+        expect(shown(tester), EventScreenTab.lineup);
+        expect(reports, [EventScreenTab.lineup]);
+        expect(reportedDates, [null]);
+
+        // A later location naming it opens Lineup too, and is told so.
+        location.value = 'pool';
+        await tester.pumpAndSettle();
+        expect(shown(tester), EventScreenTab.pool);
+        location.value = 'nominations';
+        await tester.pumpAndSettle();
+
+        expect(shown(tester), EventScreenTab.lineup);
+        expect(reports, [EventScreenTab.lineup, EventScreenTab.lineup]);
+      });
+
+      // A location that names both at once is taken date first: the tab is
+      // looked for among the sub-tabs the new date shows.
+      testWidgets('a location naming Nominations and a date that shows it, '
+          'together, opens Nominations', (tester) async {
+        await openOn(tester, dated, 'pool', date: 'o-2');
+        expect(section(EventGamesSection.nominations), findsNothing);
+
+        location.value = 'nominations';
+        dateLocation.value = 'o-1';
+        await tester.pumpAndSettle();
+
+        expect(section(EventGamesSection.nominations), findsOneWidget);
+        expect(shown(tester), EventScreenTab.nominations);
+        expect(games(tester).dateView, const OneDateView('o-1'));
+        expect(reports, isEmpty);
+      });
+
+      testWidgets('a location naming Pool and a host-only date together, from '
+          'Nominations, opens Pool', (tester) async {
+        await openOn(tester, dated, 'nominations', date: 'o-1');
+
+        location.value = 'pool';
+        dateLocation.value = 'o-2';
+        await tester.pumpAndSettle();
+
+        expect(section(EventGamesSection.nominations), findsNothing);
+        expect(shown(tester), EventScreenTab.pool);
+        expect(reports, isEmpty);
+      });
+
+      // Nominations not yet read count as none, so a link to them lands on
+      // Lineup first; once they load, the sub-tab shows, and the screen
+      // stays where it landed.
+      testWidgets('tab=nominations on a host-only event with nominations '
+          'opens Lineup, then shows Nominations once they are read', (
+        tester,
+      ) async {
+        await openOn(
+          tester,
+          hostOnly,
+          'nominations',
+          nominations: [nominationFor(null)],
+        );
+
+        expect(section(EventGamesSection.nominations), findsOneWidget);
+        expect(shown(tester), EventScreenTab.lineup);
+        expect(reports, [EventScreenTab.lineup]);
+      });
+
+      testWidgets('focus on Nominations as it leaves goes to Lineup, the '
+          'sub-tab chosen', (tester) async {
+        await openOn(tester, dated, 'nominations', date: 'o-1');
+        tabFocus(tester, EventGamesSection.nominations).requestFocus();
+        await tester.pump();
+
+        // The location moves to the host-only date, as Back can.
+        dateLocation.value = 'o-2';
+        await tester.pumpAndSettle();
+
+        expect(shown(tester), EventScreenTab.lineup);
+        expect(
+          tabFocus(tester, EventGamesSection.lineup).hasPrimaryFocus,
+          isTrue,
+        );
+      });
+
+      testWidgets('focus on Pool stays on Pool as Nominations leaves and '
+          'comes back', (tester) async {
+        await openOn(tester, dated, 'lineup', date: 'o-1');
+        tabFocus(tester, EventGamesSection.pool).requestFocus();
+        await tester.pump();
+
+        dateLocation.value = 'o-2';
+        await tester.pumpAndSettle();
+        expect(section(EventGamesSection.nominations), findsNothing);
+        expect(
+          tabFocus(tester, EventGamesSection.pool).hasPrimaryFocus,
+          isTrue,
+        );
+
+        dateLocation.value = 'o-1';
+        await tester.pumpAndSettle();
+        expect(section(EventGamesSection.nominations), findsOneWidget);
+        expect(
+          tabFocus(tester, EventGamesSection.pool).hasPrimaryFocus,
+          isTrue,
+        );
+        expect(shown(tester), EventScreenTab.lineup);
+      });
+
+      testWidgets('focus in the Nominations list as it leaves goes to '
+          'Lineup', (tester) async {
+        await openOn(
+          tester,
+          dated,
+          'nominations',
+          date: 'o-1',
+          nominations: [nominationFor('o-1')],
+        );
+        final filters = find.byKey(EventDetailScreen.nominationsFiltersKey);
+        expect(filters, findsOneWidget);
+        tester.widget<ButtonStyleButton>(filters).focusNode!.requestFocus();
+        await tester.pump();
+
+        dateLocation.value = 'o-2';
+        await tester.pumpAndSettle();
+
+        expect(filters, findsNothing);
+        expect(
+          tabFocus(tester, EventGamesSection.lineup).hasPrimaryFocus,
+          isTrue,
+        );
+      });
+
+      testWidgets('focus elsewhere stays where it is as Nominations leaves', (
+        tester,
+      ) async {
+        await openOn(tester, dated, 'nominations', date: 'o-1');
+        final chip = find.byKey(EventDetailScreen.dateChipKey('o-2'));
+        await tester.ensureVisible(chip);
+        final chipFocus = Focus.of(
+          tester.element(
+            find.descendant(of: chip, matching: find.byType(Text)).first,
+          ),
+        )..requestFocus();
+        await tester.pump();
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+        await tester.pumpAndSettle();
+
+        expect(shown(tester), EventScreenTab.lineup);
+        expect(chipFocus.hasPrimaryFocus, isTrue);
+      });
     });
   });
 }

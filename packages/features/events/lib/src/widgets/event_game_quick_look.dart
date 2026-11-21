@@ -432,7 +432,11 @@ class _EventGameQuickLookState extends State<EventGameQuickLook> {
       controller: controller,
       names: names,
       acting: acting,
-      scopes: nominateScopes(detail.detail, now: now),
+      scopes: nominateChoicesIn(
+        detail,
+        view: controller.dateView,
+        now: now,
+      ),
       lineup: lineup,
     );
     final medium = switch (shown.medium) {

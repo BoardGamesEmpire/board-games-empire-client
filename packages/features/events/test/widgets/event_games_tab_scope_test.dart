@@ -13,6 +13,7 @@ import 'package:events/src/bloc/event_lineup_state.dart';
 import 'package:events/src/bloc/event_nominations_bloc.dart';
 import 'package:events/src/bloc/event_nominations_event.dart';
 import 'package:events/src/bloc/event_nominations_state.dart';
+import 'package:events/src/detail/event_nominations.dart';
 import 'package:events/src/detail/games_date_view.dart';
 import 'package:events/src/widgets/event_detail_tabs.dart';
 import 'package:events/src/widgets/event_games_tab_scope.dart';
@@ -38,13 +39,15 @@ class _MockLineup extends MockBloc<EventLineupEvent, EventLineupState>
 
 /// The scope under the screen's tab controller and the blocs it reads, with
 /// the controller it holds handed to [onBuild] on each build. The detail's
-/// bloc emits [details], and the scope opens on [initialDate], the date the
-/// location names (#1042), by the clock [now].
+/// bloc starts on [initialDetail] and emits [details], and the scope opens
+/// on [initialDate], the date the location names (#1042), by the clock
+/// [now].
 Widget _harness({
   required void Function(EventGamesTabController controller) onBuild,
   EventGamesSection initialSection = EventGamesSection.nominations,
   bool disableAnimations = false,
   Stream<EventDetailState> details = const Stream.empty(),
+  EventDetailState initialDetail = const EventDetailLoading(),
   String? initialDate,
   DateTime Function() now = DateTime.now,
 }) {
@@ -67,7 +70,7 @@ Widget _harness({
     const Stream<EventLineupState>.empty(),
     initialState: const EventLineupState(),
   );
-  whenListen(detail, details, initialState: const EventDetailLoading());
+  whenListen(detail, details, initialState: initialDetail);
   return MediaQuery(
     data: MediaQueryData(disableAnimations: disableAnimations),
     child: MultiBlocProvider(
@@ -468,6 +471,103 @@ void main() {
 
       controller.chooseDate(const OneDateView('later'));
       expect(notified, 1);
+    });
+
+    // A detail can be ready as the scope is made, as one handed in already
+    // read could be: the sub-tabs it opens with follow the date the location
+    // names, not the event's own rules, so a link to Nominations on a date
+    // that takes nominations lands there (#519).
+    testWidgets('a detail ready as the scope is made opens on the sub-tabs of '
+        'the date the location names', (tester) async {
+      final at = now;
+      // Only the hosts add games to the event, but its later date takes
+      // nominations.
+      final detail = EventDetailReady(
+        detail: EventDetail(
+          snapshot: EventSnapshot(
+            event: item('e').event,
+            occurrences: [soon, later],
+            policy: EventPolicy(
+              id: 'p',
+              eventId: 'e',
+              allowMemberInvites: true,
+              allowGuestInvites: false,
+              restrictToGameCategories: false,
+              requireHostApprovalToJoin: false,
+              allowSpectators: false,
+              strictCapacity: false,
+              gameAdditionMode: GameAdditionMode.hostOnly,
+              restrictToAttendeePool: false,
+              voteThresholdType: VoteThresholdType.simpleMajority,
+              voteQuorumType: VoteQuorumType.none,
+              voteEligibility: VoteEligibility.allAttendees,
+              interestedWeight: InterestedWeight.asAbstain,
+              createdAt: at,
+              updatedAt: at,
+            ),
+            occurrencePolicies: [
+              EventOccurrencePolicy(
+                id: 'op-later',
+                occurrenceId: 'later',
+                allowedCategoryIds: const [],
+                allowedPlatformIds: const [],
+                allowedPlatformTypes: const [],
+                platformTypesUnrestricted: false,
+                platformsUnrestricted: false,
+                capacityUnrestricted: false,
+                gameAdditionMode: GameAdditionMode.requiresVote,
+                createdAt: at,
+                updatedAt: at,
+              ),
+            ],
+          ),
+        ),
+        actions: const {},
+      );
+
+      await tester.pumpWidget(
+        _harness(
+          initialDetail: detail,
+          initialDate: 'later',
+          now: () => now,
+          onBuild: (c) => controller = c,
+        ),
+      );
+
+      expect(controller.dateView, const OneDateView('later'));
+      expect(controller.visibleSections, EventGamesSection.values);
+      expect(controller.section, EventGamesSection.nominations);
+    });
+
+    // The row takes the place of the nominations' date facet: a date set
+    // in the filter before the row appears is cleared as it does, none is
+    // taken while it shows, and none is set back as it goes.
+    testWidgets("the row clears the nominations' filter's date, and takes "
+        'none while it shows', (tester) async {
+      await open(tester);
+      await emit(tester, ready([soon]));
+      controller.setNominationFilter(
+        const NominationFilter(scope: DateScope('soon'), mine: true),
+      );
+      expect(controller.nominationFilter.scope, const DateScope('soon'));
+      notified = 0;
+
+      await emit(tester, ready([soon, later]));
+
+      expect(controller.dateView, const OneDateView('soon'));
+      expect(controller.nominationFilter, const NominationFilter(mine: true));
+      expect(notified, 1);
+
+      controller.setNominationFilter(
+        const NominationFilter(scope: WholeEventScope(), mine: true),
+      );
+      expect(controller.nominationFilter, const NominationFilter(mine: true));
+      expect(notified, 1);
+
+      await emit(tester, ready([soon]));
+
+      expect(controller.dateView, isNull);
+      expect(controller.nominationFilter, const NominationFilter(mine: true));
     });
 
     // The cache's dates can be older than the server's: a link to a date

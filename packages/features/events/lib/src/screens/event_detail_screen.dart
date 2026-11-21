@@ -168,6 +168,19 @@ typedef OpenEventGame = void Function(BuildContext context, String gameId);
 /// cover and lines open its quick look (#957), a pop-up of the copy's place in
 /// this event, with its writes and, through [onOpenGame], View game.
 ///
+/// On an event of two or more dates, a row of them above the sub-tabs
+/// chooses which the tab shows (#1042): every date, or one. Lineup and
+/// Nominations show that view's, and Pool the same games in every view,
+/// with each row's Nominate for the view's scope and under its mode
+/// (#519). Under a host-only view, where nothing can be nominated, the bar
+/// has no Nominations while the view has no nominations the screen has
+/// read: one made before the mode turned host-only keeps it. A Nominations
+/// chosen as it goes, by a date chosen, a read, or a location that names
+/// it, gives way to Lineup, which the location is told as a sub-tab chosen
+/// is; a sub-tab still shown stays chosen, and focus on a sub-tab, or in
+/// what one that went showed, stays on it or goes to the one chosen
+/// ([EventGamesSectionBar]).
+///
 /// It is read the first time the tab shows on a ready event, or, where a read
 /// of the event is running then, once that read ends, and so once; and again
 /// each time a read of the event ends once the tab has shown, for the event
@@ -1484,7 +1497,10 @@ class _EventDetailView extends StatelessWidget {
 /// and would otherwise take the bars back. Built again with the location it
 /// had, as it can be before a report's location comes back, the screen stays
 /// where the user is. The sub-tab moves first, then the screen's tab, so Games
-/// never shows the sub-tab it is leaving. A tab the page can't show, as an
+/// never shows the sub-tab it is leaving. A sub-tab the Games tab doesn't
+/// show, as Nominations under a host-only view (#519), opens its first,
+/// Lineup, and that is reported, as it is where a sub-tab chosen leaves the
+/// bar and gives way to the first. A tab the page can't show, as an
 /// event made offline shows Details alone, doesn't wait in the controllers: the
 /// page puts them back on Details at once ([_ReadyPage]), and that move is
 /// reported as the user's are, so the location drops the tab.
@@ -1492,10 +1508,11 @@ class _EventDetailView extends StatelessWidget {
 /// A [date] that names another date than the location did, and than the one
 /// last reported or taken, is handed to the Games tab, which shows the view
 /// it opens ([EventGamesTabController.takeDate]), and becomes the one taken,
-/// on the same terms as a tab. Its move isn't reported, except where the
-/// location is to name another, as where it names none of the event's dates,
-/// or the event has no row of them: then that one is reported, so the
-/// location names the view shown.
+/// on the same terms as a tab. A location naming both is taken date first,
+/// so its tab is looked for among the sub-tabs its date shows. Its move
+/// isn't reported, except where the location is to name another, as where
+/// it names none of the event's dates, or the event has no row of them:
+/// then that one is reported, so the location names the view shown.
 class _EventTabLocation extends StatefulWidget {
   const _EventTabLocation({
     required this.tab,
@@ -1554,8 +1571,11 @@ class _EventTabLocationState extends State<_EventTabLocation> {
   @override
   void didUpdateWidget(_EventTabLocation oldWidget) {
     super.didUpdateWidget(oldWidget);
-    _takeTab(oldWidget.tab);
+    // The date first: which sub-tabs the Games tab shows follows it (#519),
+    // so a tab is looked for among those the new date shows. A sub-tabs'
+    // controller it replaces is followed as the tab is taken.
     _takeDate(oldWidget.date);
+    _takeTab(oldWidget.tab);
   }
 
   /// Moves the bars to the tab the location names, where it names another
@@ -1572,7 +1592,11 @@ class _EventTabLocationState extends State<_EventTabLocation> {
     _moving = true;
     try {
       if (wanted.section case final section?) {
-        _sections!.animateTo(section.index);
+        final index = _games!.sectionIndex(section);
+        // A sub-tab the date view doesn't show (#519) opens the first, which
+        // the location is told, as a sub-tab chosen is.
+        _sections!.animateTo(index ?? 0);
+        if (index == null) _changedAfterFrame();
       }
       _tabs!.animateTo(wanted.tab.index);
     } finally {
@@ -1655,7 +1679,7 @@ class _EventTabLocationState extends State<_EventTabLocation> {
     if (tabs.indexIsChanging || sections.indexIsChanging) return;
     final shown = EventScreenTab.of(
       EventDetailTab.values[tabs.index],
-      EventGamesSection.values[sections.index],
+      _games!.section,
     );
     final date = _games!.dateQuery;
     if (shown == _last && date == _lastDate) return;
@@ -2089,8 +2113,7 @@ class _ReadyPage extends StatelessWidget {
       final tabs = DefaultTabController.of(context);
       if (tabs.index != EventDetailTab.games.index) return;
       tabs.index = EventDetailTab.details.index;
-      EventGamesTabScope.of(context).sections.index =
-          EventGamesSection.values.first.index;
+      EventGamesTabScope.of(context).sections.index = 0;
     });
   }
 

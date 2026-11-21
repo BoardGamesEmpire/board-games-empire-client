@@ -7,6 +7,7 @@ import 'package:events/src/detail/event_actions.dart';
 import 'package:events/src/detail/event_date_actions.dart';
 import 'package:events/src/detail/event_detail_write.dart';
 import 'package:events/src/detail/event_nominations.dart';
+import 'package:events/src/detail/games_date_view.dart';
 import 'package:events/src/screens/event_detail_screen.dart';
 import 'package:events/src/widgets/event_game_quick_look.dart';
 import 'package:events/src/widgets/event_game_row_head.dart';
@@ -16,6 +17,7 @@ import 'package:events/src/widgets/event_games_tab_scope.dart';
 import 'package:events/src/widgets/game_name.dart';
 import 'package:events/src/widgets/nomination_filters_sheet.dart';
 import 'package:events/src/widgets/nomination_row_controls.dart';
+import 'package:events/src/widgets/pool_row_controls.dart';
 import 'package:flutter/material.dart';
 import 'package:game_filters/game_filters.dart' show InUseChip, InUseChips;
 import 'package:models/domain.dart' hide Visibility;
@@ -35,7 +37,7 @@ enum EventNominationsBody {
   /// again.
   failed,
 
-  /// Nobody has nominated a game.
+  /// Nobody has nominated a game, or none is in the date view (#1042).
   empty,
 
   /// Games are nominated, and the filter leaves none of them.
@@ -47,8 +49,12 @@ enum EventNominationsBody {
 
 /// The Nominations section, what an event's Games tab shows on its
 /// Nominations sub-tab (#517, #945): the games nominated for the lineup, one
-/// row each, those the filter keeps, in the order chosen, newest first
-/// unless the viewer chose another.
+/// row each, those in the date view the row of dates chose (#1042) that the
+/// filter keeps, in the order chosen, newest first unless the viewer chose
+/// another. Under a date those are the date's, then the whole event's, each
+/// in the order chosen, and a whole-event one says on its status line that
+/// it is for every date; under Every date, the whole event's; with no row,
+/// every one ([shownNominations]).
 ///
 /// Its slivers, as one group under the sub-tabs' bar, with no heading of
 /// their own, as the sub-tab's label names the list (#946): the header,
@@ -61,14 +67,16 @@ enum EventNominationsBody {
 /// the state would take; on its own sub-tab (#945), nothing follows this one. A
 /// first read that fails says so here, with Try again; one that fails over
 /// nominations read before leaves them and is the footer's to say. With none
-/// nominated, it points to the Pool sub-tab only where the viewer is offered
-/// Nominate there ([nominateGate]).
+/// nominated, or none in the view, it points to the Pool sub-tab only where
+/// the viewer is offered Nominate there in the view, under its mode (#519),
+/// with a choice to nominate for ([nominateChoicesIn]).
 ///
 /// ## Filters and sort
 ///
 /// Every nomination is read, so they are narrowed and ordered on the device
 /// (#517), by the [controller]'s filter and order, which outlive a switch to
-/// the Details tab. [rows] arrive filtered and sorted.
+/// the Details tab. [rows] arrive in the view, filtered and sorted. While a
+/// row of dates shows, the filter has no date: the row chooses it (#1042).
 ///
 /// The header shows wherever nominations are held to narrow, and wherever
 /// the filter narrows, so its chips and Clear filters stay reachable over
@@ -81,9 +89,9 @@ enum EventNominationsBody {
 /// - A chip per filter in use, which removes it ([InUseChips]): its press
 ///   hands focus to the chip in its place, else the one before it, else
 ///   Filters, while focus is free.
-/// - The count: how many nominations there are, and while the filter
-///   narrows, how many of them it keeps, as a live region, so a filter
-///   applied is heard.
+/// - The count: how many nominations the view holds ([total]), and while
+///   the filter narrows, how many of them it keeps, as a live region, so a
+///   filter applied is heard.
 ///
 /// "No nominations match" offers Clear filters, which brings every
 /// nomination back and hands focus to Filters, as the pool's hands it to
@@ -143,6 +151,7 @@ class EventNominationsSection extends StatelessWidget {
   const EventNominationsSection({
     required this.body,
     required this.rows,
+    required this.total,
     required this.detail,
     required this.state,
     required this.controller,
@@ -155,8 +164,13 @@ class EventNominationsSection extends StatelessWidget {
 
   final EventNominationsBody body;
 
-  /// The nominations shown, filtered and sorted, while [body] is rows.
+  /// The nominations shown, in the view, filtered and sorted, while [body]
+  /// is rows.
   final List<EventNomination> rows;
+
+  /// How many nominations the date view holds, whatever the filter keeps
+  /// (#1042).
+  final int total;
   final EventDetailReady detail;
   final EventNominationsState state;
 
@@ -213,7 +227,7 @@ class EventNominationsSection extends StatelessWidget {
               controller: controller,
               detail: detail,
               shown: rows.length,
-              total: state.nominations.length,
+              total: total,
               now: now,
             ),
           ),
@@ -243,8 +257,14 @@ class EventNominationsSection extends StatelessWidget {
             child: BgeEmptyState(
               title: l10n.eventsNominationsEmptyTitle,
               // Pointing to the Pool sub-tab only where the viewer is
-              // offered Nominate there.
-              body: nominateGate(detail) == NominateGate.open
+              // offered Nominate there, in the view (#1042).
+              body:
+                  nominateChoicesIn(
+                        detail,
+                        view: controller.dateView,
+                        now: now,
+                      )?.isNotEmpty ??
+                      false
                   ? l10n.eventsNominationsEmptyBody
                   : null,
             ),
@@ -272,6 +292,11 @@ class EventNominationsSection extends StatelessWidget {
               nomination: nomination,
               viewerId: viewerId,
               voting: voting,
+              // Under a date, the whole event's say they are for every date
+              // (#1042).
+              everyDate:
+                  controller.dateView is OneDateView &&
+                  nomination.occurrenceId == null,
             ),
           ),
         },
@@ -587,7 +612,8 @@ String _sortName(EventsLocalizations l10n, NominationSort sort) =>
 
 /// One nomination (#517), compact (#946): its picture, its title and one
 /// status line, where it stands and its tally of the votes that count,
-/// "Voting · 3 for · 1 against · 0 interested", spoken with commas, as one
+/// "Voting · 3 for · 1 against · 0 interested", then, where [everyDate],
+/// that it is for every date (#1042), spoken with commas, as one
 /// button, the row's head, which opens its quick look (#957,
 /// [EventGameRowHead]). Under both, outside that node and at the row's full
 /// width, the viewer's vote while it is open and they may vote ([voting],
@@ -600,6 +626,7 @@ class _NominationRow extends StatelessWidget {
     required this.nomination,
     required this.viewerId,
     required this.voting,
+    required this.everyDate,
   });
 
   /// Holds the whole row, so a row that leaves the rows shown can say it
@@ -617,6 +644,10 @@ class _NominationRow extends StatelessWidget {
 
   /// The viewer's vote, where they may vote ([nominationVoting]).
   final NominationVoting? voting;
+
+  /// Whether its status line says it is for every date: a whole-event one
+  /// under one date's view (#1042).
+  final bool everyDate;
 
   @override
   Widget build(BuildContext context) {
@@ -652,19 +683,25 @@ class _NominationRow extends StatelessWidget {
               focusNode: head,
               lines: [
                 Text(
-                  l10n.eventsNominationStatusLine(
-                    status,
-                    tally.forCount,
-                    tally.againstCount,
-                    tally.interestedCount,
-                  ),
+                  [
+                    l10n.eventsNominationStatusLine(
+                      status,
+                      tally.forCount,
+                      tally.againstCount,
+                      tally.interestedCount,
+                    ),
+                    if (everyDate) l10n.eventsGamesEveryDateMark,
+                  ].join(l10n.eventsDetailSeparator),
                   // The symbols between its parts would be read out.
-                  semanticsLabel: l10n.eventsNominationStatusLineSpoken(
-                    status,
-                    tally.forCount,
-                    tally.againstCount,
-                    tally.interestedCount,
-                  ),
+                  semanticsLabel: [
+                    l10n.eventsNominationStatusLineSpoken(
+                      status,
+                      tally.forCount,
+                      tally.againstCount,
+                      tally.interestedCount,
+                    ),
+                    if (everyDate) l10n.eventsGamesEveryDateMark,
+                  ].join(l10n.eventsDetailSpokenSeparator),
                   style: quiet,
                 ),
               ],

@@ -190,6 +190,101 @@ void main() {
     });
   });
 
+  // The nominations as the date row's choice shows them (#1042), before the
+  // filter narrows them.
+  group('nominationsInView (#1042)', () {
+    final all = [
+      nom('a'),
+      nom('b', occurrenceId: 'd1'),
+      nom('c', occurrenceId: 'd2'),
+      nom('d', status: NominationStatus.withdrawn),
+    ];
+    List<String> ids(GamesDateView? view) =>
+        nominationsInView(view, all).map((n) => n.id).toList();
+
+    test("a date lists its nominations, then the whole event's", () {
+      expect(ids(const OneDateView('d1')), ['b', 'a', 'd']);
+    });
+
+    test('Every date lists only whole-event nominations', () {
+      expect(ids(const EveryDateView()), ['a', 'd']);
+    });
+
+    test('with no view, every nomination', () {
+      expect(ids(null), ['a', 'b', 'c', 'd']);
+    });
+  });
+
+  // What the Nominations section shows (#517, #1042): the view's, narrowed
+  // and ordered, a date's own apart from the whole event's.
+  group('shownNominations', () {
+    EventNominationVote forVote(String attendeeId) =>
+        vote(attendeeId, VoteType.forGame);
+    // In the server's order: the less supported first in each part.
+    final all = [
+      nom('a'),
+      nom('b', votes: [forVote('att-1'), forVote('att-2')]),
+      nom('c', occurrenceId: 'd1'),
+      nom('d', occurrenceId: 'd1', votes: [forVote('att-1')]),
+      nom('e', occurrenceId: 'd2'),
+      nom('f', occurrenceId: 'd1', status: NominationStatus.withdrawn),
+    ];
+    List<String> ids(
+      GamesDateView? view, {
+      NominationFilter filter = const NominationFilter(),
+      NominationSort sort = NominationSort.newest,
+    }) => [
+      for (final n in shownNominations(
+        all,
+        view: view,
+        filter: filter,
+        sort: sort,
+        viewerId: 'att-me',
+      ))
+        n.id,
+    ];
+
+    test("under a date, its own come first, then the whole event's, each in "
+        'the order chosen', () {
+      const view = OneDateView('d1');
+      expect(ids(view), ['c', 'd', 'f', 'a', 'b']);
+      expect(ids(view, sort: NominationSort.mostSupport), [
+        'd',
+        'c',
+        'f',
+        'b',
+        'a',
+      ]);
+    });
+
+    test('the filter narrows each part', () {
+      expect(
+        ids(
+          const OneDateView('d1'),
+          filter: const NominationFilter(
+            statuses: {NominationStatusGroup.voting},
+          ),
+        ),
+        ['c', 'd', 'a', 'b'],
+      );
+    });
+
+    test('under Every date, or with no view, one list in the order chosen', () {
+      expect(ids(const EveryDateView(), sort: NominationSort.mostSupport), [
+        'b',
+        'a',
+      ]);
+      expect(ids(null, sort: NominationSort.mostSupport), [
+        'b',
+        'd',
+        'a',
+        'c',
+        'e',
+        'f',
+      ]);
+    });
+  });
+
   group('sortNominations', () {
     test('newest keeps the input order', () {
       final list = [nom('a'), nom('b')];
@@ -245,6 +340,22 @@ void main() {
       expect(
         nominateGate(ready(pol: policy(mode: GameAdditionMode.hostOnly))),
         NominateGate.hidden,
+      );
+    });
+
+    // The mode of the view in use (#519): a date's own, which can differ
+    // from the event's.
+    test("a mode given replaces the event's own", () {
+      expect(
+        nominateGate(ready(pol: policy()), mode: GameAdditionMode.hostOnly),
+        NominateGate.hidden,
+      );
+      expect(
+        nominateGate(
+          ready(pol: policy(mode: GameAdditionMode.hostOnly)),
+          mode: GameAdditionMode.requiresVote,
+        ),
+        NominateGate.open,
       );
     });
 

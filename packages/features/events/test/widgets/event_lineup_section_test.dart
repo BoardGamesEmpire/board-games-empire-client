@@ -104,7 +104,6 @@ void main() {
     sortOrder: 1,
   ).copyWith(eventId: 'e-1');
   const fridayName = 'Fri, Nov 6 · 7:00 PM';
-  const saturdayName = 'Sat, Nov 7 · 7:00 PM';
 
   /// Event `e-1` as the viewer sees it, on [dates] (Friday alone by
   /// default), with the viewer, Ada and someone unnamed on its roster.
@@ -307,6 +306,19 @@ void main() {
     expect(quickLook, findsNothing);
   }
 
+  /// Chooses the date [id] from the row of dates (#1042), Every date where
+  /// it is null.
+  Future<void> chooseDate(WidgetTester tester, String? id) async {
+    final chip = find.byKey(
+      EventDetailScreen.dateChipKey(id),
+      skipOffstage: false,
+    );
+    await tester.ensureVisible(chip);
+    await tester.pump();
+    await tester.tap(chip);
+    await animate(tester);
+  }
+
   group('grouping by date', () {
     testWidgets("a one-date event draws no header and marks the event's own "
         'games', (tester) async {
@@ -344,7 +356,11 @@ void main() {
       );
     });
 
-    testWidgets('two dates draw a header each', (tester) async {
+    // An event of two or more dates has a row of them (#1042), and the
+    // lineup follows its choice: a date's games, then the event's own,
+    // marked; or the event's own alone under Every date.
+    testWidgets("a date lists its games, then the event's own marked every "
+        'date', (tester) async {
       lineupAnswer = (_) => [
         _lineupGame('l-3', title: 'Root', occurrenceId: 'd-2'),
         _lineupGame('l-2', title: 'Azul', occurrenceId: 'd-1'),
@@ -353,14 +369,66 @@ void main() {
 
       await showLineup(tester, detail: detailOf(dates: [saturday, friday]));
 
-      // Every date, then each date in order, each over its own games.
+      // Friday, the next date still to come: its own game, then the
+      // event's, with no headings.
+      expect(row('l-2'), findsOneWidget);
+      expect(row('l-1'), findsOneWidget);
+      expect(row('l-3'), findsNothing);
+      expect(headings(), findsNothing);
+      expect(topOf(tester, row('l-2')), lessThan(topOf(tester, row('l-1'))));
+      expect(inRow('l-2', 'Primary · Ada is bringing this'), findsOneWidget);
+      expect(
+        inRow('l-1', 'Primary · Ada is bringing this · Every date'),
+        findsOneWidget,
+      );
+
+      await chooseDate(tester, 'd-2');
+
+      expect(row('l-3'), findsOneWidget);
+      expect(row('l-2'), findsNothing);
+      expect(topOf(tester, row('l-3')), lessThan(topOf(tester, row('l-1'))));
+      expect(headings(), findsNothing);
+    });
+
+    testWidgets("Every date lists only the event's own lineup", (
+      tester,
+    ) async {
+      lineupAnswer = (_) => [
+        _lineupGame('l-3', title: 'Root', occurrenceId: 'd-2'),
+        _lineupGame('l-2', title: 'Azul', occurrenceId: 'd-1'),
+        _lineupGame('l-1'),
+      ];
+      await showLineup(tester, detail: detailOf(dates: [friday, saturday]));
+
+      await chooseDate(tester, null);
+
+      expect(row('l-1'), findsOneWidget);
+      expect(row('l-2'), findsNothing);
+      expect(row('l-3'), findsNothing);
+      // The view says it: no heading, and no mark on the row.
+      expect(headings(), findsNothing);
+      expect(inRow('l-1', 'Primary · Ada is bringing this'), findsOneWidget);
+    });
+
+    testWidgets('Every date keeps a game for a date the event no longer '
+        'lists, under its heading', (tester) async {
+      lineupAnswer = (_) => [
+        _lineupGame('l-9', title: 'Root', occurrenceId: 'd-gone'),
+        _lineupGame('l-1'),
+        _lineupGame('l-2', title: 'Azul', occurrenceId: 'd-1'),
+      ];
+      await showLineup(tester, detail: detailOf(dates: [friday, saturday]));
+      // No date's view holds it.
+      expect(row('l-9'), findsNothing);
+
+      await chooseDate(tester, null);
+
+      expect(tester.takeException(), isNull);
       final order = [
         heading('Every date'),
         row('l-1'),
-        heading(fridayName),
-        row('l-2'),
-        heading(saturdayName),
-        row('l-3'),
+        heading('A date no longer on the event'),
+        row('l-9'),
       ];
       for (final finder in order) {
         expect(finder, findsOneWidget);
@@ -372,21 +440,24 @@ void main() {
           reason: 'item $i follows item ${i - 1}',
         );
       }
-      expect(headings(), findsNWidgets(3));
-      // The header says it: the rows carry no mark.
-      expect(inRow('l-1', 'Primary · Ada is bringing this'), findsOneWidget);
+      expect(headings(), findsNWidgets(2));
+      expect(row('l-2'), findsNothing);
     });
 
-    testWidgets('a date with no games has no header', (tester) async {
+    testWidgets('a date with nothing in view says the lineup is empty', (
+      tester,
+    ) async {
       lineupAnswer = (_) => [
         _lineupGame('l-2', title: 'Azul', occurrenceId: 'd-2'),
       ];
 
       await showLineup(tester, detail: detailOf(dates: [friday, saturday]));
 
-      expect(heading(saturdayName), findsOneWidget);
-      expect(heading(fridayName), findsNothing);
-      expect(heading('Every date'), findsNothing);
+      expect(row('l-2'), findsNothing);
+      expect(find.text('Nothing in the lineup yet'), findsOneWidget);
+
+      await chooseDate(tester, 'd-2');
+      expect(row('l-2'), findsOneWidget);
     });
 
     testWidgets('a game for a date the event no longer lists shows under a '
@@ -432,10 +503,10 @@ void main() {
       lineupAnswer = (_) => [
         _lineupGame('l-1'),
         _lineupGame('l-2', title: 'Azul', occurrenceId: 'd-1'),
-        _lineupGame('l-3', title: 'Root', occurrenceId: 'd-2'),
+        _lineupGame('l-3', title: 'Root', occurrenceId: 'd-gone'),
       ];
 
-      await showLineup(tester, detail: detailOf(dates: [friday, saturday]));
+      await showLineup(tester);
 
       expect(
         tester
@@ -616,15 +687,15 @@ void main() {
         "row's head, across a date's header", (tester) async {
       lineupAnswer = (_) => [
         _lineupGame('l-1'),
-        _lineupGame('l-2', title: 'Azul', occurrenceId: 'd-2'),
+        _lineupGame('l-2', title: 'Azul', occurrenceId: 'd-gone'),
       ];
-      await showLineup(tester, detail: detailOf(dates: [friday, saturday]));
+      await showLineup(tester);
       headFocus(tester, 'l-1').requestFocus();
       await tester.pump();
 
       // Someone else took it out: a read finds it gone.
       lineupAnswer = (_) => [
-        _lineupGame('l-2', title: 'Azul', occurrenceId: 'd-2'),
+        _lineupGame('l-2', title: 'Azul', occurrenceId: 'd-gone'),
       ];
       await readEvent(tester);
 
@@ -819,8 +890,8 @@ void main() {
   });
 
   group('accessibility audit', () {
-    /// Two dates and one no longer listed, each with a game: every header
-    /// drawn.
+    /// The event's own, its one date's, and two for dates no longer listed:
+    /// every kind of header drawn.
     List<LineupGame> grouped() => [
       _lineupGame('l-1', subtitle: 'Seafarers'),
       _lineupGame(
@@ -843,7 +914,7 @@ void main() {
       'EventDetailScreen, on the Lineup sub-tab grouped by date',
       pump: (tester, theme) async {
         lineupAnswer = (_) => grouped();
-        final detail = detailOf(dates: [friday, saturday]);
+        final detail = detailOf();
         await tester.pumpWidget(harness(detail, theme: theme));
         await arrangeGames(tester, detail);
       },
@@ -911,7 +982,6 @@ void main() {
           detail: detailOf(
             dates: [
               friday.copyWith(label: 'The long first evening of the weekend'),
-              saturday,
             ],
           ),
           theme: theme(),
@@ -947,7 +1017,6 @@ void main() {
         for (final title in [
           'Every date',
           'The long first evening of the weekend',
-          saturdayName,
           'A date no longer on the event',
         ]) {
           await tester.scrollUntilVisible(
@@ -973,18 +1042,78 @@ void main() {
       });
     }
 
+    for (final MapEntry(key: themeName, value: theme) in kAuditThemes.entries) {
+      testWidgets("at 320×640 and 200% text, a date's rows and the event's "
+          'own, marked, lay out with no overflow — $themeName', (tester) async {
+        useViewSize(tester, const Size(320, 640));
+        tester.platformDispatcher.textScaleFactorTestValue =
+            BgeTextScale.maxScaleFactor;
+        addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+        // The longest status line: a Filler's minutes, a long name, and the
+        // every-date mark.
+        lineupAnswer = (_) => [
+          _lineupGame(
+            'l-1',
+            title: _longTitle,
+            role: ScheduledGameRole.filler,
+            maxPlayTime: 120,
+            supplierName: _longTitle,
+          ),
+          _lineupGame('l-2', title: _longTitle, occurrenceId: 'd-1'),
+        ];
+
+        await showLineup(
+          tester,
+          detail: detailOf(dates: [friday, saturday]),
+          theme: theme(),
+        );
+
+        expect(tester.takeException(), isNull);
+        for (final id in ['l-2', 'l-1']) {
+          await tester.scrollUntilVisible(
+            row(id),
+            100,
+            scrollable: scrollable(),
+          );
+          await tester.ensureVisible(row(id));
+          await tester.pump();
+          expect(tester.takeException(), isNull, reason: id);
+          for (final paragraph in tester.renderObjectList<RenderParagraph>(
+            find.descendant(
+              of: head(id),
+              matching: find.byType(RichText, skipOffstage: false),
+              skipOffstage: false,
+            ),
+          )) {
+            expect(paragraph.didExceedMaxLines, isFalse, reason: id);
+          }
+          expect(tester.getRect(row(id)).right, lessThanOrEqualTo(320));
+        }
+        expect(
+          find.descendant(
+            of: row('l-1'),
+            matching: find.textContaining(
+              'Every date',
+              skipOffstage: false,
+            ),
+            skipOffstage: false,
+          ),
+          findsOneWidget,
+        );
+      });
+    }
+
     testWidgets('group headers are headers to a screen reader', (
       tester,
     ) async {
       final handle = tester.ensureSemantics();
       lineupAnswer = (_) => grouped();
 
-      await showLineup(tester, detail: detailOf(dates: [friday, saturday]));
+      await showLineup(tester);
 
       for (final title in [
         'Every date',
         fridayName,
-        saturdayName,
         'A date no longer on the event',
       ]) {
         await tester.scrollUntilVisible(
