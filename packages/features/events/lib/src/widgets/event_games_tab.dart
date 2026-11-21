@@ -97,7 +97,12 @@ typedef _PoolShown = ({_Body body, List<OfferedGame> rows});
 /// screen counts them for the page's `semanticChildCount`, and the tab draws
 /// the same value, so the two can't disagree.
 final class _GamesBody {
-  const _GamesBody({required this.names, this.pool, this.nominations});
+  const _GamesBody({
+    required this.names,
+    this.pool,
+    this.nominations,
+    this.lineup = false,
+  });
 
   /// What the tab shows for [games] and [nominations] on [detail], on the
   /// [controller]'s sub-tab. With no nominations' state it is the pool
@@ -115,6 +120,9 @@ final class _GamesBody {
         pool: _poolOf(detail, games, controller),
       );
     }
+    if (controller.section == EventGamesSection.lineup) {
+      return _GamesBody(names: names, lineup: true);
+    }
     return _GamesBody(
       names: names,
       nominations: _nominationsOf(detail, nominations, controller),
@@ -127,6 +135,10 @@ final class _GamesBody {
   /// What the Nominations section shows, while the tab shows it; null
   /// otherwise.
   final _NominationsShown? nominations;
+
+  /// Whether the tab shows the Lineup section (#519): an empty body until
+  /// the section's own replaces it.
+  final bool lineup;
 
   /// The roster's names, by row id: none where it is withheld or not read.
   final Map<String, String?> names;
@@ -251,10 +263,11 @@ final class _GamesBody {
 /// ([EventGamesSectionBar]), Material's secondary [TabBar], whose controller is
 /// the [controller]'s [EventGamesTabController.sections]; then the chosen
 /// sub-tab's slivers alone, which the bar swaps, keeping its own place, so
-/// focus stays on the sub-tab chosen. Games opens on Nominations. Where there
+/// focus stays on the sub-tab chosen. Games opens on Lineup. Where there
 /// is no nominations' state, the tab is the pool alone, with no bar.
 ///
-/// Nominations is the Nominations section. Pool is the pool's header, then
+/// Lineup shows nothing until its section lands (#519). Nominations
+/// is the Nominations section. Pool is the pool's header, then
 /// its rows ([EventGamesRowLines], keyed by the offered game's id, two to a
 /// line in an expanded window, #949) or one state in a [BgeStateSliver].
 /// Neither has a heading of its own: each sub-tab's label, said as it is
@@ -427,6 +440,8 @@ class EventGamesTab extends StatelessWidget {
               ],
             ),
           ),
+        // Nothing yet: Lineup's list replaces this (#519).
+        if (_body.lineup) const SliverToBoxAdapter(child: SizedBox.shrink()),
         if (_body.nominations case final shown?)
           EventNominationsSection(
             key: _nominationsKey,

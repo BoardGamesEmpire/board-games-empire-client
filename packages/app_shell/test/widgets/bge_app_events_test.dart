@@ -2232,6 +2232,30 @@ void main() {
         }
       });
 
+      testWidgets('a link to ?tab=lineup opens the event on Lineup', (
+        tester,
+      ) async {
+        final handle = tester.ensureSemantics();
+        try {
+          await pumpHosted(tester);
+
+          routerOf(tester).go('/events/e-0?tab=lineup');
+          await tester.pumpAndSettle();
+
+          expect(
+            tester.getSemantics(
+              find.byKey(
+                EventDetailScreen.sectionTabKey(EventGamesSection.lineup),
+              ),
+            ),
+            isSemantics(isSelected: true),
+          );
+          expect(find.byKey(EventDetailScreen.poolSearchKey), findsNothing);
+        } finally {
+          handle.dispose();
+        }
+      });
+
       testWidgets('a link with an unknown tab opens Details', (tester) async {
         final handle = tester.ensureSemantics();
         try {

@@ -185,6 +185,7 @@ void main() {
 
   /// Each sub-tab's label.
   const sectionLabels = {
+    EventGamesSection.lineup: 'Lineup',
     EventGamesSection.nominations: 'Nominations',
     EventGamesSection.pool: 'Pool',
   };
@@ -200,12 +201,13 @@ void main() {
     Future<void> showNarrow(
       WidgetTester tester, {
       bool longLabel = false,
+      ThemeData? theme,
     }) async {
       useViewSize(tester, const Size(320, 640));
       tester.platformDispatcher.textScaleFactorTestValue =
           BgeTextScale.maxScaleFactor;
       addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
-      await tester.pumpWidget(app(longLabel: longLabel));
+      await tester.pumpWidget(app(longLabel: longLabel, theme: theme));
       await showing(tester);
     }
 
@@ -259,24 +261,69 @@ void main() {
       }
     });
 
-    testWidgets('the sub-tab bar lays out with no overflow and whole labels '
-        'at 320dp and 200% text', (tester) async {
-      await showNarrow(tester);
-      await tester.tap(tab(EventDetailTab.games));
-      await tester.pumpAndSettle();
+    for (final MapEntry(key: themeName, value: theme) in kAuditThemes.entries) {
+      testWidgets('every sub-tab label is whole, and each tab says where it '
+          'stands, at 320dp and 200% text, $themeName', (tester) async {
+        final handle = tester.ensureSemantics();
+        try {
+          await showNarrow(tester, theme: theme());
+          await tester.tap(tab(EventDetailTab.games));
+          await tester.pumpAndSettle();
 
-      expect(tester.takeException(), isNull);
-      final bar = tester.getRect(find.byKey(EventDetailScreen.sectionBarKey));
-      expect(bar.left, greaterThanOrEqualTo(0));
-      expect(bar.right, lessThanOrEqualTo(320));
-      for (final which in EventGamesSection.values) {
-        final label = sectionLabels[which]!;
-        final tabRect = tester.getRect(section(which));
-        expect(tabRect.left, greaterThanOrEqualTo(bar.left), reason: label);
-        expect(tabRect.right, lessThanOrEqualTo(bar.right), reason: label);
-        expectWholeLabel(tester, section(which), label);
-      }
-    });
+          for (final which in EventGamesSection.values) {
+            final label = sectionLabels[which]!;
+            expectWholeLabel(tester, section(which), label);
+            expect(
+              tester.getSemantics(section(which)),
+              isSemantics(isSelected: which == EventGamesSection.lineup),
+              reason: label,
+            );
+            expect(
+              tester.getSemantics(section(which)).label,
+              contains('${which.index + 1} of 3'),
+              reason: label,
+            );
+            expect(
+              tester.getSemantics(section(which)).rect.shortestSide,
+              greaterThanOrEqualTo(kMinInteractiveDimension),
+              reason: label,
+            );
+          }
+        } finally {
+          handle.dispose();
+        }
+      });
+    }
+
+    for (final MapEntry(key: themeName, value: theme) in kAuditThemes.entries) {
+      testWidgets('the bar lays out three sub-tabs with no overflow and whole '
+          'labels at 320dp and 200% text, $themeName', (tester) async {
+        await showNarrow(tester, theme: theme());
+        await tester.tap(tab(EventDetailTab.games));
+        await tester.pumpAndSettle();
+
+        expect(tester.takeException(), isNull);
+        expect(EventGamesSection.values, hasLength(3));
+        final bar = tester.getRect(find.byKey(EventDetailScreen.sectionBarKey));
+        expect(bar.left, greaterThanOrEqualTo(0));
+        expect(bar.right, lessThanOrEqualTo(320));
+        var previousRight = bar.left;
+        for (final which in EventGamesSection.values) {
+          final label = sectionLabels[which]!;
+          final tabRect = tester.getRect(section(which));
+          expect(tabRect.left, greaterThanOrEqualTo(bar.left), reason: label);
+          expect(tabRect.right, lessThanOrEqualTo(bar.right), reason: label);
+          // In order, without overlap: Lineup first.
+          expect(
+            tabRect.left,
+            greaterThanOrEqualTo(previousRight - 0.5),
+            reason: label,
+          );
+          previousRight = tabRect.right;
+          expectWholeLabel(tester, section(which), label);
+        }
+      });
+    }
 
     // At 320dp and 200% "Details" fits its half of the bar, so the case
     // above would pass with a bare Text. A longer label must shrink.
@@ -356,7 +403,7 @@ void main() {
       }
     });
 
-    testWidgets('Games opens on Nominations', (tester) async {
+    testWidgets('Games opens on Lineup', (tester) async {
       final handle = tester.ensureSemantics();
       try {
         await tester.pumpWidget(app(pool: const [azul]));
@@ -366,13 +413,18 @@ void main() {
         await tester.pumpAndSettle();
 
         expect(
-          tester.getSemantics(section(EventGamesSection.nominations)),
+          tester.getSemantics(section(EventGamesSection.lineup)),
           isSemantics(isSelected: true),
         );
-        expect(
-          tester.getSemantics(section(EventGamesSection.pool)),
-          isSemantics(isSelected: false),
-        );
+        for (final other in [
+          EventGamesSection.nominations,
+          EventGamesSection.pool,
+        ]) {
+          expect(
+            tester.getSemantics(section(other)),
+            isSemantics(isSelected: false),
+          );
+        }
         // The pool's rows are the Pool sub-tab's alone.
         Finder azulRow() => find.byKey(
           EventDetailScreen.poolRowKey(azul.id),
@@ -396,6 +448,10 @@ void main() {
         await activateByKeyboard(tester, tab(EventDetailTab.games));
         final pool = Focus.of(
           tester.element(section(EventGamesSection.pool)),
+        );
+        await activateByKeyboard(
+          tester,
+          section(EventGamesSection.nominations),
         );
         expect(
           find.text("Couldn't load nominations", skipOffstage: false),
@@ -454,11 +510,11 @@ void main() {
     for (final (value, opens, query) in [
       (null, EventScreenTab.details, null),
       ('details', EventScreenTab.details, null),
-      ('games', EventScreenTab.nominations, 'nominations'),
+      ('games', EventScreenTab.lineup, 'lineup'),
+      ('lineup', EventScreenTab.lineup, 'lineup'),
       ('nominations', EventScreenTab.nominations, 'nominations'),
       ('pool', EventScreenTab.pool, 'pool'),
-      // Not a tab until the lineup is one (#519).
-      ('lineup', EventScreenTab.details, null),
+      ('nonsense', EventScreenTab.details, null),
       // Case matters.
       ('POOL', EventScreenTab.details, null),
     ]) {
@@ -481,6 +537,11 @@ void main() {
           )
         >[
           (EventScreenTab.details, EventDetailTab.details, null),
+          (
+            EventScreenTab.lineup,
+            EventDetailTab.games,
+            EventGamesSection.lineup,
+          ),
           (
             EventScreenTab.nominations,
             EventDetailTab.games,
@@ -638,7 +699,7 @@ void main() {
     });
 
     testWidgets('an unknown tab opens Details', (tester) async {
-      await open(tester, 'lineup');
+      await open(tester, 'nonsense');
       await showing(tester);
 
       expect(shown(tester), EventScreenTab.details);
@@ -707,8 +768,8 @@ void main() {
       // Games opens on its first sub-tab, not the one the location named.
       await tester.tap(tab(EventDetailTab.games));
       await tester.pumpAndSettle();
-      expect(shown(tester), EventScreenTab.nominations);
-      expect(reports, [EventScreenTab.details, EventScreenTab.nominations]);
+      expect(shown(tester), EventScreenTab.lineup);
+      expect(reports, [EventScreenTab.details, EventScreenTab.lineup]);
     });
 
     testWidgets('choosing a tab reports it once it settles', (tester) async {
@@ -719,20 +780,20 @@ void main() {
       expect(tabs(tester).indexIsChanging, isTrue);
       expect(reports, isEmpty);
       await tester.pumpAndSettle();
-      expect(reports, [EventScreenTab.nominations]);
+      expect(reports, [EventScreenTab.lineup]);
 
       await tapAndHold(tester, section(EventGamesSection.pool));
       expect(sections(tester).indexIsChanging, isTrue);
-      expect(reports, [EventScreenTab.nominations]);
+      expect(reports, [EventScreenTab.lineup]);
       await tester.pumpAndSettle();
-      expect(reports, [EventScreenTab.nominations, EventScreenTab.pool]);
+      expect(reports, [EventScreenTab.lineup, EventScreenTab.pool]);
 
       await tapAndHold(tester, tab(EventDetailTab.details));
       expect(tabs(tester).indexIsChanging, isTrue);
-      expect(reports, [EventScreenTab.nominations, EventScreenTab.pool]);
+      expect(reports, [EventScreenTab.lineup, EventScreenTab.pool]);
       await tester.pumpAndSettle();
       expect(reports, [
-        EventScreenTab.nominations,
+        EventScreenTab.lineup,
         EventScreenTab.pool,
         EventScreenTab.details,
       ]);
@@ -776,7 +837,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(section(EventGamesSection.pool));
       await tester.pumpAndSettle();
-      expect(reports, [EventScreenTab.nominations, EventScreenTab.pool]);
+      expect(reports, [EventScreenTab.lineup, EventScreenTab.pool]);
 
       location.value = 'pool';
       await tester.pump();
@@ -786,7 +847,7 @@ void main() {
       expect(sections(tester).indexIsChanging, isFalse);
       expect(shown(tester), EventScreenTab.pool);
       await tester.pumpAndSettle();
-      expect(reports, [EventScreenTab.nominations, EventScreenTab.pool]);
+      expect(reports, [EventScreenTab.lineup, EventScreenTab.pool]);
     });
 
     // Until the location a report asks for comes back, the screen is built
@@ -800,15 +861,15 @@ void main() {
       await showing(tester);
       await tester.tap(tab(EventDetailTab.games));
       await tester.pumpAndSettle();
-      expect(reports, [EventScreenTab.nominations]);
+      expect(reports, [EventScreenTab.lineup]);
 
       tester.platformDispatcher.accessibilityFeaturesTestValue =
           const FakeAccessibilityFeatures(disableAnimations: true);
       await tester.pumpAndSettle();
 
       expect(location.value, isNull);
-      expect(shown(tester), EventScreenTab.nominations);
-      expect(reports, [EventScreenTab.nominations]);
+      expect(shown(tester), EventScreenTab.lineup);
+      expect(reports, [EventScreenTab.lineup]);
     });
 
     // The location a report asked for can come back after the user has
@@ -820,16 +881,16 @@ void main() {
       await showing(tester);
       await tester.tap(tab(EventDetailTab.games));
       await tester.pumpAndSettle();
-      expect(reports, [EventScreenTab.nominations]);
+      expect(reports, [EventScreenTab.lineup]);
 
       await tester.tap(section(EventGamesSection.pool));
       await tester.pump();
       expect(sections(tester).indexIsChanging, isTrue);
-      location.value = 'nominations';
+      location.value = 'lineup';
       await tester.pumpAndSettle();
 
       expect(shown(tester), EventScreenTab.pool);
-      expect(reports, [EventScreenTab.nominations, EventScreenTab.pool]);
+      expect(reports, [EventScreenTab.lineup, EventScreenTab.pool]);
     });
 
     // The scope replaces the sub-tabs' controller when the motion setting
@@ -849,7 +910,7 @@ void main() {
       tester.platformDispatcher.accessibilityFeaturesTestValue =
           const FakeAccessibilityFeatures(disableAnimations: true);
       await tester.pumpAndSettle();
-      expect(reports, [EventScreenTab.nominations]);
+      expect(reports, [EventScreenTab.lineup]);
 
       tester.platformDispatcher.clearAccessibilityFeaturesTestValue();
       await tester.pumpAndSettle();
@@ -860,7 +921,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(shown(tester), EventScreenTab.pool);
-      expect(reports, [EventScreenTab.nominations, EventScreenTab.pool]);
+      expect(reports, [EventScreenTab.lineup, EventScreenTab.pool]);
     });
 
     // A report puts the tab in the location on top, which is another
@@ -885,7 +946,7 @@ void main() {
       Navigator.of(tester.element(find.text('Over the event'))).pop();
       await tester.pumpAndSettle();
 
-      expect(reports, [EventScreenTab.nominations]);
+      expect(reports, [EventScreenTab.lineup]);
     });
 
     testWidgets('a change that settles as the screen leaves reports nothing', (

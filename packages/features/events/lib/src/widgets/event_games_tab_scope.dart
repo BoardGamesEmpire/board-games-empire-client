@@ -931,7 +931,7 @@ class EventGamesTabScope extends StatefulWidget {
   const EventGamesTabScope({
     required this.onFirstShown,
     required this.child,
-    this.initialSection = EventGamesSection.nominations,
+    this.initialSection = EventGamesSection.lineup,
     this.now = DateTime.now,
     this.onOpenGame,
     super.key,

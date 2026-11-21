@@ -130,14 +130,14 @@ typedef OpenEventGame = void Function(BuildContext context, String gameId);
 ///
 /// ## The Games tab
 ///
-/// Two sub-tabs (#945): Nominations, where it opens unless the location names
-/// Pool (#856), then Pool, the games the attendees offer to bring, one row per
-/// offered copy, with a search, a filter by person, the shared filter sheet
-/// (#851), and Take back on the viewer's own rows ([EventGamesTab], #516). The
-/// pool isn't cached: the [EventGamesBloc] holds what was read last, and the
-/// tab filters it on the device. A pool row's cover and lines open its quick
-/// look (#957), a pop-up of the copy's place in this event, with its writes
-/// and, through [onOpenGame], View game.
+/// Three sub-tabs (#945): Lineup, where it opens unless the location names
+/// another (#856), then Nominations, then Pool, the games the attendees offer
+/// to bring, one row per offered copy, with a search, a filter by person, the
+/// shared filter sheet (#851), and Take back on the viewer's own rows
+/// ([EventGamesTab], #516). The pool isn't cached: the [EventGamesBloc] holds
+/// what was read last, and the tab filters it on the device. A pool row's
+/// cover and lines open its quick look (#957), a pop-up of the copy's place in
+/// this event, with its writes and, through [onOpenGame], View game.
 ///
 /// It is read the first time the tab shows on a ready event, or, where a read
 /// of the event is running then, once that read ends, and so once; and again
@@ -512,8 +512,8 @@ class EventDetailScreen extends StatelessWidget {
   /// Key on one tab of the bar (#516).
   static Key tabKey(EventDetailTab tab) => Key('event_detail.tab_${tab.name}');
 
-  /// Key on the Games tab's sub-tab bar (#945), Nominations and Pool, where
-  /// the tab shows it.
+  /// Key on the Games tab's sub-tab bar (#945), Lineup, Nominations and Pool,
+  /// where the tab shows it.
   static const Key sectionBarKey = Key('event_detail.section_bar');
 
   /// Key on one sub-tab of the Games tab's bar (#945).
@@ -1231,7 +1231,7 @@ class _EventDetailView extends StatelessWidget {
       ),
       child: EventGamesTabScope(
         onFirstShown: _gamesFirstShown,
-        initialSection: screenTab.section ?? EventGamesSection.nominations,
+        initialSection: screenTab.section ?? EventGamesSection.lineup,
         // What the tab's quick looks reach the screen by (#957).
         now: now,
         onOpenGame: onOpenGame,

@@ -120,7 +120,7 @@ void main() {
       controller.addListener(() => notified++);
 
       controller.sections.animateTo(
-        1,
+        EventGamesSection.pool.index,
         duration: const Duration(milliseconds: 300),
       );
       await tester.pump();
@@ -161,7 +161,7 @@ void main() {
       expect(controller.section, EventGamesSection.pool);
       expect(controller.sections, isNot(same(before)));
       expect(controller.sections.animationDuration, Duration.zero);
-      expect(controller.sections.index, 1);
+      expect(controller.sections.index, EventGamesSection.pool.index);
       // The swap tells the page once, so it builds on the new controller; it
       // is not a change of sub-tab, so nothing more.
       expect(notified, 1);
@@ -169,7 +169,7 @@ void main() {
       controller.sections.animateTo(0);
       await tester.pumpAndSettle();
 
-      expect(controller.section, EventGamesSection.nominations);
+      expect(controller.section, EventGamesSection.lineup);
       expect(notified, 2);
     });
   });

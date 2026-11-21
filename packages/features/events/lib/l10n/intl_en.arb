@@ -588,13 +588,17 @@
   "@eventsDetailGames": {
     "description": "Label of the second tab on an event's screen, beside the Details tab (eventsDetailTabDetails). The tab holds the games the people coming to the event offer to bring. Keep it short: two tabs share the width of a phone."
   },
+  "eventsGamesSectionLineup": "Lineup",
+  "@eventsGamesSectionLineup": {
+    "description": "Label of the first sub-tab in the second row of tabs under the Games tab of an event's screen (eventsDetailGames), before the Nominations sub-tab (eventsGamesSectionNominations) and the Pool sub-tab (eventsGamesSectionPool). The sub-tab lists the games lined up for the event; it has no heading of its own, so this label names the list. Keep it short: three sub-tabs share the width of a phone."
+  },
   "eventsGamesSectionNominations": "Nominations",
   "@eventsGamesSectionNominations": {
-    "description": "Label of the first sub-tab in the second row of tabs under the Games tab of an event's screen (eventsDetailGames), beside the Pool sub-tab (eventsGamesSectionPool). The sub-tab lists the games nominated for the event's lineup; it has no heading of its own, so this label names the list. Keep it short: two sub-tabs share the width of a phone."
+    "description": "Label of the second sub-tab in the second row of tabs under the Games tab of an event's screen (eventsDetailGames), after the Lineup sub-tab (eventsGamesSectionLineup), before the Pool sub-tab (eventsGamesSectionPool). The sub-tab lists the games nominated for the event's lineup; it has no heading of its own, so this label names the list. Keep it short: three sub-tabs share the width of a phone."
   },
   "eventsGamesSectionPool": "Pool",
   "@eventsGamesSectionPool": {
-    "description": "Label of the second sub-tab in the second row of tabs under the Games tab of an event's screen (eventsDetailGames), beside the Nominations sub-tab (eventsGamesSectionNominations). The sub-tab lists the games pool, the games the people coming offer to bring; it has no heading of its own, so this label names the list. Keep it short: two sub-tabs share the width of a phone."
+    "description": "Label of the third sub-tab in the second row of tabs under the Games tab of an event's screen (eventsDetailGames), after the Nominations sub-tab (eventsGamesSectionNominations). The sub-tab lists the games pool, the games the people coming offer to bring; it has no heading of its own, so this label names the list. Keep it short: three sub-tabs share the width of a phone."
   },
   "eventsGamesSearchLabel": "Search the games",
   "@eventsGamesSearchLabel": {

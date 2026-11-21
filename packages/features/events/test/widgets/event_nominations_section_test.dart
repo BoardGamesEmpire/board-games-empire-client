@@ -334,7 +334,7 @@ void main() {
   }
 
   /// Shows [detail] (the viewer's, by default) and opens the Games tab, on
-  /// its Nominations sub-tab, the one it opens on (#945), with the reads that
+  /// its Nominations sub-tab (#945), with the reads that
   /// starts ended. [householdRole] answers the viewer's role in the event's
   /// household; [offline] is the connection, online where it isn't given.
   Future<void> showGames(
@@ -352,6 +352,13 @@ void main() {
     await settle(tester);
     await tester.tap(
       find.byKey(EventDetailScreen.tabKey(EventDetailTab.games)),
+    );
+    await animate(tester);
+    // Games opens on Lineup (#519).
+    await tester.tap(
+      find.byKey(
+        EventDetailScreen.sectionTabKey(EventGamesSection.nominations),
+      ),
     );
     await animate(tester);
   }
@@ -2769,6 +2776,7 @@ void main() {
         find.byKey(EventDetailScreen.tabKey(EventDetailTab.games)),
       );
       await animate(tester);
+      await chooseSection(tester, EventGamesSection.nominations);
 
       expect(rowsShown(tester), ['n-2', 'n-5', 'n-1']);
       expect(inUse('status_voting'), findsOneWidget);

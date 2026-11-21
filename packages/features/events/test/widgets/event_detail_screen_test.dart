@@ -1588,8 +1588,17 @@ void main() {
       await settle(tester);
     }
 
+    /// Chooses [which], and on Games the Nominations sub-tab, as Games opens
+    /// on Lineup (#519) and these tests are about the nominations.
     Future<void> choose(WidgetTester tester, EventDetailTab which) async {
       await tester.tap(tab(which));
+      await animate(tester);
+      if (which != games) return;
+      await tester.tap(
+        find.byKey(
+          EventDetailScreen.sectionTabKey(EventGamesSection.nominations),
+        ),
+      );
       await animate(tester);
     }
 
@@ -11108,9 +11117,16 @@ void main() {
     /// header has a chip and a count read out.
     Future<void> showNominations(WidgetTester tester) async {
       await showing(tester, host);
+      await tester.tap(
+        find.byKey(EventDetailScreen.tabKey(EventDetailTab.games)),
+      );
+      await animate(tester);
+      // Games opens on Lineup (#519).
       await press(
         tester,
-        find.byKey(EventDetailScreen.tabKey(EventDetailTab.games)),
+        find.byKey(
+          EventDetailScreen.sectionTabKey(EventGamesSection.nominations),
+        ),
       );
       await press(tester, nominationsFilters());
       await press(
@@ -11181,9 +11197,16 @@ void main() {
       build: screen(remote: nominating),
       arrange: (tester) async {
         await showing(tester, host);
+        await tester.tap(
+          find.byKey(EventDetailScreen.tabKey(EventDetailTab.games)),
+        );
+        await animate(tester);
+        // Games opens on Lineup (#519).
         await press(
           tester,
-          find.byKey(EventDetailScreen.tabKey(EventDetailTab.games)),
+          find.byKey(
+            EventDetailScreen.sectionTabKey(EventGamesSection.nominations),
+          ),
         );
         // In the nomination's quick look (#946, #957).
         await press(
@@ -11226,9 +11249,16 @@ void main() {
 
       await tester.pumpWidget(screen(remote: nominating)(BgeTheme.light()));
       await showing(tester, host);
+      await tester.tap(
+        find.byKey(EventDetailScreen.tabKey(EventDetailTab.games)),
+      );
+      await animate(tester);
+      // Games opens on Lineup (#519).
       await press(
         tester,
-        find.byKey(EventDetailScreen.tabKey(EventDetailTab.games)),
+        find.byKey(
+          EventDetailScreen.sectionTabKey(EventGamesSection.nominations),
+        ),
       );
 
       // Every filter in use, so every chip shows, the longest included. The
