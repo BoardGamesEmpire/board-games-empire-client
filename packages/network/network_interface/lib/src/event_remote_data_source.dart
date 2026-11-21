@@ -103,6 +103,8 @@ typedef CreatedEvent = ({EventSnapshot snapshot, DateTime? deletedAt});
 ///   proof that nobody is on the event. It also carries the policy's rule
 ///   lists and `occurrencePolicies`, each date's own rules (#1009). The create
 ///   and the policy update answer with the lists but no `occurrencePolicies`.
+///   Beside a policy, those three answers always serve the lists, never null,
+///   so a missing or null one is a contract break, not a list left out.
 ///
 /// Both reads serve every occurrence of an event, unbounded until backend#404.
 ///

@@ -279,7 +279,7 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     // rules are saved all the same.
     return parseRemote(
       failures,
-      () => _mapPolicy(response.body['policy']),
+      () => _mapPolicy(response.body['policy'], served: true),
       action: action,
       status: response.status,
     );
@@ -1084,7 +1084,7 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
   static EventSnapshot _mapListRow(Map<String, dynamic> json) => EventSnapshot(
     event: _mapEvent(json),
     occurrences: _mapOccurrences(json['occurrences']),
-    policy: _mapPolicy(json['policy']),
+    policy: _mapPolicy(json['policy'], served: false),
     attendance: _mapAttendance(json['attendance']),
   );
 
@@ -1100,7 +1100,7 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
   static EventSnapshot _mapDetail(Map<String, dynamic> json) => EventSnapshot(
     event: _mapEvent(json),
     occurrences: _mapOccurrences(json['occurrences']),
-    policy: _mapPolicy(json['policy']),
+    policy: _mapPolicy(json['policy'], served: true),
     occurrencePolicies: json['occurrencePolicies'] == null
         ? null
         : _mapObjects(
@@ -1325,7 +1325,14 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
   /// Maps the embedded policy. Null is an event with none, or a detail read by
   /// a caller who may not read it (backend#560); either way the model carries
   /// no policy.
-  static EventPolicy? _mapPolicy(Object? raw) {
+  ///
+  /// [served] is the backend's policy view, which the detail read, the create
+  /// and the policy update answer with: its three rule lists are always there,
+  /// never null, so a missing or null one is a contract break rather than a
+  /// read that didn't carry it, which would keep the cached lists (#1009). A
+  /// list row's policy is the bare row, without them, and reads as not
+  /// carried.
+  static EventPolicy? _mapPolicy(Object? raw, {required bool served}) {
     if (raw == null) return null;
     if (raw is! Map<String, dynamic>) {
       throw FormatException(
@@ -1361,17 +1368,20 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
         raw['interestedWeight'] as String,
       ),
       votingWindowHours: raw['votingWindowHours'] as int?,
-      allowedPlatformTypes: _stringListOrNull(
-        raw['allowedPlatformTypes'],
-        field: 'allowedPlatformTypes',
+      allowedPlatformTypes: _policyList(
+        raw,
+        'allowedPlatformTypes',
+        served: served,
       )?.map(PlatformType.fromWire).toList(growable: false),
-      allowedPlatformIds: _stringListOrNull(
-        raw['allowedPlatformIds'],
-        field: 'allowedPlatformIds',
+      allowedPlatformIds: _policyList(
+        raw,
+        'allowedPlatformIds',
+        served: served,
       ),
-      allowedCategoryIds: _stringListOrNull(
-        raw['allowedCategoryIds'],
-        field: 'allowedCategoryIds',
+      allowedCategoryIds: _policyList(
+        raw,
+        'allowedCategoryIds',
+        served: served,
       ),
       // A column of the row, so every read that serves a policy carries it,
       // the list read's included.
@@ -1690,13 +1700,17 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
         .toList(growable: false);
   }
 
-  /// Reads [raw] as a list of strings. Absent is null: the read didn't carry
-  /// it. Present, it must be a list of strings, or the payload is a contract
-  /// break rather than an empty list.
-  static List<String>? _stringListOrNull(
-    Object? raw, {
-    required String field,
-  }) => raw == null ? null : _stringList(raw, field: field);
+  /// One of a policy's rule lists, as [_mapPolicy] reads it: required when
+  /// the policy is [served] as the view, null when a list row's bare policy
+  /// leaves it out. Present, it must be a list of strings, or the payload is
+  /// a contract break rather than an empty list.
+  static List<String>? _policyList(
+    Map<String, dynamic> policy,
+    String field, {
+    required bool served,
+  }) => served || policy[field] != null
+      ? _stringList(policy[field], field: field)
+      : null;
 
   static List<String> _stringList(Object? raw, {required String field}) {
     if (raw is! List) {
