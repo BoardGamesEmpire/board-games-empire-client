@@ -4,6 +4,7 @@ import 'package:bge_test_support/session.dart';
 import 'package:bge_test_support/widgets.dart';
 import 'package:events/events.dart';
 import 'package:events/l10n/events_localizations.dart';
+import 'package:events/src/widgets/held_spinner.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -114,6 +115,9 @@ void main() {
   /// the server stop showing it.
   Object? detailFailure;
 
+  /// Holds each lineup removal's answer while set (#520).
+  Completer<void>? removeHold;
+
   /// Each game page a quick look's View game asked for, by the game's id.
   final openedGames = <String>[];
 
@@ -170,6 +174,7 @@ void main() {
       () => repository.forgetEvent(any(), lastWrite: any(named: 'lastWrite')),
     ).thenAnswer((_) async => true);
     detailFailure = null;
+    removeHold = null;
     lineupAnswer = (_) => const [];
     pool = const [];
     poolAnswer = () => pool;
@@ -202,6 +207,10 @@ void main() {
         occurrenceId: request.occurrenceId,
         role: request.role,
       ),
+      lineupRemoved: (request) async {
+        await removeHold?.future;
+        return _lineupGame(request.lineupGameId);
+      },
     );
     return MaterialApp(
       theme: theme ?? BgeTheme.light(),
@@ -1329,6 +1338,231 @@ void main() {
     });
   });
 
+  group('Remove from lineup (#520)', () {
+    final host = _row('att-me', name: 'Me', role: EventRole.host);
+    Finder remove(String id) => find.byKey(
+      EventDetailScreen.lineupRemoveKey(id),
+      skipOffstage: false,
+    );
+    final removeInQuickLook = find.byKey(
+      EventDetailScreen.quickLookLineupRemoveKey,
+    );
+    final confirm = find.byKey(EventDetailScreen.lineupRemoveConfirmKey);
+    final keep = find.byKey(EventDetailScreen.lineupRemoveKeepKey);
+    final outcome = find.byKey(EventDetailScreen.lineupOutcomeKey);
+    const startedHint =
+        "This lineup has started or was called off, so it can't be changed.";
+
+    bool enabled(WidgetTester tester, Finder button) =>
+        tester.widget<ButtonStyleButton>(button).onPressed != null;
+
+    testWidgets('a host sees Remove on each lineup row', (tester) async {
+      lineupAnswer = (_) => [_lineupGame('l-1'), _lineupGame('l-2')];
+      await showLineup(tester, detail: detailOf(viewer: host));
+
+      for (final id in ['l-1', 'l-2']) {
+        expect(remove(id), findsOneWidget, reason: id);
+        expect(
+          find.descendant(
+            of: remove(id),
+            matching: find.text('Remove from lineup', skipOffstage: false),
+            skipOffstage: false,
+          ),
+          findsOneWidget,
+        );
+        expect(enabled(tester, remove(id)), isTrue);
+      }
+    });
+
+    testWidgets("a started date's game shows Remove disabled with its reason", (
+      tester,
+    ) async {
+      final begun = confirmed(
+        'd-0',
+        DateTime(2026, 10, 22, 19),
+      ).copyWith(eventId: 'e-1');
+      // Under the date that has begun, with the event's own game, which has
+      // Friday still ahead.
+      lineupAnswer = (_) => [
+        _lineupGame('l-1', occurrenceId: 'd-0'),
+        _lineupGame('l-2'),
+      ];
+      await showLineup(
+        tester,
+        detail: detailOf(viewer: host, dates: [begun, friday]),
+      );
+      await chooseDate(tester, 'd-0');
+
+      expect(remove('l-1'), findsOneWidget);
+      expect(enabled(tester, remove('l-1')), isFalse);
+      expect(inRow('l-1', startedHint), findsOneWidget);
+      // The date still to come is open.
+      expect(enabled(tester, remove('l-2')), isTrue);
+      expect(inRow('l-2', startedHint), findsNothing);
+    });
+
+    FocusNode removeFocus(WidgetTester tester, String id) =>
+        tester.widget<ButtonStyleButton>(remove(id)).focusNode!;
+
+    testWidgets('Remove asks first, naming the subtitle', (tester) async {
+      lineupAnswer = (_) => [_lineupGame('l-1', subtitle: 'Seafarers')];
+      await showLineup(tester, detail: detailOf(viewer: host));
+      removeFocus(tester, 'l-1').requestFocus();
+      await tester.pump();
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await animate(tester);
+      expect(
+        find.text('Take Catan: Seafarers out of the lineup?'),
+        findsOneWidget,
+      );
+
+      // Keep it sends nothing, and focus is back on Remove.
+      await tester.tap(keep);
+      await animate(tester);
+      expect(remote.lineupRemovals, isEmpty);
+      expect(row('l-1'), findsOneWidget);
+      expect(removeFocus(tester, 'l-1').hasPrimaryFocus, isTrue);
+
+      lineupAnswer = (_) => const [];
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await animate(tester);
+      await tester.tap(confirm);
+      await animate(tester);
+
+      expect(remote.lineupRemovals, [(eventId: 'e-1', lineupGameId: 'l-1')]);
+      expect(row('l-1'), findsNothing);
+      expect(
+        find.descendant(
+          of: outcome,
+          matching: find.text('Catan: Seafarers is out of the lineup.'),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets("a row removed hands focus to the next row's Remove", (
+      tester,
+    ) async {
+      lineupAnswer = (_) => [_lineupGame('l-1'), _lineupGame('l-2')];
+      await showLineup(tester, detail: detailOf(viewer: host));
+      removeFocus(tester, 'l-1').requestFocus();
+      await tester.pump();
+
+      lineupAnswer = (_) => [_lineupGame('l-2')];
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await animate(tester);
+      await tester.tap(confirm);
+      await animate(tester);
+
+      expect(row('l-1'), findsNothing);
+      expect(removeFocus(tester, 'l-2').hasPrimaryFocus, isTrue);
+    });
+
+    testWidgets("a screen reader's Remove hands focus to the next row", (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      lineupAnswer = (_) => [_lineupGame('l-1'), _lineupGame('l-2')];
+      await showLineup(tester, detail: detailOf(viewer: host));
+      await tester.ensureVisible(remove('l-1'));
+      await tester.pump();
+      // Activated as a screen reader does: no input focus moves.
+      expect(removeFocus(tester, 'l-1').hasFocus, isFalse);
+
+      lineupAnswer = (_) => [_lineupGame('l-2')];
+      tester.semantics.tap(
+        find.semantics.byLabel('Remove Catan from the lineup').first,
+      );
+      await animate(tester);
+      await tester.tap(confirm);
+      await animate(tester);
+
+      expect(row('l-1'), findsNothing);
+      expect(removeFocus(tester, 'l-2').hasPrimaryFocus, isTrue);
+      handle.dispose();
+    });
+
+    testWidgets('Remove keeps focus, inert, while its removal is out', (
+      tester,
+    ) async {
+      final hold = removeHold = Completer<void>();
+      lineupAnswer = (_) => [_lineupGame('l-1')];
+      await showLineup(tester, detail: detailOf(viewer: host));
+      removeFocus(tester, 'l-1').requestFocus();
+      await tester.pump();
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await animate(tester);
+      await tester.tap(confirm);
+      await animate(tester);
+
+      expect(remote.lineupRemovals, hasLength(1));
+      expect(removeFocus(tester, 'l-1').hasPrimaryFocus, isTrue);
+      expect(enabled(tester, remove('l-1')), isTrue);
+      expect(
+        find.descendant(of: remove('l-1'), matching: find.byType(HeldSpinner)),
+        findsOneWidget,
+      );
+      // A press meanwhile sends nothing more.
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await animate(tester);
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(remote.lineupRemovals, hasLength(1));
+
+      lineupAnswer = (_) => const [];
+      hold.complete();
+      await animate(tester);
+      expect(row('l-1'), findsNothing);
+    });
+
+    testWidgets('a participant sees no Remove', (tester) async {
+      lineupAnswer = (_) => [_lineupGame('l-1')];
+      await showLineup(tester);
+
+      expect(row('l-1'), findsOneWidget);
+      expect(remove('l-1'), findsNothing);
+    });
+
+    testWidgets('the quick look carries Remove, and a removal sent from it '
+        'is said there', (tester) async {
+      lineupAnswer = (_) => [_lineupGame('l-1'), _lineupGame('l-2')];
+      await showLineup(tester, detail: detailOf(viewer: host));
+      await openQuickLook(tester, 'l-1');
+      expect(removeInQuickLook, findsOneWidget);
+
+      lineupAnswer = (_) => [_lineupGame('l-2')];
+      await tester.tap(removeInQuickLook);
+      await animate(tester);
+      await tester.tap(confirm);
+      await animate(tester);
+
+      expect(remote.lineupRemovals, [(eventId: 'e-1', lineupGameId: 'l-1')]);
+      // Gone from the quick look, which says so and holds the outcome.
+      expect(find.byKey(EventDetailScreen.quickLookGoneKey), findsOneWidget);
+      expect(textIn('Catan is out of the lineup.'), findsOneWidget);
+    });
+
+    testWidgets('a started game in the quick look is disabled with its '
+        'reason', (tester) async {
+      final begun = confirmed(
+        'd-0',
+        DateTime(2026, 10, 22, 19),
+      ).copyWith(eventId: 'e-1');
+      lineupAnswer = (_) => [_lineupGame('l-1', occurrenceId: 'd-0')];
+      await showLineup(
+        tester,
+        detail: detailOf(viewer: host, dates: [begun, friday]),
+      );
+      await chooseDate(tester, 'd-0');
+      await openQuickLook(tester, 'l-1');
+
+      expect(removeInQuickLook, findsOneWidget);
+      expect(enabled(tester, removeInQuickLook), isFalse);
+      expect(textIn(startedHint), findsOneWidget);
+    });
+  });
+
   group('the quick look', () {
     testWidgets('a row opens the lineup quick look, and focus returns to the '
         'row after', (tester) async {
@@ -1519,6 +1753,53 @@ void main() {
       arrange: (tester) async {
         await tester.ensureVisible(find.byKey(EventDetailScreen.lineupAddKey));
         await tester.pumpAndSettle();
+      },
+    );
+
+    auditScreen(
+      "EventDetailScreen, a host's Lineup sub-tab with Remove from lineup, "
+      'one game started (#520)',
+      pump: (tester, theme) async {
+        final begun = confirmed(
+          'd-0',
+          DateTime(2026, 10, 22, 19),
+        ).copyWith(eventId: 'e-1');
+        lineupAnswer = (_) => [
+          _lineupGame('l-1', title: _longTitle),
+          _lineupGame('l-2', occurrenceId: 'd-0'),
+        ];
+        final detail = detailOf(
+          viewer: _row('att-me', name: 'Me', role: EventRole.host),
+          dates: [begun, friday],
+        );
+        await tester.pumpWidget(harness(detail, theme: theme));
+        await arrangeGames(tester, detail);
+      },
+      arrange: (tester) async {
+        await tester.ensureVisible(
+          find.byKey(EventDetailScreen.lineupRemoveKey('l-1')),
+        );
+        await tester.pumpAndSettle();
+      },
+    );
+
+    auditScreen(
+      "EventDetailScreen, a lineup game's quick look with Remove from "
+      'lineup (#520)',
+      pump: (tester, theme) async {
+        lineupAnswer = (_) => [_lineupGame('l-1', title: _longTitle)];
+        final detail = detailOf(
+          viewer: _row('att-me', name: 'Me', role: EventRole.host),
+        );
+        await tester.pumpWidget(harness(detail, theme: theme));
+        await arrangeGames(tester, detail);
+      },
+      arrange: (tester) async {
+        await openQuickLook(tester, 'l-1');
+        expect(
+          find.byKey(EventDetailScreen.quickLookLineupRemoveKey),
+          findsOneWidget,
+        );
       },
     );
 

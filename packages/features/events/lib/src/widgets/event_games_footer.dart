@@ -11,6 +11,7 @@ import 'package:events/src/bloc/event_nominations_bloc.dart';
 import 'package:events/src/bloc/event_nominations_event.dart';
 import 'package:events/src/bloc/event_nominations_state.dart';
 import 'package:events/src/detail/event_games_pool.dart';
+import 'package:events/src/detail/event_lineup.dart';
 import 'package:events/src/detail/event_nominations.dart';
 import 'package:events/src/screens/event_detail_screen.dart';
 import 'package:events/src/widgets/event_detail_tabs.dart';
@@ -85,6 +86,7 @@ class EventGamesFooter extends StatelessWidget {
     required this.names,
     this.nominations,
     this.lineup,
+    this.inLineup,
     this.viewerId,
     this.saidInQuickLook,
     super.key,
@@ -101,6 +103,12 @@ class EventGamesFooter extends StatelessWidget {
   /// nominations', and whose stale-data banner shows on the Lineup sub-tab.
   /// Null shows neither.
   final EventLineupState? lineup;
+
+  /// Whether the lineup holds a game the pool row it is given supplies that
+  /// a host could take out (#520, [lineupHoldsRemovable]): what a take-back's
+  /// 409 names as the step that frees it. Null, as where the lineup isn't
+  /// read, says none does.
+  final bool Function(String offeredGameId)? inLineup;
 
   /// The viewer's roster row id, which says which nominations are theirs, or
   /// null where they have none.
@@ -158,6 +166,7 @@ class EventGamesFooter extends StatelessWidget {
           EventPoolOutcomeBanner(
             outcome: outcome,
             nominations: nominations?.nominations ?? const [],
+            inLineup: inLineup,
             viewerId: viewerId,
             names: names,
             announce: !(saidInQuickLook?.call(outcome) ?? false),
@@ -260,6 +269,7 @@ class EventPoolOutcomeBanner extends StatelessWidget {
     required this.nominations,
     required this.viewerId,
     required this.names,
+    this.inLineup,
     this.announce = true,
   }) : assert(says(outcome), 'Build it only where it says something.'),
        super(key: ObjectKey(outcome));
@@ -277,6 +287,12 @@ class EventPoolOutcomeBanner extends StatelessWidget {
   /// The roster's names, by row id, which name whose games a take-back of
   /// someone else's game was about (#518).
   final Map<String, String?> names;
+
+  /// Whether the lineup holds a game the pool row it is given supplies that
+  /// a host could take out (#520, [lineupHoldsRemovable]): where nobody holds
+  /// a live nomination of the row, a take-back's 409 names that step. Null
+  /// says none does.
+  final bool Function(String offeredGameId)? inLineup;
 
   /// Whether it is a live region ([BgeInlineBanner.announce]): not where a
   /// quick look said the outcome (#957).
@@ -297,6 +313,10 @@ class EventPoolOutcomeBanner extends StatelessWidget {
       l10n,
       outcome,
       _suppliedBy(outcome, nominations: nominations, viewerId: viewerId),
+      inLineup:
+          outcome is EventTakeBackOutcome &&
+          outcome.offeredGameId != null &&
+          (inLineup?.call(outcome.offeredGameId!) ?? false),
     );
 
     // In the words it landed with, which the nominations' changes leave as
@@ -339,10 +359,16 @@ class EventPoolOutcomeBanner extends StatelessWidget {
   String _message(
     EventsLocalizations l10n,
     EventGamesOutcome outcome,
-    StillSuppliedBy supplied,
-  ) => switch (outcome) {
+    StillSuppliedBy supplied, {
+    required bool inLineup,
+  }) => switch (outcome) {
     EventOfferOutcome() => _offerMessage(l10n, outcome),
-    EventTakeBackOutcome() => _takeBackMessage(l10n, outcome, supplied),
+    EventTakeBackOutcome() => _takeBackMessage(
+      l10n,
+      outcome,
+      supplied,
+      inLineup: inLineup,
+    ),
   };
 
   /// Who holds the live nominations of the pool row a take-back's 409 is
@@ -389,8 +415,10 @@ class EventPoolOutcomeBanner extends StatelessWidget {
   /// A take-back's copy, naming its game by its title and subtitle
   /// ([gameName], #851): the banner is built only where [says], where the
   /// outcome names one. A 409 says what to do by [supplied] (#517): where
-  /// nobody holds a live nomination of the row, it is in the lineup, or
-  /// nominated in a way the nominations held don't show.
+  /// nobody holds a live nomination of the row, it says a host can take it
+  /// out of the lineup where it is in one ([inLineup], #520), and else that it
+  /// is nominated, or in the lineup for a date still to come, in a way the
+  /// nominations held don't show.
   ///
   /// Whose games it was about comes from the roster row the outcome names
   /// (#518): someone else's where that isn't the viewer's [viewerId], and
@@ -401,8 +429,9 @@ class EventPoolOutcomeBanner extends StatelessWidget {
   String _takeBackMessage(
     EventsLocalizations l10n,
     EventTakeBackOutcome outcome,
-    StillSuppliedBy supplied,
-  ) {
+    StillSuppliedBy supplied, {
+    required bool inLineup,
+  }) {
     final name = gameName(l10n, outcome.title!, outcome.subtitle);
     final id = outcome.attendeeId;
     final theirs = id != null && id != viewerId;
@@ -429,6 +458,11 @@ class EventPoolOutcomeBanner extends StatelessWidget {
           l10n.eventsGamesStillSuppliesTheirs(name),
         (StillSuppliedBy.someoneElse, true) =>
           l10n.eventsGamesTheirsStillSuppliesTheirs(name, offeredBy()),
+        // In the lineup, which a host can take it out of (#520).
+        (StillSuppliedBy.none, false) when inLineup =>
+          l10n.eventsGamesStillInLineup(name),
+        (StillSuppliedBy.none, true) when inLineup =>
+          l10n.eventsGamesTheirsStillInLineup(name, offeredBy()),
         (StillSuppliedBy.none, false) => l10n.eventsGamesStillSupplies(name),
         (StillSuppliedBy.none, true) => l10n.eventsGamesTheirsStillSupplies(
           name,

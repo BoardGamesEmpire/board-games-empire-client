@@ -13,6 +13,7 @@ import 'package:events/src/bloc/event_lineup_state.dart';
 import 'package:events/src/bloc/event_nominations_bloc.dart';
 import 'package:events/src/bloc/event_nominations_state.dart';
 import 'package:events/src/detail/event_games_pool.dart';
+import 'package:events/src/detail/event_lineup.dart';
 import 'package:events/src/detail/event_nominations.dart';
 import 'package:events/src/screens/event_detail_screen.dart';
 import 'package:events/src/widgets/event_games_footer.dart';
@@ -204,7 +205,10 @@ Future<void> showEventGameQuickLook(
 /// ([lineupSupplierLine]), the date it is on, or "Every date" for the
 /// event's own, or that its date is no longer on the event, the note the
 /// host left on it, and that it came from a nomination, where it did (#519).
-/// Nothing on it can be changed here.
+/// Then, for those the server lets take a game out, Remove from lineup
+/// ([lineupRemoveButton], #520): it asks first, and is disabled with its
+/// reason where the lineup has started. Nothing else on it can be changed
+/// here.
 ///
 /// ## Outcomes
 ///
@@ -337,6 +341,7 @@ class _EventGameQuickLookState extends State<EventGameQuickLook> {
                             games: games,
                             nominations: nominations,
                             lineup: lineup,
+                            acting: eventScreenActing(actions),
                           ),
                         },
                       ),
@@ -350,6 +355,8 @@ class _EventGameQuickLookState extends State<EventGameQuickLook> {
   Widget? _poolOutcome({
     required EventGamesState games,
     required EventNominationsState nominations,
+    required EventLineupState lineup,
+    required EventDetailState detail,
     required String? viewerId,
     required Map<String, String?> names,
   }) {
@@ -359,9 +366,16 @@ class _EventGameQuickLookState extends State<EventGameQuickLook> {
         !EventPoolOutcomeBanner.says(pool)) {
       return null;
     }
+    final known = knownLineup(lineup);
+    final now = EventGamesTabScope.of(context).clock();
     return EventPoolOutcomeBanner(
       outcome: pool,
       nominations: nominations.nominations,
+      // A take-back's 409 names a host's step for a game in the lineup
+      // (#520).
+      inLineup: detail is EventDetailReady
+          ? (id) => lineupHoldsRemovable(detail, known, id, now: now)
+          : null,
       viewerId: viewerId,
       names: names,
     );
@@ -432,6 +446,8 @@ class _EventGameQuickLookState extends State<EventGameQuickLook> {
       ?_poolOutcome(
         games: games,
         nominations: nominations,
+        lineup: lineup,
+        detail: detail,
         viewerId: viewerId,
         names: names,
       ),
@@ -567,6 +583,8 @@ class _EventGameQuickLookState extends State<EventGameQuickLook> {
       ?_poolOutcome(
         games: games,
         nominations: nominations,
+        lineup: lineup,
+        detail: detail,
         viewerId: ready?.detail.attendance?.id,
         names: ready == null
             ? const <String, String?>{}
@@ -613,6 +631,7 @@ class _EventGameQuickLookState extends State<EventGameQuickLook> {
     required EventGamesState games,
     required EventNominationsState nominations,
     required EventLineupState lineup,
+    required bool acting,
   }) {
     final l10n = EventsLocalizations.of(context);
     final theme = Theme.of(context);
@@ -638,6 +657,8 @@ class _EventGameQuickLookState extends State<EventGameQuickLook> {
       ?_poolOutcome(
         games: games,
         nominations: nominations,
+        lineup: lineup,
+        detail: detail,
         viewerId: viewerId,
         names: names,
       ),
@@ -671,6 +692,18 @@ class _EventGameQuickLookState extends State<EventGameQuickLook> {
             null => l10n.eventsLineupDateGone,
           };
 
+    // Remove from lineup, for those offered it (#520).
+    final remove = lineupRemoveButton(
+      context,
+      game: shown,
+      detail: detail,
+      state: lineup,
+      acting: acting,
+      now: controller.clock(),
+      clock: controller.clock,
+      buttonKey: EventDetailScreen.quickLookLineupRemoveKey,
+    );
+
     return _QuickLookFrame(
       thumbnail: shown.thumbnail,
       name: name,
@@ -687,6 +720,13 @@ class _EventGameQuickLookState extends State<EventGameQuickLook> {
         if (shown.nominationId != null)
           Text(l10n.eventsLineupFromNomination, style: quiet),
       ],
+      controls: [?remove],
+      // Its hint already says why it can't be pressed.
+      note: remove != null && remove.started
+          ? l10n.eventsLineupStartedHint
+          : null,
+      // A write.
+      offlineNote: remove != null,
       outcomes: outcomes,
       onOpenGame: _viewGame(controller, shown.gameId),
     );

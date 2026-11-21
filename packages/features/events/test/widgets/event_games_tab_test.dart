@@ -2607,6 +2607,86 @@ void main() {
       expect(outcome(), findsNothing);
     });
 
+    testWidgets("Take back refused for a lineup game names a host's step", (
+      tester,
+    ) async {
+      takeBackAnswer = (_) => throw const EventWriteConflictException(
+        'supplies',
+        statusCode: 409,
+      );
+      lineupAnswer = (_) => [
+        LineupGame(
+          id: 'l-1',
+          platformGameId: catanMine.platformGameId,
+          gameId: catanMine.gameId,
+          title: 'Catan',
+          platformName: 'Tabletop',
+          role: ScheduledGameRole.primary,
+          sortOrder: 0,
+          suppliedById: catanMine.id,
+          supplierAttendeeId: catanMine.attendeeId,
+        ),
+      ];
+      await showGames(tester);
+
+      await press(tester, takeBack(catanMine.id));
+      await animate(tester);
+
+      expect(
+        find.descendant(
+          of: outcome(),
+          matching: find.text(
+            'Catan is in the lineup. A host can take it out of the lineup, '
+            'then it can come off your games.',
+          ),
+        ),
+        findsOneWidget,
+      );
+      expect(row(catanMine.id), findsOneWidget);
+    });
+
+    testWidgets('a lineup game that has started keeps the generic copy, as no '
+        'host can take it out', (tester) async {
+      takeBackAnswer = (_) => throw const EventWriteConflictException(
+        'supplies',
+        statusCode: 409,
+      );
+      lineupAnswer = (_) => [
+        LineupGame(
+          id: 'l-1',
+          occurrenceId: 'o-0',
+          platformGameId: catanMine.platformGameId,
+          gameId: catanMine.gameId,
+          title: 'Catan',
+          platformName: 'Tabletop',
+          role: ScheduledGameRole.primary,
+          sortOrder: 0,
+          suppliedById: catanMine.id,
+          supplierAttendeeId: catanMine.attendeeId,
+        ),
+      ];
+      await showGames(
+        tester,
+        detail: detailOf(
+          viewer: _row('att-me', name: 'Me', role: EventRole.moderator),
+          occurrences: [
+            confirmed(
+              'o-0',
+              DateTime(2026, 10, 22, 19),
+            ).copyWith(eventId: 'e-1'),
+          ],
+        ),
+      );
+
+      await press(tester, takeBack(catanMine.id));
+      await animate(tester);
+
+      expect(
+        find.descendant(of: outcome(), matching: find.text(_stillSuppliesCopy)),
+        findsOneWidget,
+      );
+    });
+
     testWidgets('a 409 says the game is nominated or in the lineup, in the '
         'footer', (tester) async {
       takeBackAnswer = (_) => throw const EventWriteConflictException(
@@ -4196,6 +4276,33 @@ void main() {
             findsOneWidget,
           );
           expect(row(azul.id), findsOneWidget);
+        });
+
+        testWidgets("a game in the lineup names a host's step, naming whose "
+            'games', (tester) async {
+          lineupAnswer = (_) => [
+            LineupGame(
+              id: 'l-1',
+              platformGameId: azul.platformGameId,
+              gameId: azul.gameId,
+              title: 'Azul',
+              platformName: 'Tabletop',
+              role: ScheduledGameRole.primary,
+              sortOrder: 0,
+              suppliedById: azul.id,
+              supplierAttendeeId: azul.attendeeId,
+            ),
+          ];
+
+          await takeBackAzul(tester);
+
+          expect(
+            says(
+              'Azul is in the lineup. A host can take it out of the lineup, '
+              "then it can come off Ada's games.",
+            ),
+            findsOneWidget,
+          );
         });
 
         testWidgets('on a game the viewer nominated says to withdraw the '
