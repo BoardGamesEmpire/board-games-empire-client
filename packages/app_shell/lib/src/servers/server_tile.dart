@@ -68,21 +68,26 @@ class ServerTile extends StatelessWidget {
       onPressed: onTap,
       builder: (context, focusNode, onPressed) {
         final quiet = Theme.of(context).hoverColor.withValues(alpha: 0);
-        return ListTile(
+        return BgeRowFocusRing(
           focusNode: focusNode,
-          onTap: onPressed,
-          selected: inUse,
-          mouseCursor: ignoresTap ? SystemMouseCursors.basic : null,
-          enableFeedback: !ignoresTap,
-          splashColor: ignoresTap ? quiet : null,
-          hoverColor: ignoresTap ? quiet : null,
-          title: Text(name),
-          subtitle: _StateLine(state: row.state, text: stateText),
-          trailing: inUse
-              ? const Icon(Icons.check)
-              : switching
-              ? const _Spinner()
-              : null,
+          builder: (context, ring) => ListTile(
+            focusNode: ring.focusNode,
+            onFocusChange: ring.onFocusChange,
+            focusColor: ring.focusColor,
+            onTap: ring.onTap(onPressed),
+            selected: inUse,
+            mouseCursor: ignoresTap ? SystemMouseCursors.basic : null,
+            enableFeedback: !ignoresTap,
+            splashColor: ignoresTap ? quiet : null,
+            hoverColor: ignoresTap ? quiet : null,
+            title: Text(name),
+            subtitle: _StateLine(state: row.state, text: stateText),
+            trailing: inUse
+                ? const Icon(Icons.check)
+                : switching
+                ? const _Spinner()
+                : null,
+          ),
         );
       },
     );

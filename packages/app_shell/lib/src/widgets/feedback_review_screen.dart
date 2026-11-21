@@ -456,12 +456,22 @@ class _FeedbackReviewScreenState extends State<FeedbackReviewScreen> {
     required String value,
     required bool enabled,
   }) {
-    return SwitchListTile(
-      key: FeedbackReviewScreen.redactToggleKey(path),
-      value: _isRedacted(path),
-      onChanged: enabled ? (redact) => _toggle(path, redact) : null,
-      title: Text(label),
-      subtitle: Semantics(liveRegion: true, child: Text(value)),
+    return BgeRowFocusRing(
+      // Keyed as its tile is: the ring keeps the row's focus node, so it
+      // must stay with its field.
+      key: ValueKey('ring.$path'),
+      // The list's theme takes the tile's padding, so its title runs to the
+      // box's side.
+      outsideSides: true,
+      builder: (context, row) => SwitchListTile(
+        key: FeedbackReviewScreen.redactToggleKey(path),
+        focusNode: row.focusNode,
+        onFocusChange: row.onFocusChange,
+        value: _isRedacted(path),
+        onChanged: enabled ? (redact) => _toggle(path, redact) : null,
+        title: Text(label),
+        subtitle: Semantics(liveRegion: true, child: Text(value)),
+      ),
     );
   }
 

@@ -465,4 +465,16 @@ void main() {
       arrange: (tester) => tester.tap(_row('beta')),
     );
   });
+
+  testWidgets('a focused server row is ringed (#758)', (tester) async {
+    await _Harness().pump(tester);
+
+    expect(
+      await keyboardFocusShowsRing(
+        tester,
+        find.descendant(of: _row('beta'), matching: find.text('Beta')),
+      ),
+      isTrue,
+    );
+  });
 }

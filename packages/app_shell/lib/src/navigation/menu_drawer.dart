@@ -3,6 +3,7 @@ import 'package:app_shell/src/navigation/nav_destination.dart';
 import 'package:app_shell/src/screens/home_menu_entry.dart';
 import 'package:flutter/foundation.dart' show defaultTargetPlatform, listEquals;
 import 'package:flutter/material.dart';
+import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
 /// The navigation menu (#129, #414): a drawer with the app's destinations,
@@ -168,6 +169,12 @@ class _MenuDrawerState extends State<MenuDrawer> {
     return found;
   }
 
+  /// The key an entry's tile has among the drawer's children. The tile's
+  /// ring keeps the row's focus node, so when an entry above goes, the
+  /// children match by entry rather than by place, and each ring stays with
+  /// its own entry.
+  static Key _tileKey(HomeMenuEntry entry) => ValueKey('tile.${entry.id}');
+
   @override
   Widget build(BuildContext context) {
     final l10n = ShellLocalizations.of(context);
@@ -257,6 +264,7 @@ class _MenuDrawerState extends State<MenuDrawer> {
           if (destinations.isNotEmpty && entries.isNotEmpty) divider(),
           for (final entry in entries)
             _MenuEntryTile(
+              key: _tileKey(entry),
               entry: entry,
               onSelected: () => widget.onEntry(entry),
             ),
@@ -264,6 +272,7 @@ class _MenuDrawerState extends State<MenuDrawer> {
             divider(),
             for (final entry in actions)
               _MenuEntryTile(
+                key: _tileKey(entry),
                 entry: entry,
                 onSelected: () => widget.onEntry(entry),
               ),
@@ -425,7 +434,11 @@ class _DrawerStatus extends StatelessWidget {
 /// the destination selection/index model, which would read it as a tab (#763),
 /// and so it can carry the error color when [HomeMenuEntry.isDestructive].
 class _MenuEntryTile extends StatelessWidget {
-  const _MenuEntryTile({required this.entry, required this.onSelected});
+  const _MenuEntryTile({
+    required this.entry,
+    required this.onSelected,
+    super.key,
+  });
 
   final HomeMenuEntry entry;
   final VoidCallback onSelected;
@@ -439,14 +452,19 @@ class _MenuEntryTile extends StatelessWidget {
       // spaceSm here + ListTile's own 16 content padding = the same 24 the
       // destinations sit at. Both halves have to move together.
       padding: EdgeInsets.symmetric(horizontal: BgeTokens.of(context).spaceSm),
-      child: ListTile(
-        key: MenuDrawer.entryKey(entry.id),
-        leading: Icon(entry.icon, color: color),
-        title: Text(
-          entry.label,
-          style: color == null ? null : TextStyle(color: color),
+      child: BgeRowFocusRing(
+        builder: (context, row) => ListTile(
+          key: MenuDrawer.entryKey(entry.id),
+          focusNode: row.focusNode,
+          onFocusChange: row.onFocusChange,
+          focusColor: row.focusColor,
+          leading: Icon(entry.icon, color: color),
+          title: Text(
+            entry.label,
+            style: color == null ? null : TextStyle(color: color),
+          ),
+          onTap: row.onTap(onSelected),
         ),
-        onTap: onSelected,
       ),
     );
   }

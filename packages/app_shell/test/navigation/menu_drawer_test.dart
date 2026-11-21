@@ -834,4 +834,14 @@ void main() {
       arrange: _openDrawer,
     );
   });
+
+  testWidgets('a focused drawer entry is ringed (#758)', (tester) async {
+    await _pump(tester, entries: _entries(), activeServerName: 'My Server');
+    await _openDrawer(tester);
+
+    expect(
+      await keyboardFocusShowsRing(tester, find.text('Create household')),
+      isTrue,
+    );
+  });
 }

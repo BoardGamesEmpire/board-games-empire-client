@@ -1,4 +1,5 @@
 import 'package:app_shell/app_shell.dart';
+import 'package:bge_test_support/widgets.dart';
 import 'package:data_export/data_export.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -82,5 +83,14 @@ void main() {
     );
 
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('a focused export row is ringed (#758)', (tester) async {
+    await pumpEntry(tester, serverName: 'Game Night HQ');
+
+    expect(
+      await keyboardFocusShowsRing(tester, find.text('Export your data')),
+      isTrue,
+    );
   });
 }
