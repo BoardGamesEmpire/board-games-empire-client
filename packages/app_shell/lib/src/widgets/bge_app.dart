@@ -435,6 +435,8 @@ class _BgeAppState extends State<BgeApp> {
 
   /// Drains [BgeApp.pendingDeepLinkHolder] (#82): on each link that
   /// arrives, and on the shell's authenticated signal ([_onAuthenticated]).
+  /// It also holds a link handed back after its server was added from it,
+  /// until that server is signed in ([_buildManagerServerAddRoute], #971).
   /// Null when there is no holder.
   DeepLinkConsumer? _deepLinkConsumer;
 
@@ -2936,10 +2938,28 @@ class _BgeAppState extends State<BgeApp> {
   /// with the set in hand. Null (→ the server-add `ShellPlaceholderScreen`)
   /// is the backstop: no container at all (tests), a bundle that cannot
   /// resolve on a cubit built without the check, or no orchestrator.
-  Widget? _buildServerAddRoute(BuildContext context) => _serverAddFlow(
-    onUnavailable: _logServerAddUnavailable,
-    onSucceeded: (_) => widget.bootstrapCubit.onServerRegistered(),
-  );
+  ///
+  /// A device with no server that opened a link holds it in the slot, at
+  /// this route. When the held link is a server link with an address, the
+  /// form starts with that address, and the add is checked against the
+  /// server the link names (#971). The link stays in the slot, so once the
+  /// added server is signed in it lands, or shows the unknown-server screen
+  /// if the server added isn't the link's. Nothing is handed back.
+  ///
+  /// A link with an address that arrives while the screen shows replaces
+  /// the form, address, check and all ([_FirstRunServerAdd]): the person
+  /// who installs the app because of a link most often opens it again from
+  /// the first-run screen.
+  Widget? _buildServerAddRoute(BuildContext context) {
+    final flow = _serverAddFlow(
+      onUnavailable: _logServerAddUnavailable,
+      onSucceeded: (_, _) => widget.bootstrapCubit.onServerRegistered(),
+    );
+    if (flow == null) return null;
+    final holder = widget.pendingDeepLinkHolder;
+    if (holder == null) return flow(null);
+    return _FirstRunServerAdd(holder: holder, flow: flow);
+  }
 
   /// The #36 flow as the server manager opens it (#134), over the manager
   /// and with an app bar, signed in or not. Null (→ the router's not-found
@@ -2953,24 +2973,51 @@ class _BgeAppState extends State<BgeApp> {
   /// server already exists. When the switch has already changed the
   /// bootstrap state, the redirect has taken the route away, and it goes
   /// nowhere.
+  ///
+  /// [link] is the server link the unknown-server screen opened this with
+  /// (#971). With an address, the form starts with it, and the add is
+  /// checked against the server the link names. After a success the link
+  /// goes back to [_deepLinkConsumer], held until the added server is signed
+  /// in, so it opens there rather than landing at once on a server with no
+  /// session. If the server added isn't the link's, the unknown-server
+  /// screen shows after that sign-in. It goes back whether or not the route
+  /// is still showing. A newer link that has arrived since stays in the
+  /// slot instead, and waits for that sign-in too when it is for the added
+  /// server, unless the add has left the server that newer link was
+  /// switched to ([DeepLinkConsumer.holdUntilSignedIn]).
   Widget? _buildManagerServerAddRoute(
     BuildContext context,
-    ServerDeepLink? _,
+    ServerDeepLink? link,
   ) => _serverAddFlow(
     title: Text(ServerOnboardingLocalizations.of(context).serverAddTitle),
-    onSucceeded: (context) {
+    onSucceeded: (context, succeeded) {
+      // The bloc reports success once the added server is the active one,
+      // which is when the consumer may start waiting on its sign-in.
+      if (link != null) {
+        _deepLinkConsumer?.holdUntilSignedIn(link, succeeded.serverId);
+      }
       if (!(ModalRoute.isActiveOf(context) ?? false)) return;
       GoRouter.of(context).go(AppRoutes.home);
     },
-  );
+  )?.call(link);
 
   /// The #36 add-server screen over its bloc, built from the root-scope
   /// [ServerOnboardingDeps] and the late-bound orchestrator, with
   /// [onSucceeded] run, in the screen's context, once the server is added
   /// and active. Null, after [onUnavailable] names what is missing, when
   /// either is absent.
-  Widget? _serverAddFlow({
-    required void Function(BuildContext context) onSucceeded,
+  ///
+  /// Given a link with an address, the flow's form starts with that
+  /// address, and the bloc refuses an add from it whose server answers with
+  /// a different id than the link names (#971). Without one, it is an
+  /// ordinary add. The flow tells `onBusy` when an add starts and when it
+  /// fails: from the start until a failure, its bloc must not be replaced.
+  _ServerAddFlow? _serverAddFlow({
+    required void Function(
+      BuildContext context,
+      ServerOnboardingSucceeded succeeded,
+    )
+    onSucceeded,
     void Function(List<String> missing)? onUnavailable,
     Widget? title,
   }) {
@@ -2983,21 +3030,51 @@ class _BgeAppState extends State<BgeApp> {
       ]);
       return null;
     }
-    return BlocProvider<ServerOnboardingBloc>(
-      create: (_) => ServerOnboardingBloc(
-        wellKnownClient: deps.wellKnownClient,
-        versionNegotiator: deps.versionNegotiator,
-        connectivityService: deps.connectivityService,
-        buildInfo: deps.buildInfo,
-        orchestrator: orchestrator,
-      ),
-      child: BlocListener<ServerOnboardingBloc, ServerOnboardingState>(
-        listenWhen: (_, current) => current is ServerOnboardingSucceeded,
-        listener: (context, _) => onSucceeded(context),
-        child: ServerAddScreen(title: title),
-      ),
-    );
+    return (link, {onBusy}) {
+      final expected = switch (link) {
+        ServerDeepLink(:final serverId, :final String address) =>
+          ExpectedServer(address: address, bgeServerId: serverId),
+        _ => null,
+      };
+      return BlocProvider<ServerOnboardingBloc>(
+        create: (_) => ServerOnboardingBloc(
+          wellKnownClient: deps.wellKnownClient,
+          versionNegotiator: deps.versionNegotiator,
+          connectivityService: deps.connectivityService,
+          buildInfo: deps.buildInfo,
+          orchestrator: orchestrator,
+          expectedServer: expected,
+        ),
+        child: MultiBlocListener(
+          listeners: [
+            BlocListener<ServerOnboardingBloc, ServerOnboardingState>(
+              listenWhen: (_, current) => current is ServerOnboardingSucceeded,
+              listener: (context, state) {
+                if (state is ServerOnboardingSucceeded) {
+                  onSucceeded(context, state);
+                }
+              },
+            ),
+            if (onBusy != null)
+              BlocListener<ServerOnboardingBloc, ServerOnboardingState>(
+                listenWhen: (previous, current) =>
+                    _addBusy(previous) != _addBusy(current),
+                listener: (_, state) => onBusy(_addBusy(state)),
+              ),
+          ],
+          child: ServerAddScreen(
+            title: title,
+            initialAddress: expected?.address,
+          ),
+        ),
+      );
+    };
   }
+
+  /// Whether an add in [state] is under way or done: its server may be
+  /// saved, or about to be, so the bloc reporting it must stay.
+  static bool _addBusy(ServerOnboardingState state) =>
+      state is ServerOnboardingInProgress || state is ServerOnboardingSucceeded;
 
   /// Builds the server manager (#134) for [AppRoutes.servers], or null (→
   /// the router's not-found page) without an orchestrator or a registry of
@@ -4747,5 +4824,85 @@ void _replaceEventTab(
   Router.neglect(
     context,
     () => context.replace(AppRoutes.eventDetailOf(eventId, tab: tab.query)),
+  );
+}
+
+/// The #36 add-server screen for one [ServerDeepLink], or none, built by
+/// `_BgeAppState._serverAddFlow`. `onBusy` hears when an add starts, and
+/// when it fails.
+typedef _ServerAddFlow = Widget Function(
+  ServerDeepLink? link, {
+  ValueChanged<bool>? onBusy,
+});
+
+/// First run's add flow, for the server link with an address that the slot
+/// holds (#971).
+///
+/// The flow is built for the link held when the screen first shows. A
+/// newer one with an address replaces it, with a new form and bloc, so the
+/// form fills in and the add is checked against the server that link names.
+/// A link with no address, or an app link, leaves the form alone: it has
+/// nothing to fill in, and still waits in the slot.
+///
+/// Not while an add is under way or has succeeded: closing the bloc then
+/// would drop its success, with the server saved. A link that arrived then
+/// is taken up if the add fails.
+class _FirstRunServerAdd extends StatefulWidget {
+  const _FirstRunServerAdd({required this.holder, required this.flow});
+
+  final PendingDeepLinkHolder holder;
+  final _ServerAddFlow flow;
+
+  @override
+  State<_FirstRunServerAdd> createState() => _FirstRunServerAddState();
+}
+
+class _FirstRunServerAddState extends State<_FirstRunServerAdd> {
+  ServerDeepLink? _link;
+  bool _busy = false;
+
+  static ServerDeepLink? _withAddress(NormalizedDeepLink? held) =>
+      switch (held) {
+        final ServerDeepLink link when link.address != null => link,
+        _ => null,
+      };
+
+  @override
+  void initState() {
+    super.initState();
+    _link = _withAddress(widget.holder.peek);
+    widget.holder.addListener(_takeUp);
+  }
+
+  @override
+  void didUpdateWidget(_FirstRunServerAdd oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (identical(oldWidget.holder, widget.holder)) return;
+    oldWidget.holder.removeListener(_takeUp);
+    widget.holder.addListener(_takeUp);
+  }
+
+  @override
+  void dispose() {
+    widget.holder.removeListener(_takeUp);
+    super.dispose();
+  }
+
+  void _takeUp() {
+    if (_busy || !mounted) return;
+    final held = _withAddress(widget.holder.peek);
+    if (held == null || held == _link) return;
+    setState(() => _link = held);
+  }
+
+  void _onBusy(bool busy) {
+    _busy = busy;
+    if (!busy) _takeUp();
+  }
+
+  @override
+  Widget build(BuildContext context) => KeyedSubtree(
+    key: ValueKey<ServerDeepLink?>(_link),
+    child: widget.flow(_link, onBusy: _onBusy),
   );
 }

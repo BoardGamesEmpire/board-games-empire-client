@@ -192,12 +192,29 @@ class _WellKnownClient implements WellKnownClient {
   Future<ServerIdentity> fetchIdentity(String serverUrl) async => _betaIdentity;
 }
 
-class _OnlineConnectivity implements ConnectivityService {
+/// Online unless a test says otherwise.
+class _Connectivity implements ConnectivityService {
   @override
-  ConnectivityState get current => ConnectivityState.online;
+  ConnectivityState current = ConnectivityState.online;
 
   @override
   Stream<ConnectivityState> watch() => Stream.value(ConnectivityState.online);
+}
+
+/// Finds a server among [_scope]'s by the id its identity names, as the
+/// registry finds an added server (#82).
+class _ScopeLookup implements KnownServerLookup {
+  _ScopeLookup(this._scope);
+
+  final _OrchestratorScope _scope;
+
+  @override
+  Future<String?> localServerIdFor(String bgeServerId) async {
+    for (final server in _scope.servers.values) {
+      if (server.identity.serverId == bgeServerId) return server.serverId;
+    }
+    return null;
+  }
 }
 
 /// The active server as the orchestrator says it is, re-read on each of
@@ -227,13 +244,19 @@ class _OrchestratorScope implements ActiveServerScope {
 void main() {
   late FakeServerOrchestrator orchestrator;
   late _OrchestratorScope scope;
+  late _Connectivity connectivity;
+
+  /// The auth of the server the last add added, signed out, as a new one
+  /// is.
+  late FakeAuthRepository addedAuth;
 
   /// The root container the add flow resolves its collaborators from.
   DependencyContainerImpl rootContainer() {
+    connectivity = _Connectivity();
     final container = DependencyContainerImpl()
       ..registerLazySingleton<WellKnownClient>(_WellKnownClient.new)
       ..registerLazySingleton<VersionNegotiator>(VersionNegotiatorImpl.new)
-      ..registerLazySingleton<ConnectivityService>(_OnlineConnectivity.new)
+      ..registerSingleton<ConnectivityService>(connectivity)
       ..registerSingleton<BuildInfo>(BuildInfo.unknown);
     container.registerLazySingleton<ServerOnboardingDeps>(
       () => ServerOnboardingDeps.from(container),
@@ -249,25 +272,33 @@ void main() {
   /// [others] are registered too, and not connected. [native] false boots
   /// as web does: no orchestrator and no registry. [unsentChanges] counts
   /// `My Server`'s changes that haven't reached it.
+  ///
+  /// [firstRun] boots with no server added, to the first-run add, and `My
+  /// Server` is neither registered nor active. [holder] is the deep-link
+  /// slot (#82), and links are looked up among the servers [scope] knows.
   Future<AppBootstrapCubit> pumpApp(
     WidgetTester tester,
     FakeAuthRepository repo, {
     ActiveServer? first,
     List<ActiveServer> others = const [],
     bool native = true,
+    bool firstRun = false,
     UnsentChangesNoticeRepository? unsentChanges,
+    PendingDeepLinkHolder? holder,
   }) async {
     orchestrator = FakeServerOrchestrator();
     addTearDown(orchestrator.close);
     final alpha =
         first ?? buildActiveServer(repo, unsentChangesNotice: unsentChanges);
-    orchestrator.activate(alpha.serverId);
+    if (!firstRun) orchestrator.activate(alpha.serverId);
     scope = _OrchestratorScope(orchestrator, alpha);
+    if (firstRun) scope.servers.clear();
     for (final other in others) {
       scope.servers[other.serverId] = other;
     }
     orchestrator.onAdd = (serverId, displayName) {
-      final added = buildActiveServer(FakeAuthRepository(), serverId: serverId);
+      addedAuth = FakeAuthRepository();
+      final added = buildActiveServer(addedAuth, serverId: serverId);
       scope.servers[serverId] = ActiveServer(
         serverId: serverId,
         displayName: displayName,
@@ -276,7 +307,7 @@ void main() {
       );
     };
     final registered = FakeRegisteredServers([
-      for (final server in [alpha, ...others])
+      for (final server in [if (!firstRun) alpha, ...others])
         testRegisteredServer(server.serverId, server.displayName),
     ]);
     addTearDown(registered.close);
@@ -286,10 +317,11 @@ void main() {
         outcomes: [
           if (native)
             BootstrapResult(
-              hasServer: true,
+              hasServer: !firstRun,
               activeServerScope: scope,
               orchestrator: orchestrator,
               registeredServers: registered,
+              knownServerLookup: _ScopeLookup(scope),
             )
           else
             BootstrapResult(
@@ -302,7 +334,11 @@ void main() {
     );
     addTearDown(cubit.close);
     await tester.pumpWidget(
-      BgeApp(bootstrapCubit: cubit, rootContainer: rootContainer()),
+      BgeApp(
+        bootstrapCubit: cubit,
+        rootContainer: rootContainer(),
+        pendingDeepLinkHolder: holder,
+      ),
     );
     await cubit.initialize();
     await tester.pumpAndSettle();
@@ -449,6 +485,327 @@ void main() {
     expect(find.byType(ServerAddScreen), findsOneWidget);
     expect(cubit.state, isA<AppBootstrapReady>());
     expect(scope.active?.displayName, 'My Server');
+  });
+
+  group('adding the server a link names (#971)', () {
+    /// A link for `bge-beta`, the server the form finds at any address,
+    /// carrying its address.
+    const betaLink = ServerDeepLink(
+      serverId: 'bge-beta',
+      location:
+          '/server/bge-beta/event/ev-1?address=https%3A%2F%2Fbge.example.com',
+    );
+
+    /// [betaLink]'s address, as the add form shows it.
+    const betaAddress = 'https://bge.example.com';
+
+    PendingDeepLinkHolder buildHolder() {
+      final holder = PendingDeepLinkHolder();
+      addTearDown(holder.dispose);
+      return holder;
+    }
+
+    /// What the add form's address field holds.
+    String addressShown(WidgetTester tester) => tester
+        .widget<TextField>(
+          find.descendant(
+            of: find.byKey(ServerAddForm.urlFieldKey),
+            matching: find.byType(TextField),
+          ),
+        )
+        .controller!
+        .text;
+
+    /// Submits the add form as it stands.
+    Future<void> submitAsIs(WidgetTester tester) async {
+      final button = find.byKey(ServerAddForm.submitButtonKey);
+      await tester.ensureVisible(button);
+      await tester.pumpAndSettle();
+      await tester.tap(button);
+      await tester.pumpAndSettle();
+    }
+
+    // Nothing is added, so there is no link to hand back, and the slot the
+    // unknown-server screen emptied stays empty.
+    for (final (name, banner, fail) in <(String, String, void Function())>[
+      (
+        'capacity',
+        "You've reached the maximum number of connected servers on this "
+            'device.',
+        () =>
+            orchestrator.onAdd = (_, _) =>
+                throw const ServerCapacityExceededException(
+                  currentConnected: 5,
+                  maxCapacity: 5,
+                ),
+      ),
+      (
+        'duplicate',
+        'That server is already registered on this device.',
+        () => orchestrator.onAdd = (_, _) =>
+            throw const DuplicateServerException.url('https://bge.example.com'),
+      ),
+      (
+        'offline',
+        "You're offline. Connect to a network and try again.",
+        () => connectivity.current = ConnectivityState.offline,
+      ),
+    ]) {
+      testWidgets('a failed add hands nothing back: $name', (tester) async {
+        final holder = buildHolder();
+        final cubit = await pumpApp(
+          tester,
+          FakeAuthRepository(initialSession: testAuthResponse()),
+          holder: holder,
+        );
+        holder.set(betaLink);
+        await tester.pumpAndSettle();
+        expect(find.byType(UnknownServerLinkScreen), findsOneWidget);
+        await tester.tap(find.byKey(UnknownServerLinkScreen.addButtonKey));
+        await tester.pumpAndSettle();
+        expect(addressShown(tester), betaAddress);
+        fail();
+
+        await submitAsIs(tester);
+
+        expect(find.text(banner), findsOneWidget);
+        expect(find.byType(ServerAddScreen), findsOneWidget);
+        expect(cubit.state, isA<AppBootstrapReady>());
+        expect(scope.active?.displayName, 'My Server');
+        expect(holder.peek, isNull);
+      });
+    }
+
+    testWidgets('first run pre-fills from a held link', (tester) async {
+      final holder = buildHolder()..set(betaLink);
+      final cubit = await pumpApp(
+        tester,
+        FakeAuthRepository(),
+        firstRun: true,
+        holder: holder,
+      );
+      expect(cubit.state, isA<AppBootstrapNeedsServer>());
+      expect(routerOf(tester).state.uri.path, AppRoutes.serverAdd);
+      expect(addressShown(tester), betaAddress);
+
+      await submitAsIs(tester);
+
+      // The link never left the slot, and waits for the sign-in.
+      expect(orchestrator.calls, ['add $_betaId']);
+      expect(cubit.state, isA<AppBootstrapNeedsAuth>());
+      expect(routerOf(tester).state.uri.path, AppRoutes.auth);
+      expect(holder.peek, betaLink);
+
+      await addedAuth.signIn(email: 'player@example.com', password: 'pw');
+      await tester.pumpAndSettle();
+
+      expect(cubit.state, isA<AppBootstrapReady>());
+      expect(routerOf(tester).state.uri.path, '/events/ev-1');
+      expect(holder.peek, isNull);
+    });
+
+    // The person who installs the app because of a link most often opens
+    // it again from the first-run screen.
+    testWidgets('first run fills in from a link that arrives while it '
+        'shows', (tester) async {
+      final holder = buildHolder();
+      final cubit = await pumpApp(
+        tester,
+        FakeAuthRepository(),
+        firstRun: true,
+        holder: holder,
+      );
+      expect(addressShown(tester), isEmpty);
+
+      holder.set(betaLink);
+      await tester.pumpAndSettle();
+      expect(addressShown(tester), betaAddress);
+
+      await submitAsIs(tester);
+
+      expect(orchestrator.calls, ['add $_betaId']);
+      expect(cubit.state, isA<AppBootstrapNeedsAuth>());
+      expect(holder.peek, betaLink);
+
+      await addedAuth.signIn(email: 'player@example.com', password: 'pw');
+      await tester.pumpAndSettle();
+
+      expect(routerOf(tester).state.uri.path, '/events/ev-1');
+      expect(holder.peek, isNull);
+    });
+
+    testWidgets('first run checks the add against a link that arrives while '
+        'it shows', (tester) async {
+      // Names another server than the one the form finds at its address.
+      const otherLink = ServerDeepLink(
+        serverId: 'bge-other',
+        location:
+            '/server/bge-other/event/ev-1'
+            '?address=https%3A%2F%2Fbge.example.com',
+      );
+      final holder = buildHolder()..set(betaLink);
+      final cubit = await pumpApp(
+        tester,
+        FakeAuthRepository(),
+        firstRun: true,
+        holder: holder,
+      );
+
+      holder.set(otherLink);
+      await tester.pumpAndSettle();
+      await submitAsIs(tester);
+
+      expect(
+        find.text(
+          "The server at that address isn't the one the link is for, so it "
+          "wasn't added.",
+        ),
+        findsOneWidget,
+      );
+      expect(orchestrator.calls, isEmpty);
+      expect(cubit.state, isA<AppBootstrapNeedsServer>());
+    });
+
+    // Replacing the bloc mid-add would drop its success with the server
+    // saved, and first run would never move on.
+    testWidgets('first run keeps an add under way when a link arrives', (
+      tester,
+    ) async {
+      const laterLink = ServerDeepLink(
+        serverId: 'bge-later',
+        location:
+            '/server/bge-later/event/ev-2'
+            '?address=https%3A%2F%2Flater.example.org',
+      );
+      final holder = buildHolder()..set(betaLink);
+      final cubit = await pumpApp(
+        tester,
+        FakeAuthRepository(),
+        firstRun: true,
+        holder: holder,
+      );
+      final add = orchestrator.onAdd!;
+      final gate = Completer<void>();
+      orchestrator.onAdd = (serverId, displayName) async {
+        await gate.future;
+        await add(serverId, displayName);
+      };
+
+      final button = find.byKey(ServerAddForm.submitButtonKey);
+      await tester.ensureVisible(button);
+      await tester.pumpAndSettle();
+      await tester.tap(button);
+      await tester.pump();
+      await tester.pump();
+
+      holder.set(laterLink);
+      await tester.pump();
+      gate.complete();
+      await tester.pumpAndSettle();
+
+      expect(orchestrator.calls, ['add $_betaId']);
+      expect(cubit.state, isA<AppBootstrapNeedsAuth>());
+      expect(holder.peek, laterLink);
+    });
+
+    testWidgets('first run takes up a link that arrived during an add that '
+        'failed', (tester) async {
+      const laterLink = ServerDeepLink(
+        serverId: 'bge-later',
+        location:
+            '/server/bge-later/event/ev-2'
+            '?address=https%3A%2F%2Flater.example.org',
+      );
+      final holder = buildHolder()..set(betaLink);
+      await pumpApp(
+        tester,
+        FakeAuthRepository(),
+        firstRun: true,
+        holder: holder,
+      );
+      final gate = Completer<void>();
+      orchestrator.onAdd = (_, _) async {
+        await gate.future;
+        throw const DuplicateServerException.url('https://bge.example.com');
+      };
+
+      final button = find.byKey(ServerAddForm.submitButtonKey);
+      await tester.ensureVisible(button);
+      await tester.pumpAndSettle();
+      await tester.tap(button);
+      await tester.pump();
+      await tester.pump();
+
+      holder.set(laterLink);
+      await tester.pump();
+      expect(addressShown(tester), betaAddress);
+      gate.complete();
+      await tester.pumpAndSettle();
+
+      expect(addressShown(tester), 'https://later.example.org');
+    });
+
+    testWidgets('first run keeps what was typed when a link with no address '
+        'arrives', (tester) async {
+      final holder = buildHolder();
+      await pumpApp(
+        tester,
+        FakeAuthRepository(),
+        firstRun: true,
+        holder: holder,
+      );
+      await tester.enterText(
+        find.byKey(ServerAddForm.urlFieldKey),
+        'mine.example.org',
+      );
+      // reactive_forms delivers control changes asynchronously.
+      await tester.pumpAndSettle();
+
+      holder.set(
+        const ServerDeepLink(
+          serverId: 'bge-beta',
+          location: '/server/bge-beta/event/ev-1',
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(addressShown(tester), 'mine.example.org');
+    });
+
+    for (final (name, held) in <(String, NormalizedDeepLink?)>[
+      ('no link', null),
+      (
+        'a link with no address',
+        const ServerDeepLink(
+          serverId: 'bge-beta',
+          location: '/server/bge-beta/event/ev-1',
+        ),
+      ),
+      (
+        'an app link',
+        (normalizeDeepLink(
+          Uri.parse('bge://settings'),
+        ) as DeepLinkNormalized).link,
+      ),
+    ]) {
+      testWidgets('first run without a held link starts empty: $name', (
+        tester,
+      ) async {
+        final holder = buildHolder();
+        if (held != null) holder.set(held);
+        final cubit = await pumpApp(
+          tester,
+          FakeAuthRepository(),
+          firstRun: true,
+          holder: holder,
+        );
+
+        expect(cubit.state, isA<AppBootstrapNeedsServer>());
+        expect(find.byType(ServerAddScreen), findsOneWidget);
+        expect(addressShown(tester), isEmpty);
+        expect(holder.peek, held);
+      });
+    }
   });
 
   group('Manage servers on the sign-in screen', () {
