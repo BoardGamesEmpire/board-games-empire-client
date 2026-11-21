@@ -8,6 +8,7 @@ import 'package:app_shell/src/data_export/export_label_resolvers.dart';
 import 'package:app_shell/src/deep_links/deep_link_consumer.dart';
 import 'package:app_shell/src/deep_links/deep_link_failure.dart';
 import 'package:app_shell/src/deep_links/deep_link_handler.dart';
+import 'package:app_shell/src/deep_links/deep_link_normalizer.dart';
 import 'package:app_shell/src/deep_links/pending_deep_link_holder.dart';
 import 'package:app_shell/src/i18n/active_locale.dart';
 import 'package:app_shell/src/navigation/nav_destination.dart';
@@ -2952,7 +2953,10 @@ class _BgeAppState extends State<BgeApp> {
   /// server already exists. When the switch has already changed the
   /// bootstrap state, the redirect has taken the route away, and it goes
   /// nowhere.
-  Widget? _buildManagerServerAddRoute(BuildContext context) => _serverAddFlow(
+  Widget? _buildManagerServerAddRoute(
+    BuildContext context,
+    ServerDeepLink? _,
+  ) => _serverAddFlow(
     title: Text(ServerOnboardingLocalizations.of(context).serverAddTitle),
     onSucceeded: (context) {
       if (!(ModalRoute.isActiveOf(context) ?? false)) return;

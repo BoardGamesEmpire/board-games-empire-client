@@ -5,6 +5,7 @@ import 'package:app_shell/src/bootstrap/app_bootstrap_state.dart';
 import 'package:app_shell/src/bootstrap/local_data_in_use_error.dart';
 import 'package:app_shell/src/deep_links/deep_link_normalizer.dart';
 import 'package:app_shell/src/deep_links/pending_deep_link_holder.dart';
+import 'package:app_shell/src/deep_links/server_link_address.dart';
 import 'package:app_shell/src/navigation/shell_modal_guard.dart';
 import 'package:app_shell/src/screens/bootstrap_error_screen.dart';
 import 'package:app_shell/src/screens/not_yet_available_screen.dart';
@@ -498,7 +499,14 @@ typedef ServersScreenBuilder = Widget? Function(BuildContext context);
 /// at navigation time when the composition cannot back the flow, as
 /// [ServerAddScreenBuilder] does, in which case the route shows
 /// [RouteNotFoundScreen], as the manager's does: web has no orchestrator.
-typedef ManagerServerAddScreenBuilder = Widget? Function(BuildContext context);
+///
+/// [link] is the server link the route carries in its
+/// [AppRoutes.deepLinkParam] query, when the unknown-server screen opened it
+/// (#971); null when it carries none, or a value that isn't a server link.
+typedef ManagerServerAddScreenBuilder = Widget? Function(
+  BuildContext context,
+  ServerDeepLink? link,
+);
 
 /// Builds the real auth screen subtree (#37) for the [AppRoutes.auth]
 /// route — the `AuthGate` rendered against the active server's bloc.
@@ -1126,7 +1134,10 @@ GoRouter buildAppRouter({
             path: AppRoutes._serversAddSegment,
             pageBuilder: (context, state) => _materialPage(
               state,
-              managerServerAddBuilder?.call(context) ??
+              managerServerAddBuilder?.call(
+                    context,
+                    _deepLinkOf(state),
+                  ) ??
                   const RouteNotFoundScreen(),
             ),
           ),
@@ -1844,11 +1855,30 @@ GoRouter buildAppRouter({
           ),
       GoRoute(
         path: AppRoutes.deepLinkUnknownServer,
-        pageBuilder: (_, state) =>
-            _materialPage(state, const UnknownServerLinkScreen()),
+        pageBuilder: (_, state) => _materialPage(
+          state,
+          // The screen's add opens the server manager's add route, which
+          // needs an orchestrator: web has none, and no manager (#134). A
+          // link loaded there gets the screen with no add (#971).
+          UnknownServerLinkScreen(
+            link: bootstrapCubit.orchestrator == null
+                ? null
+                : _deepLinkOf(state),
+          ),
+        ),
       ),
     ],
   );
+}
+
+/// The server link [state] carries in its [AppRoutes.deepLinkParam] query,
+/// or null when it carries none or a value that isn't a server link (#971).
+///
+/// The location is normalized again, as a link is on arrival, so a hand-typed
+/// or tampered query can't put anything on screen that a link couldn't.
+ServerDeepLink? _deepLinkOf(GoRouterState state) {
+  final location = state.uri.queryParameters[AppRoutes.deepLinkParam];
+  return location == null ? null : serverDeepLinkFromLocation(location);
 }
 
 // go_router 18 picks a route's default page by looking for

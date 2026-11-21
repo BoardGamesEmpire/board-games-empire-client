@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:app_shell/app_shell.dart';
+import 'package:app_shell/src/deep_links/server_link_address.dart';
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -46,6 +47,7 @@ void main() {
     PendingDeepLinkHolder? pendingDeepLinkHolder,
     String? coldLoad,
     ServersScreenBuilder? serversBuilder,
+    ManagerServerAddScreenBuilder? managerServerAddBuilder,
   }) async {
     whenListen(
       cubit,
@@ -72,6 +74,7 @@ void main() {
       authScopeBuilder: authScopeBuilder,
       navigationShellBuilder: navigationShellBuilder,
       serversBuilder: serversBuilder,
+      managerServerAddBuilder: managerServerAddBuilder,
     );
     // go_router does not own the listenable; dispose the router first (it
     // removes its listener during dispose) then the listenable.
@@ -269,6 +272,81 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byType(UnknownServerLinkScreen), findsOneWidget);
+    });
+
+    // #971: the screen reads the link from its query, as the consumer
+    // routes it there, and a value that isn't a server link is ignored.
+    testWidgets('the unknown-server link screen reads its link', (
+      tester,
+    ) async {
+      when(() => cubit.orchestrator).thenReturn(FakeServerOrchestrator());
+      const location =
+          '/server/srv-1/event/ev-1'
+          '?address=https%3A%2F%2Fgames.example.org%3A8443%2Fbge';
+      final router = await pumpRouter(
+        tester,
+        initialState: const AppBootstrapReady(),
+      );
+
+      router.go(AppRoutes.deepLinkUnknownServerOf(location));
+      await tester.pumpAndSettle();
+
+      final screen = tester.widget<UnknownServerLinkScreen>(
+        find.byType(UnknownServerLinkScreen),
+      );
+      expect(screen.link, isNotNull);
+      expect(screen.link, serverDeepLinkFromLocation(location));
+    });
+
+    // Web has no orchestrator, so no server manager to add from: a link
+    // loaded there shows the screen with no add.
+    testWidgets('the unknown-server link screen gets no link without an '
+        'orchestrator', (tester) async {
+      when(() => cubit.orchestrator).thenReturn(null);
+      const location =
+          '/server/srv-1/event/ev-1'
+          '?address=https%3A%2F%2Fgames.example.org%3A8443%2Fbge';
+      final router = await pumpRouter(
+        tester,
+        initialState: const AppBootstrapReady(),
+      );
+
+      router.go(AppRoutes.deepLinkUnknownServerOf(location));
+      await tester.pumpAndSettle();
+
+      final screen = tester.widget<UnknownServerLinkScreen>(
+        find.byType(UnknownServerLinkScreen),
+      );
+      expect(screen.link, isNull);
+      expect(find.byKey(UnknownServerLinkScreen.addButtonKey), findsNothing);
+      expect(
+        find.byKey(UnknownServerLinkScreen.homeButtonKey),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('the unknown-server link screen ignores a bad link', (
+      tester,
+    ) async {
+      when(() => cubit.orchestrator).thenReturn(FakeServerOrchestrator());
+      final router = await pumpRouter(
+        tester,
+        initialState: const AppBootstrapReady(),
+      );
+
+      for (final location in [
+        AppRoutes.deepLinkUnknownServerOf('/events/ev-1'),
+        AppRoutes.deepLinkUnknownServerOf('not a link'),
+        AppRoutes.deepLinkUnknownServer,
+      ]) {
+        router.go(location);
+        await tester.pumpAndSettle();
+
+        final screen = tester.widget<UnknownServerLinkScreen>(
+          find.byType(UnknownServerLinkScreen),
+        );
+        expect(screen.link, isNull, reason: location);
+      }
     });
 
     testWidgets('the unknown-server link screen is gated behind bootstrap', (
@@ -1065,6 +1143,43 @@ void main() {
       await tester.pumpAndSettle();
       expect(router.state.uri.path, AppRoutes.home);
       expect(find.text('Home'), findsOneWidget);
+    });
+
+    // #971: the add route hands its builder the link it carries.
+    testWidgets('the add route passes its link to the builder', (
+      tester,
+    ) async {
+      when(() => cubit.orchestrator).thenReturn(FakeServerOrchestrator());
+      const location =
+          '/server/srv-1/event/ev-1'
+          '?address=https%3A%2F%2Fgames.example.org%3A8443%2Fbge';
+      final built = <ServerDeepLink?>[];
+      final router = await pumpRouter(
+        tester,
+        initialState: const AppBootstrapReady(),
+        managerServerAddBuilder: (_, link) {
+          built.add(link);
+          return const Scaffold(body: Text('Add'));
+        },
+      );
+
+      for (final (target, expected) in [
+        (
+          AppRoutes.serversAddOf(location),
+          serverDeepLinkFromLocation(location),
+        ),
+        (AppRoutes.serversAddOf('/events/ev-1'), null),
+        (AppRoutes.serversAdd, null),
+      ]) {
+        built.clear();
+        router.go(target);
+        await tester.pumpAndSettle();
+
+        expect(find.text('Add'), findsOneWidget, reason: target);
+        expect(built, isNotEmpty, reason: target);
+        expect(built.last, expected, reason: target);
+      }
+      expect(serverDeepLinkFromLocation(location), isNotNull);
     });
 
     testWidgets('with no server registered /servers goes to /server-add', (

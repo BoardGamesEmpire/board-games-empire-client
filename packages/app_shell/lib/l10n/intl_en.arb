@@ -84,6 +84,20 @@
   "@shellUnknownServerLinkBody": {
     "description": "Body of the screen shown when a link names a server this device hasn't added"
   },
+  "shellUnknownServerLinkBodyAt": "This link is for a Board Games Empire server at {address}, which you haven't added on this device.",
+  "@shellUnknownServerLinkBodyAt": {
+    "description": "Body of the screen shown when a link names a server this device hasn't added and carries the server's address, so the screen can offer to add it (#971). Names the address without its scheme: the host, with its port when it has one (an IPv6 host in brackets), and its path prefix when it has one.",
+    "placeholders": {
+      "address": {
+        "type": "String",
+        "example": "games.example.org:8443/bge"
+      }
+    }
+  },
+  "shellUnknownServerLinkAdd": "Add this server",
+  "@shellUnknownServerLinkAdd": {
+    "description": "Primary button on the unknown-server link screen, shown when the link carries the server's address. Opens the add-server form with that address filled in (#971)"
+  },
   "shellUnknownServerLinkHome": "Go home",
   "@shellUnknownServerLinkHome": {
     "description": "Button on the unknown-server link screen that returns to home"
