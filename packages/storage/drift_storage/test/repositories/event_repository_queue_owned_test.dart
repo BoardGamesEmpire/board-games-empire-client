@@ -127,6 +127,41 @@ void main() {
     await expectLeftAlone('e-1', dirty: true, localOnly: false);
   });
 
+  test(
+    "a queue-owned event's date rules are not overwritten by a read",
+    () async {
+      final rules = [testOccurrencePolicy('e-1-o1')];
+      final me = testAttendee('att-me', userId: _kUserId);
+      await repo.cacheEvent(
+        testSnapshot(
+          'e-1',
+          policy: testPolicy(),
+          attendees: [me],
+          occurrencePolicies: rules,
+        ),
+        source: EventAccessSource.read,
+      );
+      await markDirty('e-1');
+
+      // A detail read that disagrees: no date rules left, and other lists.
+      await repo.cacheEvent(
+        testSnapshot(
+          'e-1',
+          policy: testPolicy().copyWith(
+            allowedPlatformIds: const ['platform-9'],
+          ),
+          attendees: [me],
+          occurrencePolicies: const [],
+        ),
+        source: EventAccessSource.read,
+      );
+
+      final cached = (await repo.getEvent('e-1'))!;
+      expect(cached.occurrencePolicies, rules);
+      expect(cached.policy, testPolicy());
+    },
+  );
+
   test('a read does not take a generation for the event it leaves '
       'alone', () async {
     await cacheOwned('e-1', markLocalOnly);

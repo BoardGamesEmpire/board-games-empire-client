@@ -4,6 +4,7 @@ import 'package:models/src/domain/event/event.dart';
 import 'package:models/src/domain/event/event_attendance.dart';
 import 'package:models/src/domain/event/event_attendee.dart';
 import 'package:models/src/domain/event/event_occurrence.dart';
+import 'package:models/src/domain/event/event_occurrence_policy.dart';
 import 'package:models/src/domain/event/event_policy.dart';
 
 part 'event_snapshot.freezed.dart';
@@ -37,5 +38,10 @@ abstract class EventSnapshot with _$EventSnapshot {
     /// The caller's own attendance as the read carried it. Null when the read
     /// carried none, or carried `null`.
     EventAttendance? attendance,
+
+    /// Each date's own rules, for the dates that have any. Null means the read
+    /// did not carry them, as with [attendees], so it says nothing about
+    /// whether a date overrides the event. An empty list means none do.
+    List<EventOccurrencePolicy>? occurrencePolicies,
   }) = _EventSnapshot;
 }

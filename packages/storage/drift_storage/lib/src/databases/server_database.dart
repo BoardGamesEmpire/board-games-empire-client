@@ -4,6 +4,7 @@ import 'package:drift_storage/src/tables/event_access_table.dart';
 import 'package:drift_storage/src/tables/event_attendees_table.dart';
 import 'package:drift_storage/src/tables/event_generation_table.dart';
 import 'package:drift_storage/src/tables/event_moves_table.dart';
+import 'package:drift_storage/src/tables/event_occurrence_policies_table.dart';
 import 'package:drift_storage/src/tables/event_occurrences_table.dart';
 import 'package:drift_storage/src/tables/event_policies_table.dart';
 import 'package:drift_storage/src/tables/event_table.dart';
@@ -45,7 +46,7 @@ part 'server_database.g.dart';
 /// household_members, household_moves, sync_queue, unsent_changes_users,
 /// game_access, platform_game_access, events, event_occurrences,
 /// event_attendees, event_policies, event_access, event_generation,
-/// event_moves, list_layouts.
+/// event_moves, list_layouts, event_occurrence_policies.
 ///
 /// `game_collections` enforces uniqueness on
 /// `(user_id, platform_game_id, medium) WHERE deleted_at IS NULL` via
@@ -55,7 +56,7 @@ part 'server_database.g.dart';
 ///
 /// ## Migrations
 ///
-/// `schemaVersion` is **18**.
+/// `schemaVersion` is **19**.
 ///
 /// - **v1 → v2 (#39):** adds `households.is_dirty` and
 ///   `households.is_local_only`, the optimistic-write flags the household
@@ -161,6 +162,20 @@ part 'server_database.g.dart';
 ///   expansion to its base games, defaulting to `[]`. Additive: one
 ///   `addColumn` call, no table rebuilt. A game cached before it holds `[]`,
 ///   which reads as no base games until the next read writes them.
+/// - **v18 → v19 (#1009):** adds `event_policies.occurrence_override_scope`,
+///   how far a date's rules may depart from the event's, defaulting to
+///   `'Any'`, and nullable `allowed_platform_types_json`,
+///   `allowed_platform_ids_json` and `allowed_category_ids_json`, the lists a
+///   restriction allows, and `occurrence_policies_read`, whether a read has
+///   carried the dates' own rules, defaulting to false. Adds
+///   `event_occurrence_policies`, each date's own rules, keyed by occurrence
+///   id and indexed on its event. Additive: five `addColumn` calls, one
+///   `createTable` and one `createIndex`, no table rebuilt. A policy cached
+///   before it holds `'Any'` and null lists, which read as not carried, until
+///   the next read writes them, and its dates' rules read as not known until
+///   a detail read writes them. The new table references
+///   `events` and not `event_occurrences`, because every read deletes and
+///   reinserts an event's occurrence rows.
 ///
 /// The [migration] strategy is built by `bgeMigrationStrategy()` (see
 /// `migration_policy.dart`), which refuses schema *downgrades* by throwing a
@@ -177,7 +192,7 @@ part 'server_database.g.dart';
 /// closure below for the generated `stepByStep(...)` dispatcher. Either
 /// way, the committed schema snapshot must be refreshed:
 /// `melos run schema:dump` writes
-/// `drift_schemas/server/drift_schema_v18.json`, and
+/// `drift_schemas/server/drift_schema_v19.json`, and
 /// `melos run schema:migrations` regenerates `server_database.steps.dart`
 /// plus the `test/drift/` scaffold; the CI schema freshness job
 /// byte-compares the snapshot against a fresh dump.
@@ -201,6 +216,7 @@ part 'server_database.g.dart';
     EventGenerationTable,
     EventMovesTable,
     ListLayoutsTable,
+    EventOccurrencePoliciesTable,
   ],
 )
 class ServerDatabase extends _$ServerDatabase {
@@ -224,7 +240,7 @@ class ServerDatabase extends _$ServerDatabase {
   // `web_storage` (#288).
 
   @override
-  int get schemaVersion => 18;
+  int get schemaVersion => 19;
 
   @override
   MigrationStrategy get migration => bgeMigrationStrategy(
@@ -328,6 +344,15 @@ class ServerDatabase extends _$ServerDatabase {
         await m.dropColumn(eventOccurrencesTable, 'cancel_reason');
         await m.createTable(eventAttendeesTable);
         await m.createTable(eventPoliciesTable);
+        // The live table has the columns v19 adds (#1009), and adding them
+        // again would fail, so they go here and v19 puts them back. Dropped
+        // in place from a table that is empty. None is in a key, an index or
+        // a CHECK constraint, which DROP COLUMN would refuse.
+        await m.dropColumn(eventPoliciesTable, 'occurrence_override_scope');
+        await m.dropColumn(eventPoliciesTable, 'allowed_platform_types_json');
+        await m.dropColumn(eventPoliciesTable, 'allowed_platform_ids_json');
+        await m.dropColumn(eventPoliciesTable, 'allowed_category_ids_json');
+        await m.dropColumn(eventPoliciesTable, 'occurrence_policies_read');
         await m.createTable(eventAccessTable);
         // The live table has the columns v15 adds (#667) and v17 adds
         // (#567), and adding them again would fail, so they go here and those
@@ -445,6 +470,40 @@ class ServerDatabase extends _$ServerDatabase {
         // Additive with a default: every existing game holds `[]` until the
         // next read writes its links, so there is nothing to backfill.
         await m.addColumn(gamesTable, gamesTable.baseGamesJson);
+      }
+      if (from < 19 && to >= 19) {
+        // v18 → v19 (#1009): an event policy's override scope and allowed
+        // lists, whether its dates' rules have been read, and each date's own
+        // rules. Additive: the scope defaults to 'Any', the server's default,
+        // until a read writes the event's own, the lists hold null, read as
+        // not carried, until a read carries them, and the dates' rules read
+        // as not known until a detail read, so there is nothing to backfill.
+        // The new table starts empty and its foreign key points at the
+        // existing `events`, so no table is rebuilt and no FK-off wrapper is
+        // needed (#54 stays deferred).
+        await m.addColumn(
+          eventPoliciesTable,
+          eventPoliciesTable.occurrenceOverrideScope,
+        );
+        await m.addColumn(
+          eventPoliciesTable,
+          eventPoliciesTable.allowedPlatformTypesJson,
+        );
+        await m.addColumn(
+          eventPoliciesTable,
+          eventPoliciesTable.allowedPlatformIdsJson,
+        );
+        await m.addColumn(
+          eventPoliciesTable,
+          eventPoliciesTable.allowedCategoryIdsJson,
+        );
+        await m.addColumn(
+          eventPoliciesTable,
+          eventPoliciesTable.occurrencePoliciesRead,
+        );
+        await m.createTable(eventOccurrencePoliciesTable);
+        // createTable does not create a table's indexes.
+        await m.createIndex(eventOccurrencePoliciesEventIdIdx);
       }
     },
   );

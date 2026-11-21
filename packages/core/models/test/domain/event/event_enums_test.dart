@@ -181,6 +181,14 @@ void main() {
     toWire: (mode) => mode.toWire(),
   );
 
+  _wireContract<OccurrenceOverrideScope>(
+    wireNames: const ['None', 'TightenOnly', 'Any'],
+    values: OccurrenceOverrideScope.values,
+    unknown: OccurrenceOverrideScope.unknown,
+    fromWire: OccurrenceOverrideScope.fromWire,
+    toWire: (scope) => scope.toWire(),
+  );
+
   _wireContract<VoteThresholdType>(
     wireNames: const [
       'SimpleMajority',

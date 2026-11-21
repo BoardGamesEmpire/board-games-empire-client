@@ -43,6 +43,19 @@ void main() {
 
       expect(_snapshot(), isNot(_snapshot(attendees: const [])));
     });
+
+    test('a snapshot without occurrence policies is not the same as '
+        'one with none', () {
+      EventSnapshot snapshot({List<EventOccurrencePolicy>? policies}) =>
+          EventSnapshot(
+            event: _event(),
+            occurrences: const [],
+            occurrencePolicies: policies,
+          );
+
+      expect(snapshot().occurrencePolicies, isNull);
+      expect(snapshot(), isNot(snapshot(policies: const [])));
+    });
   });
 
   group('EventAttendee', () {

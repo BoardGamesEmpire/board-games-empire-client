@@ -14,6 +14,7 @@ import 'generated/schema_v15.dart' as v15;
 import 'generated/schema_v16.dart' as v16;
 import 'generated/schema_v17.dart' as v17;
 import 'generated/schema_v18.dart' as v18;
+import 'generated/schema_v19.dart' as v19;
 import 'generated/schema_v2.dart' as v2;
 import 'generated/schema_v3.dart' as v3;
 import 'generated/schema_v4.dart' as v4;
@@ -1601,4 +1602,106 @@ void main() {
       },
     );
   });
+
+  // Data-integrity coverage for v18 → v19 (#1009): the step adds the event
+  // policy's three allowed lists, null until a read carries them, its
+  // `occurrence_override_scope`, 'Any' until a read writes the event's own,
+  // and `occurrence_policies_read`, false until a detail read carries the
+  // dates' rules, and creates `event_occurrence_policies` empty. A policy
+  // cached before it must come through unchanged.
+  test(
+    'v18 to v19 keeps each policy, with no lists or date rules read and '
+    'scope Any',
+    () async {
+      await verifier.testWithDataIntegrity(
+        oldVersion: 18,
+        newVersion: 19,
+        createOld: v18.DatabaseAtV18.new,
+        createNew: v19.DatabaseAtV19.new,
+        openTestedDatabase: ServerDatabase.new,
+        createItems: (batch, oldDb) {
+          batch
+            ..insert(
+              oldDb.events,
+              const v18.EventsData(
+                id: 'e_v18_1',
+                title: 'Game night',
+                createdById: 'user_v18_1',
+                householdId: 'hh_v18_1',
+                type: 'StrategyNight',
+                reach: 'FriendsOfFriends',
+                status: 'Ongoing',
+                schedulingMode: 'Fixed',
+                isDirty: 0,
+                isLocalOnly: 0,
+                generation: 4,
+                createdAt: '2024-01-15T10:30:00.000Z',
+                updatedAt: '2024-01-15T10:30:00.000Z',
+              ),
+            )
+            ..insert(
+              oldDb.eventPolicies,
+              const v18.EventPoliciesData(
+                id: 'pol_v18_1',
+                eventId: 'e_v18_1',
+                allowMemberInvites: 1,
+                allowGuestInvites: 0,
+                maxAttendees: 8,
+                restrictToGameCategories: 1,
+                requireHostApprovalToJoin: 0,
+                allowSpectators: 1,
+                maxTotalParticipants: 10,
+                strictCapacity: 1,
+                gameAdditionMode: 'RequiresVote',
+                restrictToAttendeePool: 0,
+                fillerMaxPlayTime: 30,
+                voteThresholdType: 'FixedCount',
+                voteThresholdValue: 60,
+                voteQuorumType: 'PercentOfAttendees',
+                voteQuorumValue: 3,
+                voteEligibility: 'ConfirmedOnly',
+                interestedWeight: 'AsAbstain',
+                votingWindowHours: 48,
+                createdAt: '2024-01-15T10:30:00.000Z',
+                updatedAt: '2024-01-16T10:30:00.000Z',
+              ),
+            );
+        },
+        validateItems: (newDb) async {
+          expect(await newDb.select(newDb.eventPolicies).get(), const [
+            v19.EventPoliciesData(
+              id: 'pol_v18_1',
+              eventId: 'e_v18_1',
+              allowMemberInvites: 1,
+              allowGuestInvites: 0,
+              maxAttendees: 8,
+              restrictToGameCategories: 1,
+              requireHostApprovalToJoin: 0,
+              allowSpectators: 1,
+              maxTotalParticipants: 10,
+              strictCapacity: 1,
+              gameAdditionMode: 'RequiresVote',
+              restrictToAttendeePool: 0,
+              fillerMaxPlayTime: 30,
+              voteThresholdType: 'FixedCount',
+              voteThresholdValue: 60,
+              voteQuorumType: 'PercentOfAttendees',
+              voteQuorumValue: 3,
+              voteEligibility: 'ConfirmedOnly',
+              interestedWeight: 'AsAbstain',
+              votingWindowHours: 48,
+              occurrenceOverrideScope: 'Any',
+              occurrencePoliciesRead: 0,
+              createdAt: '2024-01-15T10:30:00.000Z',
+              updatedAt: '2024-01-16T10:30:00.000Z',
+            ),
+          ]);
+          expect(
+            await newDb.select(newDb.eventOccurrencePolicies).get(),
+            isEmpty,
+          );
+        },
+      );
+    },
+  );
 }

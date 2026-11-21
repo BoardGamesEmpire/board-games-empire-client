@@ -2,9 +2,11 @@ import 'package:freezed_annotation/freezed_annotation.dart';
 
 import 'package:models/src/domain/event/game_addition_mode.dart';
 import 'package:models/src/domain/event/interested_weight.dart';
+import 'package:models/src/domain/event/occurrence_override_scope.dart';
 import 'package:models/src/domain/event/vote_eligibility.dart';
 import 'package:models/src/domain/event/vote_quorum_type.dart';
 import 'package:models/src/domain/event/vote_threshold_type.dart';
+import 'package:models/src/domain/game/platform_type.dart';
 
 part 'event_policy.freezed.dart';
 
@@ -15,11 +17,14 @@ part 'event_policy.freezed.dart';
 /// none, and so is an event that has none, so an `EventSnapshot` carries it as
 /// nullable.
 ///
-/// ## What is deliberately not here
+/// ## The allowed lists
 ///
-/// **The categories and platforms a restriction allows.** The server serves the
-/// policy's own columns only, so [restrictToGameCategories] arrives as a flag
-/// with no list behind it.
+/// [allowedCategoryIds], [allowedPlatformIds] and [allowedPlatformTypes] are
+/// nullable because not every read carries them. Null means this read did not
+/// carry the list, so it says nothing about what is allowed; it never means "no
+/// restriction". An empty list is a list the read carried.
+///
+/// ## What is deliberately not here
 ///
 /// **Voting itself.** The `vote*` fields and [interestedWeight] are the rules a
 /// vote is judged by. Nominations, votes and lineup games are out of scope for
@@ -44,6 +49,24 @@ abstract class EventPolicy with _$EventPolicy {
     required InterestedWeight interestedWeight,
     required DateTime createdAt,
     required DateTime updatedAt,
+
+    /// How far a date's own rules may depart from this policy's restrictions,
+    /// its allowed lists and capacity. The server's column defaults to
+    /// [OccurrenceOverrideScope.any].
+    @Default(OccurrenceOverrideScope.any)
+    OccurrenceOverrideScope occurrenceOverrideScope,
+
+    /// The platform types a restriction allows. Null means this read did not
+    /// carry the list, not that nothing is restricted.
+    List<PlatformType>? allowedPlatformTypes,
+
+    /// The platforms a restriction allows. Null means this read did not carry
+    /// the list, not that nothing is restricted.
+    List<String>? allowedPlatformIds,
+
+    /// The categories [restrictToGameCategories] allows. Null means this read
+    /// did not carry the list, not that nothing is restricted.
+    List<String>? allowedCategoryIds,
 
     /// The most attendees the event takes. Null means no cap.
     int? maxAttendees,

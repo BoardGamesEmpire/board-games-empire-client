@@ -126,15 +126,15 @@ void main() {
       test('a version change writes it through a custom statement', () async {
         final (db, log) = await openLogged();
 
-        await db.migration.beforeOpen!(const OpeningDetails(17, 18));
+        await db.migration.beforeOpen!(const OpeningDetails(18, 19));
 
-        expect(log.statements, contains('PRAGMA user_version = 18'));
+        expect(log.statements, contains('PRAGMA user_version = 19'));
       });
 
       test('an unchanged version writes none', () async {
         final (db, log) = await openLogged();
 
-        await db.migration.beforeOpen!(const OpeningDetails(18, 18));
+        await db.migration.beforeOpen!(const OpeningDetails(19, 19));
 
         expect(
           log.statements.where((s) => s.contains('user_version')),

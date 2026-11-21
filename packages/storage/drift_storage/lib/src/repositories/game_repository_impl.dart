@@ -5,6 +5,7 @@ import 'package:drift_storage/src/databases/server_database.dart';
 import 'package:drift_storage/src/repositories/expansion_links_codec.dart';
 import 'package:drift_storage/src/repositories/game_cache_access.dart';
 import 'package:drift_storage/src/repositories/stored_enum_name.dart';
+import 'package:drift_storage/src/repositories/string_list_codec.dart';
 import 'package:drift_storage/src/repositories/watch_disposal.dart';
 import 'package:drift_storage/src/tables/game_access_table.dart';
 import 'package:interfaces/repositories.dart';
@@ -583,11 +584,11 @@ class GameRepositoryImpl with WatchDisposal implements GameRepository {
     bayesRating: row.bayesRating,
     ratingsCount: row.ratingsCount,
     ownedByCount: row.ownedByCount,
-    categories: _decodeStringList(row.categoriesJson),
-    mechanics: _decodeStringList(row.mechanicsJson),
-    designers: _decodeStringList(row.designersJson),
-    publishers: _decodeStringList(row.publishersJson),
-    tags: _decodeStringList(row.tagsJson),
+    categories: decodeStringList(row.categoriesJson),
+    mechanics: decodeStringList(row.mechanicsJson),
+    designers: decodeStringList(row.designersJson),
+    publishers: decodeStringList(row.publishersJson),
+    tags: decodeStringList(row.tagsJson),
     baseGames: decodeExpansionLinks(row.baseGamesJson),
     reach: Reach.fromWire(row.reach),
     createdById: row.createdById,
@@ -690,27 +691,4 @@ class GameRepositoryImpl with WatchDisposal implements GameRepository {
     updatedAt: pg.updatedAt,
     fullRecordCachedAt: Value(cachedAt),
   );
-
-  /// Decodes a JSON-encoded list of strings, returning `[]` on any
-  /// failure (malformed JSON, wrong shape at the top level, or a
-  /// non-String element).
-  ///
-  /// The trailing `.toList()` after `.cast<String>()` is
-  /// load-bearing. `cast<String>()` returns a LAZY view that
-  /// defers per-element type-checking until access; without an
-  /// eager materialisation, a corrupt element (e.g. an integer
-  /// slipped into a list otherwise full of strings) would not
-  /// throw here — it would throw LATER, when a downstream
-  /// consumer iterates the returned list, OUTSIDE this method's
-  /// try/catch. `.toList()` forces the type-checked walk to
-  /// happen inside the try, so the catch can do its job and the
-  /// caller sees an empty list rather than an unhandled
-  /// [TypeError] in unrelated mapping code.
-  List<String> _decodeStringList(String json) {
-    try {
-      return (jsonDecode(json) as List).cast<String>().toList();
-    } on Object catch (_) {
-      return [];
-    }
-  }
 }
