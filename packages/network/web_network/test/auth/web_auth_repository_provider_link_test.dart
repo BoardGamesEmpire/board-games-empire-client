@@ -154,6 +154,35 @@ class _Route implements HttpClientAdapter {
   void close({bool force = false}) {}
 }
 
+/// Answers each session read with `user-1`'s session, at once, and hands
+/// every other request to [inner], which never sees the reads.
+class _SignedIn implements HttpClientAdapter {
+  _SignedIn(this.inner);
+
+  final HttpClientAdapter inner;
+
+  @override
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<Uint8List>? requestStream,
+    Future<void>? cancelFuture,
+  ) async {
+    if (!options.path.endsWith('/get-session')) {
+      return inner.fetch(options, requestStream, cancelFuture);
+    }
+    return ResponseBody.fromString(
+      _sessionAs('user-1'),
+      200,
+      headers: {
+        Headers.contentTypeHeader: [Headers.jsonContentType],
+      },
+    );
+  }
+
+  @override
+  void close({bool force = false}) => inner.close(force: force);
+}
+
 /// Answers the link start with [link], once [linkGate] completes, and each
 /// session read with the next of [sessions], all 200.
 class _ByPath implements HttpClientAdapter {
@@ -246,19 +275,35 @@ void main() {
     return repo;
   }
 
+  /// [repoWith], signed in as `user-1` by a first session read that [dio]'s
+  /// adapter never sees ([_SignedIn]): a link starts only for the user the
+  /// tab shows (#582).
+  Future<WebAuthRepositoryImpl> signedInRepoWith(
+    Dio dio, {
+    WebProviderSignInBindings? providerSignIn,
+  }) async {
+    dio.httpClientAdapter = _SignedIn(dio.httpClientAdapter);
+    final repo = repoWith(dio, providerSignIn: providerSignIn);
+    expect(await repo.getSession(), isNotNull);
+    return repo;
+  }
+
   group('linkProvider', () {
     test('posts provider and a callbackURL and errorCallbackURL on the return '
         'path carrying a fresh return id to link-social, then leaves for the '
         'url with a link marker naming the provider and the same id', () async {
       final route = _Route(body: _answer(_kProviderUrl));
-      final repo = repoWith(_dio(route), providerSignIn: bindings());
+      final repo = await signedInRepoWith(
+        _dio(route),
+        providerSignIn: bindings(),
+      );
 
       await repo.linkProvider(_kStrategy, returnPath: _kReturnPath);
 
       expect(left, [Uri.parse(_kProviderUrl)]);
       final marker = markers.single;
       final match = RegExp(
-        r'^link:authentik:([A-Za-z0-9_-]{22})$',
+        r'^link:authentik:([A-Za-z0-9_-]{22}):user-1$',
       ).firstMatch(marker);
       expect(match, isNotNull, reason: marker);
       final returnId = match!.group(1);
@@ -282,7 +327,7 @@ void main() {
     });
 
     test('each attempt chooses its own return id', () async {
-      final repo = repoWith(
+      final repo = await signedInRepoWith(
         _dio(_Route(body: _answer(_kProviderUrl))),
         providerSignIn: bindings(),
       );
@@ -294,14 +339,31 @@ void main() {
       expect(markers.first, isNot(markers.last));
     });
 
+    // The marker binds the link's return to the user who started it, so a
+    // tab that shows nobody has no one to start it for.
+    test('with no user shown, a link is superseded before any request, and '
+        'does not leave', () async {
+      final route = _Route(body: _answer(_kProviderUrl));
+      final repo = repoWith(_dio(route), providerSignIn: bindings());
+
+      await expectLater(
+        repo.linkProvider(_kStrategy, returnPath: _kReturnPath),
+        throwsA(isA<AuthSupersededException>()),
+      );
+      expect(route.requests, isEmpty);
+      expect(left, isEmpty);
+    });
+
     test('a page that leaves never completes the call; one still here after '
         'the grace completes it normally', () {
       fakeAsync((async) {
         final repo = repoWith(
-          _dio(_Route(body: _answer(_kProviderUrl))),
+          _dio(_SignedIn(_Route(body: _answer(_kProviderUrl)))),
           providerSignIn: bindings(),
           pageLeaveGrace: WebAuthRepositoryImpl.defaultPageLeaveGrace,
         );
+        unawaited(repo.getSession());
+        async.elapse(Duration.zero);
         var completed = false;
         unawaited(
           repo
@@ -334,7 +396,10 @@ void main() {
           'superseded and does not leave', () async {
         final gate = Completer<void>();
         final route = _Route(body: _answer(_kProviderUrl), gate: gate.future);
-        final repo = repoWith(_dio(route), providerSignIn: bindings());
+        final repo = await signedInRepoWith(
+          _dio(route),
+          providerSignIn: bindings(),
+        );
 
         final outcome = repo.linkProvider(_kStrategy, returnPath: _kReturnPath);
         await pumpEventQueue();
@@ -390,7 +455,7 @@ void main() {
 
     // A link moves no session, so nothing is announced to the other tabs.
     test('a link announces nothing to the other tabs', () async {
-      final repo = repoWith(
+      final repo = await signedInRepoWith(
         _dio(_Route(body: _answer(_kProviderUrl))),
         providerSignIn: bindings(),
       );
@@ -410,7 +475,7 @@ void main() {
       test('$shape 403 PROVIDER_LINK_NEEDS_RECENT_SIGN_IN throws '
           'needsRecentSignIn and does not leave the page', () async {
         final route = _Route(statusCode: 403, body: _kNeedsRecentSignIn);
-        final repo = repoWith(
+        final repo = await signedInRepoWith(
           _dio(route, permissiveStatus: permissive),
           providerSignIn: bindings(),
         );
@@ -434,7 +499,7 @@ void main() {
           body: '{"code":"RATE_LIMITED","message":"slow down"}',
           headers: {'x-retry-after': '7'},
         );
-        final repo = repoWith(
+        final repo = await signedInRepoWith(
           _dio(route, permissiveStatus: permissive),
           providerSignIn: bindings(),
         );
@@ -458,7 +523,7 @@ void main() {
           statusCode: 404,
           body: '{"code":"PROVIDER_NOT_FOUND","message":"Provider not found"}',
         );
-        final repo = repoWith(
+        final repo = await signedInRepoWith(
           _dio(route, permissiveStatus: permissive),
           providerSignIn: bindings(),
         );
@@ -478,7 +543,7 @@ void main() {
       test('$shape 500 with no code throws AuthServerException(500) and does '
           'not leave the page', () async {
         final route = _Route(statusCode: 500, body: '<html></html>');
-        final repo = repoWith(
+        final repo = await signedInRepoWith(
           _dio(route, permissiveStatus: permissive),
           providerSignIn: bindings(),
         );
@@ -504,7 +569,7 @@ void main() {
       final route = _Route(body: _answer(_kProviderUrl));
       final dio = const WebDioFactory().buildForServer(baseUrl: _kOrigin)
         ..httpClientAdapter = route;
-      final repo = repoWith(dio, providerSignIn: bindings());
+      final repo = await signedInRepoWith(dio, providerSignIn: bindings());
 
       await repo.linkProvider(_kStrategy, returnPath: _kReturnPath);
 
@@ -526,7 +591,7 @@ void main() {
     ]) {
       test('a 200 with $label throws AuthProviderLinkException(generic) and '
           'does not leave the page', () async {
-        final repo = repoWith(
+        final repo = await signedInRepoWith(
           _dio(_Route(body: body)),
           providerSignIn: bindings(),
         );
@@ -541,7 +606,7 @@ void main() {
 
     test('a transport failure is a network failure, and does not leave the '
         'page', () async {
-      final repo = repoWith(
+      final repo = await signedInRepoWith(
         _dio(FailingAdapter(DioExceptionType.connectionError)),
         providerSignIn: bindings(),
       );
@@ -555,7 +620,7 @@ void main() {
 
     test('a page that cannot be left is a generic failure, not a raw '
         'error', () async {
-      final repo = repoWith(
+      final repo = await signedInRepoWith(
         _dio(_Route(body: _answer(_kProviderUrl))),
         providerSignIn: bindings(
           leavePageFor: (url, _) =>
@@ -600,7 +665,10 @@ void main() {
   });
 
   group('a link return (#582)', () {
-    const linked = WebProviderSignInReturn(linkProviderId: 'authentik');
+    const linked = WebProviderSignInReturn(
+      linkProviderId: 'authentik',
+      linkUserId: 'user-1',
+    );
 
     test('a link success return is not announced as a sign-in, and '
         'takeProviderSignInReturn() is null', () async {
@@ -661,6 +729,7 @@ void main() {
         providerSignIn: bindings(
           startupReturn: const WebProviderSignInReturn(
             linkProviderId: 'authentik',
+            linkUserId: 'user-1',
             errorCode: 'account_already_linked_to_different_user',
           ),
         ),
@@ -688,6 +757,7 @@ void main() {
         providerSignIn: bindings(
           startupReturn: const WebProviderSignInReturn(
             linkProviderId: 'authentik',
+            linkUserId: 'user-1',
             errorCode: '',
           ),
         ),
@@ -710,6 +780,7 @@ void main() {
         providerSignIn: bindings(
           startupReturn: const WebProviderSignInReturn(
             linkProviderId: 'authentik',
+            linkUserId: 'user-1',
             errorCode: 'access_denied',
           ),
         ),
@@ -750,6 +821,20 @@ void main() {
 
         expect(await repo.getSession(), isNotNull);
         expect(repo.takeProviderLinkReturn(), isA<ProviderLinkSucceeded>());
+      });
+
+      // The marker names the user who started the link. Another tab can
+      // switch the shared cookie to another user before the page comes back,
+      // and the link was never theirs.
+      test('a page that comes back to a user other than the one who started '
+          'the link drops it', () async {
+        final repo = repoWith(
+          _dio(_Bodies([_sessionAs('user-2')])),
+          providerSignIn: bindings(startupReturn: linked),
+        );
+
+        expect(await repo.getSession(), isNotNull);
+        expect(repo.takeProviderLinkReturn(), isNull);
       });
 
       test('a page that comes back to no session drops it', () async {
@@ -957,7 +1042,7 @@ void main() {
       String body, {
       void Function(Uri url, String marker)? leavePageFor,
     }) async {
-      final repo = repoWith(
+      final repo = await signedInRepoWith(
         _dio(_Route(body: body)),
         providerSignIn: bindings(leavePageFor: leavePageFor),
       );

@@ -113,14 +113,11 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
   bool _providerReturnTaken = false;
 
   /// Whether [takeProviderLinkReturn] has handed out this page load's link
-  /// return, so that it hands it out once (#582), or dropped it because the
-  /// session it came back to ended ([_dropLinkReturnOnSessionChange]). Apart
+  /// return, so that it hands it out once (#582), or dropped it because this
+  /// tab showed someone other than the user who started the link
+  /// ([_dropLinkReturnOnSessionChange]). Apart
   /// from [_providerReturnTaken]: neither take consumes the other's.
   bool _providerLinkReturnTaken = false;
-
-  /// The user the first session this page load read belongs to, or null
-  /// before one is read: the only user a link return can be for (#582).
-  String? _pageLoadUserId;
 
   /// Whether this page load is a provider sign-in's successful return that
   /// the other tabs have not heard of yet (#583).
@@ -1334,8 +1331,15 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
     // Neither counter moves for a session read that finds another user, or
     // none, without a broadcast: a session the server ended, or another
     // tab's sign-in read here before that tab announced it. The user this
-    // tab shows is the third check.
+    // tab shows is the third check, and the marker names them, so that the
+    // return is theirs alone.
     final userAtStart = _shownUserId;
+    if (userAtStart == null) {
+      _log.info('No user is shown, so the provider link does not start');
+      throw const AuthSupersededException(
+        message: 'No user is signed in here, so the link did not start.',
+      );
+    }
 
     // Relative, as the sign-in's start is: this Dio's base URL is the page
     // origin, which is also why the server's origin check accepts a relative
@@ -1381,7 +1385,11 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
       );
     }
 
-    final marker = providerLinkMarker(strategy.providerId, returnId);
+    final marker = providerLinkMarker(
+      strategy.providerId,
+      returnId,
+      userAtStart,
+    );
     if (!_leavePageFor(providerSignIn, address, marker: marker)) {
       throw const AuthProviderLinkException(
         ProviderLinkFailureReason.generic,
@@ -1464,29 +1472,30 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
     if (!_stateController.isClosed) _stateController.add(next);
   }
 
-  /// Drops this page load's link return, untaken, once the session it came
-  /// back to has ended (#582): a sign-out, a session the server no longer
-  /// accepts, or a sign-in as a different user. The link was that session's
-  /// user's, so whoever signs in next on this page never hears its result.
+  /// Drops this page load's link return, untaken, once this tab shows
+  /// anyone but the user who started the link (#582): no session, or a
+  /// session for another user. The server linked the provider to the user
+  /// the marker names ([providerLinkMarker]), so nobody else hears its
+  /// result: not a user another tab signed in before the page came back, and
+  /// not whoever signs in next on this page.
   ///
-  /// A session gone by the time the page comes back reads as no session on
-  /// the first read, and drops it too. A return the screen has already taken
+  /// Dropped once, it stays dropped. A return the screen has already taken
   /// is not affected.
   void _dropLinkReturnOnSessionChange(AuthState next) {
     if (_providerLinkReturnTaken) return;
-    final ended = switch (next) {
-      AuthStateAuthenticated(:final session) =>
-        (_pageLoadUserId ??= session.user.id) != session.user.id,
+    final linkUserId = _providerSignIn?.startupReturn?.linkUserId;
+    if (linkUserId == null) return;
+    final notTheirs = switch (next) {
+      AuthStateAuthenticated(:final session) => session.user.id != linkUserId,
       AuthStateUnauthenticated() => true,
       _ => false,
     };
-    if (!ended) return;
+    if (!notTheirs) return;
     _providerLinkReturnTaken = true;
-    if (_providerSignIn?.startupReturn?.linkProviderId != null) {
-      _log.info(
-        'Dropped the provider link return: the session it came back to ended',
-      );
-    }
+    _log.info(
+      'Dropped the provider link return: this tab no longer shows the user '
+      'who started it',
+    );
   }
 
   void _announce(SessionChange change) {

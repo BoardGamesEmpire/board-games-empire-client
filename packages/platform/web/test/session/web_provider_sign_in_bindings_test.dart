@@ -42,7 +42,7 @@ void main() {
 
   void leftToLink() => web.window.sessionStorage.setItem(
     providerSignInMarkerKey,
-    providerLinkMarker('authentik', returnId),
+    providerLinkMarker('authentik', returnId, 'user-1'),
   );
 
   /// The test page's address with [query] added, as the server would send
@@ -108,6 +108,7 @@ void main() {
       final captured = capture();
 
       expect(captured.startupReturn?.linkProviderId, 'authentik');
+      expect(captured.startupReturn?.linkUserId, 'user-1');
       expect(captured.startupReturn?.errorCode, isNull);
       expect(marker(), isNull);
       expect(web.window.location.href, original);

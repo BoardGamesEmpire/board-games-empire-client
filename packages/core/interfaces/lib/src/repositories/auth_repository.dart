@@ -287,7 +287,8 @@ abstract class AuthRepository {
   /// connectivity failures. Throws [AuthServerException] for a non-2xx with
   /// no code.
   /// Throws [AuthSupersededException] on web when the session changed while
-  /// the start request was out; the page stays.
+  /// the start request was out, or no user is signed in here; the page
+  /// stays.
   Future<void> linkProvider(
     OidcStrategy strategy, {
     required String returnPath,
@@ -308,8 +309,10 @@ abstract class AuthRepository {
   /// Web only: it is present only when this browser tab left the page for a
   /// provider to link it and came back. Take-once: the first call returns it
   /// and later calls return null, so a reload or a second reader never shows
-  /// the same result twice. Native always returns null, since a native link
-  /// never leaves the app.
+  /// the same result twice. It is only for the user who started the link:
+  /// once this tab shows anyone else, or no one, it is dropped and never
+  /// returned. Native always returns null, since a native link never leaves
+  /// the app.
   ProviderLinkReturn? takeProviderLinkReturn();
 
   /// Stream of auth state changes. Replays current state on subscribe.

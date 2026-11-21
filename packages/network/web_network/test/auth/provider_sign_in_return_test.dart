@@ -150,11 +150,12 @@ void main() {
       );
       expect(r.startupReturn!.errorCode, 'x');
       expect(r.startupReturn!.linkProviderId, isNull);
+      expect(r.startupReturn!.linkUserId, isNull);
     });
   });
 
   group('readProviderSignInReturn for a link (#582)', () {
-    const linkMarker = 'link:authentik:$_kId';
+    const linkMarker = 'link:authentik:$_kId:user-1';
     const page = 'https://bge.example.com/settings/sign-in-methods';
 
     test('a link marker and its return id read as a link return, naming the '
@@ -165,8 +166,18 @@ void main() {
       );
       expect(r.startupReturn, isNotNull);
       expect(r.startupReturn!.linkProviderId, 'authentik');
+      expect(r.startupReturn!.linkUserId, 'user-1');
       expect(r.startupReturn!.errorCode, isNull);
       expect(r.cleanedAddress.toString(), page);
+    });
+
+    test('a link marker names the user who started the link, whatever '
+        'that id holds after the return id', () {
+      final r = readProviderSignInReturn(
+        marker: 'link:authentik:$_kId:a:b',
+        address: Uri.parse('$page?$_kReturn'),
+      );
+      expect(r.startupReturn!.linkUserId, 'a:b');
     });
 
     test('a link return with ?error= carries the code and strips error and '
@@ -217,6 +228,10 @@ void main() {
         ('link::$_kId', _kId),
         ('link:authentik:', ''),
         ('link:authentik:', 'link:authentik:'),
+        // No user: a link can't be bound to the user who started it.
+        ('link:authentik:$_kId', _kId),
+        ('link:authentik:$_kId:', _kId),
+        ('link:authentik::user-1', ''),
       ]) {
         final r = readProviderSignInReturn(
           marker: marker,
@@ -233,12 +248,13 @@ void main() {
     test('providerLinkMarker and providerLinkCallback make a link '
         'return', () {
       final r = readProviderSignInReturn(
-        marker: providerLinkMarker('authentik', _kId),
+        marker: providerLinkMarker('authentik', _kId, 'user-1'),
         address: Uri.parse('https://bge.example.com').resolve(
           providerLinkCallback('/settings/sign-in-methods', _kId),
         ),
       );
       expect(r.startupReturn!.linkProviderId, 'authentik');
+      expect(r.startupReturn!.linkUserId, 'user-1');
       expect(r.startupReturn!.errorCode, isNull);
     });
   });
@@ -250,8 +266,12 @@ void main() {
   });
 
   group('providerLinkMarker', () {
-    test('records the purpose, the provider and the return id', () {
-      expect(providerLinkMarker('authentik', _kId), 'link:authentik:$_kId');
+    test('records the purpose, the provider, the return id and the user '
+        'who started the link', () {
+      expect(
+        providerLinkMarker('authentik', _kId, 'user-1'),
+        'link:authentik:$_kId:user-1',
+      );
     });
   });
 
