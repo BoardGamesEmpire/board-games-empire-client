@@ -2,6 +2,10 @@
 /// each is on, and as the row of dates' choice shows them (#1042).
 library;
 
+import 'package:events/src/bloc/event_detail_state.dart';
+import 'package:events/src/detail/event_actions.dart';
+import 'package:events/src/detail/event_date_actions.dart';
+import 'package:events/src/detail/event_status_now.dart';
 import 'package:events/src/detail/games_date_view.dart';
 import 'package:models/domain.dart';
 
@@ -133,3 +137,107 @@ bool lineupMarksEveryDate(GamesDateView? view, {required bool headers}) =>
       EveryDateView() => false,
       null => !headers,
     };
+
+/// What [lineupAddGate] decides for the screen.
+enum LineupAddGate {
+  /// No direct add is built.
+  hidden,
+
+  /// A direct add is offered.
+  open,
+}
+
+/// Whether the viewer is offered adding a game straight to the lineup on
+/// [state] (#519), where the event's rules for the games in question work out
+/// to [mode].
+///
+/// [LineupAddGate.open] only when all of these hold: their actions hold
+/// [EventAction.addToLineup]; the detail has a row for them on the roster (a
+/// household owner or admin with none can't be recorded as the adder); the
+/// event isn't local-only; it takes writes at all ([takesDateWrites]); and
+/// [mode] is [GameAdditionMode.direct] or [GameAdditionMode.hostOnly], the
+/// two the server accepts a direct add under. Otherwise
+/// [LineupAddGate.hidden].
+LineupAddGate lineupAddGate(
+  EventDetailReady state, {
+  required GameAdditionMode mode,
+}) {
+  final event = state.detail.snapshot.event;
+
+  final allowed = switch (mode) {
+    GameAdditionMode.direct || GameAdditionMode.hostOnly => true,
+    GameAdditionMode.requiresVote ||
+    GameAdditionMode.hostApproval ||
+    GameAdditionMode.unknown => false,
+  };
+
+  return allowed &&
+          state.actions.contains(EventAction.addToLineup) &&
+          state.detail.attendance != null &&
+          !event.isLocalOnly &&
+          takesDateWrites(event)
+      ? LineupAddGate.open
+      : LineupAddGate.hidden;
+}
+
+/// What [lineupRemoveGate] decides for one game.
+enum LineupRemoveGate {
+  /// No remove is built.
+  hidden,
+
+  /// The lineup has started, so the game stays in it as the record of what
+  /// was planned (#520). Shown with that reason, not hidden.
+  started,
+
+  /// Remove is offered.
+  open,
+}
+
+/// Whether the viewer is offered taking [game] out of the lineup on [state],
+/// as of [now] (#520).
+///
+/// [LineupRemoveGate.hidden] without [EventAction.removeFromLineup], or on a
+/// local-only event. [LineupRemoveGate.started] when the server would refuse
+/// the removal as the lineup having started: the event is cancelled, or was
+/// before it was archived (the server reads its `cancelledAt`, and an archived
+/// event arrives with that status, [wasCancelled]); for a
+/// date's game, its date is no longer proposed or confirmed, or started
+/// (`startDate <= now`); for the event's own game, the event has dates and
+/// none is still to come, which is a proposed or confirmed date with no start
+/// or one after [now]. An event with no dates hasn't started. A game whose
+/// date the event doesn't list is [LineupRemoveGate.open], since the client
+/// can't say, and the server answers. Otherwise [LineupRemoveGate.open].
+LineupRemoveGate lineupRemoveGate(
+  EventDetailReady state,
+  LineupGame game, {
+  required DateTime now,
+}) {
+  final event = state.detail.snapshot.event;
+  final dates = state.detail.snapshot.occurrences;
+
+  if (!state.actions.contains(EventAction.removeFromLineup) ||
+      event.isLocalOnly) {
+    return LineupRemoveGate.hidden;
+  }
+
+  if (wasCancelled(event)) return LineupRemoveGate.started;
+
+  bool ahead(EventOccurrence date) =>
+      switch (date.status) {
+        OccurrenceStatus.proposed || OccurrenceStatus.confirmed => true,
+        OccurrenceStatus.declined ||
+        OccurrenceStatus.cancelled ||
+        OccurrenceStatus.unknown => false,
+      } &&
+      (date.startDate == null || date.startDate!.isAfter(now));
+
+  final started = switch (game.occurrenceId) {
+    null => dates.isNotEmpty && !dates.any(ahead),
+    final id => switch (dates.where((date) => date.id == id).firstOrNull) {
+      null => false,
+      final date => !ahead(date),
+    },
+  };
+
+  return started ? LineupRemoveGate.started : LineupRemoveGate.open;
+}
