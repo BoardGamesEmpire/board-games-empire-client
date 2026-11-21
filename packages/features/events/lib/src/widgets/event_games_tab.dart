@@ -116,10 +116,10 @@ typedef _LineupShown = ({
 /// (#1042): the lineup's rows are its games in the view, grouped by date
 /// ([lineupGroupsFor]), and the nominations' those in the view that their
 /// filter keeps, in the order chosen, a date's own before the whole event's
-/// ([shownNominations]). The
-/// pool's are the ones its filter keeps, the same in every view. The screen
-/// counts them for the page's `semanticChildCount`, and the tab draws the
-/// same value, so the two can't disagree.
+/// ([shownNominations]). The pool's are the ones its filter keeps, the same
+/// in every view. The screen counts them for the page's
+/// `semanticChildCount`, and the tab draws the same value, so the two can't
+/// disagree.
 final class _GamesBody {
   const _GamesBody({
     required this.names,
@@ -750,13 +750,15 @@ class EventGamesTab extends StatelessWidget {
                   head: controller.rowHeadFocus(OfferedCopyEntry(game.id)),
                   who: gates.who,
                   nominated: gates.nominatedLine,
-                  // Why the main action can't be pressed, where its hint
-                  // says so for the ear: Take back's, where it is that
-                  // action, says what the game still supplies (#905).
+                  // Why the main action can't be pressed: the one reason
+                  // its hint says for the ear (STYLE_GUIDE §4), where its
+                  // label doesn't draw it already, as Nominated does (#947).
+                  // Take back's, where it is that action, says what the game
+                  // still supplies (#905).
                   note: add != null
-                      ? gates.addToLineup?.notGoing
+                      ? gates.addToLineup?.reason
                       : nominate != null
-                      ? gates.nominate?.notGoing
+                      ? gates.nominate?.drawnReason
                       : gates.takeBack?.blockedReason,
                   // One main action (#946): Nominate where the viewer is
                   // offered it, or Add to lineup in its place, else Take back

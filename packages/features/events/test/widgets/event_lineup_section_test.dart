@@ -24,6 +24,12 @@ import '../support/fake_event_remote.dart';
 class _MockEventRepository extends Mock implements EventRepository {}
 
 const _offline = EventRemoteTransientException('offline');
+const _notFound = EventRemoteNotFoundException('gone', statusCode: 404);
+const _started = EventWriteConflictException(
+  'started',
+  statusCode: 409,
+  code: 'LINEUP_STARTED',
+);
 const _longTitle =
     'Twilight Imperium: Fourth Edition, Prophecy of Kings and the Codex '
     'Volumes';
@@ -118,6 +124,15 @@ void main() {
   /// Holds each lineup removal's answer while set (#520).
   Completer<void>? removeHold;
 
+  /// Holds each direct add's answer while set (#519).
+  Completer<void>? addHold;
+
+  /// What each direct add throws, while set (#519).
+  Object? addFailure;
+
+  /// What each lineup removal throws, while set (#520).
+  Object? removeFailure;
+
   /// Each game page a quick look's View game asked for, by the game's id.
   final openedGames = <String>[];
 
@@ -175,6 +190,9 @@ void main() {
     ).thenAnswer((_) async => true);
     detailFailure = null;
     removeHold = null;
+    addHold = null;
+    addFailure = null;
+    removeFailure = null;
     lineupAnswer = (_) => const [];
     pool = const [];
     poolAnswer = () => pool;
@@ -202,13 +220,22 @@ void main() {
       pool: (_) => poolAnswer(),
       nominations: (_) => const [],
       lineup: (eventId) => lineupAnswer(eventId),
-      directAdded: (request) => _lineupGame(
-        'l-${request.suppliedById}',
-        occurrenceId: request.occurrenceId,
-        role: request.role,
-      ),
+      directAdded: (request) async {
+        await addHold?.future;
+        // The fake throws what a test hands it.
+        // ignore: only_throw_errors
+        if (addFailure case final failure?) throw failure;
+        return _lineupGame(
+          'l-${request.suppliedById}',
+          occurrenceId: request.occurrenceId,
+          role: request.role,
+        );
+      },
       lineupRemoved: (request) async {
         await removeHold?.future;
+        // The fake throws what a test hands it.
+        // ignore: only_throw_errors
+        if (removeFailure case final failure?) throw failure;
         return _lineupGame(request.lineupGameId);
       },
     );
@@ -1106,6 +1133,14 @@ void main() {
       );
       await pickGame(tester, 'o-2');
       expect(scopeChoice('d-0'), findsNothing);
+      // It says up front that the game can't then be taken out (#520).
+      expect(
+        find.text(
+          "This date has started, so a game added now can't be taken out of "
+          'the lineup.',
+        ),
+        findsOneWidget,
+      );
       await tester.tap(confirm);
       await animate(tester);
 
@@ -1338,6 +1373,167 @@ void main() {
     });
   });
 
+  group('a write that finds the cached event out of date', () {
+    final host = _row('att-me', name: 'Me', role: EventRole.host);
+    final azul = _offered('o-2', 'att-ada', 'Azul');
+    final outcome = find.byKey(EventDetailScreen.lineupOutcomeKey);
+
+    /// Adds Azul for the whole event, from Add a game.
+    Future<void> addAzul(WidgetTester tester) async {
+      await tester.tap(find.byKey(EventDetailScreen.lineupAddKey));
+      await animate(tester);
+      await tester.tap(find.byKey(EventDetailScreen.lineupPickKey('o-2')));
+      await animate(tester);
+      await tester.tap(
+        find.byKey(EventDetailScreen.addToLineupScopeKey(null)),
+      );
+      await animate(tester);
+      final confirm = find.byKey(EventDetailScreen.addToLineupConfirmKey);
+      await tester.ensureVisible(confirm);
+      await tester.pump();
+      await tester.tap(confirm);
+      await animate(tester);
+    }
+
+    testWidgets('an add that finds something gone says what may be, and '
+        'reads the event and the pool again', (tester) async {
+      pool = [azul];
+      await showLineup(tester, detail: detailOf(viewer: host));
+      final detailReads = remote.detailRequests.length;
+      final poolReads = remote.poolRequests.length;
+      addFailure = _notFound;
+
+      await addAzul(tester);
+      await settle(tester);
+      await animate(tester);
+
+      expect(remote.directAdds, hasLength(1));
+      expect(
+        find.descendant(
+          of: outcome,
+          matching: find.text(
+            "Azul wasn't added: it has left the games pool, or its date or "
+            'the event is gone.',
+          ),
+        ),
+        findsOneWidget,
+      );
+      // The server's 404 doesn't say which went, so the event is read, and
+      // the pool with it.
+      expect(remote.detailRequests, hasLength(detailReads + 1));
+      expect(remote.poolRequests.length, greaterThan(poolReads));
+    });
+
+    testWidgets('a removal refused as started reads the event again', (
+      tester,
+    ) async {
+      lineupAnswer = (_) => [_lineupGame('l-1', occurrenceId: 'd-1')];
+      await showLineup(tester, detail: detailOf(viewer: host));
+      final detailReads = remote.detailRequests.length;
+      removeFailure = _started;
+
+      final remove = find.byKey(
+        EventDetailScreen.lineupRemoveKey('l-1'),
+        skipOffstage: false,
+      );
+      await tester.ensureVisible(remove);
+      await tester.pump();
+      await tester.tap(remove);
+      await animate(tester);
+      await tester.tap(find.byKey(EventDetailScreen.lineupRemoveConfirmKey));
+      await animate(tester);
+      await settle(tester);
+      await animate(tester);
+
+      expect(remote.lineupRemovals, hasLength(1));
+      expect(
+        find.descendant(
+          of: outcome,
+          matching: find.textContaining("can't come out of the lineup"),
+        ),
+        findsOneWidget,
+      );
+      // The cached dates said it could come out, so they are read again,
+      // for Remove's gate.
+      expect(remote.detailRequests, hasLength(detailReads + 1));
+    });
+
+    testWidgets('an add confirmed while a removal is out waits for it, then '
+        'goes', (tester) async {
+      pool = [azul];
+      lineupAnswer = (_) => [_lineupGame('l-1')];
+      await showLineup(tester, detail: detailOf(viewer: host));
+      final hold = removeHold = Completer<void>();
+
+      await tester.tap(find.byKey(EventDetailScreen.lineupAddKey));
+      await animate(tester);
+      await tester.tap(find.byKey(EventDetailScreen.lineupPickKey('o-2')));
+      await animate(tester);
+      // A removal starts while the dialog is open.
+      blocOf<EventLineupBloc>(
+        tester,
+      ).add(LineupGameRemoved('e-1', _lineupGame('l-1')));
+      await tester.pump();
+      expect(blocOf<EventLineupBloc>(tester).state.busy, isTrue);
+
+      await tester.tap(
+        find.byKey(EventDetailScreen.addToLineupScopeKey(null)),
+      );
+      await animate(tester);
+      final confirm = find.byKey(EventDetailScreen.addToLineupConfirmKey);
+      await tester.ensureVisible(confirm);
+      await tester.pump();
+      await tester.tap(confirm);
+      await animate(tester);
+      expect(remote.directAdds, isEmpty);
+
+      lineupAnswer = (_) => const [];
+      hold.complete();
+      await animate(tester);
+
+      expect(remote.lineupRemovals, hasLength(1));
+      expect(remote.directAdds, hasLength(1));
+      expect(
+        find.descendant(
+          of: outcome,
+          matching: find.textContaining('Azul'),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a removal confirmed while an add is out waits for it, then '
+        'goes', (tester) async {
+      pool = [azul];
+      lineupAnswer = (_) => [_lineupGame('l-1')];
+      await showLineup(tester, detail: detailOf(viewer: host));
+      final hold = addHold = Completer<void>();
+
+      final remove = find.byKey(
+        EventDetailScreen.lineupRemoveKey('l-1'),
+        skipOffstage: false,
+      );
+      await tester.ensureVisible(remove);
+      await tester.pump();
+      await tester.tap(remove);
+      await animate(tester);
+      // An add starts while the dialog is open.
+      blocOf<EventLineupBloc>(tester).add(LineupGameAdded('e-1', azul));
+      await tester.pump();
+      expect(blocOf<EventLineupBloc>(tester).state.busy, isTrue);
+
+      await tester.tap(find.byKey(EventDetailScreen.lineupRemoveConfirmKey));
+      await animate(tester);
+      expect(remote.lineupRemovals, isEmpty);
+
+      hold.complete();
+      await animate(tester);
+
+      expect(remote.directAdds, hasLength(1));
+      expect(remote.lineupRemovals, [(eventId: 'e-1', lineupGameId: 'l-1')]);
+    });
+  });
+
   group('Remove from lineup (#520)', () {
     final host = _row('att-me', name: 'Me', role: EventRole.host);
     Finder remove(String id) => find.byKey(
@@ -1351,7 +1547,8 @@ void main() {
     final keep = find.byKey(EventDetailScreen.lineupRemoveKeepKey);
     final outcome = find.byKey(EventDetailScreen.lineupOutcomeKey);
     const startedHint =
-        "This lineup has started or was called off, so it can't be changed.";
+        "This game's date has started or was called off, so it can't be taken "
+        'out of the lineup.';
 
     bool enabled(WidgetTester tester, Finder button) =>
         tester.widget<ButtonStyleButton>(button).onPressed != null;
@@ -1780,6 +1977,29 @@ void main() {
           find.byKey(EventDetailScreen.lineupRemoveKey('l-1')),
         );
         await tester.pumpAndSettle();
+      },
+    );
+
+    auditScreen(
+      'EventDetailScreen, the dialog Remove from lineup asks in (#520)',
+      pump: (tester, theme) async {
+        lineupAnswer = (_) => [_lineupGame('l-1', title: _longTitle)];
+        final detail = detailOf(
+          viewer: _row('att-me', name: 'Me', role: EventRole.host),
+        );
+        await tester.pumpWidget(harness(detail, theme: theme));
+        await arrangeGames(tester, detail);
+      },
+      arrange: (tester) async {
+        final remove = find.byKey(EventDetailScreen.lineupRemoveKey('l-1'));
+        await tester.ensureVisible(remove);
+        await tester.pumpAndSettle();
+        await tester.tap(remove);
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(EventDetailScreen.lineupRemoveConfirmKey),
+          findsOneWidget,
+        );
       },
     );
 

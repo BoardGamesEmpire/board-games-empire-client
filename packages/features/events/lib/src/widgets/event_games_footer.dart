@@ -24,23 +24,25 @@ import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
 /// What the page's footer holds for the Games tab: the games pool's (#516),
-/// then the nominations' (#517). First the pool's last write, as the line
-/// saying how many games a run of offers is offering while one is out, then as
-/// the banner saying how it went; then the viewer's last nominations write, a
-/// nominate, a vote or a withdrawal, or a host's approval, rejection or close
-/// of a vote (#518), as the banner saying how it went; then the stale-data
+/// then the nominations' (#517), then the lineup's (#519). First the pool's
+/// last write, as the line saying how many games a run of offers is
+/// offering while one is out, then as the banner saying how it went; then
+/// the viewer's last nominations write, a nominate, a vote or a withdrawal,
+/// or a host's approval, rejection or close of a vote (#518), as the banner
+/// saying how it went; then a host's last lineup write, an add or a removal
+/// (#519, #520), as the banner saying how it went; then the stale-data
 /// banner of the Games tab's sub-tab shown ([staleFor], #945): the pool's
 /// while the games shown may be out of date, the nominations' while those
-/// shown may be, or the lineup's while its games shown may be (#519). Each
-/// when there is one; nothing otherwise. Passed on every build, on either
-/// tab, so the page keeps one shape.
+/// shown may be, or the lineup's while its games shown may be. Each when
+/// there is one; nothing otherwise. Passed on every build, on either tab,
+/// so the page keeps one shape.
 ///
 /// All of them answer a list, which moves on: a run's end, a vote's, or a
 /// read that fails after a write or a detail read, lands while the user may
 /// be far down it. In the footer each is on screen and heard as it arrives,
 /// and moves no row. The writes' lines and banners are drawn first, the
-/// pool's before the nominations', and the stale-data banner under them.
-/// Each write's banner has its own Dismiss.
+/// pool's, then the nominations', then the lineup's, and the stale-data
+/// banner under them. Each write's banner has its own Dismiss.
 ///
 /// The writes' lines and banners show on either tab: a run of offers can
 /// outlast the stay on Games, and its line is a live region that a footer
@@ -51,12 +53,12 @@ import 'package:ui_tokens/ui_tokens.dart';
 ///
 /// Each outcome is a banner of its own, built anew, so one that says what
 /// the last said is still heard as it lands. The writes' banners are
-/// [EventPoolOutcomeBanner] and [EventNominationsOutcomeBanner], which a
-/// quick look builds too, for the outcomes that land while it is open
-/// (#957), since its barrier hides the footer from a screen reader. The
-/// footer's banner of such an outcome ([saidInQuickLook]) is no live
-/// region: the quick look said it, and one coming back into the tree as the
-/// barrier lifts would be read out again.
+/// [EventPoolOutcomeBanner], [EventNominationsOutcomeBanner] and
+/// [EventLineupOutcomeBanner], which a quick look builds too, for the
+/// outcomes that land while it is open (#957), since its barrier hides the
+/// footer from a screen reader. The footer's banner of such an outcome
+/// ([saidInQuickLook]) is no live region: the quick look said it, and one
+/// coming back into the tree as the barrier lifts would be read out again.
 ///
 /// A host's close of a vote (#518) says how it came out with the counts the
 /// server gave as it settled it, which it stores nowhere: this banner is the
@@ -541,22 +543,26 @@ class EventLineupOutcomeBanner extends StatelessWidget {
       tone: switch (outcome) {
         LineupAddOutcome(:final result) => switch (result) {
           LineupAddResult.done => BgeBannerTone.success,
+          LineupAddResult.refused ||
+          LineupAddResult.gone ||
+          LineupAddResult.supplierNotGoing ||
+          LineupAddResult.dropped => BgeBannerTone.warning,
           LineupAddResult.failed => BgeBannerTone.error,
-          _ => BgeBannerTone.warning,
         },
         LineupRemoveOutcome(:final result) => switch (result) {
           LineupRemoveResult.done => BgeBannerTone.success,
+          LineupRemoveResult.alreadyGone ||
+          LineupRemoveResult.started ||
+          LineupRemoveResult.refused ||
+          LineupRemoveResult.dropped => BgeBannerTone.warning,
           LineupRemoveResult.failed => BgeBannerTone.error,
-          _ => BgeBannerTone.warning,
         },
       },
       message: switch (outcome) {
         LineupAddOutcome(:final result) => switch (result) {
           LineupAddResult.done => l10n.eventsLineupAddDone(title),
           LineupAddResult.refused => l10n.eventsLineupAddRefused(title),
-          LineupAddResult.supplierGone => l10n.eventsLineupAddSupplierGone(
-            title,
-          ),
+          LineupAddResult.gone => l10n.eventsLineupAddGone(title),
           LineupAddResult.supplierNotGoing =>
             l10n.eventsLineupAddSupplierNotGoing(title),
           LineupAddResult.failed => l10n.eventsLineupAddFailed(title),

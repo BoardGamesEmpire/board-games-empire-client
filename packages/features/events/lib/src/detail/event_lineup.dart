@@ -201,21 +201,22 @@ enum LineupRemoveGate {
 /// [LineupRemoveGate.hidden] without [EventAction.removeFromLineup], or on a
 /// local-only event. [LineupRemoveGate.started] when the server would refuse
 /// the removal as the lineup having started: the event is cancelled, or was
-/// before it was archived (the server reads its `cancelledAt`, and an archived
-/// event arrives with that status, [wasCancelled]); for a
-/// date's game, its date is no longer proposed or confirmed, or started
+/// before it was archived (the server reads its `cancelledAt`, and an
+/// archived event arrives with that status, [wasCancelled]); or the game's
+/// date has started by the dates ([lineupStartedFor]): for a date's game,
+/// its date is no longer proposed or confirmed, or started
 /// (`startDate <= now`); for the event's own game, the event has dates and
-/// none is still to come, which is a proposed or confirmed date with no start
-/// or one after [now]. An event with no dates hasn't started. A game whose
-/// date the event doesn't list is [LineupRemoveGate.open], since the client
-/// can't say, and the server answers. Otherwise [LineupRemoveGate.open].
+/// none is still to come, which is a proposed or confirmed date with no
+/// start or one after [now]. An event with no dates hasn't started. A game
+/// whose date the event doesn't list is [LineupRemoveGate.open], since the
+/// client can't say, and the server answers. Otherwise
+/// [LineupRemoveGate.open].
 LineupRemoveGate lineupRemoveGate(
   EventDetailReady state,
   LineupGame game, {
   required DateTime now,
 }) {
   final event = state.detail.snapshot.event;
-  final dates = state.detail.snapshot.occurrences;
 
   if (!state.actions.contains(EventAction.removeFromLineup) ||
       event.isLocalOnly) {
@@ -224,17 +225,35 @@ LineupRemoveGate lineupRemoveGate(
 
   if (wasCancelled(event)) return LineupRemoveGate.started;
 
+  return lineupStartedFor(state.detail, game.occurrenceId, now: now)
+      ? LineupRemoveGate.started
+      : LineupRemoveGate.open;
+}
+
+/// Whether a game in the lineup of [detail] for the date [occurrenceId], or
+/// for the event as a whole where it is null, can no longer be taken out of
+/// it as of [now], by its dates, as the server judges a removal (#520): a
+/// date's game once its date is no longer proposed or confirmed, or has
+/// started (`startDate <= now`); the event's own once the event has dates
+/// and none is still to come. An event with no dates hasn't started, and a
+/// date the event doesn't list can't be told, so it hasn't either. The
+/// remove gate ([lineupRemoveGate]) and the add dialog's warning (#519)
+/// read it.
+bool lineupStartedFor(
+  EventDetail detail,
+  String? occurrenceId, {
+  required DateTime now,
+}) {
+  final dates = detail.snapshot.occurrences;
   bool ahead(EventOccurrence date) => _dateAhead(date, now: now);
 
-  final started = switch (game.occurrenceId) {
+  return switch (occurrenceId) {
     null => dates.isNotEmpty && !dates.any(ahead),
     final id => switch (dates.where((date) => date.id == id).firstOrNull) {
       null => false,
       final date => !ahead(date),
     },
   };
-
-  return started ? LineupRemoveGate.started : LineupRemoveGate.open;
 }
 
 /// Whether [date] is still to come as of [now]: proposed or confirmed, with

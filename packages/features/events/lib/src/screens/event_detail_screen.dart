@@ -231,16 +231,17 @@ typedef OpenEventGame = void Function(BuildContext context, String gameId);
 /// for the footer's stale-data banner to say.
 ///
 /// The page's footer holds what answers the lists: how many games a run of
-/// offers is offering while it is out, or how the pool's last write went, a run
-/// of offers or a take-back, then how the viewer's last nominations write went,
-/// a nominate, a vote or a withdrawal, or a host's approval, rejection or close
-/// of a vote (#518), each with its own Dismiss, on either tab, since a run can
-/// outlast the stay on Games; then, while Games is selected, the stale-data
-/// banner of the sub-tab shown (#945), the pool's on Pool, the nominations' on
-/// Nominations or the lineup's on Lineup, while what it shows may be out of
-/// date.
-/// There each is on screen and heard however far down the list the user is;
-/// what answers the whole screen stays in the header.
+/// offers is offering while it is out, or how the pool's last write went, a
+/// run of offers or a take-back, then how the viewer's last nominations write
+/// went, a nominate, a vote or a withdrawal, or a host's approval, rejection
+/// or close of a vote (#518), then how a host's last lineup write went, an
+/// add or a removal (#519, #520), each with its own Dismiss, on either tab,
+/// since a run can outlast the stay on Games; then, while Games is selected,
+/// the stale-data banner of the sub-tab shown (#945), the pool's on Pool,
+/// the nominations' on Nominations or the lineup's on Lineup, while what it
+/// shows may be out of date. There each is on screen and heard however far
+/// down the list the user is; what answers the whole screen stays in the
+/// header.
 ///
 /// *Offer games* is built where [onOfferGames] is given, the role table gives
 /// the viewer `offerGame`, they have a row on the roster and the event takes
@@ -691,6 +692,12 @@ class EventDetailScreen extends StatelessWidget {
 
   /// Key on *Who voted* in a nomination's quick look (#957).
   static const Key quickLookVotersKey = Key('event_detail.quick_look_voters');
+
+  /// Key on *See in lineup* in the quick look of a nomination that put its
+  /// game in the lineup (#519).
+  static const Key quickLookOpenLineupKey = Key(
+    'event_detail.quick_look_open_lineup',
+  );
 
   /// Key on one choice of the nominate dialog (#517): the date's id, or
   /// null for the whole event.
@@ -1520,6 +1527,15 @@ class _EventDetailView extends StatelessWidget {
           listener: _readPoolAfterWrite,
         ),
         BlocListener<EventLineupBloc, EventLineupState>(
+          // A write's answer that says the event as cached is out of date
+          // (#519, #520): its end reads the pool, the nominations and the
+          // lineup again ([_readPoolAgain]).
+          listenWhen: (previous, current) =>
+              current.outcome != previous.outcome &&
+              _staleDetail(current.outcome),
+          listener: (context, _) => unawaited(_rereadEvent(context)),
+        ),
+        BlocListener<EventLineupBloc, EventLineupState>(
           // As the nominations': on the way into gone only, and the read
           // after the event's re-read ends a 404 again as failed, so no loop
           // (#519).
@@ -2062,7 +2078,8 @@ void _readLineupAfterNominationWrite(
 /// Whether [outcome] ends a write that changes what a pool row supplies
 /// (#905): a nominations write that went through, bar a vote, which changes
 /// no row's supply, or a lineup write that put a game in the lineup or found
-/// it out of it. A rejection counts: it ends a live nomination.
+/// it out of it, or an add that found its pool row may be gone. A rejection
+/// counts: it ends a live nomination.
 bool _changesPoolRow(Object? outcome) => switch (outcome) {
   NominateOutcome(:final result) => switch (result) {
     NominateResult.open ||
@@ -2074,11 +2091,24 @@ bool _changesPoolRow(Object? outcome) => switch (outcome) {
   WithdrawOutcome(result: WithdrawResult.done) => true,
   HostDecisionOutcome(result: HostDecisionResult.done) => true,
   ResolveOutcome(result: ResolveResult.decided) => true,
-  LineupAddOutcome(result: LineupAddResult.done) => true,
+  LineupAddOutcome(result: LineupAddResult.done || LineupAddResult.gone) =>
+    true,
   LineupRemoveOutcome(
     result: LineupRemoveResult.done || LineupRemoveResult.alreadyGone,
   ) =>
     true,
+  _ => false,
+};
+
+/// Whether [outcome] ends a lineup write whose answer shows the event's
+/// cached detail to be out of date (#519, #520): an add that found something
+/// gone, which can be the date or the event, or a removal refused as
+/// started, which the cached dates and status didn't say. Remove's gate
+/// reads those ([lineupRemoveGate]), and would go on offering the same
+/// refused removal.
+bool _staleDetail(EventLineupOutcome? outcome) => switch (outcome) {
+  LineupAddOutcome(result: LineupAddResult.gone) ||
+  LineupRemoveOutcome(result: LineupRemoveResult.started) => true,
   _ => false,
 };
 

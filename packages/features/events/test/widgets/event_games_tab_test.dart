@@ -2734,6 +2734,69 @@ void main() {
         expect(reasonOnCatan(_stillInLineupCopy), findsNothing);
       });
 
+      testWidgets('an add that went through, and a removal that found the '
+          'game out already, each read the pool again; a refused add does '
+          'not', (tester) async {
+        // A moderator, who may take a game out of the lineup.
+        served = [catanCounted(), azul];
+        lineupAnswer = (_) => const [];
+        await showGames(
+          tester,
+          detail: detailOf(
+            viewer: _row('att-me', name: 'Me', role: EventRole.moderator),
+          ),
+        );
+        final lineup = blocOf<EventLineupBloc>(tester);
+        var reads = remote.poolRequests.length;
+
+        // Refused: nothing in the lineup changed.
+        directAddAnswer = (_) =>
+            throw const EventWriteRefusedException('no', statusCode: 403);
+        lineup.add(LineupGameAdded('e-1', catanCounted()));
+        await animate(tester);
+        expect(
+          lineup.state.outcome,
+          isA<LineupAddOutcome>().having(
+            (outcome) => outcome.result,
+            'result',
+            LineupAddResult.refused,
+          ),
+        );
+        expect(remote.poolRequests, hasLength(reads));
+
+        // Added: the row now supplies a lineup game (#905).
+        directAddAnswer = (_) => catanInLineup();
+        lineupAnswer = (_) => [catanInLineup()];
+        lineup.add(LineupGameAdded('e-1', catanCounted()));
+        await animate(tester);
+        expect(
+          lineup.state.outcome,
+          isA<LineupAddOutcome>().having(
+            (outcome) => outcome.result,
+            'result',
+            LineupAddResult.done,
+          ),
+        );
+        expect(remote.poolRequests, hasLength(reads + 1));
+        reads = remote.poolRequests.length;
+
+        // Already out (#520): the row may no longer supply it.
+        lineupRemoveAnswer = (_) =>
+            throw const EventRemoteNotFoundException('gone', statusCode: 404);
+        lineupAnswer = (_) => const [];
+        lineup.add(LineupGameRemoved('e-1', catanInLineup()));
+        await animate(tester);
+        expect(
+          lineup.state.outcome,
+          isA<LineupRemoveOutcome>().having(
+            (outcome) => outcome.result,
+            'result',
+            LineupRemoveResult.alreadyGone,
+          ),
+        );
+        expect(remote.poolRequests, hasLength(reads + 1));
+      });
+
       testWidgets('a game in a started lineup does not block Take back', (
         tester,
       ) async {
@@ -5948,6 +6011,94 @@ void main() {
       handle.dispose();
     });
 
+    testWidgets('a supplier who stops going frees their lineup game for '
+        "another copy, and it stays free once they're back (#519)", (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      // Bo's copy of Azul: the same game as Ada's.
+      final azulBos = azul.copyWith(id: 'o-9', attendeeId: 'att-bo');
+      served = [catanMine, azul, azulBos, root];
+      final ada = _row('att-ada', name: 'Ada');
+      final adaOut = _row(
+        'att-ada',
+        name: 'Ada',
+        status: EventParticipationStatus.notAttending,
+      );
+      // Ada's Azul passed its vote, and is in the lineup.
+      final passed = nominationOf(
+        'n-1',
+        azul,
+        status: NominationStatus.passed,
+      ).copyWith(elevatedTo: (id: 'l-1', occurrenceId: null));
+      nominationsAnswer = (_) => [passed];
+      lineupAnswer = (_) => [
+        LineupGame(
+          id: 'l-1',
+          platformGameId: azul.platformGameId,
+          gameId: azul.gameId,
+          title: 'Azul',
+          platformName: 'Tabletop',
+          role: ScheduledGameRole.primary,
+          sortOrder: 0,
+          suppliedById: azul.id,
+          supplierAttendeeId: azul.attendeeId,
+          nominationId: 'n-1',
+        ),
+      ];
+      useViewSize(tester, const Size(800, 2400));
+      await showGames(tester, detail: detailOf(roster: [me, ada, bo]));
+
+      Future<void> expectNominate(String id, {required bool enabled}) async {
+        await tester.ensureVisible(nominate(id));
+        await tester.pump();
+        expect(onPressed(tester, id), enabled ? isNotNull : isNull, reason: id);
+      }
+
+      await expectNominate(azulBos.id, enabled: false);
+      expect(
+        tester.getSemantics(nominate(azulBos.id)),
+        isSemantics(label: 'Nominated: Azul', hint: 'Already in the lineup'),
+      );
+
+      /// The event read again, its roster [roster] by then, and the
+      /// nominations and the lineup with it, as a read's end has them.
+      Future<void> readAgain(List<EventAttendee> roster) async {
+        final lineupReads = remote.lineupRequests.length;
+        heldRead = Completer<EventSnapshot>();
+        blocOf<EventDetailBloc>(tester).add(const EventDetailRetryRequested());
+        await animate(tester);
+        final detail = detailOf(roster: roster);
+        cache.add(detail);
+        heldRead!.complete(detail.snapshot);
+        heldRead = null;
+        await animate(tester);
+        expect(remote.lineupRequests.length, greaterThan(lineupReads));
+      }
+
+      // Ada stops going: the server takes her game out of the lineup, and
+      // her nomination, Passed still, no longer names it.
+      nominationsAnswer = (_) => [passed.copyWith(elevatedTo: null)];
+      lineupAnswer = (_) => const [];
+      await readAgain([me, adaOut, bo]);
+
+      await expectNominate(azulBos.id, enabled: true);
+      expect(
+        tester.getSemantics(nominate(azulBos.id)),
+        isSemantics(label: 'Nominate Azul', isEnabled: true),
+      );
+      // Hers can't be: she isn't going.
+      await expectNominate(azul.id, enabled: false);
+
+      // She comes back: nothing puts the game back in the lineup, so it is
+      // still free, her copy too.
+      await readAgain([me, ada, bo]);
+
+      await expectNominate(azulBos.id, enabled: true);
+      await expectNominate(azul.id, enabled: true);
+      handle.dispose();
+    });
+
     testWidgets('a game in the lineup for one date is taken in its view, and '
         "not in another's", (tester) async {
       final handle = tester.ensureSemantics();
@@ -6921,11 +7072,95 @@ void main() {
           ),
           reason: id,
         );
+        // Drawn under it too, as its hint says it (STYLE_GUIDE §4).
+        expect(
+          find.descendant(
+            of: row(azul.id),
+            matching: find.text('Nominations for this date have closed'),
+            skipOffstage: false,
+          ),
+          findsOneWidget,
+          reason: id,
+        );
       }
 
       // Every date still takes one, for the whole event.
       await chooseDate(tester, null);
       expect(onPressed(), isNotNull);
+      expect(
+        find.text('Nominations for this date have closed', skipOffstage: false),
+        findsNothing,
+      );
+      handle.dispose();
+    });
+
+    testWidgets("a date started under a supplier who isn't going draws the "
+        'reason Nominate says: the date closed', (tester) async {
+      final handle = tester.ensureSemantics();
+      final started = confirmed(
+        'd-0',
+        DateTime(2026, 10, 2, 19),
+      ).copyWith(eventId: 'e-1');
+      // Tall enough that every pool row is built.
+      useViewSize(tester, const Size(800, 2400));
+      await showGames(
+        tester,
+        detail: detailOf(
+          roster: [
+            me,
+            _row(
+              'att-ada',
+              name: 'Ada',
+              status: EventParticipationStatus.notAttending,
+            ),
+            bo,
+          ],
+          occurrences: [started, friday],
+          policy: policyOf(GameAdditionMode.requiresVote),
+        ),
+      );
+      const closed = 'Nominations for this date have closed';
+      const notGoing = "Whoever brings it isn't going";
+      // Under every date, not going is all that stops it.
+      expect(
+        find.descendant(
+          of: row(azul.id),
+          matching: find.text(notGoing, skipOffstage: false),
+          skipOffstage: false,
+        ),
+        findsOneWidget,
+      );
+
+      await chooseDate(tester, 'd-0');
+      await tester.ensureVisible(nominateOn(azul.id));
+      await tester.pump();
+
+      expect(
+        tester.getSemantics(nominateOn(azul.id)),
+        matchesSemantics(
+          label: 'Nominate Azul',
+          hint: closed,
+          isButton: true,
+          hasEnabledState: true,
+        ),
+      );
+      // The one reason, the hint's, drawn once on the row.
+      expect(
+        find.descendant(
+          of: row(azul.id),
+          matching: find.text(closed, skipOffstage: false),
+          skipOffstage: false,
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: row(azul.id),
+          matching: find.text(notGoing, skipOffstage: false),
+          skipOffstage: false,
+        ),
+        findsNothing,
+      );
       handle.dispose();
     });
 
@@ -7448,6 +7683,14 @@ void main() {
           isButton: true,
           hasEnabledState: true,
         ),
+      );
+      // Drawn under the controls too, once (STYLE_GUIDE §4).
+      expect(
+        find.descendant(
+          of: quickLook,
+          matching: find.text('Nominations for this date have closed'),
+        ),
+        findsOneWidget,
       );
       handle.dispose();
     });
@@ -8226,6 +8469,66 @@ void main() {
       await press(tester, confirm);
       await animate(tester);
       expect(remote.directAdds.single.occurrenceId, 'd-2');
+    });
+
+    testWidgets("a date called off under a supplier who isn't going draws the "
+        'reason Add to lineup says, on the row and in its quick look', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      const closed = "This date isn't happening, so games can't be added to it";
+      const notGoing = "Whoever brings it isn't going";
+      await showGames(
+        tester,
+        detail: detailOf(
+          viewer: host,
+          roster: [
+            host,
+            _row(
+              'att-ada',
+              name: 'Ada',
+              status: EventParticipationStatus.notAttending,
+            ),
+            bo,
+          ],
+          occurrences: [
+            friday,
+            saturday.copyWith(status: OccurrenceStatus.cancelled),
+          ],
+          policy: policyOf(GameAdditionMode.hostOnly),
+        ),
+      );
+      final chip = find.byKey(
+        EventDetailScreen.dateChipKey('d-2'),
+        skipOffstage: false,
+      );
+      await press(tester, chip);
+      await animate(tester);
+      await tester.ensureVisible(addOn(azul.id));
+      await tester.pump();
+
+      expect(
+        tester.getSemantics(addOn(azul.id)),
+        isSemantics(
+          label: 'Add Azul to the lineup',
+          hint: closed,
+          isEnabled: false,
+        ),
+      );
+      // The one reason, the hint's, drawn once on the row.
+      expect(
+        find.descendant(of: row(azul.id), matching: find.text(closed)),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: row(azul.id), matching: find.text(notGoing)),
+        findsNothing,
+      );
+
+      await openQuickLook(tester, azul.id);
+      expect(inQuickLook(find.text(closed)), findsOneWidget);
+      expect(inQuickLook(find.text(notGoing)), findsNothing);
+      handle.dispose();
     });
   });
 

@@ -36,9 +36,11 @@ typedef CreatedEvent = ({EventSnapshot snapshot, DateTime? deletedAt});
 /// collection at once and [takeBackGame] takes one back (#516, #851).
 /// [fetchNominations] and [fetchNomination] read the nominations, [nominate]
 /// makes one, [castVote] votes on one and [withdrawNomination] withdraws one
-/// (#517). [fetchLineup] reads the lineup the games became (#519).
-/// [approveNomination], [rejectNomination] and [resolveNomination] are the
-/// host's decisions on one (#518).
+/// (#517). [fetchLineup] reads the lineup the games became (#519),
+/// [directAddGame] puts a game straight into it (#519) and
+/// [removeLineupGame] takes one out of it (#520). [approveNomination],
+/// [rejectNomination] and [resolveNomination] are the host's decisions on one
+/// (#518).
 ///
 /// Implementations run over a **per-server** authenticated transport, like
 /// [HouseholdRemoteDataSource]: the injected client carries the base URL and
@@ -84,6 +86,8 @@ typedef CreatedEvent = ({EventSnapshot snapshot, DateTime? deletedAt});
 /// | [approveNomination] | `POST /api/events/:id/nominations/:nid/approve` | `{ message, nomination }` |
 /// | [rejectNomination] | `POST /api/events/:id/nominations/:nid/reject` | `{ message, nomination }` |
 /// | [resolveNomination] | `POST /api/events/:id/nominations/:nid/resolve` | `{ message, nomination, resolution }` |
+/// | [directAddGame] | `POST /api/events/:id/nominations/direct-add` | `{ message, eventGame }` |
+/// | [removeLineupGame] | `DELETE /api/events/:id/lineup/:lgid` | `{ message, lineupGame }` |
 /// | [fetchAvailabilitySummary] | `GET /api/events/:id/occurrences/summary/availability` | `{ summary }` |
 ///
 /// The two reads do not return the same parts, and an [EventSnapshot] records
@@ -846,9 +850,10 @@ abstract class EventRemoteDataSource {
   /// A 403 carrying the envelope is [EventWriteRefusedException]: the caller
   /// may not add, or the event's mode does not allow a direct add. A 404 is
   /// [EventRemoteNotFoundException]: the event, the date or the pool row is
-  /// gone. A 409 is [EventWriteConflictException]: the supplier is not
-  /// attending, and it carries no code. A 400 (the pool row does not match the
-  /// game, or a value the server rejects) is [EventRemotePermanentException].
+  /// gone. A 409 carrying the envelope is [EventWriteConflictException]: the
+  /// supplier is not attending, and it carries no code. A 400 (the pool row
+  /// does not match the game, or a value the server rejects) is
+  /// [EventRemotePermanentException].
   ///
   /// Throws [ArgumentError] before the request for an empty id, and otherwise
   /// [EventRemoteException] per the class doc.
@@ -868,11 +873,11 @@ abstract class EventRemoteDataSource {
   ///
   /// A 403 carrying the envelope is [EventWriteRefusedException]. A 404 is
   /// [EventRemoteNotFoundException]: the game is not in this event's lineup,
-  /// or another removal got there first. A 409 is
+  /// or another removal got there first. A 409 carrying the envelope is
   /// [EventWriteConflictException] with `code` `LINEUP_STARTED`: the game's
   /// date has started or was called off, none of the event's dates is still to
-  /// come, or the event was called off. Its code is read from the body
-  /// itself.
+  /// come, or the event was called off. A 409 without it is not the API's, and
+  /// is [EventRemotePermanentException] with no code (backend#1260).
   ///
   /// Throws [ArgumentError] before the request for an empty id, and otherwise
   /// [EventRemoteException] per the class doc.

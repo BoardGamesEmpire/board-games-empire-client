@@ -1228,6 +1228,26 @@ void main() {
       );
     });
 
+    test('an override scope this client does not know reads as '
+        'unknown', () async {
+      final remote = answering(
+        _detailBody(
+          _eventRow(attendees: [])
+            ..['policy'] = _policyRow({
+              ..._policyLists(),
+              'occurrenceOverrideScope': 'LoosenOnly',
+            }),
+        ),
+      );
+
+      final snapshot = await remote.fetchEvent('ev_1');
+
+      expect(
+        snapshot.policy!.occurrenceOverrideScope,
+        OccurrenceOverrideScope.unknown,
+      );
+    });
+
     test('a detail read whose caller may not read the policy carries the '
         'date rules as known and empty', () async {
       final remote = answering(
@@ -5642,23 +5662,30 @@ void main() {
         );
       });
 
-      test('a coded 409 outside the error envelope still reads its '
-          'code', () async {
-        final remote = answering(
-          jsonEncode({'code': 'LINEUP_STARTED', 'message': 'Started'}),
-          status: 409,
-        );
-
-        await expectLater(
-          remote.removeLineupGame('e1', 'lg_1'),
-          throwsA(
-            isA<EventWriteConflictException>().having(
-              (e) => e.code,
-              'code',
-              'LINEUP_STARTED',
+      test("a coded 409 outside the error envelope is not the API's, so it "
+          'is no conflict', () async {
+        // The API's refusals arrive in its envelope (backend#1260): a bare
+        // body came from something in between, and its code says nothing.
+        for (final call in <Future<Object?> Function(EventRemoteDataSource)>[
+          directAdd,
+          (remote) => remote.removeLineupGame('e1', 'lg_1'),
+        ]) {
+          await expectLater(
+            call(
+              answering(
+                jsonEncode({'code': 'LINEUP_STARTED', 'message': 'Started'}),
+                status: 409,
+              ),
             ),
-          ),
-        );
+            throwsA(
+              isA<EventRemotePermanentException>().having(
+                (e) => e.statusCode,
+                'statusCode',
+                409,
+              ),
+            ),
+          );
+        }
       });
 
       test('404 is not found; 403 is refused', () async {
