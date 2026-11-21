@@ -2190,7 +2190,7 @@ void main() {
         final entries = history.allLocations.length;
 
         final screen = find.byType(EventDetailScreen, skipOffstage: false);
-        tester.widget<EventDetailScreen>(screen).onTabChanged!(
+        tester.widget<EventDetailScreen>(screen).onLocationChanged!(
           tester.element(
             find
                 .descendant(
@@ -2201,12 +2201,65 @@ void main() {
                 .first,
           ),
           EventScreenTab.pool,
+          null,
         );
         await tester.pumpAndSettle();
 
         expect(find.byType(EventAvailabilityScreen), findsOneWidget);
         expect(history.locations.last, AppRoutes.eventAvailabilityOf('e-0'));
         expect(history.allLocations, hasLength(entries));
+      });
+
+      testWidgets('choosing Pool replaces the location and keeps Back', (
+        tester,
+      ) async {
+        // The date the event was opened on stays beside the tab (#1042).
+        // Each sub-tab chosen takes the event's history entry, with the
+        // date kept, and adds none, so browser Back leaves the event for
+        // Home rather than stepping through its tabs.
+        final history = FakeBrowserHistory.install(tester);
+        await pumpHosted(tester);
+        unawaited(
+          routerOf(
+            tester,
+          ).push<void>(AppRoutes.eventDetailOf('e-0', date: 'occ-2')),
+        );
+        await tester.pumpAndSettle();
+        expect(
+          history.locations.last,
+          AppRoutes.eventDetailOf('e-0', date: 'occ-2'),
+        );
+        final entries = history.allLocations.length;
+
+        await choose(
+          tester,
+          find.byKey(EventDetailScreen.tabKey(EventDetailTab.games)),
+        );
+        expect(
+          history.locations.last,
+          AppRoutes.eventDetailOf('e-0', tab: 'lineup', date: 'occ-2'),
+        );
+        await choose(
+          tester,
+          find.byKey(EventDetailScreen.sectionTabKey(EventGamesSection.pool)),
+        );
+
+        expect(
+          history.locations.last,
+          AppRoutes.eventDetailOf('e-0', tab: 'pool', date: 'occ-2'),
+        );
+        expect(Uri.parse(history.locations.last).queryParameters, {
+          AppRoutes.eventTabParam: 'pool',
+          AppRoutes.eventDateParam: 'occ-2',
+        });
+        expect(history.allLocations, hasLength(entries));
+        expect(find.byKey(EventDetailScreen.poolSearchKey), findsOneWidget);
+
+        await history.back();
+
+        expect(find.byType(EventDetailScreen), findsNothing);
+        expect(find.byType(HomeScreen), findsOneWidget);
+        expect(history.locations.last, AppRoutes.home);
       });
 
       testWidgets('a link to ?tab=pool opens the event on Pool', (
@@ -2252,6 +2305,33 @@ void main() {
             isSemantics(isSelected: true),
           );
           expect(find.byKey(EventDetailScreen.poolSearchKey), findsNothing);
+        } finally {
+          handle.dispose();
+        }
+      });
+
+      testWidgets('a link to ?tab=lineup&date=occ-2 reaches the screen with '
+          'both', (tester) async {
+        final handle = tester.ensureSemantics();
+        try {
+          await pumpHosted(tester);
+
+          routerOf(tester).go('/events/e-0?tab=lineup&date=occ-2');
+          await tester.pumpAndSettle();
+
+          final screen = tester.widget<EventDetailScreen>(
+            find.byType(EventDetailScreen),
+          );
+          expect(screen.tab, 'lineup');
+          expect(screen.date, 'occ-2');
+          expect(
+            tester.getSemantics(
+              find.byKey(
+                EventDetailScreen.sectionTabKey(EventGamesSection.lineup),
+              ),
+            ),
+            isSemantics(isSelected: true),
+          );
         } finally {
           handle.dispose();
         }

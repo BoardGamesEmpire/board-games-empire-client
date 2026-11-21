@@ -102,25 +102,30 @@ typedef OpenEventGame = void Function(BuildContext context, String gameId);
 /// games bloc shows Details whatever the location names. An event made
 /// offline shows Details alone, with no bar, and drops a Games tab the
 /// location names: it puts its tabs back on Details, and the sub-tabs on
-/// their first, at once, and tells [onTabChanged] Details, so the location
-/// loses the tab. Once the event reaches the server, the bar shows with
-/// Details chosen.
+/// their first, at once, and tells [onLocationChanged] Details, so the
+/// location loses the tab. Once the event reaches the server, the bar shows
+/// with Details chosen.
 ///
-/// Each tab the user chooses, or sub-tab under Games, is told to [onTabChanged]
-/// once the change has settled, and only where it differs from the tab last
-/// told or taken from the location, so the caller can put it in the location.
-/// Only while the screen's route is the current one in its own navigator: a
-/// change that settles under a route over it there is told once that route has
-/// gone, and one that settles as the screen leaves isn't told. A pop-up on the
-/// root navigator over the app's shell, as [showBgePopup] and [showDialog] open
-/// one, leaves the screen's route current in the shell's navigator, so a change
-/// that settles under it is told at once; the app's router puts it in the
-/// location only while the top location is still the event's (#856). A later
-/// [tab] that names another tab moves the bars there, and isn't told back.
-/// Comparing it with the tab last told, rather than the tab shown, leaves the
-/// user's newer choice in place when the location an earlier report asked for
-/// comes back after it. The screen is never built anew for a new [tab]: its
-/// blocs and its state stay.
+/// Each tab the user chooses, or sub-tab under Games, is told to
+/// [onLocationChanged] once the change has settled, and only where it differs
+/// from the tab last told or taken from the location, so the caller can put it
+/// in the location. Only while the screen's route is the current one in its own
+/// navigator: a change that settles under a route over it there is told once
+/// that route has gone, and one that settles as the screen leaves isn't told. A
+/// pop-up on the root navigator over the app's shell, as [showBgePopup] and
+/// [showDialog] open one, leaves the screen's route current in the shell's
+/// navigator, so a change that settles under it is told at once; the app's
+/// router puts it in the location only while the top location is still the
+/// event's (#856). A later [tab] that names another tab moves the bars there,
+/// and isn't told back. Comparing it with the tab last told, rather than the
+/// tab shown, leaves the user's newer choice in place when the location an
+/// earlier report asked for comes back after it. The screen is never built anew
+/// for a new [tab]: its blocs and its state stay.
+///
+/// Beside the tab, the location can name a date, [date], its `date` parameter
+/// (#1042). Each tab told goes with the date the location names as it came, so
+/// a tab change keeps it. A new [date] alone is not told back, and the screen
+/// is not built anew for it either.
 ///
 /// ## Which actions it offers
 ///
@@ -447,7 +452,8 @@ class EventDetailScreen extends StatelessWidget {
     this.onOpenGame,
     this.now,
     this.tab,
-    this.onTabChanged,
+    this.date,
+    this.onLocationChanged,
     super.key,
   });
 
@@ -988,11 +994,16 @@ class EventDetailScreen extends StatelessWidget {
   /// [EventScreenTab.parse] (#856). See "The tab and the location" above.
   final String? tab;
 
+  /// The date the location names beside [tab], as its `date` parameter
+  /// carries it (#1042): one of the event's dates, by its id, or `all`. See
+  /// "The tab and the location" above.
+  final String? date;
+
   /// Tells, with this screen's context, each tab the user's choice settles
-  /// on, where it differs from the one last told or taken from [tab]
-  /// (#856). The feature package doesn't know the route table. Null tells
-  /// nobody, and the location still moves the bars.
-  final EventTabChanged? onTabChanged;
+  /// on, where it differs from the one last told or taken from [tab], with
+  /// [date] beside it (#856, #1042). The feature package doesn't know the
+  /// route table. Null tells nobody, and the location still moves the bars.
+  final EventLocationChanged? onLocationChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -1172,7 +1183,8 @@ class _EventDetailBlocsState extends State<_EventDetailBlocs> {
         say: _messenger.say,
         // Read once, here, where it enters the screen.
         screenTab: EventScreenTab.parse(screen.tab),
-        onTabChanged: screen.onTabChanged,
+        date: screen.date,
+        onLocationChanged: screen.onLocationChanged,
       ),
     );
   }
@@ -1190,7 +1202,8 @@ class _EventDetailView extends StatelessWidget {
     this.onAddAttendee,
     this.onOfferGames,
     this.onOpenGame,
-    this.onTabChanged,
+    this.date,
+    this.onLocationChanged,
   });
 
   final DateTime Function() now;
@@ -1204,8 +1217,11 @@ class _EventDetailView extends StatelessWidget {
   /// The tab [EventDetailScreen.tab] names (#856).
   final EventScreenTab screenTab;
 
-  /// [EventDetailScreen.onTabChanged] (#856).
-  final EventTabChanged? onTabChanged;
+  /// [EventDetailScreen.date] (#1042).
+  final String? date;
+
+  /// [EventDetailScreen.onLocationChanged] (#856, #1042).
+  final EventLocationChanged? onLocationChanged;
 
   /// Whether an [EventActionsBloc] is provided above, which is whether the
   /// screen has a server and a way back. Looking it up where it isn't would
@@ -1283,7 +1299,8 @@ class _EventDetailView extends StatelessWidget {
         onOpenGame: onOpenGame,
         child: _EventTabLocation(
           tab: screenTab,
-          onTabChanged: onTabChanged,
+          date: date,
+          onLocationChanged: onLocationChanged,
           child: _listeners(page),
         ),
       ),
@@ -1412,10 +1429,10 @@ class _EventDetailView extends StatelessWidget {
 /// screen's tab controller and the Games tab's scope, whose sub-tabs'
 /// controller it follows.
 ///
-/// A tab the user chooses is reported through [onTabChanged] once the change
-/// has settled, with neither bar's indicator moving, where the tab the bars
-/// stand on, and on Games the sub-tab, differs from the one last reported or
-/// taken from the location. A change cut short by a new controller, as the
+/// A tab the user chooses is reported through [onLocationChanged] once the
+/// change has settled, with neither bar's indicator moving, where the tab the
+/// bars stand on, and on Games the sub-tab, differs from the one last reported
+/// or taken from the location. A change cut short by a new controller, as the
 /// motion setting replaces either, is checked once that frame has ended, since
 /// the new one never says it settled. Only while the screen's route is current
 /// in its own navigator ([ModalRoute.isCurrent]): a report puts the tab in the
@@ -1425,7 +1442,9 @@ class _EventDetailView extends StatelessWidget {
 /// pop-up on the root navigator over the app's shell, as [showBgePopup] and
 /// [showDialog] open one, leaves the route current, so a change under it is
 /// reported at once, and the caller keeps the location to the event's
-/// ([EventDetailScreen.onTabChanged]).
+/// ([EventDetailScreen.onLocationChanged]). Each report carries [date], the
+/// date the location names beside the tab, as it came (#1042), so a tab
+/// change keeps it. A new [date] alone moves nothing and isn't reported.
 ///
 /// A [tab] that names another tab than the location did, and than the one last
 /// reported or taken, moves the bars there, and becomes the one taken. Its move
@@ -1441,15 +1460,19 @@ class _EventDetailView extends StatelessWidget {
 class _EventTabLocation extends StatefulWidget {
   const _EventTabLocation({
     required this.tab,
-    required this.onTabChanged,
+    required this.date,
+    required this.onLocationChanged,
     required this.child,
   });
 
   /// The tab [EventDetailScreen.tab] names.
   final EventScreenTab tab;
 
-  /// [EventDetailScreen.onTabChanged].
-  final EventTabChanged? onTabChanged;
+  /// [EventDetailScreen.date].
+  final String? date;
+
+  /// [EventDetailScreen.onLocationChanged].
+  final EventLocationChanged? onLocationChanged;
 
   final Widget child;
 
@@ -1565,7 +1588,7 @@ class _EventTabLocationState extends State<_EventTabLocation> {
     );
     if (shown == _last) return;
     _last = shown;
-    widget.onTabChanged?.call(context, shown);
+    widget.onLocationChanged?.call(context, shown, widget.date);
   }
 
   @override

@@ -84,11 +84,14 @@ enum EventScreenTab {
   };
 }
 
-/// How the event screen tells where the user's choice has settled it (#856):
-/// [EventDetailScreen.onTabChanged], with the screen's context.
-typedef EventTabChanged = void Function(
+/// How the event screen tells where the user's choice has settled it (#856,
+/// #1042): [EventDetailScreen.onLocationChanged], with the screen's context,
+/// the tab it stands on and the date beside it, as the location's `date`
+/// parameter carries it, or null for none.
+typedef EventLocationChanged = void Function(
   BuildContext context,
   EventScreenTab tab,
+  String? date,
 );
 
 /// The event screen's tab bar (#516): Details, then Games.

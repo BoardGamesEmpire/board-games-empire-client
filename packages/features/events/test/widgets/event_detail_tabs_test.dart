@@ -117,16 +117,18 @@ void main() {
   /// The pool is [pool], none unless a test says otherwise, served by
   /// [remote] where a test holds one.
   ///
-  /// The screen's `tab` is [location]'s value, and the screen is built again
-  /// with each new one, as the router builds it for a new location (#856).
-  /// Each tab change the screen reports goes to [onTabChanged].
+  /// The screen's `tab` is [location]'s value, and its `date` is [date]'s,
+  /// and the screen is built again with each new one, as the router builds it
+  /// for a new location (#856, #1042). Each change the screen reports goes to
+  /// [onLocationChanged].
   Widget app({
     ThemeData? theme,
     bool longLabel = false,
     List<OfferedGame> pool = const [],
     FakeEventRemote? remote,
     ValueListenable<String?>? location,
-    void Function(BuildContext context, EventScreenTab tab)? onTabChanged,
+    ValueListenable<String?>? date,
+    EventLocationChanged? onLocationChanged,
   }) {
     // Nobody has offered a game, unless a test says otherwise: the pool is
     // the empty state, under its header. Its rows are audited with the tab's
@@ -135,7 +137,7 @@ void main() {
         remote ??
         FakeEventRemote.detail((_) => hosted.snapshot, pool: (_) => pool);
     final lease = FakeSessionLease();
-    Widget screen(String? tab) => EventDetailScreen(
+    Widget screen(String? tab, String? date) => EventDetailScreen(
       eventId: 'e-1',
       repository: repository,
       session: lease,
@@ -143,7 +145,8 @@ void main() {
       onBack: (_) {},
       now: () => now,
       tab: tab,
-      onTabChanged: onTabChanged,
+      date: date,
+      onLocationChanged: onLocationChanged,
     );
 
     return MaterialApp(
@@ -158,10 +161,10 @@ void main() {
       ],
       supportedLocales: EventsLocalizations.supportedLocales,
       home: location == null
-          ? screen(null)
-          : ValueListenableBuilder<String?>(
-              valueListenable: location,
-              builder: (_, tab, _) => screen(tab),
+          ? screen(null, date?.value)
+          : ListenableBuilder(
+              listenable: Listenable.merge([location, date]),
+              builder: (_, _) => screen(location.value, date?.value),
             ),
     );
   }
@@ -571,25 +574,38 @@ void main() {
 
   group('the location (#856)', () {
     late ValueNotifier<String?> location;
+    late ValueNotifier<String?> dateLocation;
     late List<EventScreenTab> reports;
 
-    /// Opens the screen on the location's [tab], and keeps each tab change
-    /// it reports in [reports].
+    /// The date told beside each of [reports], in the same order (#1042).
+    late List<String?> reportedDates;
+
+    /// Opens the screen on the location's [tab] and [date], and keeps each
+    /// tab change it reports in [reports], with the date told beside it in
+    /// [reportedDates].
     Future<void> open(
       WidgetTester tester,
       String? tab, {
+      String? date,
       FakeEventRemote? remote,
       List<OfferedGame> pool = const [],
     }) async {
       location = ValueNotifier(tab);
       addTearDown(location.dispose);
+      dateLocation = ValueNotifier(date);
+      addTearDown(dateLocation.dispose);
       reports = [];
+      reportedDates = [];
       await tester.pumpWidget(
         app(
           location: location,
+          date: dateLocation,
           remote: remote,
           pool: pool,
-          onTabChanged: (_, tab) => reports.add(tab),
+          onLocationChanged: (_, tab, date) {
+            reports.add(tab);
+            reportedDates.add(date);
+          },
         ),
       );
     }
@@ -970,6 +986,46 @@ void main() {
 
       expect(find.byType(EventDetailScreen), findsNothing);
       expect(reports, isEmpty);
+    });
+
+    // The date beside the tab (#1042) is told back as the location named
+    // it, so a tab change never drops it.
+    testWidgets('choosing a sub-tab keeps the date in the location', (
+      tester,
+    ) async {
+      await open(tester, 'lineup', date: 'occ-2');
+      await showingOnAnyTab(tester);
+
+      await tester.tap(section(EventGamesSection.pool));
+      await tester.pumpAndSettle();
+      await tester.tap(tab(EventDetailTab.details));
+      await tester.pumpAndSettle();
+
+      expect(reports, [EventScreenTab.pool, EventScreenTab.details]);
+      expect(reportedDates, ['occ-2', 'occ-2']);
+    });
+
+    testWidgets('a new date from the location reports nothing, and goes '
+        'with the next tab told', (tester) async {
+      await open(tester, null, date: 'occ-2');
+      await showing(tester);
+
+      dateLocation.value = 'occ-3';
+      await tester.pumpAndSettle();
+      expect(reports, isEmpty);
+
+      await tester.tap(tab(EventDetailTab.games));
+      await tester.pumpAndSettle();
+      expect(reports, [EventScreenTab.lineup]);
+      expect(reportedDates, ['occ-3']);
+
+      // A location that names none leaves it out of the next.
+      dateLocation.value = null;
+      await tester.pumpAndSettle();
+      await tester.tap(section(EventGamesSection.pool));
+      await tester.pumpAndSettle();
+      expect(reports, [EventScreenTab.lineup, EventScreenTab.pool]);
+      expect(reportedDates, ['occ-3', null]);
     });
   });
 }

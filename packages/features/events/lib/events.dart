@@ -50,5 +50,9 @@ export 'src/sync/event_refresher.dart';
 export 'src/sync/household_events_hydrator.dart';
 export 'src/sync/household_events_sync.dart';
 export 'src/widgets/event_detail_tabs.dart'
-    show EventDetailTab, EventGamesSection, EventScreenTab, EventTabChanged;
+    show
+        EventDetailTab,
+        EventGamesSection,
+        EventLocationChanged,
+        EventScreenTab;
 export 'src/widgets/event_row.dart';
