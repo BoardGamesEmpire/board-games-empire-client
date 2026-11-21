@@ -33,9 +33,10 @@ enum BgeButtonFocusRingPlacement {
 /// cue elsewhere. A list row is ringed by `ui`'s `BgeRowFocusRing` (#758), an
 /// extended floating action button by `BgeExtendedFab` (#760), and a ring
 /// over a cover by `BgeFocusRing` with two tones (#812). `SegmentedButton`
-/// builds its segments' style without the theme's builder, and chips and
-/// drawer entries still show focus by a faint fill; `ACCESSIBILITY_AUDIT.md`
-/// lists each in its findings.
+/// builds its segments' style without the theme's builder, so a segment
+/// shows focus by a fill instead (`BgeSegmentFocus`, #759). Chips and drawer
+/// entries still show focus by a faint fill; `ACCESSIBILITY_AUDIT.md` lists
+/// each in its findings.
 ///
 /// Material 3's only focus feedback on a button is a faint tint, which a
 /// keyboard user can lose. This ring is [colorOf] the scheme,

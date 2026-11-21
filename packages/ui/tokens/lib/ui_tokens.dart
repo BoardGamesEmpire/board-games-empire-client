@@ -10,6 +10,7 @@ export 'src/accessibility/bge_focus_fill.dart';
 export 'src/accessibility/bge_motion.dart';
 export 'src/accessibility/bge_navigation_focus.dart';
 export 'src/accessibility/bge_pointer_pressed.dart';
+export 'src/accessibility/bge_segment_focus.dart';
 export 'src/accessibility/bge_selection.dart';
 export 'src/accessibility/bge_selection_page.dart';
 export 'src/accessibility/bge_selection_region.dart';

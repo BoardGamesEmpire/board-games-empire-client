@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:ui_tokens/src/accessibility/bge_button_focus_ring.dart';
 import 'package:ui_tokens/src/accessibility/bge_navigation_focus.dart';
 import 'package:ui_tokens/src/accessibility/bge_pointer_pressed.dart';
+import 'package:ui_tokens/src/accessibility/bge_segment_focus.dart';
 import 'package:ui_tokens/src/accessibility/bge_selection.dart';
 import 'package:ui_tokens/src/bge_line_colors.dart';
 import 'package:ui_tokens/src/bge_palette.dart';
@@ -80,8 +81,9 @@ ButtonStyle _buttonStyle(BgeButtonFocusRingPlacement placement) => ButtonStyle(
 ///   row's box with `radiusMd` corners (#758), and an extended floating
 ///   action button is a `BgeExtendedFab`, ringed inside its edge (#760).
 ///   Every ring hides after a mouse press until the next key press
-///   ([BgePointerPressed]). Segmented buttons don't get one yet; see
-///   [BgeButtonFocusRing].
+///   ([BgePointerPressed]). A segmented button's segment can't take a
+///   ring from the theme, so it shows focus by a fill 3:1 from rest, its
+///   label changing with it ([BgeSegmentFocus], #759).
 /// - **Two-family typography** — the bundled display face on
 ///   display/headline/title, the platform face on body/label. See
 ///   [BgeTypography] for why the split falls there.
@@ -156,6 +158,10 @@ abstract final class BgeTheme {
 
   static ThemeData _build(ColorScheme scheme, {required bool highContrast}) {
     const tokens = BgeTokens.standard;
+    final segmentFocus = (
+      selected: BgeSegmentFocus.selected(scheme),
+      unselected: BgeSegmentFocus.unselected(scheme),
+    );
     return ThemeData(
       useMaterial3: true,
       colorScheme: scheme,
@@ -217,6 +223,21 @@ abstract final class BgeTheme {
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: _buttonStyle(BgeButtonFocusRingPlacement.inside),
+      ),
+      // #759: a segment builds its style without the buttons' ring builder,
+      // and Material's focus overlay stands about 1.2:1 from rest. So a
+      // focused segment paints a fill that stands 3:1 as its background, and
+      // its label changes with it, since a selected segment's own label
+      // can't be read on any fill that does. Both read the same gate in the
+      // same build, so they can't come apart. Every other state is
+      // Material's, restated: the theme's property replaces the default
+      // whole. See [BgeSegmentFocus].
+      segmentedButtonTheme: SegmentedButtonThemeData(
+        style: ButtonStyle(
+          backgroundColor: _SegmentBackground(scheme, segmentFocus),
+          foregroundColor: _SegmentLabel(scheme, segmentFocus),
+          overlayColor: _SegmentOverlay(scheme, segmentFocus),
+        ),
       ),
       // #644: a focused bar destination is a fill alone, and Flutter's own
       // focus tint stands about 1.3:1 from the bar. The unselected icon is
@@ -332,4 +353,112 @@ class _NavigationIcon implements WidgetStateProperty<IconThemeData?> {
 
   @override
   int get hashCode => Object.hash(selected, unselected);
+}
+
+/// [color] at [opacity], as Material's `withOpacity` rounds it, so a state
+/// the theme restates resolves to the very colour Material's default does.
+Color _materialOpacity(Color color, double opacity) =>
+    color.withAlpha((255 * opacity).round());
+
+/// A segment's focus fills and labels, selected and not.
+typedef _SegmentFocus = ({
+  BgeSegmentFocus selected,
+  BgeSegmentFocus unselected,
+});
+
+/// A segment's colour for one part by state (#759), with value equality, so
+/// two themes built from one palette compare equal.
+@immutable
+abstract class _SegmentProperty implements WidgetStateProperty<Color?> {
+  const _SegmentProperty(this.scheme, this.focus);
+
+  final ColorScheme scheme;
+  final _SegmentFocus focus;
+
+  /// Whether a segment in [states] shows keyboard focus.
+  ///
+  /// `WidgetState.focused` holds whenever the segment has focus, but the
+  /// ink well shows focus only while the highlight mode is the keyboard's.
+  /// The fill and the label both ask here, in the same build, so a label
+  /// never sits on the rest colour without its fill.
+  static bool showsFocus(Set<WidgetState> states) =>
+      states.contains(WidgetState.focused) &&
+      FocusManager.instance.highlightMode == FocusHighlightMode.traditional;
+
+  /// [focus]'s selected or unselected half, for [states].
+  BgeSegmentFocus focusFor(Set<WidgetState> states) =>
+      states.contains(WidgetState.selected) ? focus.selected : focus.unselected;
+
+  @override
+  bool operator ==(Object other) =>
+      other.runtimeType == runtimeType &&
+      other is _SegmentProperty &&
+      other.scheme == scheme &&
+      other.focus == focus;
+
+  @override
+  int get hashCode => Object.hash(runtimeType, scheme, focus);
+}
+
+/// A segment's background: Material's, or the focus fill while it shows
+/// focus.
+class _SegmentBackground extends _SegmentProperty {
+  const _SegmentBackground(super.scheme, super.focus);
+
+  @override
+  Color? resolve(Set<WidgetState> states) {
+    if (states.contains(WidgetState.disabled)) return null;
+    if (_SegmentProperty.showsFocus(states)) {
+      return focusFor(states).background;
+    }
+    return states.contains(WidgetState.selected)
+        ? scheme.secondaryContainer
+        : null;
+  }
+}
+
+/// A segment's label and icon colour: Material's, or the label solved with
+/// the focus fill while it shows focus.
+class _SegmentLabel extends _SegmentProperty {
+  const _SegmentLabel(super.scheme, super.focus);
+
+  @override
+  Color? resolve(Set<WidgetState> states) {
+    if (states.contains(WidgetState.disabled)) {
+      return _materialOpacity(scheme.onSurface, 0.38);
+    }
+    if (_SegmentProperty.showsFocus(states)) return focusFor(states).label;
+    return states.contains(WidgetState.selected)
+        ? scheme.onSecondaryContainer
+        : scheme.onSurface;
+  }
+}
+
+/// A segment's overlay: Material's press and hover tints, and no focus tint,
+/// since the background shows focus.
+///
+/// Focus alone gets Material's tint colour at no strength, not null, which
+/// would fall through to the text button's own focus tint. The colour
+/// matters though it draws nothing: an ink well creates its focus
+/// highlight with every state the segment is in, so focus that arrives
+/// under a resting mouse fixes the highlight's strength at the hover's 8%,
+/// and then paints it in this colour. In Material's tint, that is one more
+/// hover tint, which the fill is solved to carry the label under.
+class _SegmentOverlay extends _SegmentProperty {
+  const _SegmentOverlay(super.scheme, super.focus);
+
+  @override
+  Color? resolve(Set<WidgetState> states) {
+    final tint = states.contains(WidgetState.selected)
+        ? scheme.onSecondaryContainer
+        : scheme.onSurface;
+    if (states.contains(WidgetState.pressed)) {
+      return _materialOpacity(tint, 0.1);
+    }
+    if (states.contains(WidgetState.hovered)) {
+      return BgeSegmentFocus.hoverTint(tint);
+    }
+    if (states.contains(WidgetState.focused)) return tint.withAlpha(0);
+    return null;
+  }
 }

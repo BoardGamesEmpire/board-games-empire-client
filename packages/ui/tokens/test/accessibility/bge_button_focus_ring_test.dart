@@ -830,32 +830,306 @@ void main() {
     },
   );
 
-  // What #50's drafted findings want, skipped until each is fixed, so the gap
-  // stays visible in the suite. Each is written against what a user sees
-  // rather than against today's ring, so a fix of any shape passes it. Each
-  // sits in a `group` so that its skip can carry the reason: `testWidgets`
-  // takes only a bool.
-  group('focus the ring does not reach yet (#50)', () {
-    /// Whether [c] is within a little of [target].
-    bool near(Color c, Color target) =>
-        (c.r - target.r).abs() < 0.05 &&
-        (c.g - target.g).abs() < 0.05 &&
-        (c.b - target.b).abs() < 0.05;
-
-    final schemes = {
+  // A segmented button builds its segments' style without the theme's
+  // builder, so a segment shows keyboard focus as a fill (#759). The fill
+  // stands 3:1 from the segment at rest, and the label on it 4.5:1, over
+  // every background a segment sits on in the app: a page's surface, a
+  // sheet's surfaceContainerLow and a dialog's surfaceContainerHigh (the
+  // vote control's quick look is both).
+  group("a segmented button's focused segment differs from rest by 3:1, "
+      'its label 4.5:1 on the fill (#759)', () {
+    final themes = {
       'light': BgeTheme.light,
       'dark': BgeTheme.dark,
       'highContrastLight': BgeTheme.highContrastLight,
       'highContrastDark': BgeTheme.highContrastDark,
     };
+    final backgrounds = <String, Color Function(ColorScheme)>{
+      'surface': (s) => s.surface,
+      'surfaceContainerLow': (s) => s.surfaceContainerLow,
+      'surfaceContainerHigh': (s) => s.surfaceContainerHigh,
+    };
 
+    for (final MapEntry(key: name, value: build) in themes.entries) {
+      for (final MapEntry(key: on, value: background) in backgrounds.entries) {
+        for (final selected in [true, false]) {
+          final which = selected ? 'selected' : 'unselected';
+          testWidgets('$name, $which, on $on', (tester) async {
+            final themeData = build();
+            await host(tester, [
+              ColoredBox(
+                color: background(themeData.colorScheme),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: SegmentedButton<int>(
+                    segments: const [
+                      ButtonSegment(value: 0, label: Text('One')),
+                      ButtonSegment(value: 1, label: Text('Two')),
+                    ],
+                    selected: const {0},
+                    onSelectionChanged: (_) {},
+                  ),
+                ),
+              ),
+            ], themeData: themeData);
+            final text = find.text(selected ? 'One' : 'Two');
+            final segment = tester.getRect(
+              find.ancestor(of: text, matching: find.byType(TextButton)),
+            );
+            final label = tester.getRect(text);
+            // Clear of the label, and of a selected segment's check.
+            final fillAt = Offset(label.right + 3, label.center.dy);
+            final atRest = await capturePixels(tester, boundary);
+
+            // Selected is the first segment, unselected the second.
+            await tab(tester);
+            if (!selected) await tab(tester);
+            await tester.pumpAndSettle();
+            expect(Focus.of(tester.element(text)).hasPrimaryFocus, isTrue);
+            final focused = await capturePixels(tester, boundary);
+
+            // Round the label, so the label can't stand in for the fill.
+            expect(
+              strongestContrast(
+                segment,
+                atRest,
+                focused,
+                skip: label.inflate(2).contains,
+              ),
+              greaterThanOrEqualTo(3.0),
+              reason: 'the fill',
+            );
+            final fill = focused(fillAt);
+            expect(
+              strongestContrast(label, focused, (_) => fill),
+              greaterThanOrEqualTo(4.5),
+              reason: 'the label on the fill',
+            );
+
+            // A mouse resting on the segment lays Material's hover tint over
+            // the fill: the label still reads.
+            final mouse = await tester.createGesture(
+              kind: PointerDeviceKind.mouse,
+            );
+            addTearDown(mouse.removePointer);
+            await mouse.addPointer(location: label.center);
+            await tester.pumpAndSettle();
+            final hovered = await capturePixels(tester, boundary);
+            final hoveredFill = hovered(fillAt);
+            expect(
+              strongestContrast(label, hovered, (_) => hoveredFill),
+              greaterThanOrEqualTo(4.5),
+              reason: 'the label on the fill under a hover',
+            );
+          });
+        }
+      }
+    }
+
+    /// The style a segment's [TextButton] reads from its theme, under
+    /// [themeData].
+    Future<ButtonStyle> segmentStyle(
+      WidgetTester tester,
+      ThemeData themeData,
+    ) async {
+      await host(tester, [
+        SegmentedButton<int>(
+          segments: const [
+            ButtonSegment(value: 0, label: Text('One')),
+            ButtonSegment(value: 1, label: Text('Two')),
+          ],
+          selected: const {0},
+          onSelectionChanged: (_) {},
+        ),
+      ], themeData: themeData);
+      return TextButtonTheme.of(tester.element(find.text('One'))).style!;
+    }
+
+    /// Every set of [states], each with and without the others.
+    List<Set<WidgetState>> subsets(List<WidgetState> states) => [
+      for (var mask = 0; mask < 1 << states.length; mask++)
+        {
+          for (var i = 0; i < states.length; i++)
+            if (mask & (1 << i) != 0) states[i],
+        },
+    ];
+
+    for (final MapEntry(key: name, value: build) in themes.entries) {
+      testWidgets("the theme leaves every unfocused state as Material's, "
+          '$name', (tester) async {
+        final themed = build();
+        final ours = await segmentStyle(tester, themed);
+        final material = await segmentStyle(
+          tester,
+          themed.copyWith(
+            segmentedButtonTheme: const SegmentedButtonThemeData(),
+          ),
+        );
+        expect(themed.segmentedButtonTheme.style, isNotNull);
+
+        for (final states in subsets([
+          WidgetState.selected,
+          WidgetState.hovered,
+          WidgetState.pressed,
+          WidgetState.disabled,
+        ])) {
+          expect(
+            ours.foregroundColor?.resolve(states),
+            material.foregroundColor?.resolve(states),
+            reason: 'foregroundColor $states',
+          );
+          expect(
+            ours.overlayColor?.resolve(states),
+            material.overlayColor?.resolve(states),
+            reason: 'overlayColor $states',
+          );
+          // Null, as Material's, where a segment shows what it sits on.
+          // Transparent in its place drew the same pixels in every probe,
+          // so the default is kept.
+          expect(
+            ours.backgroundColor?.resolve(states),
+            material.backgroundColor?.resolve(states),
+            reason: 'backgroundColor $states',
+          );
+        }
+        // Focus alone gets no tint: the background shows it. Not null, which
+        // would fall through to the text button's own focus tint.
+        for (final selected in [true, false]) {
+          expect(
+            ours.overlayColor?.resolve({
+              WidgetState.focused,
+              if (selected) WidgetState.selected,
+            })?.a,
+            0,
+          );
+        }
+        // A press or hover that comes with focus is Material's too: the
+        // ink well asks for the focus fill with focus alone.
+        for (final states
+            in subsets([
+              WidgetState.selected,
+              WidgetState.hovered,
+              WidgetState.pressed,
+            ]).where(
+              (s) => s.intersection({
+                WidgetState.hovered,
+                WidgetState.pressed,
+              }).isNotEmpty,
+            )) {
+          final focused = {...states, WidgetState.focused};
+          expect(
+            ours.overlayColor?.resolve(focused),
+            material.overlayColor?.resolve(focused),
+            reason: 'overlayColor $focused',
+          );
+        }
+      });
+    }
+
+    testWidgets("a focused segment's fill and label are both Material's while "
+        'the highlight mode is touch', (tester) async {
+      final ours = await segmentStyle(tester, theme);
+      final material = await segmentStyle(
+        tester,
+        theme.copyWith(segmentedButtonTheme: const SegmentedButtonThemeData()),
+      );
+      addTearDown(
+        () => FocusManager.instance.highlightStrategy =
+            FocusHighlightStrategy.automatic,
+      );
+
+      for (final selected in [true, false]) {
+        final states = {
+          WidgetState.focused,
+          if (selected) WidgetState.selected,
+        };
+        final focus = selected
+            ? BgeSegmentFocus.selected(theme.colorScheme)
+            : BgeSegmentFocus.unselected(theme.colorScheme);
+        FocusManager.instance.highlightStrategy =
+            FocusHighlightStrategy.alwaysTraditional;
+        expect(ours.backgroundColor?.resolve(states), focus.background);
+        expect(ours.foregroundColor?.resolve(states), focus.label);
+
+        FocusManager.instance.highlightStrategy =
+            FocusHighlightStrategy.alwaysTouch;
+        for (final property
+            in <
+              WidgetStateProperty<Color?>? Function(
+                ButtonStyle,
+              )
+            >[(s) => s.backgroundColor, (s) => s.foregroundColor]) {
+          expect(
+            property(ours)?.resolve(states),
+            property(material)?.resolve(states),
+            reason: 'by touch, selected: $selected',
+          );
+        }
+      }
+    });
+
+    // The fill and the label read the highlight mode together, in one
+    // build, so a touch that changes the mode can't take one away and leave
+    // the other. Whatever the segment shows until it next builds, the label
+    // reads on it.
     group(
-      "a segmented button's segment is ringed on keyboard focus",
-      skip: 'see #759',
+      'a touch after Tab leaves the label readable on what is under it',
       () {
-        testWidgets(
-          'its first segment',
-          (tester) async {
+        for (final MapEntry(key: name, value: build) in themes.entries) {
+          for (final selected in [true, false]) {
+            final which = selected ? 'selected' : 'unselected';
+            testWidgets('$name, $which', (tester) async {
+              await host(tester, [
+                SegmentedButton<int>(
+                  segments: const [
+                    ButtonSegment(value: 0, label: Text('One')),
+                    ButtonSegment(value: 1, label: Text('Two')),
+                  ],
+                  selected: const {0},
+                  onSelectionChanged: (_) {},
+                ),
+              ], themeData: build());
+              final text = find.text(selected ? 'One' : 'Two');
+              final label = tester.getRect(text);
+
+              await tab(tester);
+              if (!selected) await tab(tester);
+              await tester.pumpAndSettle();
+              expect(Focus.of(tester.element(text)).hasPrimaryFocus, isTrue);
+
+              // A touch: startGesture's default kind.
+              final touch = await tester.startGesture(empty);
+              addTearDown(touch.up);
+              // Long enough for an ink highlight the mode change ends to fade.
+              await tester.pumpAndSettle();
+              expect(
+                FocusManager.instance.highlightMode,
+                FocusHighlightMode.touch,
+              );
+              expect(Focus.of(tester.element(text)).hasPrimaryFocus, isTrue);
+              final pixels = await capturePixels(tester, boundary);
+              final under = pixels(Offset(label.right + 3, label.center.dy));
+              expect(
+                strongestContrast(label, pixels, (_) => under),
+                greaterThanOrEqualTo(4.5),
+              );
+            });
+          }
+        }
+      },
+    );
+
+    // A mouse already resting on a segment when Tab focuses it. The ink
+    // well makes its focus highlight with every state the segment is in, so
+    // the highlight takes the hover's 8% strength, and keeps it after the
+    // mouse leaves. The label is checked on whatever is drawn, while
+    // hovered and after.
+    group('a hover already on a segment when focus arrives leaves the label '
+        'readable', () {
+      for (final MapEntry(key: name, value: build) in themes.entries) {
+        for (final selected in [true, false]) {
+          final which = selected ? 'selected' : 'unselected';
+          testWidgets('$name, $which', (tester) async {
             await host(tester, [
               SegmentedButton<int>(
                 segments: const [
@@ -865,36 +1139,70 @@ void main() {
                 selected: const {0},
                 onSelectionChanged: (_) {},
               ),
-            ]);
-            final segment = find
-                .descendant(
-                  of: find.byType(SegmentedButton<int>),
-                  matching: find.byType(TextButton),
-                )
-                .first;
-            // The ring may sit on the edge or outside it.
-            final around = tester
-                .getRect(segment)
-                .inflate(tokens.focusRingGap + tokens.focusOutlineWidth);
-            int ringPixels(Color Function(Offset) pixels) =>
-                pixelCentres(around).where((p) => near(pixels(p), ring)).length;
-            final atRest = ringPixels(await capturePixels(tester, boundary));
+            ], themeData: build());
+            final text = find.text(selected ? 'One' : 'Two');
+            final label = tester.getRect(text);
+            final at = Offset(label.right + 3, label.center.dy);
+            final mouse = await tester.createGesture(
+              kind: PointerDeviceKind.mouse,
+            );
+            addTearDown(mouse.removePointer);
+            await mouse.addPointer(location: label.center);
+            await tester.pumpAndSettle();
 
             await tab(tester);
+            if (!selected) await tab(tester);
             await tester.pumpAndSettle();
-            expect(
-              Focus.of(tester.element(find.text('One'))).hasPrimaryFocus,
-              isTrue,
-            );
+            expect(Focus.of(tester.element(text)).hasPrimaryFocus, isTrue);
 
-            expect(
-              ringPixels(await capturePixels(tester, boundary)),
-              greaterThan(atRest),
-            );
-          },
+            for (final when in ['hovered', 'after the hover']) {
+              if (when == 'after the hover') {
+                await mouse.moveTo(empty);
+                await tester.pumpAndSettle();
+              }
+              final pixels = await capturePixels(tester, boundary);
+              final under = pixels(at);
+              expect(
+                strongestContrast(label, pixels, (_) => under),
+                greaterThanOrEqualTo(4.5),
+                reason: '$when, under $under',
+              );
+            }
+          });
+        }
+      }
+    });
+
+    test('two themes built from one palette give equal segment styles', () {
+      final first = BgeTheme.from(BgePalette.storm);
+      final second = BgeTheme.from(BgePalette.storm);
+      for (final (a, b) in [
+        (first.light, second.light),
+        (first.dark, second.dark),
+        (first.highContrastLight, second.highContrastLight),
+        (first.highContrastDark, second.highContrastDark),
+      ]) {
+        expect(a.segmentedButtonTheme, b.segmentedButtonTheme);
+        expect(
+          a.segmentedButtonTheme.hashCode,
+          b.segmentedButtonTheme.hashCode,
         );
-      },
-    );
+      }
+    });
+  });
+
+  // What #50's drafted findings want, skipped until each is fixed, so the gap
+  // stays visible in the suite. Each is written against what a user sees
+  // rather than against today's ring, so a fix of any shape passes it. Each
+  // sits in a `group` so that its skip can carry the reason: `testWidgets`
+  // takes only a bool.
+  group('focus the ring does not reach yet (#50)', () {
+    final schemes = {
+      'light': BgeTheme.light,
+      'dark': BgeTheme.dark,
+      'highContrastLight': BgeTheme.highContrastLight,
+      'highContrastDark': BgeTheme.highContrastDark,
+    };
 
     group(
       'a text button label that wraps at 320dp and 2.0 text keeps every '
