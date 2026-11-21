@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:reactive_forms/reactive_forms.dart';
+import 'package:ui/src/focus/bge_row_focus_ring.dart';
 
 /// A labelled on/off switch bound to a `FormControl<bool>`.
 ///
@@ -115,20 +116,25 @@ class _BgeSwitchFieldState extends State<BgeSwitchField> {
                 : null,
             child: IgnorePointer(
               ignoring: readOnly,
-              child: SwitchListTile(
-                key: widget.switchKey,
+              child: BgeRowFocusRing(
+                outsideSides: true,
                 focusNode: _focusNode,
-                value: control.value ?? false,
-                title: Text(widget.label),
-                subtitle: subtitle == null ? null : Text(subtitle),
-                contentPadding: EdgeInsets.zero,
-                // Set while read-only too, so the tile stays enabled and
-                // focusable; a toggle then changes nothing.
-                onChanged: readOnly
-                    ? _ignore
-                    : (value) => control
-                        ..value = value
-                        ..markAsTouched(),
+                builder: (context, row) => SwitchListTile(
+                  key: widget.switchKey,
+                  focusNode: row.focusNode,
+                  onFocusChange: row.onFocusChange,
+                  value: control.value ?? false,
+                  title: Text(widget.label),
+                  subtitle: subtitle == null ? null : Text(subtitle),
+                  contentPadding: EdgeInsets.zero,
+                  // Set while read-only too, so the tile stays enabled and
+                  // focusable; a toggle then changes nothing.
+                  onChanged: readOnly
+                      ? _ignore
+                      : (value) => control
+                          ..value = value
+                          ..markAsTouched(),
+                ),
               ),
             ),
           ),

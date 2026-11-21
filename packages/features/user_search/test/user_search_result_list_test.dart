@@ -1,3 +1,4 @@
+import 'package:bge_test_support/widgets.dart';
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -155,6 +156,12 @@ void main() {
     expect(checkIn('u_2'), findsOneWidget);
     expect(row(tester, 'u_3').selected, isFalse);
     expect(checkIn('u_3'), findsNothing);
+  });
+
+  testWidgets('a focused result row is ringed (#758)', (tester) async {
+    await pumpList(tester, const UserSearchResults([_ana, _bo]));
+
+    expect(await keyboardFocusShowsRing(tester, find.text('bo')), isTrue);
   });
 
   testWidgets('more than one user can be picked at once', (tester) async {

@@ -29,6 +29,9 @@ dependencies:
     path: ../../ui/widgets
 
 dev_dependencies:
+  # The ring helper the result list's test checks its rows with.
+  bge_test_support:
+    path: ../../testing/support
   bloc_test: ^10.0.0
   flutter_test:
     sdk: flutter

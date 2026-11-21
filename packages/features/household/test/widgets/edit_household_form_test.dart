@@ -1,3 +1,4 @@
+import 'package:bge_test_support/widgets.dart';
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -353,6 +354,46 @@ void main() {
       }
       // Only the known policies are offered.
       expect(find.byType(RadioListTile<MemberInvitePolicy?>), findsNWidgets(3));
+    });
+
+    testWidgets('a focused policy option is ringed (#758)', (tester) async {
+      await tester.pumpWidget(form(_household(policy: MemberInvitePolicy.off)));
+
+      expect(
+        await keyboardFocusShowsRing(
+          tester,
+          find
+              .descendant(
+                of: find.byKey(
+                  EditHouseholdForm.policyOptionKey(MemberInvitePolicy.direct),
+                ),
+                matching: find.byType(Text),
+              )
+              .first,
+        ),
+        isTrue,
+      );
+    });
+
+    testWidgets('a focused leave-it-as-it-is option is ringed (#758)', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        form(_household(policy: MemberInvitePolicy.unknown)),
+      );
+
+      expect(
+        await keyboardFocusShowsRing(
+          tester,
+          find
+              .descendant(
+                of: find.byKey(EditHouseholdForm.policyUnchangedKey),
+                matching: find.byType(Text),
+              )
+              .first,
+        ),
+        isTrue,
+      );
     });
 
     testWidgets('the fields and options are read-only while submitting', (

@@ -874,13 +874,19 @@ class _ReadyPage extends StatelessWidget {
               actions.contains(HouseholdAction.sendInvite) &&
               !actions.contains(HouseholdAction.manageInvites)) ...[
             const BgeGap.lg(),
-            ListTile(
-              key: HouseholdDetailScreen.inviteKey,
-              contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.person_add_alt_1_outlined),
-              title: Text(l10n.householdDetailInvite),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => invite(context, state.household.id),
+            BgeRowFocusRing(
+              outsideSides: true,
+              builder: (context, row) => ListTile(
+                key: HouseholdDetailScreen.inviteKey,
+                focusNode: row.focusNode,
+                onFocusChange: row.onFocusChange,
+                focusColor: row.focusColor,
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.person_add_alt_1_outlined),
+                title: Text(l10n.householdDetailInvite),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: row.onTap(() => invite(context, state.household.id)),
+              ),
             ),
           ],
           // Every role sees the events of a household the server knows (#503).
@@ -909,13 +915,19 @@ class _ReadyPage extends StatelessWidget {
           if (newEvent != null &&
               actions.contains(HouseholdAction.createEvent)) ...[
             const BgeGap.lg(),
-            ListTile(
-              key: HouseholdDetailScreen.newEventKey,
-              contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.event_outlined),
-              title: Text(l10n.householdNewEvent),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => newEvent(context, state.household.id),
+            BgeRowFocusRing(
+              outsideSides: true,
+              builder: (context, row) => ListTile(
+                key: HouseholdDetailScreen.newEventKey,
+                focusNode: row.focusNode,
+                onFocusChange: row.onFocusChange,
+                focusColor: row.focusColor,
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.event_outlined),
+                title: Text(l10n.householdNewEvent),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: row.onTap(() => newEvent(context, state.household.id)),
+              ),
             ),
           ],
           // Last, after every other row: the one that ends the person's
@@ -960,16 +972,22 @@ class _InvitesEntry extends StatelessWidget {
         return ReadAgainWhenUncovered(
           onUncovered: () =>
               unawaited(context.read<AwaitingApprovalCountCubit>().load()),
-          child: ListTile(
-            key: HouseholdDetailScreen.invitesKey,
-            contentPadding: EdgeInsets.zero,
-            leading: const Icon(Icons.mail_outline),
-            title: Text(l10n.householdDetailInvites),
-            subtitle: count == null || count == 0
-                ? null
-                : Text(l10n.householdDetailInvitesAwaiting(count)),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => onOpen(context, householdId),
+          child: BgeRowFocusRing(
+            outsideSides: true,
+            builder: (context, row) => ListTile(
+              key: HouseholdDetailScreen.invitesKey,
+              focusNode: row.focusNode,
+              onFocusChange: row.onFocusChange,
+              focusColor: row.focusColor,
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.mail_outline),
+              title: Text(l10n.householdDetailInvites),
+              subtitle: count == null || count == 0
+                  ? null
+                  : Text(l10n.householdDetailInvitesAwaiting(count)),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: row.onTap(() => onOpen(context, householdId)),
+            ),
           ),
         );
       },
@@ -1622,15 +1640,20 @@ class _RoleDialogState extends State<_RoleDialog> {
           mainAxisSize: MainAxisSize.min,
           children: [
             for (final role in widget.roles)
-              RadioListTile<HouseholdRole>(
-                key: HouseholdDetailScreen.roleOptionKey(role),
-                value: role,
-                contentPadding: EdgeInsets.zero,
-                title: Text(householdRoleLabel(l10n, role)),
-                subtitle: switch (_roleDescription(l10n, role)) {
-                  final description? => Text(description),
-                  null => null,
-                },
+              BgeRowFocusRing(
+                outsideSides: true,
+                builder: (context, row) => RadioListTile<HouseholdRole>(
+                  key: HouseholdDetailScreen.roleOptionKey(role),
+                  focusNode: row.focusNode,
+                  onFocusChange: row.onFocusChange,
+                  value: role,
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(householdRoleLabel(l10n, role)),
+                  subtitle: switch (_roleDescription(l10n, role)) {
+                    final description? => Text(description),
+                    null => null,
+                  },
+                ),
               ),
           ],
         ),
@@ -1935,30 +1958,38 @@ class _LeaveRowState extends State<_LeaveRow> {
         excludeSemantics: true,
         child: tile,
       ),
-      child: ListTile(
-        key: HouseholdDetailScreen.leaveKey,
+      child: BgeRowFocusRing(
+        outsideSides: true,
         focusNode: _row,
-        contentPadding: EdgeInsets.zero,
-        enabled: !disabled,
-        iconColor: error,
-        textColor: error,
-        leading: const Icon(Icons.logout),
-        // A last owner's row has no online-only note, and nor does a busy
-        // one: neither changes when the connection does.
-        title: busy || reason != null ? Text(label) : BgeOnlineOnlyLabel(label),
-        // In the online-only reason's style, `bodySmall` in
-        // `onSurfaceVariant`, so the two reason lines match and this one
-        // stays legible on the disabled row.
-        subtitle: reason == null
-            ? null
-            : Text(
-                reason,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
+        builder: (context, row) => ListTile(
+          key: HouseholdDetailScreen.leaveKey,
+          focusNode: row.focusNode,
+          onFocusChange: row.onFocusChange,
+          focusColor: row.focusColor,
+          contentPadding: EdgeInsets.zero,
+          enabled: !disabled,
+          iconColor: error,
+          textColor: error,
+          leading: const Icon(Icons.logout),
+          // A last owner's row has no online-only note, and nor does a busy
+          // one: neither changes when the connection does.
+          title: busy || reason != null
+              ? Text(label)
+              : BgeOnlineOnlyLabel(label),
+          // In the online-only reason's style, `bodySmall` in
+          // `onSurfaceVariant`, so the two reason lines match and this one
+          // stays legible on the disabled row.
+          subtitle: reason == null
+              ? null
+              : Text(
+                  reason,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
                 ),
-              ),
-        trailing: busy ? const _BusyIconSpinner() : null,
-        onTap: press,
+          trailing: busy ? const _BusyIconSpinner() : null,
+          onTap: row.onTap(press),
+        ),
       ),
     );
   }

@@ -1172,6 +1172,27 @@ void main() {
       expect(find.text('2 awaiting approval'), findsOneWidget);
     });
 
+    testWidgets('a focused invites entry is ringed (#758)', (tester) async {
+      await tester.pumpWidget(withInvites());
+      await settleWith(
+        tester,
+        roster: [_member('u-me', role: HouseholdRole.householdOwner)],
+      );
+
+      expect(
+        await keyboardFocusShowsRing(
+          tester,
+          find
+              .descendant(
+                of: find.byKey(HouseholdDetailScreen.invitesKey),
+                matching: find.byType(Text),
+              )
+              .first,
+        ),
+        isTrue,
+      );
+    });
+
     testWidgets('no count is shown when nothing awaits approval', (
       tester,
     ) async {
@@ -1278,6 +1299,16 @@ void main() {
       expect(invites.calls, isEmpty);
     });
 
+    testWidgets('a focused Invite row is ringed (#758)', (tester) async {
+      await tester.pumpWidget(withInvite());
+      await settleWith(tester, household: under(MemberInvitePolicy.direct));
+
+      expect(
+        await keyboardFocusShowsRing(tester, find.text('Invite someone')),
+        isTrue,
+      );
+    });
+
     testWidgets('a member under NeedsApproval gets the Invite row', (
       tester,
     ) async {
@@ -1370,6 +1401,16 @@ void main() {
       await tester.pumpWidget(withNewEvent());
       await settleWith(tester, roster: [_member('u-me', role: role)]);
     }
+
+    testWidgets('a focused New event row is ringed (#758)', (tester) async {
+      await tester.pumpWidget(withNewEvent());
+      await settleWith(tester);
+
+      expect(
+        await keyboardFocusShowsRing(tester, find.text('New event')),
+        isTrue,
+      );
+    });
 
     testWidgets('New event shows for a member and calls onNewEvent with the '
         'household id', (tester) async {
@@ -2020,6 +2061,29 @@ void main() {
         expect(saveButton(tester).onPressed, isNull);
       },
     );
+
+    testWidgets('a focused role option is ringed (#758)', (tester) async {
+      await tester.pumpWidget(withMembers());
+      await settleAsOwner(tester);
+      await choose(tester, 'u-2', HouseholdDetailScreen.changeRoleKey);
+
+      expect(
+        await keyboardFocusShowsRing(
+          tester,
+          find
+              .descendant(
+                of: find.byKey(
+                  HouseholdDetailScreen.roleOptionKey(
+                    HouseholdRole.householdGuest,
+                  ),
+                ),
+                matching: find.byType(Text),
+              )
+              .first,
+        ),
+        isTrue,
+      );
+    });
 
     testWidgets('saving a new role sends it', (tester) async {
       when(() => remote.changeRole(any(), any(), any())).thenAnswer(
