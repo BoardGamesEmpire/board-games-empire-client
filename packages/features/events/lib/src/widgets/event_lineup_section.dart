@@ -113,7 +113,9 @@ String lineupSupplierLine(
 /// headings, that it is for every date, joined as the event's other lines
 /// are and read without the symbols between them. They are one button, the
 /// row's head, which opens the game's quick look (#957, [EventGameRowHead]).
-/// It has no other control. As the quick look closes, focus goes back to the
+/// Its other control is its main action, Remove from lineup, for those the
+/// server lets take a game out ([lineupRemoveButton], #520). As the quick
+/// look closes, focus goes back to the
 /// row's head, or where the row has left, to the head of the row in its
 /// place, else to Add a game
 /// ([EventGamesTabController.focusAfterQuickLook]).
@@ -285,6 +287,16 @@ class EventLineupSection extends StatelessWidget {
             // Where nothing else says it, the event's own games say they are
             // for every date (#519, #1042).
             everyDate: marks && game.occurrenceId == null,
+            // Remove from lineup, for those offered it (#520).
+            action: lineupRemoveButton(
+              context,
+              game: game,
+              detail: detail,
+              state: state,
+              acting: acting,
+              now: now,
+              clock: clock,
+            ),
           ),
         ),
       );
@@ -325,7 +337,8 @@ class _GroupHeader extends StatelessWidget {
 /// lineup has no headings, that it is for every date, "Filler, up to 20
 /// minutes · Ada is bringing this · Every date", spoken with commas; as one
 /// button, the row's head, which opens its quick look (#957,
-/// [EventGameRowHead]). It has no other control.
+/// [EventGameRowHead]). Its other control is its main action, Remove from
+/// lineup, under the head where the viewer is offered it (#520).
 class _LineupRow extends StatelessWidget {
   const _LineupRow({
     required this.game,
@@ -334,6 +347,7 @@ class _LineupRow extends StatelessWidget {
     required this.role,
     required this.supplier,
     required this.everyDate,
+    required this.action,
   });
 
   final LineupGame game;
@@ -354,6 +368,10 @@ class _LineupRow extends StatelessWidget {
   /// Whether it says it is for every date.
   final bool everyDate;
 
+  /// Its main action, Remove from lineup (#520), where the viewer is offered
+  /// it.
+  final RemoveFromLineupButton? action;
+
   @override
   Widget build(BuildContext context) {
     final l10n = EventsLocalizations.of(context);
@@ -370,24 +388,57 @@ class _LineupRow extends StatelessWidget {
       supplier,
       if (everyDate) l10n.eventsGamesEveryDateMark,
     ];
+    final action = this.action;
 
     return Focus(
       focusNode: area,
       includeSemantics: false,
       child: Padding(
         padding: EdgeInsets.symmetric(vertical: tokens.spaceSm),
-        child: EventGameRowHead(
-          key: EventDetailScreen.lineupRowHeadKey(game.id),
-          thumbnail: game.thumbnail,
-          title: gameName(l10n, game.title, game.subtitle),
-          entry: LineupEntry(game.id),
-          focusNode: head,
-          lines: [
-            Text(
-              status.join(l10n.eventsDetailSeparator),
-              semanticsLabel: status.join(l10n.eventsDetailSpokenSeparator),
-              style: quiet,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            EventGameRowHead(
+              key: EventDetailScreen.lineupRowHeadKey(game.id),
+              thumbnail: game.thumbnail,
+              title: gameName(l10n, game.title, game.subtitle),
+              entry: LineupEntry(game.id),
+              focusNode: head,
+              lines: [
+                Text(
+                  status.join(l10n.eventsDetailSeparator),
+                  semanticsLabel: status.join(
+                    l10n.eventsDetailSpokenSeparator,
+                  ),
+                  style: quiet,
+                ),
+              ],
             ),
+            if (action != null)
+              // Outside the head, whose one button can't hold another (#957),
+              // and inset past the cover, so the action and its reason line
+              // up under the title and the status line.
+              Padding(
+                padding: EdgeInsetsDirectional.only(
+                  start: BgeThumbnail.listExtent + tokens.spaceMd,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    action,
+                    if (action.started)
+                      // The action's hint already says it.
+                      ExcludeSemantics(
+                        child: Text(
+                          l10n.eventsLineupStartedHint,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
           ],
         ),
       ),

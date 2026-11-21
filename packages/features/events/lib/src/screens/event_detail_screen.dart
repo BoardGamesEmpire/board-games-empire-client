@@ -25,6 +25,7 @@ import 'package:events/src/detail/event_date_actions.dart';
 import 'package:events/src/detail/event_detail_write.dart';
 import 'package:events/src/detail/event_game_offers.dart';
 import 'package:events/src/detail/event_games_pool.dart';
+import 'package:events/src/detail/event_lineup.dart';
 import 'package:events/src/detail/event_nominations.dart';
 import 'package:events/src/detail/event_poll.dart';
 import 'package:events/src/detail/event_status_now.dart';
@@ -803,6 +804,25 @@ class EventDetailScreen extends StatelessWidget {
   static const Key nominationsOutcomeKey = Key(
     'event_detail.nominations_outcome',
   );
+
+  /// Key on a lineup row's Remove from lineup (#520), its main action, by
+  /// the lineup game's id.
+  static Key lineupRemoveKey(String lineupGameId) =>
+      Key('event_detail.lineup_remove_$lineupGameId');
+
+  /// Key on the Remove from lineup in a lineup game's quick look (#520).
+  static const Key quickLookLineupRemoveKey = Key(
+    'event_detail.quick_look_lineup_remove',
+  );
+
+  /// Key on the Remove from lineup button of the dialog that asks before a
+  /// game is taken out of the lineup (#520).
+  static const Key lineupRemoveConfirmKey = Key(
+    'event_detail.lineup_remove_confirm',
+  );
+
+  /// Key on that dialog's Keep it button (#520).
+  static const Key lineupRemoveKeepKey = Key('event_detail.lineup_remove_keep');
 
   /// Key on the banner in the footer saying how a host's last lineup write
   /// went (#519, #520): an add or a removal.
@@ -2319,6 +2339,14 @@ class _ReadyPage extends StatelessWidget {
               state: gamesState,
               nominations: nominationsState,
               lineup: lineupState,
+              // A take-back's 409 names a host's step for a game in the
+              // lineup (#520).
+              inLineup: (id) => lineupHoldsRemovable(
+                state,
+                knownLineup(lineupState),
+                id,
+                now: now(),
+              ),
               viewerId: state.detail.attendance?.id,
               // Whose games a take-back of someone else's was about (#518),
               // named as the pool's rows name them.

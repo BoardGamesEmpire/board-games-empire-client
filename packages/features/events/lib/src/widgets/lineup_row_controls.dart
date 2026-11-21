@@ -13,6 +13,7 @@ import 'package:events/src/detail/event_nominations.dart';
 import 'package:events/src/detail/games_date_view.dart';
 import 'package:events/src/screens/event_detail_screen.dart';
 import 'package:events/src/widgets/add_to_lineup_dialog.dart';
+import 'package:events/src/widgets/confirm_dialog.dart';
 import 'package:events/src/widgets/event_games_tab_scope.dart';
 import 'package:events/src/widgets/game_name.dart';
 import 'package:events/src/widgets/held_press.dart';
@@ -357,6 +358,203 @@ class AddToLineupButtonState extends State<AddToLineupButton>
             // Nominate's, beside it in a quick look.
             icon: held ? const HeldSpinner() : const Icon(Icons.add),
             label: Text(l10n.eventsLineupAddToLineup),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Takes [game] out of the lineup (#520) once the viewer confirms and any
+/// running detail read has ended ([readEnded]), for the event as the detail
+/// shows it then, whose id a reconcile can have moved (#499). Completes true
+/// when the removal was sent, and false when nothing was: Keep it, or as
+/// below. The dialog, the outcome and a drop name the game as its row does,
+/// with its subtitle ([gameName], #851).
+///
+/// Nothing is sent if, by then, the game has left the lineup, or the viewer
+/// isn't offered the removal any more ([lineupRemoveGate], by [clock]): the
+/// page already shows that, and the footer says the removal was dropped, or
+/// a screen reader would hear nothing happen. A lineup that has started is
+/// dropped too, which the page shows as Remove disabled with its reason.
+Future<bool> removeFromLineup(
+  BuildContext context,
+  LineupGame game, {
+  required DateTime Function() clock,
+}) async {
+  // Read before the dialog opens: the row, or its quick look, can rebuild
+  // without Remove under it and take this context with it.
+  final l10n = EventsLocalizations.of(context);
+  final detail = context.read<EventDetailBloc>();
+  final lineup = context.read<EventLineupBloc>();
+  final confirmed = await showConfirmDialog(
+    context,
+    title: l10n.eventsLineupRemoveConfirm(
+      gameName(l10n, game.title, game.subtitle),
+    ),
+    body: l10n.eventsLineupRemoveConfirmBody,
+    keepLabel: l10n.eventsLineupRemoveConfirmKeep,
+    confirmLabel: l10n.eventsLineupRemoveConfirmAction,
+    destructive: true,
+    keepKey: EventDetailScreen.lineupRemoveKeepKey,
+    confirmKey: EventDetailScreen.lineupRemoveConfirmKey,
+  );
+  if (!confirmed || lineup.isClosed) return false;
+
+  final state = await readEnded(detail);
+  if (state is! EventDetailReady || lineup.isClosed) return false;
+  final current = lineup.state.games
+      .where((each) => each.id == game.id)
+      .firstOrNull;
+  if (current == null ||
+      lineupRemoveGate(state, current, now: clock()) != LineupRemoveGate.open) {
+    lineup.add(
+      LineupWriteDropped(
+        LineupWrite.remove,
+        title: game.title,
+        subtitle: game.subtitle,
+      ),
+    );
+    return false;
+  }
+  // One write at a time; the bloc would ignore this one.
+  if (lineup.state.busy) return false;
+  lineup.add(LineupGameRemoved(state.detail.snapshot.event.id, current));
+  return true;
+}
+
+/// Remove from lineup on [game], for its row and its quick look (#520),
+/// built from the viewer's [lineupRemoveGate] on [detail] by [now]: null
+/// where the viewer isn't offered it, else a [RemoveFromLineupButton],
+/// disabled with its reason where the lineup has started. Its press asks,
+/// then removes by [clock] ([removeFromLineup]). It is enabled only while no
+/// detail read runs, the screen ([acting]) isn't sending a request, and no
+/// lineup write is out; inert while this game's own removal is. Carries the
+/// row's key unless [buttonKey] gives it another.
+RemoveFromLineupButton? lineupRemoveButton(
+  BuildContext context, {
+  required LineupGame game,
+  required EventDetailReady detail,
+  required EventLineupState state,
+  required bool acting,
+  required DateTime now,
+  required DateTime Function() clock,
+  Key? buttonKey,
+}) {
+  final gate = lineupRemoveGate(detail, game, now: now);
+  if (gate == LineupRemoveGate.hidden) return null;
+  final writing = state.writing;
+  return RemoveFromLineupButton(
+    buttonKey: buttonKey,
+    game: game,
+    started: gate == LineupRemoveGate.started,
+    inert:
+        writing != null &&
+        writing.write == LineupWrite.remove &&
+        writing.id == game.id,
+    enabled: !detail.reading && !acting && !state.busy,
+    runOver: !state.busy,
+    onPressed: () => removeFromLineup(context, game, clock: clock),
+  );
+}
+
+/// Remove from lineup (#520), the lineup row's main action and in its quick
+/// look: a direct write, so disabled offline through [BgeOnlineOnly], with
+/// the connection's reason as its hint. Named for its game to a screen
+/// reader, as its row names it ([gameName], #851).
+///
+/// Where the lineup has started ([started]) it is disabled, with
+/// [EventsLocalizations.eventsLineupStartedHint] as its hint (STYLE_GUIDE §5:
+/// disable, don't hide); its row and quick look draw the same words under
+/// it. It is disabled with no hint while it may not be pressed for a while
+/// ([enabled]).
+///
+/// Its press opens a dialog, which hands focus back to it as it closes, just
+/// before the removal goes out, and a disabled button can't hold focus
+/// (#607). So, as Take back is, it is held through [HeldPress] from its
+/// press until its removal is over ([runOver]): enabled, ignoring presses
+/// and showing a spinner, wherever it would otherwise be unavailable. It is
+/// inert, too, while its game's removal is out ([inert]), however that began.
+class RemoveFromLineupButton extends StatefulWidget {
+  const RemoveFromLineupButton({
+    required this.game,
+    required this.started,
+    required this.inert,
+    required this.enabled,
+    required this.runOver,
+    required this.onPressed,
+    this.buttonKey,
+    super.key,
+  });
+
+  final LineupGame game;
+
+  /// Key on the button itself: the row's
+  /// ([EventDetailScreen.lineupRemoveKey]) where null, or the quick look's.
+  final Key? buttonKey;
+
+  /// Whether the lineup has started, so the game stays in it.
+  final bool started;
+
+  /// Whether this game's removal is out.
+  final bool inert;
+
+  /// Whether it may be pressed now, connection and [started] aside: false
+  /// while a detail read runs, the screen's own request is out, or a lineup
+  /// write is out.
+  final bool enabled;
+
+  /// Whether no lineup write is out: once its own removal went out, that is
+  /// over.
+  final bool runOver;
+
+  /// Asks first, and sends the removal. Completes true when it was sent, and
+  /// false when nothing was.
+  final Future<bool> Function() onPressed;
+
+  @override
+  State<RemoveFromLineupButton> createState() => RemoveFromLineupButtonState();
+}
+
+class RemoveFromLineupButtonState extends State<RemoveFromLineupButton>
+    with HeldPress<RemoveFromLineupButton> {
+  @override
+  bool get heldActionOver => widget.runOver;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = EventsLocalizations.of(context);
+    final offline = BgeConnectivityScope.offlineOf(context);
+    final game = widget.game;
+    final started = widget.started;
+    final available = widget.enabled && !offline && !started;
+    // Offline, or with its lineup started, it is disabled, pressed or not:
+    // no press made it so (#49).
+    final inert =
+        heldInert(available: available, disabled: offline || started) ||
+        (widget.inert && !offline && !started);
+
+    return BgeOnlineOnly(
+      showNote: false,
+      child: Semantics(
+        // One reason: offline [BgeOnlineOnly] gives its own.
+        hint: started && !offline ? l10n.eventsLineupStartedHint : null,
+        child: BgeInertButton(
+          inert: inert,
+          label: l10n.eventsLineupRemoveNamed(
+            gameName(l10n, game.title, game.subtitle),
+          ),
+          onPressed: available || inert
+              ? () => unawaited(holdPress(widget.onPressed))
+              : null,
+          builder: (context, focusNode, onPressed) => TextButton.icon(
+            key: widget.buttonKey ?? EventDetailScreen.lineupRemoveKey(game.id),
+            focusNode: focusNode,
+            onPressed: onPressed,
+            icon: inert
+                ? const HeldSpinner()
+                : const Icon(Icons.remove_circle_outline),
+            label: Text(l10n.eventsLineupRemove),
           ),
         ),
       ),

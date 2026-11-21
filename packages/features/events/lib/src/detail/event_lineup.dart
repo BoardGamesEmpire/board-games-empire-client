@@ -3,6 +3,7 @@
 library;
 
 import 'package:events/src/bloc/event_detail_state.dart';
+import 'package:events/src/bloc/event_lineup_state.dart';
 import 'package:events/src/detail/event_actions.dart';
 import 'package:events/src/detail/event_date_actions.dart';
 import 'package:events/src/detail/event_status_now.dart';
@@ -241,3 +242,22 @@ LineupRemoveGate lineupRemoveGate(
 
   return started ? LineupRemoveGate.started : LineupRemoveGate.open;
 }
+
+/// Whether the lineup [known] (null where it isn't read, [knownLineup]) holds
+/// a game the pool row [offeredGameId] supplies, one a host could take out
+/// (#520): its [lineupRemoveGate] isn't [LineupRemoveGate.started], as of
+/// [now]. What a take-back's 409 names, for a game in the lineup, as the step
+/// that frees it: a game whose lineup has started stays in it, which no host
+/// can change.
+bool lineupHoldsRemovable(
+  EventDetailReady state,
+  List<LineupGame>? known,
+  String offeredGameId, {
+  required DateTime now,
+}) =>
+    known?.any(
+      (game) =>
+          game.suppliedById == offeredGameId &&
+          lineupRemoveGate(state, game, now: now) != LineupRemoveGate.started,
+    ) ??
+    false;

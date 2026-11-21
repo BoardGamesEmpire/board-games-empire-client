@@ -976,7 +976,7 @@
   },
   "eventsGamesStillSupplies": "{title} is nominated, or in the lineup for a date still to come, so it can't come off your games yet.",
   "@eventsGamesStillSupplies": {
-    "description": "Banner at the foot of an event's screen when a game the user tried to take back stays on the games they're bringing: it has been put forward for the event, or is set to be played on a date that hasn't happened.",
+    "description": "Banner at the foot of an event's screen when a game the user tried to take back stays on the games they're bringing: it has been put forward for the event, or is set to be played on a date that hasn't happened. Shown when the lineup the screen holds doesn't show the game in it, else eventsGamesStillInLineup says what to do (#520).",
     "placeholders": {
       "title": {
         "type": "String",
@@ -3782,6 +3782,70 @@
       "title": {
         "type": "String",
         "example": "Catan"
+      }
+    }
+  },
+  "eventsLineupRemove": "Remove from lineup",
+  "@eventsLineupRemove": {
+    "description": "Label of the button, on a game's row on the Lineup sub-tab of the Games tab and in that game's quick look, that takes the game out of the lineup, for a host (#520). It asks first (eventsLineupRemoveConfirm)."
+  },
+  "eventsLineupRemoveNamed": "Remove {title} from the lineup",
+  "@eventsLineupRemoveNamed": {
+    "description": "What a screen reader says for Remove from lineup (eventsLineupRemove), naming its game, on its row and in its quick look (#520). The title is the game's title, with its subtitle where it has one (#920).",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsLineupRemoveConfirm": "Take {title} out of the lineup?",
+  "@eventsLineupRemoveConfirm": {
+    "description": "Title of the dialog that asks before a host takes a game out of the lineup (eventsLineupRemove) (#520). The title is the game's title, with its subtitle where it has one (#920).",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsLineupRemoveConfirmBody": "Everyone still coming is told. Whoever brings it can take it off their games, and it can be nominated again.",
+  "@eventsLineupRemoveConfirmBody": {
+    "description": "Body of the dialog that asks before a host takes a game out of the lineup (eventsLineupRemoveConfirm): what a removal does (#520)."
+  },
+  "eventsLineupRemoveConfirmKeep": "Keep it",
+  "@eventsLineupRemoveConfirmKeep": {
+    "description": "Button in the dialog that asks before a host takes a game out of the lineup (eventsLineupRemoveConfirm) that closes it and leaves the game in the lineup (#520)."
+  },
+  "eventsLineupRemoveConfirmAction": "Remove from lineup",
+  "@eventsLineupRemoveConfirmAction": {
+    "description": "Confirm button of the dialog that asks before a host takes a game out of the lineup (eventsLineupRemoveConfirm), drawn as a destructive action (#520)."
+  },
+  "eventsLineupStartedHint": "This lineup has started or was called off, so it can't be changed.",
+  "@eventsLineupStartedHint": {
+    "description": "The reason Remove from lineup (eventsLineupRemove) is disabled on a game whose date has started or was called off, or whose event was called off, shown under the button and as its hint on the Lineup sub-tab of the Games tab and in the game's quick look (#520)."
+  },
+  "eventsGamesStillInLineup": "{title} is in the lineup. A host can take it out of the lineup, then it can come off your games.",
+  "@eventsGamesStillInLineup": {
+    "description": "Banner at the foot of an event's screen when a game the user tried to take back stays on the games they're bringing because it is in the lineup: a host can take it out of the lineup (eventsLineupRemove), and then it can come off. The title is the game's title, with its subtitle where it has one (#920).",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsGamesTheirsStillInLineup": "{title} is in the lineup. A host can take it out of the lineup, then it can come off {name}'s games.",
+  "@eventsGamesTheirsStillInLineup": {
+    "description": "Banner at the foot of an event's screen when a game someone else offered to bring, which the user tried to take back for them, stays on that person's games because it is in the lineup. eventsGamesStillInLineup, for another person's game. {name} is that person's name, or eventsAttendeeSomeone for someone with none.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      },
+      "name": {
+        "type": "String",
+        "example": "Ada Lovelace"
       }
     }
   }

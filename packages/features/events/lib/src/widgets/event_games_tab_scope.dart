@@ -866,10 +866,13 @@ class EventGamesTabController extends ChangeNotifier {
   /// the scope's, with [dates] the event's dates, which order its rows in
   /// the date view ([lineupGroupsFor], #1042).
   ///
-  /// A row that leaves while focus is in it hands focus on once that frame
-  /// has ended, as a nominations row does ([nominationsChanged]): to the
-  /// next row shown, else the one before it, its head from its head. A row
-  /// leaves only by a read, as nothing on it can be changed here. Where no
+  /// A row that leaves while focus is in it, or as the Remove from lineup
+  /// sent from it ends (#520), however it was pressed, hands focus on once
+  /// that frame has ended, as a nominations row does ([nominationsChanged]):
+  /// to the next row shown, else the one before it, in the same place among
+  /// its controls, its head from its head. A screen reader's activation moves
+  /// no input focus, so the write's end arms the hand-off too. A row also
+  /// leaves by a read. Where no
   /// row is left, to Add a game where it is built and enabled
   /// ([lineupAddArea]), else focus stays on the page. Only while the Lineup
   /// sub-tab is chosen (#945), and not
@@ -882,6 +885,11 @@ class EventGamesTabController extends ChangeNotifier {
     required List<EventOccurrence> dates,
   }) {
     if (identical(previous.games, current.games)) return;
+    // The removal that ended in this change, if one did: its row's id.
+    final removed = switch (previous.writing) {
+      (write: LineupWrite.remove, :final id) when current.writing == null => id,
+      _ => null,
+    };
     List<String> shown(List<LineupGame> games) => [
       for (final group in lineupGroupsFor(_dateView, games, dates))
         for (final game in group.games) game.id,
@@ -894,8 +902,8 @@ class EventGamesTabController extends ChangeNotifier {
       areas: _lineupAreas,
       entryOf: LineupEntry.new,
       list: EventGamesSection.lineup,
-      // No write on the lineup can take its row away.
-      handsOn: (_) => false,
+      // The row whose removal ended, however it was pressed.
+      handsOn: (id) => id == removed,
       fallback: _focusLineupHeader,
     );
   }
