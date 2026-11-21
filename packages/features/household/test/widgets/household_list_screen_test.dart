@@ -340,6 +340,17 @@ void main() {
       expect(find.byType(BgeOutlinedRow), findsNWidgets(2));
     });
 
+    testWidgets('a focused row is ringed (#758)', (tester) async {
+      await tester.pumpWidget(harness(onOpen: (_, _) {}));
+      households.add([_household('h-1', name: 'Alpha')]);
+      await tester.pump();
+
+      expect(
+        await keyboardFocusShowsRing(tester, find.text('Alpha')),
+        isTrue,
+      );
+    });
+
     testWidgets('tells a screen reader how many rows there are', (
       tester,
     ) async {

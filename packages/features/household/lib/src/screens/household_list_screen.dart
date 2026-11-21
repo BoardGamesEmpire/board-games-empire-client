@@ -542,43 +542,50 @@ class _HouseholdRow extends StatelessWidget {
     // one source of truth instead of two that can disagree.
     return BgeOutlinedRow(
       child: MergeSemantics(
-        child: ListTile(
-          // The tap target, the focus stop and the keyboard activation all
-          // come from this one callback — ListTile builds an InkWell when it
-          // has an onTap and nothing when it does not, which is exactly the
-          // inert row #269 wanted.
-          onTap: open == null ? null : () => open(context, household.id),
-          title: Text(household.name),
-          // The badge sits UNDER the name, not in `ListTile.trailing`.
-          //
-          // Trailing is a fixed slot measured against the tile width, and
-          // "Not yet synced" at the 200% text scale this app guarantees
-          // (`BgeTextScale.maxScaleFactor`) is wider than a phone row has to
-          // spare — Flutter asserts *Trailing widget consumes the entire tile
-          // width* and the row fails to lay out. It fires from 1.6× on a
-          // 360dp window, so it is the ordinary large-text setting rather
-          // than the extreme.
-          //
-          // Constraining the slot instead would have kept the position and
-          // truncated the words, which is the one thing this badge cannot
-          // afford to lose: it is the whole reason the state is not conveyed
-          // by colour.
-          subtitle: hasDescription || syncState != null
-              ? Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (hasDescription) Text(description),
-                    if (syncState != null) ...[
-                      if (hasDescription) const BgeGap.xs(),
-                      BgeSyncBadge(
-                        state: syncState,
-                        label: _syncLabel(l10n, syncState),
-                      ),
+        child: BgeRowFocusRing(
+          builder: (context, row) => ListTile(
+            focusNode: row.focusNode,
+            onFocusChange: row.onFocusChange,
+            focusColor: row.focusColor,
+            // The tap target, the focus stop and the keyboard activation all
+            // come from this one callback — ListTile builds an InkWell when it
+            // has an onTap and nothing when it does not, which is exactly the
+            // inert row #269 wanted.
+            onTap: row.onTap(
+              open == null ? null : () => open(context, household.id),
+            ),
+            title: Text(household.name),
+            // The badge sits UNDER the name, not in `ListTile.trailing`.
+            //
+            // Trailing is a fixed slot measured against the tile width, and
+            // "Not yet synced" at the 200% text scale this app guarantees
+            // (`BgeTextScale.maxScaleFactor`) is wider than a phone row has to
+            // spare — Flutter asserts *Trailing widget consumes the entire tile
+            // width* and the row fails to lay out. It fires from 1.6× on a
+            // 360dp window, so it is the ordinary large-text setting rather
+            // than the extreme.
+            //
+            // Constraining the slot instead would have kept the position and
+            // truncated the words, which is the one thing this badge cannot
+            // afford to lose: it is the whole reason the state is not conveyed
+            // by colour.
+            subtitle: hasDescription || syncState != null
+                ? Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (hasDescription) Text(description),
+                      if (syncState != null) ...[
+                        if (hasDescription) const BgeGap.xs(),
+                        BgeSyncBadge(
+                          state: syncState,
+                          label: _syncLabel(l10n, syncState),
+                        ),
+                      ],
                     ],
-                  ],
-                )
-              : null,
+                  )
+                : null,
+          ),
         ),
       ),
     );

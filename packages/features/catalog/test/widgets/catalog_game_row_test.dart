@@ -41,4 +41,19 @@ void main() {
       );
     });
   }
+
+  testWidgets('a focused row is ringed (#758)', (tester) async {
+    await tester.pumpWidget(
+      catalogApp(
+        Scaffold(
+          body: CatalogGameRow(title: 'Wingspan', onTap: () {}),
+        ),
+      ),
+    );
+
+    expect(
+      await keyboardFocusShowsRing(tester, find.text('Wingspan')),
+      isTrue,
+    );
+  });
 }

@@ -141,6 +141,13 @@ void main() {
     expect(find.byType(BgeOutlinedRow), findsNWidgets(2));
   });
 
+  testWidgets('a focused row is ringed (#758)', (tester) async {
+    remote.listing([bgg, steam]);
+    await pumpScreen(tester, onOpen: (_, _) {});
+
+    expect(await keyboardFocusShowsRing(tester, find.text('BGG')), isTrue);
+  });
+
   testWidgets('an empty list says what a DataGateway is', (tester) async {
     remote.listing(const []);
 

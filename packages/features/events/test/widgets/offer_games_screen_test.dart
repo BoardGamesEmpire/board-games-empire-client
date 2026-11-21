@@ -301,6 +301,19 @@ void main() {
     }
   });
 
+  testWidgets('a focused row is ringed (#758)', (tester) async {
+    await open(tester);
+    await reveal(tester, row('c-azul'));
+
+    expect(
+      await keyboardFocusShowsRing(
+        tester,
+        find.descendant(of: row('c-azul'), matching: find.byType(Text)).first,
+      ),
+      isTrue,
+    );
+  });
+
   testWidgets('a row sets its thumbnail at the top at 100% text (#647)', (
     tester,
   ) async {
