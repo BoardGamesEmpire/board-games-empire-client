@@ -8,6 +8,8 @@ import 'package:events/src/bloc/event_detail_bloc.dart';
 import 'package:events/src/bloc/event_detail_state.dart';
 import 'package:events/src/bloc/event_games_bloc.dart';
 import 'package:events/src/bloc/event_games_state.dart';
+import 'package:events/src/bloc/event_lineup_bloc.dart';
+import 'package:events/src/bloc/event_lineup_state.dart';
 import 'package:events/src/bloc/event_nominations_bloc.dart';
 import 'package:events/src/bloc/event_nominations_state.dart';
 import 'package:events/src/detail/event_games_pool.dart';
@@ -15,6 +17,8 @@ import 'package:events/src/detail/event_nominations.dart';
 import 'package:events/src/screens/event_detail_screen.dart';
 import 'package:events/src/widgets/event_games_footer.dart';
 import 'package:events/src/widgets/event_games_tab_scope.dart';
+import 'package:events/src/widgets/event_labels.dart';
+import 'package:events/src/widgets/event_lineup_section.dart';
 import 'package:events/src/widgets/game_name.dart';
 import 'package:events/src/widgets/nomination_filters_sheet.dart';
 import 'package:events/src/widgets/nomination_row_controls.dart';
@@ -26,8 +30,9 @@ import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
 /// What a Games tab quick look is about (#957): one entry of the event's
-/// lists, by its id. Equal by what it names, so the tab can hold a row's
-/// focus and where the row left from by it. #519 adds a lineup entry.
+/// lists, by its id: a copy in the pool, a nomination, or a game on the
+/// lineup (#519). Equal by what it names, so the tab can hold a row's focus
+/// and where the row left from by it.
 sealed class EventGameEntry extends Equatable {
   const EventGameEntry();
 
@@ -55,6 +60,16 @@ final class NominationEntry extends EventGameEntry {
   List<Object?> get props => [nominationId];
 }
 
+/// A game on the event's lineup (#519), by the lineup game's id.
+final class LineupEntry extends EventGameEntry {
+  const LineupEntry(this.lineupGameId);
+
+  final String lineupGameId;
+
+  @override
+  List<Object?> get props => [lineupGameId];
+}
+
 /// Opens [entry]'s [EventGameQuickLook] over the event's screen (#957),
 /// through [showBgePopup]: a sheet at `compact` and a dialog from `medium`
 /// up, on the root navigator. The pop-up is named [title], the game's name
@@ -62,15 +77,15 @@ final class NominationEntry extends EventGameEntry {
 ///
 /// The root navigator is outside the screen, so the quick look is given
 /// what the tab reads from [context]: the detail's, the pool's, the
-/// nominations' and the actions' blocs, and the tab's controller
-/// ([EventGamesTabScope.value]). It reads the blocs live, as the tab does,
-/// so a write or a read under it shows at once. The page's own clock builds
-/// only the page, so the quick look listens for its ticks through the
-/// controller ([EventGamesTabController.clockTicks]) and builds again at the
-/// same boundaries, reading the same clock. The screen provides all four
-/// blocs wherever the tab is built: the Games tab exists only where the
-/// screen has actions, and the tab's scope reads the pool and the
-/// nominations itself.
+/// nominations', the lineup's (#519) and the actions' blocs, and the tab's
+/// controller ([EventGamesTabScope.value]). It reads the blocs live, as the
+/// tab does, so a write or a read under it shows at once. The page's own
+/// clock builds only the page, so the quick look listens for its ticks
+/// through the controller ([EventGamesTabController.clockTicks]) and builds
+/// again at the same boundaries, reading the same clock. The screen provides
+/// all five blocs wherever the tab is built: the Games tab exists only where
+/// the screen has actions, and the tab's scope reads the pool, the
+/// nominations and the lineup itself.
 ///
 /// The tab knows a quick look is open until it closes
 /// ([EventGamesTabController.quickLookOpened]), and its lists hand no focus
@@ -85,6 +100,7 @@ Future<void> showEventGameQuickLook(
   final detail = context.read<EventDetailBloc>();
   final games = context.read<EventGamesBloc>();
   final nominations = context.read<EventNominationsBloc>();
+  final lineup = context.read<EventLineupBloc>();
   final actions = context.read<EventActionsBloc>();
   controller.quickLookOpened();
   try {
@@ -96,6 +112,7 @@ Future<void> showEventGameQuickLook(
           BlocProvider<EventDetailBloc>.value(value: detail),
           BlocProvider<EventGamesBloc>.value(value: games),
           BlocProvider<EventNominationsBloc>.value(value: nominations),
+          BlocProvider<EventLineupBloc>.value(value: lineup),
           BlocProvider<EventActionsBloc>.value(value: actions),
         ],
         child: EventGamesTabScope.value(
@@ -175,6 +192,16 @@ Future<void> showEventGameQuickLook(
 /// trackpad on the button ([BgePointerFocus]). A write that leaves its
 /// button there, refused or failed, leaves focus on it.
 ///
+/// ## A lineup game
+///
+/// The name with its subtitle ([gameName]); then, as one node, its platform,
+/// what it is played as, Primary, or Filler with the longest it should run
+/// where the host set one ([lineupRoleLine]), who brings it
+/// ([lineupSupplierLine]), the date it is on, or "Every date" for the
+/// event's own, or that its date is no longer on the event, the note the
+/// host left on it, and that it came from a nomination, where it did (#519).
+/// Nothing on it can be changed here.
+///
 /// ## Outcomes
 ///
 /// The page's footer says how a write went, under the pop-up's barrier,
@@ -195,10 +222,11 @@ Future<void> showEventGameQuickLook(
 /// ## Its entry leaves
 ///
 /// Where the pool no longer holds the copy, taken back from here or by
-/// anyone else, or the nominations no longer hold the nomination, as a read
-/// finds, or the event is no longer shown, it says so in a live region,
-/// under the heading, and offers nothing to press but the outcomes'
-/// Dismiss, as Home's does when its game goes (#707). The outcomes still
+/// anyone else, or the nominations no longer hold the nomination, or the
+/// lineup no longer holds the game (#519), as a read finds, or the event is
+/// no longer shown, it says so in a live region, under the heading, and
+/// offers nothing to press but the outcomes' Dismiss, as Home's does when
+/// its game goes (#707). The outcomes still
 /// show under it: a take-back's, whose copy has gone, or a write's that
 /// failed as a read found the entry gone. As it closes, the tab hands focus
 /// to the row in the entry's place
@@ -234,6 +262,10 @@ class _EventGameQuickLookState extends State<EventGameQuickLook> {
   /// it has gone.
   EventNomination? _nomination;
 
+  /// The lineup game as the lineup last held it, for the heading once it has
+  /// gone (#519).
+  LineupGame? _lineupGame;
+
   /// Whether View game has opened the game's page, which it does once.
   bool _gameOpened = false;
 
@@ -261,25 +293,37 @@ class _EventGameQuickLookState extends State<EventGameQuickLook> {
       builder: (context, games) =>
           BlocBuilder<EventNominationsBloc, EventNominationsState>(
             builder: (context, nominations) =>
-                BlocBuilder<EventActionsBloc, EventActionsState>(
-                  builder: (context, actions) => switch (widget.entry) {
-                    OfferedCopyEntry(:final offeredGameId) => _offeredCopy(
-                      context,
-                      offeredGameId,
-                      detail: detail,
-                      games: games,
-                      nominations: nominations,
-                      acting: eventScreenActing(actions),
-                    ),
-                    NominationEntry(:final nominationId) => _nominationOf(
-                      context,
-                      nominationId,
-                      detail: detail,
-                      games: games,
-                      nominations: nominations,
-                      acting: eventScreenActing(actions),
-                    ),
-                  },
+                BlocBuilder<EventLineupBloc, EventLineupState>(
+                  builder: (context, lineup) =>
+                      BlocBuilder<EventActionsBloc, EventActionsState>(
+                        builder: (context, actions) => switch (widget.entry) {
+                          OfferedCopyEntry(:final offeredGameId) =>
+                            _offeredCopy(
+                              context,
+                              offeredGameId,
+                              detail: detail,
+                              games: games,
+                              nominations: nominations,
+                              acting: eventScreenActing(actions),
+                            ),
+                          NominationEntry(:final nominationId) => _nominationOf(
+                            context,
+                            nominationId,
+                            detail: detail,
+                            games: games,
+                            nominations: nominations,
+                            acting: eventScreenActing(actions),
+                          ),
+                          LineupEntry(:final lineupGameId) => _lineupOf(
+                            context,
+                            lineupGameId,
+                            detail: detail,
+                            games: games,
+                            nominations: nominations,
+                            lineup: lineup,
+                          ),
+                        },
+                      ),
                 ),
           ),
     ),
@@ -515,6 +559,93 @@ class _EventGameQuickLookState extends State<EventGameQuickLook> {
         acting: acting,
       ),
       now: controller.clock(),
+      outcomes: outcomes,
+      onOpenGame: _viewGame(controller, shown.gameId),
+    );
+  }
+
+  /// The quick look of the lineup game [id] (#519): see "A lineup game" on
+  /// [EventGameQuickLook].
+  Widget _lineupOf(
+    BuildContext context,
+    String id, {
+    required EventDetailState detail,
+    required EventGamesState games,
+    required EventNominationsState nominations,
+    required EventLineupState lineup,
+  }) {
+    final l10n = EventsLocalizations.of(context);
+    final theme = Theme.of(context);
+    final quiet = theme.textTheme.bodyMedium?.copyWith(
+      color: theme.colorScheme.onSurfaceVariant,
+    );
+    final controller = EventGamesTabScope.of(context);
+    final shown = detail is EventDetailReady
+        ? lineup.games.where((each) => each.id == id).firstOrNull
+        : null;
+    final game = _lineupGame = shown ?? _lineupGame;
+    final name = game == null
+        ? widget.title
+        : gameName(l10n, game.title, game.subtitle);
+    final ready = detail is EventDetailReady ? detail : null;
+    final names = ready == null
+        ? const <String, String?>{}
+        : poolNames(ready.detail);
+    final viewerId = ready?.detail.attendance?.id;
+    // Nothing here is a write, but one begun before it opened can end while
+    // it is open, and the footer that would say it is under the barrier.
+    final outcomes = [
+      ?_poolOutcome(
+        games: games,
+        nominations: nominations,
+        viewerId: viewerId,
+        names: names,
+      ),
+      ?_nominationsOutcome(nominations),
+    ];
+    if (shown == null || detail is! EventDetailReady) {
+      return _QuickLookFrame(
+        thumbnail: game?.thumbnail,
+        name: name,
+        gone: l10n.eventsQuickLookLineupGone,
+        outcomes: outcomes,
+      );
+    }
+
+    final role = lineupRoleLine(l10n, shown);
+    final note = shown.notes?.trim();
+    final dateId = shown.occurrenceId;
+    // Its date as the dates are named, else every date for the event's own,
+    // else gone where the event no longer lists it.
+    final date = dateId == null
+        ? l10n.eventsLineupEveryDate
+        : switch (detail.detail.snapshot.occurrences
+              .where((each) => each.id == dateId)
+              .firstOrNull) {
+            final occurrence? => eventDateName(
+              context,
+              occurrence,
+              now: controller.clock(),
+            ),
+            null => l10n.eventsLineupDateGone,
+          };
+
+    return _QuickLookFrame(
+      thumbnail: shown.thumbnail,
+      name: name,
+      lines: [
+        Text(shown.platformName, style: quiet),
+        if (role != null) Text(role, style: quiet),
+        Text(
+          lineupSupplierLine(l10n, shown, viewerId: viewerId, names: names),
+          style: quiet,
+        ),
+        Text(date, style: quiet),
+        if (note != null && note.isNotEmpty)
+          Text(l10n.eventsLineupNote(note), style: quiet),
+        if (shown.nominationId != null)
+          Text(l10n.eventsLineupFromNomination, style: quiet),
+      ],
       outcomes: outcomes,
       onOpenGame: _viewGame(controller, shown.gameId),
     );

@@ -4,25 +4,29 @@ import 'package:events/src/bloc/event_detail_bloc.dart';
 import 'package:events/src/bloc/event_detail_state.dart';
 import 'package:events/src/bloc/event_games_bloc.dart';
 import 'package:events/src/bloc/event_games_state.dart';
+import 'package:events/src/bloc/event_lineup_bloc.dart';
+import 'package:events/src/bloc/event_lineup_state.dart';
 import 'package:events/src/bloc/event_nominations_bloc.dart';
 import 'package:events/src/bloc/event_nominations_state.dart';
 import 'package:events/src/detail/event_games_pool.dart';
+import 'package:events/src/detail/event_lineup.dart';
 import 'package:events/src/detail/event_nominations.dart';
 import 'package:events/src/screens/event_detail_screen.dart';
 import 'package:events/src/widgets/event_detail_tabs.dart';
 import 'package:events/src/widgets/event_game_quick_look.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:models/domain.dart' show CollectionFilter, EventNomination;
+import 'package:models/domain.dart'
+    show CollectionFilter, EventNomination, EventOccurrence, LineupGame;
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
 /// What the Games tab keeps across the screen's rebuilds (#516): its sub-tabs'
 /// controller (#945), its filter, whether it has been shown, the ids the pool
 /// was last asked with, how the pool's last read ended and how the nominations'
-/// did (#517), the nominations' own filter and order (#517), the focus
-/// nodes a control that leaves hands focus on to, and what the tab's quick
-/// looks reach the screen by (#957).
+/// (#517) and the lineup's (#519) did, the nominations' own filter and order
+/// (#517), the focus nodes a control that leaves hands focus on to, and what
+/// the tab's quick looks reach the screen by (#957).
 ///
 /// It notifies its listeners when the chosen sub-tab changes, once for each
 /// change and as the change starts, and when the sub-tabs' controller is
@@ -30,8 +34,9 @@ import 'package:ui_tokens/ui_tokens.dart';
 ///
 /// One per screen, held by [EventGamesTabScope] above the detail's builder,
 /// beside the tab controller, so no read, write, clock tick or switch to the
-/// Details tab under it forgets either filter, and the screen reads the pool
-/// and the nominations after a detail read only once the tab has been shown.
+/// Details tab under it forgets either filter, and the screen reads the pool,
+/// the nominations and the lineup after a detail read only once the tab has
+/// been shown.
 class EventGamesTabController extends ChangeNotifier {
   PoolFilter _filter = const PoolFilter();
   NominationFilter _nominationFilter = const NominationFilter();
@@ -41,6 +46,7 @@ class EventGamesTabController extends ChangeNotifier {
   bool _disposed = false;
   EventGamesLoad? _settled;
   EventNominationsLoad? _nominationsSettled;
+  EventLineupLoad? _lineupSettled;
 
   late TabController _sections;
 
@@ -313,9 +319,11 @@ class EventGamesTabController extends ChangeNotifier {
   /// the row the quick look was opened from. To [entry]'s row head where its
   /// row is built. Where the row left while the quick look was open, to the
   /// head of the row now in its place, else of the nearest one before it,
-  /// as [poolChanged] and [nominationsChanged] noted; else to the sub-tab's
-  /// first header control: Filters for a nomination; for an offered copy,
-  /// Offer games where it is built and enabled, else the search field.
+  /// as [poolChanged], [nominationsChanged] and [lineupChanged] noted; else
+  /// to the sub-tab's first header control: Filters for a nomination; for an
+  /// offered copy, Offer games where it is built and enabled, else the
+  /// search field. The lineup has none, so for a lineup game focus stays on
+  /// the page (#519).
   ///
   /// Once the frame that closes it has ended, as the lists' own hand-offs
   /// are, and only while focus is free then ([focusIsFree]): on nothing, on
@@ -351,6 +359,8 @@ class EventGamesTabController extends ChangeNotifier {
             _focusPoolHeader();
           case NominationEntry():
             _focusNominationsHeader();
+          case LineupEntry():
+            _focusLineupHeader();
         }
       })
       // A post-frame callback asks for no frame of its own.
@@ -570,6 +580,85 @@ class EventGamesTabController extends ChangeNotifier {
           _nominationsSettled ?? EventNominationsLoad.idle,
         final settled => settled,
       };
+
+  /// Notes how the lineup's last read ended (#519), from [state] as the
+  /// lineup's bloc emits it, whichever tab is showing then: what
+  /// [drawnLineupLoad] draws while the next read is out. A state with a read
+  /// out, or none made, changes nothing.
+  void lineupEmitted(EventLineupState state) {
+    switch (state.load) {
+      case EventLineupLoad.idle || EventLineupLoad.loading:
+        break;
+      case final settled:
+        _lineupSettled = settled;
+    }
+  }
+
+  /// The load the Lineup sub-tab draws [state] as (#519): its own, or while
+  /// a read is out, the last one a read ended with ([lineupEmitted]), as
+  /// [drawnNominationsLoad] is the nominations'. So a read again neither
+  /// flashes a spinner over "nothing in the lineup" nor takes a failure's
+  /// Try again away while it runs. Before any read has ended it is idle. It
+  /// changes nothing, so a build may ask any number of times.
+  EventLineupLoad drawnLineupLoad(EventLineupState state) =>
+      switch (state.load) {
+        EventLineupLoad.idle ||
+        EventLineupLoad.loading => _lineupSettled ?? EventLineupLoad.idle,
+        final settled => settled,
+      };
+
+  /// Each lineup row, by the lineup game's id (#519).
+  final Map<String, FocusNode> _lineupAreas = {};
+
+  /// The node that holds lineup game [id]'s row (#519), so a row that
+  /// leaves can say it held focus ([lineupChanged]). Made as it is first
+  /// built and let go once the game leaves the lineup.
+  FocusNode lineupArea(String id) => _lineupAreas.putIfAbsent(
+    id,
+    () => FocusNode(
+      debugLabel: 'Lineup row $id',
+      canRequestFocus: false,
+      skipTraversal: true,
+    ),
+  );
+
+  /// Answers the lineup going from [previous] to [current], as the bloc
+  /// emits it and before the frame that builds it (#519), from [context],
+  /// the scope's, with [dates] the event's dates, which order its rows
+  /// ([lineupGroups]).
+  ///
+  /// A row that leaves while focus is in it hands focus on once that frame
+  /// has ended, as a nominations row does ([nominationsChanged]): to the
+  /// next row shown, else the one before it, its head from its head. A row
+  /// leaves only by a read, as nothing on it can be changed here. Where no
+  /// row is left, focus stays on the page: the lineup has no header control
+  /// to take it. Only while the Lineup sub-tab is chosen (#945), and not
+  /// while a quick look is open (#957), where each row that leaves notes
+  /// where it left from instead ([focusAfterQuickLook]).
+  void lineupChanged(
+    BuildContext context,
+    EventLineupState previous,
+    EventLineupState current, {
+    required List<EventOccurrence> dates,
+  }) {
+    if (identical(previous.games, current.games)) return;
+    List<String> shown(List<LineupGame> games) => [
+      for (final group in lineupGroups(games, dates))
+        for (final game in group.games) game.id,
+    ];
+    _rowsLeft(
+      context,
+      shownBefore: shown(previous.games),
+      shownAfter: shown(current.games),
+      kept: {for (final game in current.games) game.id},
+      areas: _lineupAreas,
+      entryOf: LineupEntry.new,
+      list: EventGamesSection.lineup,
+      // No write on the lineup can take its row away.
+      handsOn: (_) => false,
+      fallback: _focusLineupHeader,
+    );
+  }
 
   /// Answers the pool going from [previous] to [current], as the bloc
   /// emits it and before the frame that builds it: a pool row's hand-off
@@ -836,6 +925,12 @@ class EventGamesTabController extends ChangeNotifier {
     }
   }
 
+  /// As a hand-off with no lineup row left to take focus does (#519): the
+  /// Lineup sub-tab has no header control to take it, so focus stays on the
+  /// page, as where the tab has nothing left to take focus
+  /// ([EventGamesTabScope]).
+  void _focusLineupHeader() {}
+
   @override
   void dispose() {
     _disposed = true;
@@ -848,6 +943,9 @@ class EventGamesTabController extends ChangeNotifier {
     nominationsSortFocus.dispose();
     nominationsClearFiltersFocus.dispose();
     for (final node in _nominationAreas.values) {
+      node.dispose();
+    }
+    for (final node in _lineupAreas.values) {
       node.dispose();
     }
     for (final node in _poolRowAreas.values) {
@@ -870,9 +968,10 @@ class EventGamesTabController extends ChangeNotifier {
 /// Games chosen while the detail loads shows once the detail is ready on the
 /// server. An event only this device knows has no Games tab to show, and the
 /// screen takes its tabs back to Details (#856), so Games doesn't wait on it
-/// for the event to reach the server. [onFirstShown] reads the pool and the
-/// nominations (#517) and answers whether the tab showed on a ready detail;
-/// only then is the tab [EventGamesTabController.shown].
+/// for the event to reach the server. [onFirstShown] reads the pool, the
+/// nominations (#517) and the lineup (#519) and answers whether the tab
+/// showed on a ready detail; only then is the tab
+/// [EventGamesTabController.shown].
 ///
 /// It watches the pool, and tells the controller each state as the pool
 /// emits it, before the frame that builds it and on either tab: how the last
@@ -880,7 +979,9 @@ class EventGamesTabController extends ChangeNotifier {
 /// below. It watches the nominations the same way, for how their last read
 /// ended ([EventGamesTabController.nominationsEmitted]), and a row leaving
 /// the rows the nominations' filter keeps
-/// ([EventGamesTabController.nominationsChanged]).
+/// ([EventGamesTabController.nominationsChanged]); and the lineup, for how
+/// its last read ended ([EventGamesTabController.lineupEmitted]) and a row
+/// leaving it ([EventGamesTabController.lineupChanged], #519).
 ///
 /// ## A pool row's hand-off
 ///
@@ -937,10 +1038,10 @@ class EventGamesTabScope extends StatefulWidget {
     super.key,
   });
 
-  /// Reads the pool and the nominations for the tab's first showing, and
-  /// answers whether it showed on a ready detail. Asked again, as above,
-  /// until it does. Given the scope's controller, which its context, above
-  /// the scope's own, can't look up.
+  /// Reads the pool, the nominations and the lineup for the tab's first
+  /// showing, and answers whether it showed on a ready detail. Asked again,
+  /// as above, until it does. Given the scope's controller, which its
+  /// context, above the scope's own, can't look up.
   final bool Function(
     BuildContext context,
     EventGamesTabController controller,
@@ -999,6 +1100,9 @@ class _EventGamesTabScopeState extends State<EventGamesTabScope>
   EventNominationsBloc? _nominationsBloc;
   StreamSubscription<EventNominationsState>? _nominations;
   EventNominationsState _lastNominations = const EventNominationsState();
+  EventLineupBloc? _lineupBloc;
+  StreamSubscription<EventLineupState>? _lineup;
+  EventLineupState _lastLineup = const EventLineupState();
 
   @override
   void initState() {
@@ -1035,9 +1139,9 @@ class _EventGamesTabScopeState extends State<EventGamesTabScope>
       // Games chosen before the detail is ready shows once it is. This rests on
       // the bloc's first Ready of an event the server knows carrying
       // `reading: true`, as every open starts a read: the first showing then
-      // reads neither the pool nor the nominations, and leaves them to that
-      // read's end (the screen's `_readPoolAgain`), rather than reading them
-      // beside it.
+      // reads none of the pool, the nominations and the lineup, and leaves
+      // them to that read's end (the screen's `_readPoolAgain`), rather than
+      // reading them beside it.
       _detail = detail.stream.listen((_) => _firstShowing());
     }
     final bloc = context.read<EventGamesBloc>();
@@ -1059,6 +1163,16 @@ class _EventGamesTabScopeState extends State<EventGamesTabScope>
       // Heard before the frame that drops a row is built, while the row is
       // still built.
       _nominations = nominations.stream.listen(_nominationsChanged);
+    }
+    final lineup = context.read<EventLineupBloc>();
+    if (lineup != _lineupBloc) {
+      unawaited(_lineup?.cancel());
+      _lineupBloc = lineup;
+      _lastLineup = lineup.state;
+      _controller.lineupEmitted(lineup.state);
+      // Heard before the frame that drops a row is built, while the row is
+      // still built.
+      _lineup = lineup.stream.listen(_lineupChanged);
     }
   }
 
@@ -1132,6 +1246,22 @@ class _EventGamesTabScopeState extends State<EventGamesTabScope>
     );
   }
 
+  void _lineupChanged(EventLineupState state) {
+    final previous = _lastLineup;
+    _lastLineup = state;
+    _controller.lineupEmitted(state);
+    if (!mounted) return;
+    final detail = context.read<EventDetailBloc>().state;
+    _controller.lineupChanged(
+      context,
+      previous,
+      state,
+      dates: detail is EventDetailReady
+          ? detail.detail.snapshot.occurrences
+          : const [],
+    );
+  }
+
   @override
   void dispose() {
     _tabs?.removeListener(_firstShowing);
@@ -1139,6 +1269,7 @@ class _EventGamesTabScopeState extends State<EventGamesTabScope>
     unawaited(_detail?.cancel());
     unawaited(_pool?.cancel());
     unawaited(_nominations?.cancel());
+    unawaited(_lineup?.cancel());
     _controller.dispose();
     super.dispose();
   }

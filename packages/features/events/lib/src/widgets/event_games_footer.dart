@@ -4,6 +4,9 @@ import 'package:events/src/bloc/event_detail_state.dart';
 import 'package:events/src/bloc/event_games_bloc.dart';
 import 'package:events/src/bloc/event_games_event.dart';
 import 'package:events/src/bloc/event_games_state.dart';
+import 'package:events/src/bloc/event_lineup_bloc.dart';
+import 'package:events/src/bloc/event_lineup_event.dart';
+import 'package:events/src/bloc/event_lineup_state.dart';
 import 'package:events/src/bloc/event_nominations_bloc.dart';
 import 'package:events/src/bloc/event_nominations_event.dart';
 import 'package:events/src/bloc/event_nominations_state.dart';
@@ -26,9 +29,10 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// nominate, a vote or a withdrawal, or a host's approval, rejection or close
 /// of a vote (#518), as the banner saying how it went; then the stale-data
 /// banner of the Games tab's sub-tab shown ([staleFor], #945): the pool's
-/// while the games shown may be out of date, or the nominations' while those
-/// shown may be. Each when there is one; nothing otherwise. Passed on every
-/// build, on either tab, so the page keeps one shape.
+/// while the games shown may be out of date, the nominations' while those
+/// shown may be, or the lineup's while its games shown may be (#519). Each
+/// when there is one; nothing otherwise. Passed on every build, on either
+/// tab, so the page keeps one shape.
 ///
 /// All of them answer a list, which moves on: a run's end, a vote's, or a
 /// read that fails after a write or a detail read, lands while the user may
@@ -80,6 +84,7 @@ class EventGamesFooter extends StatelessWidget {
     required this.staleFor,
     required this.names,
     this.nominations,
+    this.lineup,
     this.viewerId,
     this.saidInQuickLook,
     super.key,
@@ -91,6 +96,10 @@ class EventGamesFooter extends StatelessWidget {
   /// banner follow the pool's. Null shows neither, and a take-back's 409
   /// names no nomination.
   final EventNominationsState? nominations;
+
+  /// The lineup's state (#519), whose stale-data banner shows on the Lineup
+  /// sub-tab. Null shows none.
+  final EventLineupState? lineup;
 
   /// The viewer's roster row id, which says which nominations are theirs, or
   /// null where they have none.
@@ -104,8 +113,9 @@ class EventGamesFooter extends StatelessWidget {
 
   /// The Games tab's sub-tab shown (#945), whose stale-data banner may
   /// show: the pool's on [EventGamesSection.pool], the nominations' on
-  /// [EventGamesSection.nominations], and neither where it is null, as on
-  /// the Details tab.
+  /// [EventGamesSection.nominations], the lineup's on
+  /// [EventGamesSection.lineup] (#519), and none where it is null, as on the
+  /// Details tab.
   final EventGamesSection? staleFor;
 
   /// Whether a quick look said an outcome as it landed (#957), whose banner
@@ -122,6 +132,7 @@ class EventGamesFooter extends StatelessWidget {
     final outcome = state.outcome;
     final nominations = this.nominations;
     final nominationsOutcome = nominations?.outcome;
+    final lineup = this.lineup;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -192,6 +203,26 @@ class EventGamesFooter extends StatelessWidget {
               retryLabel: l10n.eventsRefreshRetry,
               refreshing: nominations.refreshing,
               onRetry: () => retryEventNominations(context),
+            ),
+          ),
+        if (staleFor == EventGamesSection.lineup &&
+            lineup != null &&
+            lineup.refreshFailed &&
+            lineup.games.isNotEmpty)
+          Padding(
+            // Keyed, as the nominations' is, so it never takes another
+            // banner's place as the sub-tabs swap, and a Try again with focus
+            // keeps it (#519).
+            key: const ValueKey<String>('lineup_stale'),
+            padding: EdgeInsets.only(top: gap),
+            child: BgeRefreshBanner(
+              key: EventDetailScreen.lineupRefreshBannerKey,
+              retryKey: EventDetailScreen.lineupRetryKey,
+              failedMessage: l10n.eventsLineupRefreshFailed,
+              inProgressLabel: l10n.eventsRefreshInProgress,
+              retryLabel: l10n.eventsRefreshRetry,
+              refreshing: lineup.refreshing,
+              onRetry: () => retryEventLineup(context),
             ),
           ),
       ],
@@ -708,5 +739,16 @@ void retryEventNominations(BuildContext context) {
   if (state is! EventDetailReady) return;
   context.read<EventNominationsBloc>().add(
     EventNominationsRetryRequested(state.detail.snapshot.event.id),
+  );
+}
+
+/// Reads the lineup again, as the person asked (#519), for the event the
+/// detail shows now, which a reconcile can move (#499). Nothing before the
+/// detail is ready. Like the nominations', it needs no roster.
+void retryEventLineup(BuildContext context) {
+  final state = context.read<EventDetailBloc>().state;
+  if (state is! EventDetailReady) return;
+  context.read<EventLineupBloc>().add(
+    EventLineupRetryRequested(state.detail.snapshot.event.id),
   );
 }

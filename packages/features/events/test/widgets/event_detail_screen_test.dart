@@ -2577,6 +2577,362 @@ void main() {
     });
   });
 
+  group('lineup (#519)', () {
+    const details = EventDetailTab.details;
+    const games = EventDetailTab.games;
+    const staleCopy = "Couldn't refresh the lineup. It may be out of date.";
+
+    Finder tab(EventDetailTab which) =>
+        find.byKey(EventDetailScreen.tabKey(which));
+    Finder stale() => find.byKey(EventDetailScreen.lineupRefreshBannerKey);
+    Finder row(String id) =>
+        find.byKey(EventDetailScreen.lineupRowKey(id), skipOffstage: false);
+
+    /// The host's view of `e-1`, with a date ahead and Ada on the roster.
+    final detail = _detail(
+      occurrences: [_ahead()],
+      attendees: [
+        _attending(EventRole.host),
+        _member('att-2', displayName: 'Ada'),
+      ],
+      attendance: _attending(EventRole.host),
+    );
+
+    /// Catan, nominated by the viewer from Ada's copy, and open for votes.
+    final catan = EventNomination(
+      id: 'n-1',
+      eventId: 'e-1',
+      platformGameId: 'pg-1',
+      gameId: 'g-1',
+      title: 'Catan',
+      platformName: 'Tabletop',
+      status: NominationStatus.open,
+      nominatedById: 'att-me',
+      suppliedFromId: 'o-1',
+      createdAt: kItemInstant,
+    );
+
+    /// Catan on the event's own lineup, from Ada's copy.
+    const catanLined = LineupGame(
+      id: 'l-1',
+      platformGameId: 'pg-1',
+      gameId: 'g-1',
+      title: 'Catan',
+      platformName: 'Tabletop',
+      role: ScheduledGameRole.primary,
+      sortOrder: 0,
+      suppliedById: 'o-1',
+      supplierAttendeeId: 'att-2',
+    );
+
+    /// How a resolve of Catan came out, as [status].
+    NominationResolution resolution(NominationStatus status) =>
+        NominationResolution(
+          status: status,
+          forCount: 5,
+          againstCount: 2,
+          interestedCount: 0,
+          totalVotes: 7,
+          quorumMet: true,
+          thresholdMet: true,
+          eligibleVoterCount: 9,
+        );
+
+    /// A server whose reads serve [detail], unless [read] says otherwise,
+    /// whose games pool is empty, whose nominations are Catan alone, and
+    /// whose lineup is Catan alone, unless [lineup] says otherwise. A
+    /// nominate answers Catan as [nominatedAs], an approval and a rejection
+    /// answer Catan so decided, and a resolve answers Catan as
+    /// [resolvedAs].
+    FakeEventRemote serving({
+      FutureOr<EventSnapshot> Function(String id)? read,
+      FutureOr<List<LineupGame>> Function(String eventId)? lineup,
+      NominationStatus nominatedAs = NominationStatus.open,
+      NominationStatus resolvedAs = NominationStatus.passed,
+    }) => FakeEventRemote.detail(
+      read ?? (_) => detail.snapshot,
+      pool: (_) => const [],
+      nominations: (_) => [catan],
+      lineup: lineup ?? (_) => const [catanLined],
+      nomination: (_) => catan,
+      nominated: (_) => catan.copyWith(status: nominatedAs),
+      voteCast: (_) {},
+      withdrawn: (_) => catan.copyWith(status: NominationStatus.withdrawn),
+      approved: (_) => catan.copyWith(status: NominationStatus.approved),
+      rejected: (_) => catan.copyWith(status: NominationStatus.rejected),
+      resolved: (_) => (
+        nomination: catan.copyWith(status: resolvedAs),
+        resolution: resolution(resolvedAs),
+      ),
+    );
+
+    /// Shows [detail] from [remote] with a way back, as the app opens it,
+    /// and lets the read it starts end.
+    Future<void> showTabbed(WidgetTester tester, FakeEventRemote remote) async {
+      await show(tester, detail, remote: remote, onBack: (_) {});
+      await settle(tester);
+    }
+
+    /// Chooses [which]. Games opens on Lineup.
+    Future<void> choose(WidgetTester tester, EventDetailTab which) async {
+      await tester.tap(tab(which));
+      await animate(tester);
+    }
+
+    /// Chooses the Games tab's sub-tab [which] (#945).
+    Future<void> chooseSection(
+      WidgetTester tester,
+      EventGamesSection which,
+    ) async {
+      await tester.tap(find.byKey(EventDetailScreen.sectionTabKey(which)));
+      await animate(tester);
+    }
+
+    /// Ends a read of the event, as the refresh banner's retry starts one.
+    Future<void> readEvent(WidgetTester tester) async {
+      blocOf(tester).add(const EventDetailRetryRequested());
+      await settle(tester);
+      await settle(tester);
+    }
+
+    /// The screen's nominations bloc.
+    EventNominationsBloc nominationsOf(WidgetTester tester) =>
+        tester.element(find.byType(Scaffold).first).read();
+
+    /// [finder] is in the page's footer: below its one scroll view.
+    void expectInFooter(WidgetTester tester, Finder finder) {
+      expect(finder, findsOneWidget);
+      expect(
+        tester.getRect(finder).top,
+        greaterThanOrEqualTo(
+          tester.getRect(find.byType(CustomScrollView)).bottom,
+        ),
+      );
+    }
+
+    testWidgets('showing Games reads the lineup', (tester) async {
+      final remote = serving();
+      await showTabbed(tester, remote);
+
+      // Not before the tab is opened.
+      expect(remote.lineupRequests, isEmpty);
+
+      await choose(tester, games);
+
+      expect(remote.lineupRequests, ['e-1']);
+      // Shown on Lineup, where Games opens.
+      expect(row('l-1'), findsOneWidget);
+
+      // Opening it again reads nothing more.
+      await choose(tester, details);
+      await choose(tester, games);
+
+      expect(remote.lineupRequests, ['e-1']);
+    });
+
+    testWidgets('opened while the opening read is out, the lineup is read '
+        'once, after it', (tester) async {
+      final reads = <Completer<EventSnapshot>>[];
+      final remote = serving(
+        read: (_) {
+          final read = Completer<EventSnapshot>();
+          reads.add(read);
+          return read.future;
+        },
+      );
+      await show(tester, detail, remote: remote, onBack: (_) {});
+
+      await choose(tester, games);
+
+      expect(remote.lineupRequests, isEmpty);
+
+      reads.single.complete(detail.snapshot);
+      await animate(tester);
+
+      expect(remote.lineupRequests, ['e-1']);
+    });
+
+    testWidgets('a detail read re-reads the lineup', (tester) async {
+      final remote = serving();
+      await showTabbed(tester, remote);
+
+      // Before the tab has shown, a read's end reads nothing.
+      await readEvent(tester);
+      expect(remote.lineupRequests, isEmpty);
+
+      await choose(tester, games);
+      await readEvent(tester);
+
+      expect(remote.lineupRequests, ['e-1', 'e-1']);
+
+      // On Details too, once the tab has shown: an answer changed on the
+      // roster, which can take a supplier's games out (#519).
+      await choose(tester, details);
+      await readEvent(tester);
+
+      expect(remote.lineupRequests, ['e-1', 'e-1', 'e-1']);
+    });
+
+    testWidgets('approving a nomination re-reads the lineup', (tester) async {
+      final remote = serving();
+      await showTabbed(tester, remote);
+      await choose(tester, games);
+      expect(remote.lineupRequests, ['e-1']);
+
+      nominationsOf(tester).add(NominationApproved('e-1', catan));
+      await animate(tester);
+
+      expect(remote.approvals, hasLength(1));
+      expect(remote.lineupRequests, ['e-1', 'e-1']);
+    });
+
+    for (final (status, reads) in [
+      (NominationStatus.passed, 1),
+      (NominationStatus.approved, 1),
+      (NominationStatus.failed, 0),
+      (NominationStatus.quorumNotMet, 0),
+    ]) {
+      testWidgets('a resolve that ends ${status.name} re-reads the lineup '
+          '$reads more time(s)', (tester) async {
+        final remote = serving(resolvedAs: status);
+        await showTabbed(tester, remote);
+        await choose(tester, games);
+
+        nominationsOf(tester).add(NominationResolved('e-1', catan));
+        await animate(tester);
+
+        expect(remote.resolutions, hasLength(1));
+        expect(remote.lineupRequests, hasLength(1 + reads));
+      });
+    }
+
+    for (final (status, reads) in [
+      (NominationStatus.open, 0),
+      (NominationStatus.awaitingApproval, 0),
+      (NominationStatus.approved, 1),
+    ]) {
+      testWidgets('a nominate the server answers ${status.name} re-reads the '
+          'lineup $reads more time(s): one straight into the lineup does', (
+        tester,
+      ) async {
+        final remote = serving(nominatedAs: status);
+        await showTabbed(tester, remote);
+        await choose(tester, games);
+
+        nominationsOf(tester).add(
+          const GameNominated(
+            'e-1',
+            OfferedGame(
+              id: 'o-1',
+              attendeeId: 'att-2',
+              collectionId: 'col-1',
+              platformGameId: 'pg-1',
+              gameId: 'g-1',
+              title: 'Catan',
+              platformName: 'Tabletop',
+            ),
+          ),
+        );
+        await animate(tester);
+
+        expect(remote.nominates, hasLength(1));
+        expect(remote.lineupRequests, hasLength(1 + reads));
+      });
+    }
+
+    testWidgets('a rejection, a withdrawal and a vote read no lineup', (
+      tester,
+    ) async {
+      final remote = serving();
+      await showTabbed(tester, remote);
+      await choose(tester, games);
+
+      final nominations = nominationsOf(tester)
+        ..add(NominationRejected('e-1', catan));
+      await animate(tester);
+      nominations.add(NominationWithdrawn('e-1', catan));
+      await animate(tester);
+      nominations.add(NominationVoteCast('e-1', catan, VoteType.forGame));
+      await animate(tester);
+
+      expect(remote.rejections, hasLength(1));
+      expect(remote.lineupRequests, ['e-1']);
+    });
+
+    testWidgets('a failed re-read shows the lineup stale banner and its '
+        'retry reads again', (tester) async {
+      var fails = false;
+      final remote = serving(
+        lineup: (_) => fails
+            ? throw const EventRemoteTransientException('offline')
+            : const [catanLined],
+      );
+      await showTabbed(tester, remote);
+      await choose(tester, games);
+      expect(stale(), findsNothing);
+
+      fails = true;
+      await readEvent(tester);
+
+      // The games read before stay, with the banner in the footer.
+      expect(row('l-1'), findsOneWidget);
+      expectInFooter(tester, stale());
+      expect(
+        find.descendant(of: stale(), matching: find.text(staleCopy)),
+        findsOneWidget,
+      );
+
+      // About what Lineup shows, so not on the other sub-tabs or Details.
+      await chooseSection(tester, EventGamesSection.pool);
+      expect(stale(), findsNothing);
+      await choose(tester, details);
+      expect(stale(), findsNothing);
+      await choose(tester, games);
+      await chooseSection(tester, EventGamesSection.lineup);
+      expectInFooter(tester, stale());
+
+      fails = false;
+      await tester.tap(find.byKey(EventDetailScreen.lineupRetryKey));
+      await animate(tester);
+
+      expect(remote.lineupRequests, hasLength(3));
+      expect(stale(), findsNothing);
+      expect(row('l-1'), findsOneWidget);
+    });
+
+    testWidgets('a first read that fails has no stale banner: nothing shown '
+        'is stale', (tester) async {
+      final remote = serving(
+        lineup: (_) => throw const EventRemoteTransientException('offline'),
+      );
+      await showTabbed(tester, remote);
+
+      await choose(tester, games);
+
+      expect(find.byKey(EventDetailScreen.lineupRetryKey), findsOneWidget);
+      expect(stale(), findsNothing);
+    });
+
+    testWidgets('a lineup read that finds the event gone reads the event '
+        'again, whose end reads the lineup again', (tester) async {
+      var reads = 0;
+      final remote = serving(
+        lineup: (_) => reads++ == 0
+            ? throw const EventRemoteNotFoundException('gone')
+            : const [catanLined],
+      );
+      await showTabbed(tester, remote);
+      final readsBefore = remote.detailRequests.length;
+
+      await choose(tester, games);
+      await animate(tester);
+
+      expect(remote.detailRequests, hasLength(readsBefore + 1));
+      expect(remote.lineupRequests, hasLength(2));
+      expect(row('l-1'), findsOneWidget);
+    });
+  });
+
   group('not found', () {
     FakeEventRemote gone() => FakeEventRemote.detail(
       (_) => throw const EventRemoteNotFoundException('gone'),

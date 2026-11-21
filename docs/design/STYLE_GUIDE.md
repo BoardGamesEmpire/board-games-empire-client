@@ -441,11 +441,11 @@ switch a mode: a `SegmentedButton` is for that, such as a layout or a filter.
   bar with one tab or a dead one.
 - **A tab of two or more destinations of its own takes a second bar.** Its
   first sliver is a `TabBar.secondary` under the screen's own bar, as the
-  event's Games tab holds Nominations and Pool (#945). The same rules hold:
-  not scrollable, labels that scale down and never clip, and the bar keeps
-  its place as it swaps the slivers under it. Its `TabController` is held
-  above the blocs in the tab's own scope, so it outlives their rebuilds as
-  the screen's does, with its `animationDuration` through
+  event's Games tab holds Lineup, Nominations and Pool (#945, #519). The same
+  rules hold: not scrollable, labels that scale down and never clip, and the
+  bar keeps its place as it swaps the slivers under it. Its `TabController`
+  is held above the blocs in the tab's own scope, so it outlives their
+  rebuilds as the screen's does, with its `animationDuration` through
   `BgeMotion.durationOf`. A tab with one destination shows no second bar.
 
 ### In-flight forms

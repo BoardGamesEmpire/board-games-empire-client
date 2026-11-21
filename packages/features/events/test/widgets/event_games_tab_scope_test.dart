@@ -5,6 +5,9 @@ import 'package:events/src/bloc/event_detail_state.dart';
 import 'package:events/src/bloc/event_games_bloc.dart';
 import 'package:events/src/bloc/event_games_event.dart';
 import 'package:events/src/bloc/event_games_state.dart';
+import 'package:events/src/bloc/event_lineup_bloc.dart';
+import 'package:events/src/bloc/event_lineup_event.dart';
+import 'package:events/src/bloc/event_lineup_state.dart';
 import 'package:events/src/bloc/event_nominations_bloc.dart';
 import 'package:events/src/bloc/event_nominations_event.dart';
 import 'package:events/src/bloc/event_nominations_state.dart';
@@ -25,6 +28,9 @@ class _MockNominations
 class _MockDetail extends MockBloc<EventDetailEvent, EventDetailState>
     implements EventDetailBloc {}
 
+class _MockLineup extends MockBloc<EventLineupEvent, EventLineupState>
+    implements EventLineupBloc {}
+
 /// The scope under the screen's tab controller and the blocs it reads, with
 /// the controller it holds handed to [onBuild] on each build.
 Widget _harness({
@@ -34,6 +40,7 @@ Widget _harness({
 }) {
   final games = _MockGames();
   final nominations = _MockNominations();
+  final lineup = _MockLineup();
   final detail = _MockDetail();
   whenListen(
     games,
@@ -46,6 +53,11 @@ Widget _harness({
     initialState: const EventNominationsState(),
   );
   whenListen(
+    lineup,
+    const Stream<EventLineupState>.empty(),
+    initialState: const EventLineupState(),
+  );
+  whenListen(
     detail,
     const Stream<EventDetailState>.empty(),
     initialState: const EventDetailLoading(),
@@ -56,6 +68,7 @@ Widget _harness({
       providers: [
         BlocProvider<EventGamesBloc>.value(value: games),
         BlocProvider<EventNominationsBloc>.value(value: nominations),
+        BlocProvider<EventLineupBloc>.value(value: lineup),
         BlocProvider<EventDetailBloc>.value(value: detail),
       ],
       child: Directionality(

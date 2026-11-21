@@ -20,7 +20,9 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// - **Its number among the rows**, not its line's: a screen reader says
 ///   "3 of 9" of the third row, on the second line ([IndexedSemantics], with
 ///   the sliver's own indexes, which would count lines, off). The page's
-///   `semanticChildCount` counts the rows too.
+///   `semanticChildCount` counts the rows too. Where one list is shown as
+///   several of these, a group each, as the lineup's dates are (#519), each
+///   numbers its rows on from the groups before it ([firstIndex]).
 /// - **Its focus, as it moves between lines.** As a row before it leaves, a
 ///   row moves to the end of the line above, or to the start of its own, and
 ///   each line it leaves or joins is built again. So each row is held under
@@ -48,6 +50,7 @@ class EventGamesRowLines<T> extends StatefulWidget {
     required this.keyOf,
     required this.identityOf,
     required this.itemBuilder,
+    this.firstIndex = 0,
     super.key,
   });
 
@@ -63,6 +66,10 @@ class EventGamesRowLines<T> extends StatefulWidget {
 
   /// Builds the row for `item`. The row must not carry [keyOf]'s key.
   final Widget Function(BuildContext context, T item) itemBuilder;
+
+  /// The number among the page's rows of the first of [items], from 0: the
+  /// count of the rows shown above them, in the groups before this one.
+  final int firstIndex;
 
   @override
   State<EventGamesRowLines<T>> createState() => _EventGamesRowLinesState<T>();
@@ -91,7 +98,7 @@ class _EventGamesRowLinesState<T> extends State<EventGamesRowLines<T>> {
       final key = keyOf(item);
       return IndexedSemantics(
         key: line,
-        index: index,
+        index: widget.firstIndex + index,
         child: KeyedSubtree(
           key: key,
           child: KeyedSubtree(

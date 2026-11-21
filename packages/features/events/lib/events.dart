@@ -29,6 +29,7 @@ export 'src/detail/event_actions.dart';
 export 'src/detail/event_attendee_addition.dart';
 export 'src/detail/event_game_offers.dart';
 export 'src/detail/event_games_pool.dart';
+export 'src/detail/event_lineup.dart';
 export 'src/detail/event_nominations.dart';
 export 'src/home/upcoming_events_section.dart';
 export 'src/home/upcoming_fallback_cubit.dart';

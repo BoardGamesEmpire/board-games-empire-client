@@ -55,6 +55,13 @@ it the pool and its rows offered games. On the event's screen it is the Games ta
 _Avoid_: Pool (unqualified, in an event context, except as that sub-tab's label), event
 collection, event library
 
+**Lineup**:
+The games an event has settled on playing: its own, which hold for every date, and each
+date's. Each is one copy from the **games pool**, played as a primary game or a filler.
+A game joins it when its nomination passes or is approved, or when a host adds it
+directly. On the event's screen it is the Games tab's **Lineup** sub-tab (#519).
+_Avoid_: suggested games, scheduled games, confirmed games, event games
+
 **Excluded game**:
 A single collection entry its owner has withheld from one specific household while
 otherwise sharing with it.

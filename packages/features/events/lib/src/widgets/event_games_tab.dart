@@ -7,10 +7,12 @@ import 'package:events/src/bloc/event_detail_state.dart';
 import 'package:events/src/bloc/event_games_bloc.dart';
 import 'package:events/src/bloc/event_games_event.dart';
 import 'package:events/src/bloc/event_games_state.dart';
+import 'package:events/src/bloc/event_lineup_state.dart';
 import 'package:events/src/bloc/event_nominations_state.dart';
 import 'package:events/src/detail/event_detail_write.dart';
 import 'package:events/src/detail/event_game_offers.dart';
 import 'package:events/src/detail/event_games_pool.dart';
+import 'package:events/src/detail/event_lineup.dart';
 import 'package:events/src/detail/event_nominations.dart';
 import 'package:events/src/screens/event_detail_screen.dart';
 import 'package:events/src/widgets/event_detail_tabs.dart';
@@ -20,6 +22,7 @@ import 'package:events/src/widgets/event_game_row_head.dart';
 import 'package:events/src/widgets/event_games_footer.dart';
 import 'package:events/src/widgets/event_games_row_lines.dart';
 import 'package:events/src/widgets/event_games_tab_scope.dart';
+import 'package:events/src/widgets/event_lineup_section.dart';
 import 'package:events/src/widgets/event_nominations_section.dart';
 import 'package:events/src/widgets/event_pool_people_sheet.dart';
 import 'package:events/src/widgets/game_name.dart';
@@ -89,39 +92,56 @@ typedef _NominationsShown = ({
 /// shows rows, none otherwise.
 typedef _PoolShown = ({_Body body, List<OfferedGame> rows});
 
+/// What the Lineup sub-tab shows (#519): its body, the lineup's games by
+/// date when it shows rows, none otherwise, and the lineup's state it was
+/// worked out from.
+typedef _LineupShown = ({
+  EventLineupBody body,
+  List<LineupGroup> groups,
+  EventLineupState state,
+});
+
 /// What the Games tab shows, worked out once per build (#517): the sub-tab
 /// shown (#945), that sub-tab's body and rows, and the roster's names that
-/// both lists name people from. Only the sub-tab shown is worked out: the
-/// Nominations section's where it is chosen, else the pool's. Its rows are
-/// the ones its filter keeps, the nominations' in the order chosen. The
-/// screen counts them for the page's `semanticChildCount`, and the tab draws
-/// the same value, so the two can't disagree.
+/// the lists name people from. Only the sub-tab shown is worked out: the
+/// Lineup sub-tab's (#519) or the Nominations section's where it is chosen,
+/// else the pool's. The pool's and the nominations' rows are the ones their
+/// filters keep, the nominations' in the order chosen; the lineup's are all
+/// its games, grouped by date ([lineupGroups]). The screen counts them for
+/// the page's `semanticChildCount`, and the tab draws the same value, so the
+/// two can't disagree.
 final class _GamesBody {
   const _GamesBody({
     required this.names,
     this.pool,
     this.nominations,
-    this.lineup = false,
+    this.lineup,
   });
 
-  /// What the tab shows for [games] and [nominations] on [detail], on the
-  /// [controller]'s sub-tab. With no nominations' state it is the pool
-  /// alone (#945).
+  /// What the tab shows for [games], [nominations] and [lineup] on [detail],
+  /// on the [controller]'s sub-tab. With no nominations' or lineup's state it
+  /// is the pool alone (#945).
   factory _GamesBody.of(
     EventDetailReady detail,
     EventGamesState games,
     EventNominationsState? nominations,
+    EventLineupState? lineup,
     EventGamesTabController controller,
   ) {
     final names = poolNames(detail.detail);
-    if (nominations == null || controller.section == EventGamesSection.pool) {
+    if (nominations == null ||
+        lineup == null ||
+        controller.section == EventGamesSection.pool) {
       return _GamesBody(
         names: names,
         pool: _poolOf(detail, games, controller),
       );
     }
     if (controller.section == EventGamesSection.lineup) {
-      return _GamesBody(names: names, lineup: true);
+      return _GamesBody(
+        names: names,
+        lineup: _lineupOf(detail, lineup, controller),
+      );
     }
     return _GamesBody(
       names: names,
@@ -136,20 +156,22 @@ final class _GamesBody {
   /// otherwise.
   final _NominationsShown? nominations;
 
-  /// Whether the tab shows the Lineup section (#519): an empty body until
-  /// the section's own replaces it.
-  final bool lineup;
+  /// What the Lineup sub-tab shows (#519), while the tab shows it; null
+  /// otherwise.
+  final _LineupShown? lineup;
 
   /// The roster's names, by row id: none where it is withheld or not read.
   final Map<String, String?> names;
 
   /// The rows the sub-tab shown holds, those its filter keeps, and none
   /// while it shows a state: the page's `semanticChildCount` while it shows
-  /// the tab (#945).
-  int get rowCount => switch ((pool, nominations)) {
-    ((body: _Body.rows, :final rows), _) => rows.length,
-    (_, (body: EventNominationsBody.rows, :final rows, state: _)) =>
+  /// the tab (#945). The lineup's are every group's (#519).
+  int get rowCount => switch ((pool, nominations, lineup)) {
+    ((body: _Body.rows, :final rows), _, _) => rows.length,
+    (_, (body: EventNominationsBody.rows, :final rows, state: _), _) =>
       rows.length,
+    (_, _, (body: EventLineupBody.rows, :final groups, state: _)) =>
+      groups.fold(0, (count, group) => count + group.games.length),
     _ => 0,
   };
 
@@ -237,14 +259,46 @@ final class _GamesBody {
     };
     return (body: body, rows: const [], state: state);
   }
+
+  /// What the Lineup sub-tab shows for [state] on [detail] (#519): the
+  /// lineup's games grouped by date ([lineupGroups]), else the state their
+  /// read is drawn in ([EventGamesTabController.drawnLineupLoad]). They
+  /// need no roster, as the nominations don't.
+  static _LineupShown _lineupOf(
+    EventDetailReady detail,
+    EventLineupState state,
+    EventGamesTabController controller,
+  ) {
+    final load = controller.drawnLineupLoad(state);
+    if (load != EventLineupLoad.hidden && state.games.isNotEmpty) {
+      return (
+        body: EventLineupBody.rows,
+        groups: lineupGroups(state.games, detail.detail.snapshot.occurrences),
+        state: state,
+      );
+    }
+    final body = switch (load) {
+      // Gone makes no claim of its own, as the nominations' doesn't: the
+      // event's read again settles it.
+      EventLineupLoad.idle ||
+      EventLineupLoad.loading ||
+      EventLineupLoad.gone => EventLineupBody.loading,
+      EventLineupLoad.failed => EventLineupBody.failed,
+      EventLineupLoad.loaded => EventLineupBody.empty,
+      EventLineupLoad.hidden => EventLineupBody.hidden,
+    };
+    return (body: body, groups: const [], state: state);
+  }
 }
 
-/// The Games tab of an event's screen (#516), in two sub-tabs (#945):
-/// Nominations, the games nominated for the lineup ([EventNominationsSection],
-/// #517), narrowed and ordered by its own filters and sort; and Pool, the games
-/// its attendees offer to bring, one row per offered copy, under a header with
-/// Offer games, a search, a filter by person, "Not mine" and the shared filter
-/// sheet, as Offer games has it ([eventGameFilterOptions], #851).
+/// The Games tab of an event's screen (#516), in three sub-tabs (#945):
+/// Lineup, the games the event will play ([EventLineupSection], #519), grouped
+/// by date; Nominations, the games nominated for the lineup
+/// ([EventNominationsSection], #517), narrowed and ordered by its own filters
+/// and sort; and Pool, the games its attendees offer to bring, one row per
+/// offered copy, under a header with Offer games, a search, a filter by
+/// person, "Not mine" and the shared filter sheet, as Offer games has it
+/// ([eventGameFilterOptions], #851).
 ///
 /// Each pool row is compact (#946): its cover, its name with its subtitle
 /// where it has one ([gameName], #851), one status line, and one main action.
@@ -264,24 +318,24 @@ final class _GamesBody {
 /// the [controller]'s [EventGamesTabController.sections]; then the chosen
 /// sub-tab's slivers alone, which the bar swaps, keeping its own place, so
 /// focus stays on the sub-tab chosen. Games opens on Lineup. Where there
-/// is no nominations' state, the tab is the pool alone, with no bar.
+/// is no nominations' or lineup's state, the tab is the pool alone, with no
+/// bar.
 ///
-/// Lineup shows nothing until its section lands (#519). Nominations
-/// is the Nominations section. Pool is the pool's header, then
-/// its rows ([EventGamesRowLines], keyed by the offered game's id, two to a
-/// line in an expanded window, #949) or one state in a [BgeStateSliver].
-/// Neither has a heading of its own: each sub-tab's label, said as it is
-/// chosen, names its list (#946). The header
+/// Lineup is the Lineup section, and Nominations the Nominations section.
+/// Pool is the pool's header, then its rows ([EventGamesRowLines], keyed by
+/// the offered game's id, two to a line in an expanded window, #949) or one
+/// state in a [BgeStateSliver]. None has a heading of its own: each
+/// sub-tab's label, said as it is chosen, names its list (#946). The header
 /// stays above every state but the wait for a first answer (or for the
 /// event's read after the pool found it gone, or to bring a roster not read)
-/// and the games being hidden. A roster
-/// not read, as an event cached from the list has, is not hidden: it waits
-/// for the event's read to bring it, and if that read fails, the tab says
-/// it couldn't load the games, with Try again reading the event. The
-/// nominations need no roster, so the section shows in every state of the
-/// pool, hidden included. Each sub-tab's filter, and the search typed in
-/// the pool's, are the [controller]'s, so they outlive a switch to the
-/// other sub-tab or to Details.
+/// and the games being hidden. A roster not read, as an event cached from
+/// the list has, is not hidden: it waits for the event's read to bring it,
+/// and if that read fails, the tab says it couldn't load the games, with Try
+/// again reading the event. The nominations and the lineup need no roster,
+/// so their sections show in every state of the pool, hidden included. Each
+/// sub-tab's filter, and the search typed in the pool's, are the
+/// [controller]'s, so they outlive a switch to another sub-tab or to
+/// Details.
 ///
 /// What it shows is worked out once, as the tab is made, from the detail,
 /// the chosen sub-tab's state and the [controller] (#517). The page's
@@ -359,15 +413,21 @@ class EventGamesTab extends StatelessWidget {
     required this.acting,
     required this.now,
     this.nominations,
+    this.lineup,
     this.onOfferGames,
     super.key,
-  }) : _body = _GamesBody.of(detail, games, nominations, controller);
+  }) : _body = _GamesBody.of(detail, games, nominations, lineup, controller);
 
   final EventDetailReady detail;
   final EventGamesState games;
 
-  /// The nominations' state (#517). Null shows no Nominations section.
+  /// The nominations' state (#517). Null shows no Nominations section, and
+  /// the pool alone.
   final EventNominationsState? nominations;
+
+  /// The lineup's state (#519). Null shows no Lineup section, and the pool
+  /// alone.
+  final EventLineupState? lineup;
 
   /// The tab's own state, from the screen's [EventGamesTabScope].
   final EventGamesTabController controller;
@@ -391,6 +451,9 @@ class EventGamesTab extends StatelessWidget {
   /// Key on the Nominations section, so the pool's slivers never take its
   /// place as the sub-tabs swap (#945).
   static const _nominationsKey = ValueKey<String>('event_games.nominations');
+
+  /// Key on the Lineup section, as on the Nominations section (#519).
+  static const _lineupKey = ValueKey<String>('event_games.lineup');
 
   /// Key on the header's sliver, so it keeps its state, and its chips their
   /// focus, as what is under it changes.
@@ -421,12 +484,12 @@ class EventGamesTab extends StatelessWidget {
 
     return SliverMainAxisGroup(
       slivers: [
-        // The sub-tabs' bar (#945), where there are two to show: with no
-        // nominations' state the pool shows alone, with no bar. Keyed, so it
-        // keeps its place, and the sub-tab chosen its focus, as the sub-tabs
-        // swap under it. The controller is read as the tab is made: the
-        // scope replaces it when the motion setting changes.
-        if (nominations != null)
+        // The sub-tabs' bar (#945), where there are sub-tabs to show: with no
+        // nominations' or lineup's state the pool shows alone, with no bar.
+        // Keyed, so it keeps its place, and the sub-tab chosen its focus, as
+        // the sub-tabs swap under it. The controller is read as the tab is
+        // made: the scope replaces it when the motion setting changes.
+        if (nominations != null && lineup != null)
           SliverToBoxAdapter(
             key: _sectionBarKey,
             child: Column(
@@ -440,8 +503,17 @@ class EventGamesTab extends StatelessWidget {
               ],
             ),
           ),
-        // Nothing yet: Lineup's list replaces this (#519).
-        if (_body.lineup) const SliverToBoxAdapter(child: SizedBox.shrink()),
+        if (_body.lineup case final shown?)
+          EventLineupSection(
+            key: _lineupKey,
+            body: shown.body,
+            groups: shown.groups,
+            detail: detail,
+            state: shown.state,
+            controller: controller,
+            now: now,
+            names: names,
+          ),
         if (_body.nominations case final shown?)
           EventNominationsSection(
             key: _nominationsKey,

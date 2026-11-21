@@ -182,11 +182,11 @@
   },
   "eventsDetailSeparator": " · ",
   "@eventsDetailSeparator": {
-    "description": "Shown between the parts of one line about an event, for example 'Back room · The Smiths · Going' on its row, 'Strategy night · Scheduled' on its screen, or 'Host · Going' beside a person coming to it. Keep or drop the surrounding spaces as your language's punctuation needs."
+    "description": "Shown between the parts of one line about an event, for example 'Back room · The Smiths · Going' on its row, 'Strategy night · Scheduled' on its screen, or 'Host · Going' beside a person coming to it. Also between the parts of a game's status line on the Lineup sub-tab of an event's Games tab, for example 'Filler, up to 20 minutes · Ada is bringing this · Every date' (eventsLineupRolePrimary, eventsLineupRoleFiller or eventsLineupRoleFillerUpTo, then eventsLineupYouBring or eventsLineupBrings, then eventsGamesEveryDateMark). Keep or drop the surrounding spaces as your language's punctuation needs."
   },
   "eventsDetailSpokenSeparator": ", ",
   "@eventsDetailSpokenSeparator": {
-    "description": "Joins the same parts when a screen reader reads such a line aloud, in place of eventsDetailSeparator, whose symbol would be read out. It should sound like a short pause between list items."
+    "description": "Joins the same parts when a screen reader reads such a line aloud, in place of eventsDetailSeparator, whose symbol would be read out, a lineup game's status line among them. It should sound like a short pause between list items."
   },
   "eventsCreate": "New event",
   "@eventsCreate": {
@@ -346,7 +346,7 @@
   },
   "eventsAttendeeSomeoneStart": "This person",
   "@eventsAttendeeSomeoneStart": {
-    "description": "Stands in for a person's name where a sentence on an event's screen starts with them, when the person has no name the app can show: the same as eventsAttendeeSomeone, written as a sentence's first words. It goes in place of {name} in eventsAttendeeRemoveGone, eventsAttendeeAnswerGone, eventsAttendeeAddAlreadyOn, eventsAttendeeAddRefused and eventsAddAttendeeAlreadyOn. On the Games tab it goes in place of {name} in eventsGamesTheirs, and names that person on their chip in the Whose games list (eventsGamesPeopleTitle) and under the search field while their games are kept. In the who-voted list of a nominated game it goes in place of {name} in eventsVoterLine and eventsVoterLineNotCounting."
+    "description": "Stands in for a person's name where a sentence on an event's screen starts with them, when the person has no name the app can show: the same as eventsAttendeeSomeone, written as a sentence's first words. It goes in place of {name} in eventsAttendeeRemoveGone, eventsAttendeeAnswerGone, eventsAttendeeAddAlreadyOn, eventsAttendeeAddRefused and eventsAddAttendeeAlreadyOn. On the Games tab it goes in place of {name} in eventsGamesTheirs and eventsLineupBrings, and names that person on their chip in the Whose games list (eventsGamesPeopleTitle) and under the search field while their games are kept. In the who-voted list of a nominated game it goes in place of {name} in eventsVoterLine and eventsVoterLineNotCounting."
   },
   "eventsAttendeeActions": "Actions for {name}",
   "@eventsAttendeeActions": {
@@ -784,11 +784,97 @@
   },
   "eventsGamesFailedBody": "Check your connection and try again.",
   "@eventsGamesFailedBody": {
-    "description": "Under eventsGamesFailedTitle, above the Try again button (eventsRefreshRetry). Also under eventsNominationsFailedTitle, on the Nominations sub-tab of the same Games tab."
+    "description": "Under eventsGamesFailedTitle, above the Try again button (eventsRefreshRetry). Also under eventsNominationsFailedTitle, on the Nominations sub-tab of the same Games tab, and under eventsLineupFailedTitle, on its Lineup sub-tab."
   },
   "eventsGamesRefreshFailed": "Couldn't update the games. These may be out of date.",
   "@eventsGamesRefreshFailed": {
     "description": "Banner at the foot of an event's screen while its Games tab shows the Pool sub-tab (eventsGamesSectionPool), with a Try again button (eventsRefreshRetry), when reading the games pool again failed: the games shown are the ones read before."
+  },
+  "eventsLineupLoading": "Loading the lineup",
+  "@eventsLineupLoading": {
+    "description": "Read by a screen reader, never drawn, while the Lineup sub-tab (eventsGamesSectionLineup) of an event's Games tab waits for the lineup: the games the event will play."
+  },
+  "eventsLineupFailedTitle": "Couldn't load the lineup",
+  "@eventsLineupFailedTitle": {
+    "description": "On the Lineup sub-tab (eventsGamesSectionLineup) of an event's Games tab when the lineup, the games the event will play, couldn't be read and none was read before. Followed by eventsGamesFailedBody and a Try again button (eventsRefreshRetry)."
+  },
+  "eventsLineupHiddenTitle": "The lineup isn't shown to you",
+  "@eventsLineupHiddenTitle": {
+    "description": "On the Lineup sub-tab (eventsGamesSectionLineup) of an event's Games tab when the server won't show the user the event's lineup, the games it will play."
+  },
+  "eventsLineupEmptyTitle": "Nothing in the lineup yet",
+  "@eventsLineupEmptyTitle": {
+    "description": "On the Lineup sub-tab (eventsGamesSectionLineup) of an event's Games tab when no game is in the event's lineup, the games it will play, for the event or any of its dates."
+  },
+  "eventsLineupEmptyBody": "Games join the lineup when a nomination passes, or when a host adds one.",
+  "@eventsLineupEmptyBody": {
+    "description": "Under eventsLineupEmptyTitle on the Lineup sub-tab of an event's Games tab: how a game gets into the lineup. A nomination is a game proposed on the Nominations sub-tab beside it (eventsGamesSectionNominations); a host is one of the people running the event."
+  },
+  "eventsLineupRefreshFailed": "Couldn't refresh the lineup. It may be out of date.",
+  "@eventsLineupRefreshFailed": {
+    "description": "Banner at the foot of an event's screen while its Games tab shows the Lineup sub-tab (eventsGamesSectionLineup), with a Try again button (eventsRefreshRetry), when reading the lineup again failed: the games shown are the ones read before."
+  },
+  "eventsLineupEveryDate": "Every date",
+  "@eventsLineupEveryDate": {
+    "description": "On the Lineup sub-tab (eventsGamesSectionLineup) of an event of two or more dates, the heading over the games lined up for the event as a whole, which are played whichever date it is, above the headings of each date's own games (named as the event's dates are). Also a line of such a game's quick look, the pop-up its row opens, saying which date it is on."
+  },
+  "eventsLineupDateGone": "A date no longer on the event",
+  "@eventsLineupDateGone": {
+    "description": "On the Lineup sub-tab (eventsGamesSectionLineup) of an event's Games tab, the heading over the games lined up for a date the event no longer has, as when the date was taken off, listed last, after eventsLineupEveryDate and each date's games. Also a line of such a game's quick look, the pop-up its row opens, in place of the date's name."
+  },
+  "eventsGamesEveryDateMark": "Every date",
+  "@eventsGamesEveryDateMark": {
+    "description": "The last part of a game's status line on the Lineup sub-tab (eventsGamesSectionLineup) of an event of one date or none, where the rows have no headings, after who brings it and joined to it by eventsDetailSeparator: the game is lined up for the event as a whole, played whichever date it is, rather than for the one date. The rows of the date's own games have no such part."
+  },
+  "eventsLineupRolePrimary": "Primary",
+  "@eventsLineupRolePrimary": {
+    "description": "The first part of a game's status line on the Lineup sub-tab (eventsGamesSectionLineup) of an event's Games tab, joined to who brings it by eventsDetailSeparator, and a line of its quick look, the pop-up the row opens: the game is one of the main games played, rather than a filler (eventsLineupRoleFiller)."
+  },
+  "eventsLineupRoleFiller": "Filler",
+  "@eventsLineupRoleFiller": {
+    "description": "The first part of a game's status line on the Lineup sub-tab (eventsGamesSectionLineup) of an event's Games tab, joined to who brings it by eventsDetailSeparator, and a line of its quick look, the pop-up the row opens: the game is a short one played between the main games (eventsLineupRolePrimary) or while waiting, and the host set no longest it should run. Where they set one, eventsLineupRoleFillerUpTo takes its place."
+  },
+  "eventsLineupRoleFillerUpTo": "{minutes, plural, =1{Filler, up to 1 minute} other{Filler, up to {minutes} minutes}}",
+  "@eventsLineupRoleFillerUpTo": {
+    "description": "eventsLineupRoleFiller, in its place where the host set the longest the game should run: {minutes} is that, a whole number of minutes, at least 1. The first part of the game's status line on the Lineup sub-tab of an event's Games tab, joined to who brings it by eventsDetailSeparator, and a line of its quick look.",
+    "placeholders": {
+      "minutes": {
+        "type": "int",
+        "example": "20"
+      }
+    }
+  },
+  "eventsLineupYouBring": "You're bringing this",
+  "@eventsLineupYouBring": {
+    "description": "A part of a game's status line on the Lineup sub-tab (eventsGamesSectionLineup) of an event's Games tab, after what it is played as and joined to it by eventsDetailSeparator, and a line of its quick look, the pop-up the row opens: the copy played is the user's own, which they offered to bring. Matches eventsGamesYours, the same words on the Pool sub-tab."
+  },
+  "eventsLineupBrings": "{name} is bringing this",
+  "@eventsLineupBrings": {
+    "description": "A part of a game's status line on the Lineup sub-tab (eventsGamesSectionLineup) of an event's Games tab, after what it is played as and joined to it by eventsDetailSeparator, and a line of its quick look, the pop-up the row opens: the copy played is someone else's, which they offered to bring. {name} is the person's name, or eventsAttendeeSomeoneStart where the app can't show one. Matches eventsGamesTheirs, the same words on the Pool sub-tab.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "Ada"
+      }
+    }
+  },
+  "eventsLineupNote": "Note: {note}",
+  "@eventsLineupNote": {
+    "description": "A line of the quick look of a game in the event's lineup, the pop-up its row opens on the Lineup sub-tab (eventsGamesSectionLineup) of an event's Games tab: the note the host left on the game, as they wrote it.",
+    "placeholders": {
+      "note": {
+        "type": "String",
+        "example": "Bring the expansion"
+      }
+    }
+  },
+  "eventsLineupFromNomination": "Added from a nomination",
+  "@eventsLineupFromNomination": {
+    "description": "A line of the quick look of a game in the event's lineup, the pop-up its row opens on the Lineup sub-tab (eventsGamesSectionLineup) of an event's Games tab: the game joined the lineup when its nomination passed or was approved, rather than being added by a host directly. Nominations are on the Nominations sub-tab beside it (eventsGamesSectionNominations)."
+  },
+  "eventsQuickLookLineupGone": "This game is no longer in the lineup.",
+  "@eventsQuickLookLineupGone": {
+    "description": "Line in the quick look of a game in the event's lineup, the pop-up its row opens on the Lineup sub-tab (eventsGamesSectionLineup) of an event's Games tab, once the game has left the lineup while the quick look was open, as when someone else's change is read. Nothing in the quick look can be pressed then."
   },
   "eventsGamesTakenBack": "{title} is off your games.",
   "@eventsGamesTakenBack": {
