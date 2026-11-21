@@ -861,6 +861,90 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
   }
 
   @override
+  Future<LineupGame> directAddGame(
+    String eventId, {
+    required String platformGameId,
+    required String suppliedById,
+    String? occurrenceId,
+    ScheduledGameRole role = ScheduledGameRole.primary,
+    String? notes,
+    int? maxPlayTime,
+  }) async {
+    _checkId(eventId, name: 'eventId');
+    _checkId(platformGameId, name: 'platformGameId');
+    _checkId(suppliedById, name: 'suppliedById');
+    if (occurrenceId != null) _checkId(occurrenceId, name: 'occurrenceId');
+    // Before anything is sent: an unknown role has no wire name.
+    if (role == ScheduledGameRole.unknown) {
+      throw ArgumentError.value(role, 'role', 'has no wire name');
+    }
+    final isFiller = role == ScheduledGameRole.filler;
+    if (isFiller && maxPlayTime != null && maxPlayTime < 1) {
+      throw ArgumentError.value(
+        maxPlayTime,
+        'maxPlayTime',
+        'must be at least 1',
+      );
+    }
+
+    const action = 'Add game to lineup';
+    const failures = _EventFailures(_Route.lineupAdd);
+    final result = await sendForJson(
+      () => _dio.post<String>(
+        '${_nominationsPath(eventId)}/direct-add',
+        options: _plainBody,
+        data: {
+          'platformGameId': platformGameId,
+          'suppliedById': suppliedById,
+          'occurrenceId': ?occurrenceId,
+          'role': role.toWire(),
+          'notes': ?notes,
+          // Only a filler has a time: the server's field is "for Filler role
+          // only".
+          if (isFiller) 'maxPlayTime': ?maxPlayTime,
+        },
+      ),
+      action: action,
+      family: failures,
+    );
+    return parseRemote(
+      failures,
+      () =>
+          _mapLineupGame(_nestedObject(result.body['eventGame'], 'eventGame')),
+      action: action,
+      status: result.status,
+    );
+  }
+
+  @override
+  Future<LineupGame> removeLineupGame(
+    String eventId,
+    String lineupGameId,
+  ) async {
+    _checkId(eventId, name: 'eventId');
+    _checkId(lineupGameId, name: 'lineupGameId');
+
+    const action = 'Remove game from lineup';
+    const failures = _EventFailures(_Route.lineupRemove);
+    final result = await sendForJson(
+      () => _dio.delete<String>(
+        '${_lineupPath(eventId)}/${Uri.encodeComponent(lineupGameId)}',
+        options: _plainBody,
+      ),
+      action: action,
+      family: failures,
+    );
+    return parseRemote(
+      failures,
+      () => _mapLineupGame(
+        _nestedObject(result.body['lineupGame'], 'lineupGame'),
+      ),
+      action: action,
+      status: result.status,
+    );
+  }
+
+  @override
   Future<void> castVote(
     String eventId,
     String nominationId, {
@@ -1947,11 +2031,23 @@ final class _EventFailures extends RemoteFailureFamily<EventRemoteException> {
   /// only ever the validation pipe's (#851).
   @override
   EventRemoteException? refused(RemoteRefusal refusal) {
-    if (!refusal.fromApi) return null;
     final status = refusal.status;
     final body = refusal.body;
     final message = refusal.message;
     final cause = refusal.cause;
+    // The lineup writes' 409s are read from the body's own `code`, with or
+    // without the envelope: a coded refusal is not always enveloped (#1260).
+    if (status == 409 &&
+        (route == _Route.lineupAdd || route == _Route.lineupRemove)) {
+      return EventWriteConflictException(
+        message,
+        cause: cause,
+        statusCode: status,
+        apiMessage: apiErrorField(body, 'message'),
+        code: apiErrorField(body, 'code'),
+      );
+    }
+    if (!refusal.fromApi) return null;
     if (status == 403) {
       return switch (route) {
         _Route.create => EventCreateRefusedException(
@@ -1963,7 +2059,9 @@ final class _EventFailures extends RemoteFailureFamily<EventRemoteException> {
         _Route.write ||
         _Route.attendeeAdd ||
         _Route.gameTakeBack ||
-        _Route.nominate => EventWriteRefusedException(
+        _Route.nominate ||
+        _Route.lineupAdd ||
+        _Route.lineupRemove => EventWriteRefusedException(
           message,
           cause: cause,
           statusCode: status,
@@ -1985,7 +2083,9 @@ final class _EventFailures extends RemoteFailureFamily<EventRemoteException> {
         _Route.write ||
         _Route.attendeeAdd ||
         _Route.gameTakeBack ||
-        _Route.nominate => EventRemoteNotFoundException(
+        _Route.nominate ||
+        _Route.lineupAdd ||
+        _Route.lineupRemove => EventRemoteNotFoundException(
           message,
           cause: cause,
           statusCode: status,
@@ -2083,4 +2183,17 @@ enum _Route {
   /// supplier who is not attending, and its enveloped 400 with one message a
   /// pool row that does not match the game.
   nominate,
+
+  /// `POST /api/events/:id/nominations/direct-add` (#519). Its 403 refuses the
+  /// add (the caller's role, or a mode that is not Direct or HostOnly), its
+  /// 404 is the event, the date or the pool row gone, its 409 a supplier who
+  /// is not attending, and its 400 a pool row that does not match the game or
+  /// a value the validation pipe refused: permanent.
+  lineupAdd,
+
+  /// `DELETE /api/events/:id/lineup/:lineupGameId` (#520). Its 403 refuses the
+  /// removal, its 404 is no such game in the lineup (or one removed a moment
+  /// before), and its 409 carries `LINEUP_STARTED`. The server never answers
+  /// it 400.
+  lineupRemove,
 }

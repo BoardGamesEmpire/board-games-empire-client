@@ -158,7 +158,8 @@ typedef CreatedEvent = ({EventSnapshot snapshot, DateTime? deletedAt});
 /// - [EventRemoteNotFoundException]: a 404 carrying the envelope, from
 ///   [fetchEvent], [fetchAvailabilitySummary], [deleteEvent],
 ///   [fetchHouseholdEvents], [fetchGamesPool], [fetchNominations],
-///   [fetchNomination], [fetchLineup], or a write naming a row. From
+///   [fetchNomination], [fetchLineup], [directAddGame], [removeLineupGame],
+///   or a write naming a row. From
 ///   [fetchEvent] the event is gone, or the caller may not read it. From
 ///   [deleteEvent] no live event has the id. From [fetchHouseholdEvents] the
 ///   household is missing or deleted.
@@ -166,7 +167,8 @@ typedef CreatedEvent = ({EventSnapshot snapshot, DateTime? deletedAt});
 ///   [createEvent], which says the API refused that create (below).
 /// - [EventWriteRefusedException]: a 403 carrying the envelope, from
 ///   [deleteEvent] and from each date write and [submitAvailability] below,
-///   and from [offerGames], [takeBackGame], [nominate], [castVote],
+///   and from [offerGames], [takeBackGame], [nominate], [directAddGame],
+///   [removeLineupGame], [castVote],
 ///   [withdrawNomination], [approveNomination], [rejectNomination] and
 ///   [resolveNomination], which says the API refused that write to an
 ///   existing event (below).
@@ -174,7 +176,8 @@ typedef CreatedEvent = ({EventSnapshot snapshot, DateTime? deletedAt});
 ///   message, from a write to an existing event's dates or a vote on one
 ///   (below), or from [nominate], [castVote], [withdrawNomination],
 ///   [approveNomination], [rejectNomination] or [resolveNomination]; and a
-///   409 carrying it from [addAttendee], [takeBackGame] or [nominate]. A
+///   409 carrying it from [addAttendee], [takeBackGame], [nominate],
+///   [directAddGame] or [removeLineupGame] (#519, #520). A
 ///   caller that must tell a [nominate]'s 409 (the supplier is not
 ///   attending) from its 400 (the pool row does not match the game) reads
 ///   the exception's `statusCode`.
@@ -824,6 +827,52 @@ abstract class EventRemoteDataSource {
     required String suppliedFromId,
     String? occurrenceId,
   });
+
+  /// `POST /api/events/:eventId/nominations/direct-add`: puts the game
+  /// [platformGameId] straight into the lineup, supplied by the pool row
+  /// [suppliedById], for the event's own lineup or, with [occurrenceId], for
+  /// one date (#519). Answers 201 `{ message, eventGame }`, the game in the
+  /// lineup read's shape. `sortOrder` is left to the server.
+  ///
+  /// The body leaves out a null [occurrenceId] and [notes]. [role] is sent by
+  /// its wire name, and [maxPlayTime] only for a [ScheduledGameRole.filler].
+  /// An unknown [role] and a Filler's [maxPlayTime] under 1 throw
+  /// [ArgumentError] before the request.
+  ///
+  /// A 403 carrying the envelope is [EventWriteRefusedException]: the caller
+  /// may not add, or the event's mode does not allow a direct add. A 404 is
+  /// [EventRemoteNotFoundException]: the event, the date or the pool row is
+  /// gone. A 409 is [EventWriteConflictException]: the supplier is not
+  /// attending, and it carries no code. A 400 (the pool row does not match the
+  /// game, or a value the server rejects) is [EventRemotePermanentException].
+  ///
+  /// Throws [ArgumentError] before the request for an empty id, and otherwise
+  /// [EventRemoteException] per the class doc.
+  Future<LineupGame> directAddGame(
+    String eventId, {
+    required String platformGameId,
+    required String suppliedById,
+    String? occurrenceId,
+    ScheduledGameRole role = ScheduledGameRole.primary,
+    String? notes,
+    int? maxPlayTime,
+  });
+
+  /// `DELETE /api/events/:eventId/lineup/:lineupGameId`: takes one game out of
+  /// the lineup, the event's own or a date's, and answers the removed game,
+  /// `{ message, lineupGame }` (#520).
+  ///
+  /// A 403 carrying the envelope is [EventWriteRefusedException]. A 404 is
+  /// [EventRemoteNotFoundException]: the game is not in this event's lineup,
+  /// or another removal got there first. A 409 is
+  /// [EventWriteConflictException] with `code` `LINEUP_STARTED`: the game's
+  /// date has started or was called off, none of the event's dates is still to
+  /// come, or the event was called off. Its code is read from the body
+  /// itself.
+  ///
+  /// Throws [ArgumentError] before the request for an empty id, and otherwise
+  /// [EventRemoteException] per the class doc.
+  Future<LineupGame> removeLineupGame(String eventId, String lineupGameId);
 
   /// `POST /api/events/:eventId/nominations/:nominationId/votes` with
   /// `{ voteType, comment? }`: casts the caller's vote, or changes it (#517).
