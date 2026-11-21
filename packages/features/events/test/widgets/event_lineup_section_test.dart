@@ -27,16 +27,33 @@ const _longTitle =
     'Twilight Imperium: Fourth Edition, Prophecy of Kings and the Codex '
     'Volumes';
 
-/// A row of `e-1`'s roster, answered Going.
-EventAttendee _row(String id, {String? name}) => EventAttendee(
+/// A row of `e-1`'s roster, a participant answered Going unless a test says
+/// otherwise.
+EventAttendee _row(
+  String id, {
+  String? name,
+  EventRole role = EventRole.participant,
+  EventParticipationStatus status = EventParticipationStatus.attending,
+}) => EventAttendee(
   id: id,
   eventId: 'e-1',
   userId: 'user-$id',
   displayName: name,
-  role: EventRole.participant,
-  status: EventParticipationStatus.attending,
+  role: role,
+  status: status,
   createdAt: kItemInstant,
   updatedAt: kItemInstant,
+);
+
+/// A game [attendeeId] offers to `e-1`'s pool, from their collection.
+OfferedGame _offered(String id, String attendeeId, String title) => OfferedGame(
+  id: id,
+  attendeeId: attendeeId,
+  collectionId: 'col-$id',
+  platformGameId: 'pg-$id',
+  gameId: 'g-$id',
+  title: title,
+  platformName: 'Tabletop',
 );
 
 /// A game on `e-1`'s lineup, Primary and brought by Ada, on the event itself
@@ -85,6 +102,18 @@ void main() {
   /// What each lineup read answers.
   late FutureOr<List<LineupGame>> Function(String eventId) lineupAnswer;
 
+  /// What each read of the games pool answers: none, unless a test says
+  /// otherwise.
+  late List<OfferedGame> pool;
+
+  /// How each read of the games pool answers: with [pool], unless a test
+  /// holds it or has it fail.
+  late FutureOr<List<OfferedGame>> Function() poolAnswer;
+
+  /// What each read of the event throws, while set: none, unless a test has
+  /// the server stop showing it.
+  Object? detailFailure;
+
   /// Each game page a quick look's View game asked for, by the game's id.
   final openedGames = <String>[];
 
@@ -106,15 +135,23 @@ void main() {
   const fridayName = 'Fri, Nov 6 · 7:00 PM';
 
   /// Event `e-1` as the viewer sees it, on [dates] (Friday alone by
-  /// default), with the viewer, Ada and someone unnamed on its roster.
-  EventDetail detailOf({List<EventOccurrence>? dates}) => EventDetail(
-    snapshot: EventSnapshot(
-      event: item('e-1', title: 'Catan night').event,
-      occurrences: dates ?? [friday],
-      attendees: [me, ada, unnamed],
-    ),
-    attendance: me,
-  );
+  /// default), with the viewer, Ada and someone unnamed on its roster, or
+  /// [roster]. The viewer is [viewer], a participant by default.
+  EventDetail detailOf({
+    List<EventOccurrence>? dates,
+    EventAttendee? viewer,
+    List<EventAttendee>? roster,
+  }) {
+    final self = viewer ?? me;
+    return EventDetail(
+      snapshot: EventSnapshot(
+        event: item('e-1', title: 'Catan night').event,
+        occurrences: dates ?? [friday],
+        attendees: roster ?? [self, ada, unnamed],
+      ),
+      attendance: self,
+    );
+  }
 
   setUpAll(() {
     registerFallbackValue(detailOf().snapshot);
@@ -129,7 +166,13 @@ void main() {
       () => repository.cacheEvent(any(), source: any(named: 'source')),
     ).thenAnswer((_) async {});
     when(() => repository.lastWrite(any())).thenAnswer((_) async => 7);
+    when(
+      () => repository.forgetEvent(any(), lastWrite: any(named: 'lastWrite')),
+    ).thenAnswer((_) async => true);
+    detailFailure = null;
     lineupAnswer = (_) => const [];
+    pool = const [];
+    poolAnswer = () => pool;
     openedGames.clear();
   });
 
@@ -145,10 +188,20 @@ void main() {
     location = ValueNotifier(null);
     addTearDown(location.dispose);
     remote = FakeEventRemote.detail(
-      (_) => detail.snapshot,
-      pool: (_) => const [],
+      (_) {
+        // The fake throws what a test hands it.
+        // ignore: only_throw_errors
+        if (detailFailure case final failure?) throw failure;
+        return detail.snapshot;
+      },
+      pool: (_) => poolAnswer(),
       nominations: (_) => const [],
       lineup: (eventId) => lineupAnswer(eventId),
+      directAdded: (request) => _lineupGame(
+        'l-${request.suppliedById}',
+        occurrenceId: request.occurrenceId,
+        role: request.role,
+      ),
     );
     return MaterialApp(
       theme: theme ?? BgeTheme.light(),
@@ -830,6 +883,452 @@ void main() {
     });
   });
 
+  group('Add a game (#519)', () {
+    final host = _row('att-me', name: 'Me', role: EventRole.host);
+    final azul = _offered('o-2', 'att-ada', 'Azul');
+    final catan = _offered('o-1', 'att-me', 'Catan');
+    final root = _offered('o-3', 'att-nn', 'Root');
+    final addGame = find.byKey(EventDetailScreen.lineupAddKey);
+    final picker = find.byKey(EventDetailScreen.lineupPickerKey);
+    Finder pick(String id) => find.byKey(EventDetailScreen.lineupPickKey(id));
+    Finder inPick(String id, String text) =>
+        find.descendant(of: pick(id), matching: find.text(text));
+    final confirm = find.byKey(EventDetailScreen.addToLineupConfirmKey);
+    Finder scopeChoice(String? occurrenceId) =>
+        find.byKey(EventDetailScreen.addToLineupScopeKey(occurrenceId));
+
+    /// Add a game's focus.
+    FocusNode addFocus(WidgetTester tester) =>
+        tester.widget<ButtonStyleButton>(addGame).focusNode!;
+
+    /// Presses Add a game and picks [id] from the pool.
+    Future<void> pickGame(WidgetTester tester, String id) async {
+      await tester.tap(addGame);
+      await animate(tester);
+      expect(picker, findsOneWidget);
+      await tester.ensureVisible(pick(id));
+      await tester.pump();
+      await tester.tap(pick(id));
+      await animate(tester);
+      expect(picker, findsNothing);
+    }
+
+    testWidgets('a participant has no Add a game', (tester) async {
+      pool = [azul];
+      await showLineup(tester);
+
+      expect(find.text('Nothing in the lineup yet'), findsOneWidget);
+      expect(addGame, findsNothing);
+    });
+
+    testWidgets('Add a game picks from the pool and adds for the chosen date', (
+      tester,
+    ) async {
+      pool = [catan, azul, root];
+      await showLineup(tester, detail: detailOf(viewer: host));
+
+      expect(addGame, findsOneWidget);
+      // Above the lineup, empty as it is.
+      expect(find.text('Nothing in the lineup yet'), findsOneWidget);
+      await tester.tap(addGame);
+      await animate(tester);
+
+      // Every copy in the pool, named with who brings it.
+      expect(picker, findsOneWidget);
+      expect(inPick('o-1', 'Catan'), findsOneWidget);
+      expect(inPick('o-1', "You're bringing this"), findsOneWidget);
+      expect(inPick('o-2', 'Azul'), findsOneWidget);
+      expect(inPick('o-2', 'Ada is bringing this'), findsOneWidget);
+      expect(inPick('o-3', 'This person is bringing this'), findsOneWidget);
+
+      await tester.tap(pick('o-2'));
+      await animate(tester);
+      expect(picker, findsNothing);
+
+      // One date and no row of dates: the whole event, or Friday.
+      expect(scopeChoice(null), findsOneWidget);
+      await tester.tap(scopeChoice('d-1'));
+      await animate(tester);
+      await tester.ensureVisible(confirm);
+      await tester.pump();
+      await tester.tap(confirm);
+      await animate(tester);
+
+      expect(remote.directAdds, [
+        (
+          eventId: 'e-1',
+          platformGameId: 'pg-o-2',
+          suppliedById: 'o-2',
+          occurrenceId: 'd-1',
+          role: ScheduledGameRole.primary,
+          notes: null,
+          maxPlayTime: null,
+        ),
+      ]);
+      // The lineup is read again, and shows it.
+      expect(remote.lineupRequests, hasLength(2));
+      expect(
+        find.byKey(EventDetailScreen.lineupOutcomeKey),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets("a copy whose supplier isn't going can't be picked, and says "
+        'why', (tester) async {
+      final handle = tester.ensureSemantics();
+      pool = [catan, azul];
+      await showLineup(
+        tester,
+        detail: detailOf(
+          viewer: host,
+          roster: [
+            host,
+            _row(
+              'att-ada',
+              name: 'Ada',
+              status: EventParticipationStatus.notAttending,
+            ),
+          ],
+        ),
+      );
+      await tester.tap(addGame);
+      await animate(tester);
+
+      expect(tester.widget<ListTile>(pick('o-2')).enabled, isFalse);
+      expect(inPick('o-2', "Whoever brings it isn't going"), findsOneWidget);
+      // Its name to a screen reader says why, as the row draws it.
+      final spoken = tester.getSemantics(pick('o-2'));
+      expect(spoken, isSemantics(isEnabled: false));
+      expect(spoken.label, contains('Azul'));
+      expect(spoken.label, contains('Ada is bringing this'));
+      expect(spoken.label, contains("Whoever brings it isn't going"));
+      expect(tester.widget<ListTile>(pick('o-1')).enabled, isTrue);
+
+      // A press on it picks nothing.
+      await tester.tap(pick('o-2'), warnIfMissed: false);
+      await animate(tester);
+      expect(picker, findsOneWidget);
+      expect(find.byType(AlertDialog), findsNothing);
+      handle.dispose();
+    });
+
+    testWidgets('adding under a date view adds to that date without asking', (
+      tester,
+    ) async {
+      pool = [catan, azul];
+      await showLineup(
+        tester,
+        detail: detailOf(viewer: host, dates: [friday, saturday]),
+      );
+
+      // Friday, the next date still to come, opens.
+      await pickGame(tester, 'o-2');
+      expect(find.byType(AlertDialog), findsOneWidget);
+      expect(scopeChoice(null), findsNothing);
+      expect(scopeChoice('d-1'), findsNothing);
+      await tester.tap(confirm);
+      await animate(tester);
+
+      expect(remote.directAdds.single.occurrenceId, 'd-1');
+
+      // Under Every date, the event's own lineup.
+      await chooseDate(tester, null);
+      await pickGame(tester, 'o-1');
+      expect(scopeChoice(null), findsNothing);
+      await tester.tap(confirm);
+      await animate(tester);
+
+      expect(remote.directAdds, hasLength(2));
+      expect(remote.directAdds.last.occurrenceId, isNull);
+      expect(remote.directAdds.last.suppliedById, 'o-1');
+    });
+
+    testWidgets('under a date called off, Add a game is disabled and says '
+        'why', (tester) async {
+      final handle = tester.ensureSemantics();
+      pool = [azul];
+      await showLineup(
+        tester,
+        detail: detailOf(
+          viewer: host,
+          dates: [
+            friday,
+            saturday.copyWith(status: OccurrenceStatus.cancelled),
+          ],
+        ),
+      );
+      await chooseDate(tester, 'd-2');
+
+      const reason = "This date isn't happening, so games can't be added to it";
+      const unread = "Games can't be added to this date";
+      expect(tester.widget<ButtonStyleButton>(addGame).onPressed, isNull);
+      expect(
+        tester.getSemantics(addGame),
+        isSemantics(label: 'Add a game', hint: reason, isEnabled: false),
+      );
+      expect(find.text(reason), findsOneWidget);
+      // A date called off says so: not only that nothing can be added.
+      expect(find.text(unread), findsNothing);
+
+      await chooseDate(tester, 'd-1');
+      expect(tester.widget<ButtonStyleButton>(addGame).onPressed, isNotNull);
+      expect(find.text(reason), findsNothing);
+      handle.dispose();
+    });
+
+    testWidgets('a date that has started still takes an add, from its own '
+        'view', (tester) async {
+      pool = [azul];
+      // Earlier this month: the night itself, or the morning after.
+      final started = confirmed(
+        'd-0',
+        DateTime(2026, 10, 2, 19),
+      ).copyWith(eventId: 'e-1');
+      await showLineup(
+        tester,
+        detail: detailOf(viewer: host, dates: [started, friday]),
+      );
+      await chooseDate(tester, 'd-0');
+
+      expect(tester.widget<ButtonStyleButton>(addGame).onPressed, isNotNull);
+      expect(
+        find.text("This date isn't happening, so games can't be added to it"),
+        findsNothing,
+      );
+      await pickGame(tester, 'o-2');
+      expect(scopeChoice('d-0'), findsNothing);
+      await tester.tap(confirm);
+      await animate(tester);
+
+      expect(remote.directAdds.single.occurrenceId, 'd-0');
+    });
+
+    testWidgets("Add a game's list shows the pool's read as it goes: a "
+        'spinner, then the games', (tester) async {
+      final held = Completer<List<OfferedGame>>();
+      poolAnswer = () => held.future;
+      await showLineup(tester, detail: detailOf(viewer: host));
+      await tester.tap(addGame);
+      await animate(tester);
+
+      expect(
+        find.descendant(
+          of: picker,
+          matching: find.bySemanticsLabel('Loading the games'),
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('No games offered yet'), findsNothing);
+
+      held.complete([azul]);
+      await animate(tester);
+
+      expect(pick('o-2'), findsOneWidget);
+      expect(find.bySemanticsLabel('Loading the games'), findsNothing);
+    });
+
+    testWidgets("Add a game's list says when the pool couldn't be read, and "
+        'Try again reads it', (tester) async {
+      poolAnswer = () => throw _offline;
+      await showLineup(tester, detail: detailOf(viewer: host));
+      await tester.tap(addGame);
+      await animate(tester);
+
+      expect(
+        find.descendant(
+          of: picker,
+          matching: find.text("Couldn't load the games"),
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('No games offered yet'), findsNothing);
+
+      poolAnswer = () => [azul];
+      final reads = remote.poolRequests.length;
+      await tester.tap(find.byKey(EventDetailScreen.lineupPickerRetryKey));
+      await animate(tester);
+
+      expect(remote.poolRequests, hasLength(reads + 1));
+      expect(pick('o-2'), findsOneWidget);
+    });
+
+    testWidgets("Add a game's list says when the games aren't shown, and when "
+        'none are offered', (tester) async {
+      poolAnswer = () => throw const EventRemoteForbiddenException('no');
+      await showLineup(tester, detail: detailOf(viewer: host));
+      await tester.tap(addGame);
+      await animate(tester);
+
+      expect(
+        find.descendant(
+          of: picker,
+          matching: find.text("The games aren't shown to you"),
+        ),
+        findsOneWidget,
+      );
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await animate(tester);
+
+      // None offered, as the pool's read answers.
+      await tester.pumpWidget(const SizedBox());
+      poolAnswer = () => const [];
+      await showLineup(tester, detail: detailOf(viewer: host));
+      await tester.tap(addGame);
+      await animate(tester);
+
+      expect(
+        find.descendant(
+          of: picker,
+          matching: find.text('No games offered yet'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.text(
+          'Once someone offers to bring a game, it can be added to the lineup '
+          'from here.',
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets("under a date whose status this client can't read, Add a "
+        'game is disabled, saying only that no game can be added', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      pool = [azul];
+      await showLineup(
+        tester,
+        detail: detailOf(
+          viewer: host,
+          dates: [
+            friday,
+            saturday.copyWith(status: OccurrenceStatus.unknown),
+          ],
+        ),
+      );
+      await chooseDate(tester, 'd-2');
+
+      const neutral = "Games can't be added to this date";
+      expect(tester.widget<ButtonStyleButton>(addGame).onPressed, isNull);
+      expect(
+        tester.getSemantics(addGame),
+        isSemantics(label: 'Add a game', hint: neutral, isEnabled: false),
+      );
+      expect(find.text(neutral), findsOneWidget);
+      expect(
+        find.text("This date isn't happening, so games can't be added to it"),
+        findsNothing,
+      );
+      handle.dispose();
+    });
+
+    testWidgets("Add a game's list says the event can't be found, where it "
+        'goes while the list is open', (tester) async {
+      pool = [azul];
+      await showLineup(tester, detail: detailOf(viewer: host));
+      await tester.tap(addGame);
+      await animate(tester);
+      expect(pick('o-2'), findsOneWidget);
+
+      // The server no longer shows the event: its forget empties the cache.
+      detailFailure = const EventRemoteNotFoundException(
+        'gone',
+        statusCode: 404,
+      );
+      await readEvent(tester);
+      cache.add(null);
+      await settle(tester);
+      await animate(tester);
+
+      expect(
+        blocOf<EventDetailBloc>(tester).state,
+        isA<EventDetailNotFound>(),
+      );
+      expect(
+        find.descendant(
+          of: picker,
+          matching: find.text("We couldn't find this event"),
+        ),
+        findsOneWidget,
+      );
+      expect(pick('o-2'), findsNothing);
+      expect(
+        find.descendant(
+          of: picker,
+          matching: find.bySemanticsLabel('Loading the games'),
+        ),
+        findsNothing,
+      );
+    });
+
+    testWidgets("focus is back on Add a game after the dialog's Cancel, and "
+        'after an add is sent', (tester) async {
+      pool = [azul];
+      await showLineup(tester, detail: detailOf(viewer: host));
+      addFocus(tester).requestFocus();
+      await tester.pump();
+
+      // Cancel: nothing sent.
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await animate(tester);
+      await tester.tap(pick('o-2'));
+      await animate(tester);
+      await tester.tap(find.text('Cancel'));
+      await animate(tester);
+
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(remote.directAdds, isEmpty);
+      expect(addFocus(tester).hasPrimaryFocus, isTrue);
+
+      // Sent: held through the add, focus kept.
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await animate(tester);
+      await tester.tap(pick('o-2'));
+      await animate(tester);
+      await tester.tap(confirm);
+      await animate(tester);
+
+      expect(remote.directAdds, hasLength(1));
+      expect(addFocus(tester).hasPrimaryFocus, isTrue);
+    });
+
+    testWidgets('closed with nothing picked, focus is back on Add a game, and '
+        'nothing is sent', (tester) async {
+      pool = [azul];
+      await showLineup(tester, detail: detailOf(viewer: host));
+      addFocus(tester).requestFocus();
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await animate(tester);
+      expect(picker, findsOneWidget);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await animate(tester);
+
+      expect(picker, findsNothing);
+      expect(remote.directAdds, isEmpty);
+      expect(addFocus(tester).hasPrimaryFocus, isTrue);
+    });
+
+    testWidgets('the last row to leave while it holds focus hands it to Add a '
+        'game', (tester) async {
+      pool = [azul];
+      lineupAnswer = (_) => [_lineupGame('l-1')];
+      await showLineup(tester, detail: detailOf(viewer: host));
+      headFocus(tester, 'l-1').requestFocus();
+      await tester.pump();
+
+      // Someone else took it out: a read finds it gone.
+      lineupAnswer = (_) => const [];
+      await readEvent(tester);
+
+      expect(row('l-1'), findsNothing);
+      expect(addFocus(tester).hasPrimaryFocus, isTrue);
+    });
+  });
+
   group('the quick look', () {
     testWidgets('a row opens the lineup quick look, and focus returns to the '
         'row after', (tester) async {
@@ -1004,6 +1503,55 @@ void main() {
       },
       arrange: (tester) async {
         await openQuickLook(tester, 'l-1');
+      },
+    );
+
+    auditScreen(
+      "EventDetailScreen, a host's Lineup sub-tab with Add a game (#519)",
+      pump: (tester, theme) async {
+        lineupAnswer = (_) => [_lineupGame('l-1')];
+        final detail = detailOf(
+          viewer: _row('att-me', name: 'Me', role: EventRole.host),
+        );
+        await tester.pumpWidget(harness(detail, theme: theme));
+        await arrangeGames(tester, detail);
+      },
+      arrange: (tester) async {
+        await tester.ensureVisible(find.byKey(EventDetailScreen.lineupAddKey));
+        await tester.pumpAndSettle();
+      },
+    );
+
+    auditScreen(
+      'EventDetailScreen, the games Add a game picks from, one whose '
+      "supplier isn't going (#519)",
+      pump: (tester, theme) async {
+        pool = [
+          _offered('o-1', 'att-me', 'Catan'),
+          _offered('o-2', 'att-ada', _longTitle),
+        ];
+        final host = _row('att-me', name: 'Me', role: EventRole.host);
+        final detail = detailOf(
+          viewer: host,
+          roster: [
+            host,
+            _row(
+              'att-ada',
+              name: 'Ada',
+              status: EventParticipationStatus.notAttending,
+            ),
+          ],
+        );
+        await tester.pumpWidget(harness(detail, theme: theme));
+        await arrangeGames(tester, detail);
+      },
+      arrange: (tester) async {
+        final add = find.byKey(EventDetailScreen.lineupAddKey);
+        await tester.ensureVisible(add);
+        await tester.pumpAndSettle();
+        await tester.tap(add);
+        await tester.pumpAndSettle();
+        expect(find.byKey(EventDetailScreen.lineupPickerKey), findsOneWidget);
       },
     );
 

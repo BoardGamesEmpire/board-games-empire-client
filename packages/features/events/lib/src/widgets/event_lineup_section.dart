@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:events/l10n/events_localizations.dart';
 import 'package:events/src/bloc/event_detail_state.dart';
 import 'package:events/src/bloc/event_lineup_state.dart';
@@ -10,6 +12,10 @@ import 'package:events/src/widgets/event_games_row_lines.dart';
 import 'package:events/src/widgets/event_games_tab_scope.dart';
 import 'package:events/src/widgets/event_labels.dart';
 import 'package:events/src/widgets/game_name.dart';
+import 'package:events/src/widgets/held_press.dart';
+import 'package:events/src/widgets/held_spinner.dart';
+import 'package:events/src/widgets/lineup_row_controls.dart';
+import 'package:events/src/widgets/pool_row_controls.dart';
 import 'package:flutter/material.dart';
 import 'package:models/domain.dart';
 import 'package:ui/ui.dart';
@@ -78,7 +84,10 @@ String lineupSupplierLine(
 /// left out, whatever its date.
 ///
 /// Its slivers, as one group under the sub-tabs' bar, with no heading of
-/// their own, as the sub-tab's label names the list (#946). Where a game's
+/// their own, as the sub-tab's label names the list (#946). First, for a
+/// viewer offered a direct add under the date view's mode ([addScopes],
+/// [lineupAddChoicesIn]), Add a game, above every state but the lineup being
+/// hidden ([_AddGameButton]). Where a game's
 /// date is no longer among the event's ([lineupDrawsHeaders]), each group is
 /// headed by what it is for: "Every date", the date's name
 /// ([eventDateName]), or that the date is no longer on the event. Each
@@ -104,9 +113,9 @@ String lineupSupplierLine(
 /// headings, that it is for every date, joined as the event's other lines
 /// are and read without the symbols between them. They are one button, the
 /// row's head, which opens the game's quick look (#957, [EventGameRowHead]).
-/// It has no other control: nothing on the lineup can be changed from here.
-/// As the quick look closes, focus goes back to the row's head, or where the
-/// row has left, to the head of the row in its place
+/// It has no other control. As the quick look closes, focus goes back to the
+/// row's head, or where the row has left, to the head of the row in its
+/// place, else to Add a game
 /// ([EventGamesTabController.focusAfterQuickLook]).
 class EventLineupSection extends StatelessWidget {
   const EventLineupSection({
@@ -117,6 +126,9 @@ class EventLineupSection extends StatelessWidget {
     required this.controller,
     required this.now,
     required this.names,
+    required this.addScopes,
+    required this.acting,
+    required this.clock,
     super.key,
   });
 
@@ -137,8 +149,57 @@ class EventLineupSection extends StatelessWidget {
   /// The roster's names, by row id, which name who brings each game.
   final Map<String, String?> names;
 
+  /// What a direct add can be for in the date view (#519,
+  /// [lineupAddChoicesIn]): null where the viewer isn't offered one, which
+  /// builds no Add a game; empty where the view's date takes no add, called
+  /// off or in a status this client can't read, which disables it, saying
+  /// why ([lineupAddClosedReason]).
+  final List<NominateScope>? addScopes;
+
+  /// Whether the screen's own request is out, or the event is deleted.
+  final bool acting;
+
+  /// The screen's clock, read as an add is pressed and again as it is sent.
+  final DateTime Function() clock;
+
+  /// Key on the sliver that holds Add a game.
+  static const _addKey = ValueKey<String>('event_lineup.add');
+
+  /// Key on the sliver of what the lineup shows, so Add a game coming or
+  /// going above it never builds it anew.
+  static const _bodyKey = ValueKey<String>('event_lineup.body');
+
   @override
   Widget build(BuildContext context) {
+    final addScopes = this.addScopes;
+    return SliverMainAxisGroup(
+      slivers: [
+        if (addScopes != null && body != EventLineupBody.hidden)
+          SliverToBoxAdapter(
+            key: _addKey,
+            child: _AddGameButton(
+              area: controller.lineupAddArea,
+              closed: addScopes.isEmpty
+                  ? lineupAddClosedReason(
+                      EventsLocalizations.of(context),
+                      detail.detail,
+                      controller.dateView,
+                    )
+                  : null,
+              // As the tab's other writes are, and not while another lineup
+              // write is out.
+              enabled: !detail.reading && !acting && !state.busy,
+              runOver: !state.busy,
+              onPressed: () => pickAndAddToLineup(context, clock: clock),
+            ),
+          ),
+        KeyedSubtree(key: _bodyKey, child: _body(context)),
+      ],
+    );
+  }
+
+  /// What the lineup shows: a state, or its rows.
+  Widget _body(BuildContext context) {
     final l10n = EventsLocalizations.of(context);
     return switch (body) {
       EventLineupBody.hidden => BgeStateSliver(
@@ -330,6 +391,126 @@ class _LineupRow extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Add a game, at the top of the Lineup sub-tab (#519): opens the pool's
+/// games, and adds the one picked straight to the lineup
+/// ([pickAndAddToLineup]), for the date view's date or the whole event
+/// (#1042), or, with no row of dates, as the add dialog asks.
+///
+/// A direct write, so disabled offline through [BgeOnlineOnly], with one
+/// [BgeOnlineOnlyNote] under it, as the pool's header has. Disabled, with the
+/// reason as its hint and under it, where the date view's date takes no add,
+/// called off or in a status this client can't read ([closed],
+/// [lineupAddClosedReason]); and with nothing to say while it may not be
+/// pressed for a while ([enabled]).
+///
+/// The picker and then the dialog hand focus back to it as each closes, and
+/// a disabled button can't hold focus (#607). So, as Offer games is, it is
+/// held through [HeldPress] from its press until its add is over
+/// ([runOver]): enabled, ignoring presses and showing a spinner, wherever it
+/// would otherwise be unavailable. It is held by [area], where a hand-off
+/// with no lineup row left to take focus finds it
+/// ([EventGamesTabController.lineupAddArea]).
+class _AddGameButton extends StatefulWidget {
+  const _AddGameButton({
+    required this.area,
+    required this.closed,
+    required this.enabled,
+    required this.runOver,
+    required this.onPressed,
+  });
+
+  /// Holds the button, so a hand-off can find it.
+  final FocusNode area;
+
+  /// Why it can't be pressed in the date view in use, where its date takes
+  /// no add ([lineupAddClosedReason]). Null otherwise.
+  final String? closed;
+
+  /// Whether it may be pressed, connection and reason aside: false while a
+  /// detail read runs, the screen's own request is out, or a lineup write is
+  /// out.
+  final bool enabled;
+
+  /// Whether no lineup write is out: once its own add went out, that is
+  /// over.
+  final bool runOver;
+
+  /// Opens the picker, then the add dialog, and sends the add. Completes
+  /// true when it was sent, and false when nothing was.
+  final Future<bool> Function() onPressed;
+
+  @override
+  State<_AddGameButton> createState() => _AddGameButtonState();
+}
+
+class _AddGameButtonState extends State<_AddGameButton>
+    with HeldPress<_AddGameButton> {
+  @override
+  bool get heldActionOver => widget.runOver;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = EventsLocalizations.of(context);
+    final theme = Theme.of(context);
+    final offline = BgeConnectivityScope.offlineOf(context);
+    final closed = widget.closed;
+    final available = widget.enabled && !offline && closed == null;
+    // Offline, or with its date closed, it is disabled, pressed or not: no
+    // press made it so (#49).
+    final held = heldInert(
+      available: available,
+      disabled: offline || closed != null,
+    );
+    // One reason: offline [BgeOnlineOnly] gives its own.
+    final reason = offline ? null : closed;
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Focus(
+          focusNode: widget.area,
+          includeSemantics: false,
+          child: BgeOnlineOnly(
+            showNote: false,
+            child: Semantics(
+              hint: reason,
+              child: BgeInertButton(
+                inert: held,
+                label: l10n.eventsLineupAdd,
+                onPressed: available || held
+                    ? () => unawaited(holdPress(widget.onPressed))
+                    : null,
+                builder: (context, focusNode, onPressed) => FilledButton.icon(
+                  key: EventDetailScreen.lineupAddKey,
+                  focusNode: focusNode,
+                  onPressed: onPressed,
+                  icon: held ? const HeldSpinner() : const Icon(Icons.add),
+                  label: Text(l10n.eventsLineupAdd),
+                ),
+              ),
+            ),
+          ),
+        ),
+        if (reason != null) ...[
+          const BgeGap.xs(),
+          // Its hint already says it.
+          ExcludeSemantics(
+            child: Text(
+              reason,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ],
+        if (offline) ...[const BgeGap.md(), const BgeOnlineOnlyNote()],
+        const BgeGap.md(),
+      ],
     );
   }
 }

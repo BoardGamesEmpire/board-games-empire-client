@@ -23,6 +23,7 @@ import 'package:events/src/widgets/event_labels.dart';
 import 'package:events/src/widgets/game_name.dart';
 import 'package:events/src/widgets/held_press.dart';
 import 'package:events/src/widgets/held_spinner.dart';
+import 'package:events/src/widgets/lineup_row_controls.dart';
 import 'package:events/src/widgets/nominate_scope_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -240,23 +241,25 @@ typedef TakeBackGates = ({bool inert, bool enabled, bool runOver});
 
 /// What a pool row says of its copy and builds its controls with (#957):
 /// who brings it, as its status line says it; whether that line says
-/// Nominated (#947, #946); and Nominate's and Take back's arguments where
-/// each is offered, null where it isn't. The row builds one of the two
-/// (#946), its quick look both.
+/// Nominated (#947, #946); and Nominate's, Add to lineup's (#519) and Take
+/// back's arguments where each is offered, null where it isn't. The row
+/// builds one of them (#946), its quick look each.
 typedef PoolRowGates = ({
   String who,
   bool nominatedLine,
   NominateGates? nominate,
+  AddToLineupGates? addToLineup,
   TakeBackGates? takeBack,
 });
 
 /// What the row of [game] says and builds (#957), from the detail, the
-/// pool's and the nominations' states, the tab's [controller], the
-/// roster's [names], whether the screen is [acting]
-/// (`eventScreenActing`), and Nominate's [scopes] as of the clock in the
-/// date view ([nominateChoicesIn], #1042), the same for every row, so a
-/// list makes them once: one place, so the row and its quick look build the
-/// same controls under the same rules.
+/// pool's, the nominations' and the lineup's states, the tab's
+/// [controller], the roster's [names], whether the screen is [acting]
+/// (`eventScreenActing`), and Nominate's [scopes] and Add to lineup's
+/// [addScopes] as of the clock in the date view ([nominateChoicesIn],
+/// [lineupAddChoicesIn], #1042), the same for every row, so a list makes
+/// them once: one place, so the row and its quick look build the same
+/// controls under the same rules.
 ///
 /// Nominate, where the viewer is offered it under the mode of the date view
 /// ([scopes] not null, #519), on an event with a nominations' state.
@@ -270,6 +273,16 @@ typedef PoolRowGates = ({
 /// acting, a nominations write is out, or the nominations aren't known
 /// ([nominationsKnown]). Its game is in the lineup by [lineup] where that is
 /// known ([knownLineup], #519), else by the nominations.
+///
+/// Add to lineup on every row, anyone's copy, where the viewer is offered a
+/// direct add under the mode of the date view ([addScopes] not null, #519),
+/// on an event with a lineup's state. The row's main action under a
+/// host-only view, in Nominate's place, and otherwise its quick look's alone
+/// ([AddToLineupGates]' `onRow`). Disabled, saying why, where the date view's
+/// date takes no add, so [addScopes] is empty: called off, or in a status
+/// this client can't read ([lineupAddClosedReason]); and where
+/// whoever brings the game isn't going; and with nothing to say while a
+/// detail read runs, the screen is acting, or a lineup write is out.
 ///
 /// Take back on the viewer's own row where they may offer games or take
 /// them back ([offerGamesGate]), and on anyone else's where they may take
@@ -286,6 +299,7 @@ PoolRowGates poolRowGates(
   required Map<String, String?> names,
   required bool acting,
   required List<NominateScope>? scopes,
+  required List<NominateScope>? addScopes,
   EventLineupState? lineup,
 }) {
   final viewerId = detail.detail.attendance?.id;
@@ -304,6 +318,12 @@ PoolRowGates poolRowGates(
   final takesBack = own
       ? offerGamesGate(detail) != OfferGamesGate.hidden
       : canTakeBackAnyGame(detail);
+  // In the second person on the viewer's own rows, as the row's line is.
+  final notGoing = !supplierNotGoing(detail.detail, game)
+      ? null
+      : own
+      ? l10n.eventsNominateYouNotGoingHint
+      : l10n.eventsNominateSupplierNotGoingHint;
 
   return (
     who: own
@@ -321,13 +341,7 @@ PoolRowGates poolRowGates(
             // A date view whose date takes no nomination now (#1042).
             closed: choices.isEmpty ? l10n.eventsNominateDateClosed : null,
             unread: _nominateUnread(l10n, nominations, controller),
-            // In the second person on the viewer's own rows, as the row's
-            // line is.
-            notGoing: !supplierNotGoing(detail.detail, game)
-                ? null
-                : own
-                ? l10n.eventsNominateYouNotGoingHint
-                : l10n.eventsNominateSupplierNotGoingHint,
+            notGoing: notGoing,
             already: already,
             // As the tab's other writes are, and not while another
             // nominations write is out. Nor before the nominations are
@@ -340,6 +354,30 @@ PoolRowGates poolRowGates(
                 !nominations.busy &&
                 nominationsKnown(nominations, controller),
             runOver: !nominations.busy,
+          ),
+    addToLineup: lineup == null || addScopes == null
+        ? null
+        : (
+            // A date view whose date takes no add (#1042): called off, or in
+            // a status this client can't read. One that has started still
+            // takes a game (#519).
+            closed: addScopes.isEmpty
+                ? lineupAddClosedReason(
+                    l10n,
+                    detail.detail,
+                    controller.dateView,
+                  )
+                : null,
+            notGoing: notGoing,
+            // As the tab's other writes are, and not while another lineup
+            // write is out.
+            enabled: !detail.reading && !acting && !lineup.busy,
+            runOver: !lineup.busy,
+            // Under a host-only view, where nothing can be nominated, it is
+            // the row's main action, in Nominate's place (#519).
+            onRow:
+                viewMode(detail.detail.snapshot, controller.dateView) ==
+                GameAdditionMode.hostOnly,
           ),
     takeBack: !takesBack
         ? null
@@ -354,15 +392,21 @@ PoolRowGates poolRowGates(
   );
 }
 
-/// Nominate and Take back on [game], for its row and its quick look (#957),
-/// each built from its gates in [gates] ([poolRowGates]) where it is
-/// offered, and null where it isn't. Nominate nominates by [clock]
-/// ([nominateGame]). Take back's press, however it came, arms [controller]'s
+/// Nominate, Add to lineup (#519) and Take back on [game], for its row and
+/// its quick look (#957), each built from its gates in [gates]
+/// ([poolRowGates]) where it is offered, and null where it isn't. Nominate
+/// nominates by [clock] ([nominateGame]), and Add to lineup adds by it
+/// ([addToLineup]). Take back's press, however it came, arms [controller]'s
 /// hand-off, then takes the game back ([takeBackGame]), naming whoever
 /// offered it from [names], by the viewer's roster row [viewerId]. Each
-/// button carries the row's key unless [nominateKey] or [takeBackKey] gives
-/// it another.
-({NominateButton? nominate, TakeBackButton? takeBack}) poolRowButtons(
+/// button carries the row's key unless [nominateKey], [addToLineupKey] or
+/// [takeBackKey] gives it another.
+({
+  NominateButton? nominate,
+  AddToLineupButton? addToLineup,
+  TakeBackButton? takeBack,
+})
+poolRowButtons(
   BuildContext context, {
   required OfferedGame game,
   required PoolRowGates gates,
@@ -371,9 +415,11 @@ PoolRowGates poolRowGates(
   required Map<String, String?> names,
   required DateTime Function() clock,
   Key? nominateKey,
+  Key? addToLineupKey,
   Key? takeBackKey,
 }) {
   final nominate = gates.nominate;
+  final add = gates.addToLineup;
   final takeBack = gates.takeBack;
   return (
     nominate: nominate == null
@@ -388,6 +434,17 @@ PoolRowGates poolRowGates(
             enabled: nominate.enabled,
             runOver: nominate.runOver,
             onPressed: () => nominateGame(context, game, clock: clock),
+          ),
+    addToLineup: add == null
+        ? null
+        : AddToLineupButton(
+            buttonKey: addToLineupKey,
+            game: game,
+            closed: add.closed,
+            notGoing: add.notGoing,
+            enabled: add.enabled,
+            runOver: add.runOver,
+            onPressed: () => addToLineup(context, game, clock: clock),
           ),
     takeBack: takeBack == null
         ? null
