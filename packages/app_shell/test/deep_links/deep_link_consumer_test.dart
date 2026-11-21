@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:app_shell/app_shell.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:logging/logging.dart';
@@ -27,6 +28,18 @@ class _FakeLookup implements KnownServerLookup {
     if (error != null) throw error;
     return ids[bgeServerId];
   }
+}
+
+/// Answers in the same turn it is asked, as a cached lookup could, so a
+/// pass reaches its checks after the lookup without yielding.
+class _SynchronousLookup implements KnownServerLookup {
+  _SynchronousLookup(this.ids);
+
+  final Map<String, String> ids;
+
+  @override
+  Future<String?> localServerIdFor(String bgeServerId) =>
+      SynchronousFuture<String?>(ids[bgeServerId]);
 }
 
 class _MockServerOrchestrator extends Mock implements ServerOrchestrator {}
@@ -223,7 +236,7 @@ void main() {
 
         await consumer.drain();
 
-        expect(gone, [AppRoutes.deepLinkUnknownServer]);
+        expect(gone, [AppRoutes.deepLinkUnknownServerOf(link.location)]);
         expect(holder.peek, isNull);
         verifyNever(() => orchestrator.switchActiveServer(any()));
       },
@@ -341,15 +354,14 @@ void main() {
 
         // A link for a server this device hasn't added replaces it, and
         // lands on the unknown-server screen.
-        holder.set(
-          const ServerDeepLink(
-            serverId: 'bge-9',
-            location: '/server/bge-9/event/e9',
-          ),
+        const unknown = ServerDeepLink(
+          serverId: 'bge-9',
+          location: '/server/bge-9/event/e9',
         );
+        holder.set(unknown);
         await consumer.drain();
 
-        expect(gone, [AppRoutes.deepLinkUnknownServer]);
+        expect(gone, [AppRoutes.deepLinkUnknownServerOf(unknown.location)]);
         expect(holder.peek, isNull);
 
         // The first link sent again, with another server still active: its
@@ -911,7 +923,7 @@ void main() {
           await pumpEventQueue();
 
           // The newest link wins without waiting on the older one's sign-in.
-          expect(gone, [AppRoutes.deepLinkUnknownServer]);
+          expect(gone, [AppRoutes.deepLinkUnknownServerOf(unknown.location)]);
           expect(holder.peek, isNull);
         },
       );
@@ -1170,5 +1182,407 @@ void main() {
         expect(fake.calls, 1);
       },
     );
+
+    group('holdUntilSignedIn', () {
+      /// The server just added (`local-2`) is active and signed out, while
+      /// the app is still Ready from the server it left (#971).
+      void addedServerActive() {
+        lookup = _FakeLookup(const {'bge-1': 'local-2'});
+        when(() => orchestrator.activeServerId).thenReturn('local-2');
+      }
+
+      test('holds the link until that server signs in', () async {
+        addedServerActive();
+        final consumer = buildConsumer()..start();
+        await pumpEventQueue();
+
+        consumer.holdUntilSignedIn(link, 'local-2');
+        await pumpEventQueue();
+
+        expect(gone, isEmpty);
+        expect(holder.peek, link);
+
+        await consumer.drain();
+        await pumpEventQueue();
+
+        expect(gone, [link.location]);
+        expect(holder.peek, isNull);
+        verifyNever(() => orchestrator.switchActiveServer(any()));
+      });
+
+      test('holds the link when the lookup answers at once', () async {
+        addedServerActive();
+        lookup = _SynchronousLookup(const {'bge-1': 'local-2'});
+        final consumer = buildConsumer()..start();
+        await pumpEventQueue();
+
+        // The link's arrival runs its pass inside the call, so the wait
+        // has to be in place before the link is.
+        consumer.holdUntilSignedIn(link, 'local-2');
+        await pumpEventQueue();
+
+        expect(gone, isEmpty);
+        expect(holder.peek, link);
+      });
+
+      test('drops the link when the app leaves that server before its '
+          'sign-in', () async {
+        addedServerActive();
+        var active = 'local-2';
+        when(() => orchestrator.activeServerId).thenAnswer((_) => active);
+        final consumer = buildConsumer()..start();
+        await pumpEventQueue();
+
+        consumer.holdUntilSignedIn(link, 'local-2');
+        await pumpEventQueue();
+        expect(holder.peek, link);
+
+        // From the added server's sign-in, the user goes back to a server
+        // they are signed in on, and its authenticated signal drains. The
+        // add was this link's switch, so it is not switched to again.
+        active = 'local-1';
+        await consumer.drain();
+        await pumpEventQueue();
+
+        expect(gone, isEmpty);
+        expect(holder.peek, isNull);
+        verifyNever(() => orchestrator.switchActiveServer(any()));
+        verifyNever(
+          () => orchestrator.connectServer(
+            any(),
+            makeActive: any(named: 'makeActive'),
+          ),
+        );
+      });
+
+      // The user changed the link's address, and the server added there is
+      // another one (#971). The link waits for that server's sign-in, and
+      // then shows the unknown-server screen, rather than routing there at
+      // once and skipping the sign-in.
+      group("when the server added is not the link's", () {
+        void otherServerAdded() {
+          lookup = _FakeLookup(const {});
+          when(() => orchestrator.activeServerId).thenReturn('local-2');
+        }
+
+        test('holds the link until that server signs in, then shows the '
+            'unknown-server screen', () async {
+          otherServerAdded();
+          final consumer = buildConsumer()..start();
+          await pumpEventQueue();
+
+          consumer.holdUntilSignedIn(link, 'local-2');
+          await pumpEventQueue();
+
+          expect(gone, isEmpty);
+          expect(holder.peek, link);
+
+          await consumer.drain();
+          await pumpEventQueue();
+
+          expect(gone, [AppRoutes.deepLinkUnknownServerOf(link.location)]);
+          expect(holder.peek, isNull);
+        });
+
+        test('shows the unknown-server screen even when the app leaves that '
+            'server before its sign-in', () async {
+          otherServerAdded();
+          var active = 'local-2';
+          when(() => orchestrator.activeServerId).thenAnswer((_) => active);
+          final consumer = buildConsumer()..start();
+          await pumpEventQueue();
+
+          consumer.holdUntilSignedIn(link, 'local-2');
+          await pumpEventQueue();
+          expect(holder.peek, link);
+
+          // The user goes back to a server they are signed in on. The link
+          // names no server here, so there is nothing to drop it for
+          // leaving, and the screen shows there.
+          active = 'local-1';
+          await consumer.drain();
+          await pumpEventQueue();
+
+          expect(gone, [AppRoutes.deepLinkUnknownServerOf(link.location)]);
+          expect(holder.peek, isNull);
+          verifyNever(() => orchestrator.switchActiveServer(any()));
+        });
+
+        test(
+          'a newer link for a server not added still routes at once',
+          () async {
+            otherServerAdded();
+            const newer = ServerDeepLink(
+              serverId: 'bge-9',
+              location: '/server/bge-9/event/e9',
+            );
+            final consumer = buildConsumer()..start();
+            await pumpEventQueue();
+            consumer.holdUntilSignedIn(link, 'local-2');
+            await pumpEventQueue();
+            expect(gone, isEmpty);
+
+            holder.set(newer);
+            await pumpEventQueue();
+
+            expect(gone, [AppRoutes.deepLinkUnknownServerOf(newer.location)]);
+            expect(holder.peek, isNull);
+          },
+        );
+
+        test(
+          'a newer link for a registered server still switches at once',
+          () async {
+            otherServerAdded();
+            lookup = _FakeLookup(const {'bge-3': 'local-3'});
+            when(
+              () => orchestrator.getContext('local-3'),
+            ).thenReturn(_MockServerContext());
+            const newer = ServerDeepLink(
+              serverId: 'bge-3',
+              location: '/server/bge-3/event/e3',
+            );
+            final consumer = buildConsumer()..start();
+            await pumpEventQueue();
+            consumer.holdUntilSignedIn(link, 'local-2');
+            await pumpEventQueue();
+            expect(gone, isEmpty);
+            expect(holder.peek, link);
+
+            holder.set(newer);
+            await pumpEventQueue();
+
+            verify(() => orchestrator.switchActiveServer('local-3')).called(1);
+            expect(holder.peek, newer);
+          },
+        );
+      });
+
+      group('when a newer link is held', () {
+        const other = ServerDeepLink(
+          serverId: 'bge-1',
+          location: '/server/bge-1/event/e2',
+        );
+
+        test('leaves it in the slot, and holds it until the added server '
+            'signs in', () async {
+          addedServerActive();
+          // The newer link arrived during the add, and its pass is still
+          // looking up its server when the add hands the link back.
+          final gate = Completer<void>();
+          lookup = _FakeLookup(const {'bge-1': 'local-2'}, gate: gate);
+          final consumer = buildConsumer()..start();
+          holder.set(other);
+          await pumpEventQueue();
+
+          consumer.holdUntilSignedIn(link, 'local-2');
+          gate.complete();
+          await pumpEventQueue();
+
+          // Landing now would take it from the added server's sign-in.
+          expect(gone, isEmpty);
+          expect(holder.peek, other);
+
+          await consumer.drain();
+          await pumpEventQueue();
+
+          expect(gone, [other.location]);
+          expect(holder.peek, isNull);
+        });
+
+        test('holds a newer app link until the added server signs in, as '
+            'after a switch', () async {
+          addedServerActive();
+          const appLink = AppDeepLink(location: '/games');
+          // The app link arrives while another link's pass is still looking
+          // up its server, so its own pass is queued behind that one, and
+          // runs only after the add hands the link back.
+          final gate = Completer<void>();
+          lookup = _FakeLookup(const {'bge-1': 'local-2'}, gate: gate);
+          final consumer = buildConsumer()..start();
+          holder.set(other);
+          await pumpEventQueue();
+          holder.set(appLink);
+
+          consumer.holdUntilSignedIn(link, 'local-2');
+          gate.complete();
+          await pumpEventQueue();
+
+          // The page it opens reads the active server, which has no
+          // session yet.
+          expect(gone, isEmpty);
+          expect(holder.peek, appLink);
+
+          await consumer.drain();
+          await pumpEventQueue();
+
+          expect(gone, [appLink.location]);
+          expect(holder.peek, isNull);
+        });
+
+        test('still switches for one whose server is another registered '
+            'one', () async {
+          addedServerActive();
+          const newer = ServerDeepLink(
+            serverId: 'bge-3',
+            location: '/server/bge-3/event/e3',
+          );
+          final gate = Completer<void>();
+          lookup = _FakeLookup(const {'bge-3': 'local-3'}, gate: gate);
+          when(
+            () => orchestrator.getContext('local-3'),
+          ).thenReturn(_MockServerContext());
+          final consumer = buildConsumer()..start();
+          holder.set(newer);
+          await pumpEventQueue();
+
+          consumer.holdUntilSignedIn(link, 'local-2');
+          gate.complete();
+          await pumpEventQueue();
+
+          verify(() => orchestrator.switchActiveServer('local-3')).called(1);
+          expect(holder.peek, newer);
+        });
+
+        test('still routes one for a server not added at once', () async {
+          addedServerActive();
+          const newer = ServerDeepLink(
+            serverId: 'bge-9',
+            location: '/server/bge-9/event/e9',
+          );
+          final gate = Completer<void>();
+          lookup = _FakeLookup(const {'bge-1': 'local-2'}, gate: gate);
+          final consumer = buildConsumer()..start();
+          holder.set(newer);
+          await pumpEventQueue();
+
+          consumer.holdUntilSignedIn(link, 'local-2');
+          gate.complete();
+          await pumpEventQueue();
+
+          // Only the handed-back link waits for the added server's sign-in.
+          expect(gone, [AppRoutes.deepLinkUnknownServerOf(newer.location)]);
+          expect(holder.peek, isNull);
+        });
+
+        test('logs the link it discards', () async {
+          addedServerActive();
+          final records = captureLogs();
+          final gate = Completer<void>();
+          lookup = _FakeLookup(const {'bge-1': 'local-2'}, gate: gate);
+          final consumer = buildConsumer()..start();
+          holder.set(other);
+          await pumpEventQueue();
+
+          consumer.holdUntilSignedIn(secretLink, 'local-2');
+          gate.complete();
+          await pumpEventQueue();
+
+          expect(holder.peek, other);
+          final messages = records.map((r) => r.message).toList();
+          expect(
+            messages,
+            contains(
+              'Deep link handed back after an add, discarded for a newer '
+              'one: $secretLink',
+            ),
+          );
+          // The link's redacted form, never its token or query.
+          expect(messages.join(), isNot(contains('secret')));
+        });
+
+        // The newer link's server was switched to and needs sign-in, and the
+        // user, still on the add form, added the handed-back link's server
+        // instead. The newer link would be dropped for the server the add
+        // left, so the handed-back one takes the slot, and opens.
+        group('whose switch to another server the add left', () {
+          const newer = ServerDeepLink(
+            serverId: 'bge-3',
+            location: '/server/bge-3/event/e3',
+          );
+          late String active;
+          late Completer<void>? switchGate;
+
+          setUp(() {
+            active = 'local-1';
+            switchGate = null;
+            lookup = _FakeLookup(const {
+              'bge-1': 'local-2',
+              'bge-3': 'local-3',
+            });
+            when(() => orchestrator.activeServerId).thenAnswer((_) => active);
+            when(
+              () => orchestrator.getContext('local-3'),
+            ).thenReturn(_MockServerContext());
+            when(() => orchestrator.switchActiveServer(any())).thenAnswer((
+              invocation,
+            ) async {
+              active = invocation.positionalArguments.single as String;
+              await switchGate?.future;
+            });
+          });
+
+          test('puts the handed-back link in its place', () async {
+            final records = captureLogs();
+            final consumer = buildConsumer()..start();
+            holder.set(newer);
+            await pumpEventQueue();
+            verify(() => orchestrator.switchActiveServer('local-3')).called(1);
+            expect(holder.peek, newer);
+
+            // The add makes its server active, and hands the link back.
+            active = 'local-2';
+            consumer.holdUntilSignedIn(link, 'local-2');
+            await pumpEventQueue();
+
+            expect(holder.peek, link);
+            expect(gone, isEmpty);
+            expect(
+              records.map((r) => r.message),
+              contains(
+                'Deep link dropped: the add left the server it was switched '
+                'to, and the link handed back takes its place: $newer',
+              ),
+            );
+
+            await consumer.drain();
+            await pumpEventQueue();
+
+            expect(gone, [link.location]);
+            expect(holder.peek, isNull);
+            verifyNever(() => orchestrator.switchActiveServer(any()));
+          });
+
+          test('leaves it while its switch is still running', () async {
+            switchGate = Completer<void>();
+            final consumer = buildConsumer()..start();
+            holder.set(newer);
+            await pumpEventQueue();
+
+            consumer.holdUntilSignedIn(link, 'local-2');
+            await pumpEventQueue();
+
+            expect(holder.peek, newer);
+            switchGate!.complete();
+            await pumpEventQueue();
+            expect(holder.peek, newer);
+          });
+        });
+      });
+
+      test('after dispose does nothing', () async {
+        addedServerActive();
+        final consumer = buildConsumer()..start();
+        await pumpEventQueue();
+
+        consumer
+          ..dispose()
+          ..holdUntilSignedIn(link, 'local-2');
+        await pumpEventQueue();
+
+        expect(holder.peek, isNull);
+        expect(gone, isEmpty);
+      });
+    });
   });
 }

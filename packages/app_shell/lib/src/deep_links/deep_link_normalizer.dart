@@ -1,4 +1,5 @@
 import 'package:app_shell/src/deep_links/deep_link_redaction.dart';
+import 'package:app_shell/src/deep_links/server_link_address.dart';
 import 'package:app_shell/src/router/app_router.dart';
 import 'package:flutter/foundation.dart';
 
@@ -79,6 +80,13 @@ final class ServerDeepLink extends NormalizedDeepLink {
 
   @override
   int get hashCode => Object.hash(serverId, location);
+
+  /// The server address the link carries in its query, validated and
+  /// normalized, or null when it carries none or one that is refused (#971).
+  ///
+  /// Derived from [location] on each read, so it adds no state to the value
+  /// and no field to [==] and [hashCode].
+  String? get address => serverLinkAddress(location);
 
   /// Redacted — [location] can carry invitation/RSVP tokens and [serverId]
   /// the userInfo shape it was lifted out of, and `toString` leaks into

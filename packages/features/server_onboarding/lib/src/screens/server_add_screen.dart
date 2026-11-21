@@ -8,7 +8,7 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// (#134). Expects a `ServerOnboardingBloc` to be provided above it (the
 /// shell's router wiring owns bloc construction and success handling).
 class ServerAddScreen extends StatelessWidget {
-  const ServerAddScreen({this.title, super.key});
+  const ServerAddScreen({this.title, this.initialAddress, super.key});
 
   /// The app bar's title, for a screen opened over another page, which the
   /// app bar's Back returns to. The app bar's title is then the page's
@@ -17,6 +17,10 @@ class ServerAddScreen extends StatelessWidget {
   /// Null at first run, where there is nothing to go back to: no app bar,
   /// and the body carries the heading.
   final Widget? title;
+
+  /// An address to start the form's address field with, such as the one a
+  /// link carries (#971).
+  final String? initialAddress;
 
   @override
   Widget build(BuildContext context) {
@@ -44,7 +48,7 @@ class ServerAddScreen extends StatelessWidget {
             style: Theme.of(context).textTheme.bodyMedium,
           ),
           const BgeGap.lg(),
-          const ServerAddForm(),
+          ServerAddForm(initialAddress: initialAddress),
         ],
       ),
     );

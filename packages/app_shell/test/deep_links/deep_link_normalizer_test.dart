@@ -328,6 +328,52 @@ void main() {
       expect(rendered, contains('%0Aforged'));
     });
 
+    group('address', () {
+      test('reads from the location', () {
+        const link = ServerDeepLink(
+          serverId: 's1',
+          location: '/server/s1/event/1?address=https%3A%2F%2Fexample.org%2F',
+        );
+
+        expect(link.address, 'https://example.org');
+      });
+
+      test('is null when the location carries none', () {
+        const link = ServerDeepLink(
+          serverId: 's1',
+          location: '/server/s1/event/1',
+        );
+
+        expect(link.address, isNull);
+      });
+
+      test('does not change equality', () {
+        const a = ServerDeepLink(
+          serverId: 's1',
+          location: '/server/s1/event/1?address=example.org',
+        );
+        const b = ServerDeepLink(
+          serverId: 's1',
+          location: '/server/s1/event/1?address=example.org',
+        );
+
+        expect(a, b);
+        expect(a.hashCode, b.hashCode);
+      });
+
+      test('toString leaks neither the address nor its scheme', () {
+        const link = ServerDeepLink(
+          serverId: 's1',
+          location: '/server/s1/event/1?address=https%3A%2F%2Fexample.org',
+        );
+
+        final rendered = link.toString();
+
+        expect(rendered, isNot(contains('example.org')));
+        expect(rendered, isNot(contains('https')));
+      });
+    });
+
     test('an app link equals another with the same location, and no server '
         'link', () {
       expect(

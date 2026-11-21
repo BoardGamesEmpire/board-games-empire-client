@@ -125,6 +125,12 @@ final class ServerOnboardingSchemaTooNew extends ServerOnboardingFailure {
   const ServerOnboardingSchemaTooNew();
 }
 
+/// A link's address answered as a different server than the link names
+/// (#971), so nothing was added.
+final class ServerOnboardingWrongServer extends ServerOnboardingFailure {
+  const ServerOnboardingWrongServer();
+}
+
 /// This server (by URL or BGE id) is already registered. Richer
 /// known-server UX is #82's scope.
 final class ServerOnboardingDuplicate extends ServerOnboardingFailure {

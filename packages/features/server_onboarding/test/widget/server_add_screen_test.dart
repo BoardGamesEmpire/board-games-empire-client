@@ -148,6 +148,30 @@ void main() {
       );
     });
 
+    testWidgets('the address field starts with the initial address', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          localizationsDelegates:
+              ServerOnboardingLocalizations.localizationsDelegates,
+          supportedLocales: ServerOnboardingLocalizations.supportedLocales,
+          home: BlocProvider<ServerOnboardingBloc>.value(
+            value: bloc,
+            child: const ServerAddScreen(initialAddress: 'https://example.org'),
+          ),
+        ),
+      );
+
+      expect(
+        find.descendant(
+          of: find.byKey(ServerAddForm.urlFieldKey),
+          matching: find.text('https://example.org'),
+        ),
+        findsOneWidget,
+      );
+    });
+
     testWidgets('hosts the add-server form', (tester) async {
       await tester.pumpWidget(harness());
 

@@ -71,13 +71,15 @@ void main() {
     ).thenAnswer((_) async => 'local-id-1');
   });
 
-  ServerOnboardingBloc build() => ServerOnboardingBloc(
-    wellKnownClient: wellKnown,
-    versionNegotiator: negotiator,
-    connectivityService: connectivity,
-    buildInfo: _kBuildInfo,
-    orchestrator: orchestrator,
-  );
+  ServerOnboardingBloc build({ExpectedServer? expectedServer}) =>
+      ServerOnboardingBloc(
+        wellKnownClient: wellKnown,
+        versionNegotiator: negotiator,
+        connectivityService: connectivity,
+        buildInfo: _kBuildInfo,
+        orchestrator: orchestrator,
+        expectedServer: expectedServer,
+      );
 
   group('ServerOnboardingBloc', () {
     test('starts idle', () {
@@ -328,6 +330,151 @@ void main() {
             identity: any(named: 'identity'),
           ),
         ),
+      );
+    });
+
+    group("a link's server (#971)", () {
+      const expected = ExpectedServer(
+        address: 'https://example.org',
+        bgeServerId: 'srv-1',
+      );
+
+      void answerAs(String serverId) => when(
+        () => wellKnown.fetchIdentity(any()),
+      ).thenAnswer((_) async => _identity().copyWith(serverId: serverId));
+
+      void verifyNothingAdded() => verifyNever(
+        () => orchestrator.addAndActivateServer(
+          displayName: any(named: 'displayName'),
+          serverUrl: any(named: 'serverUrl'),
+          bgeServerId: any(named: 'bgeServerId'),
+          identity: any(named: 'identity'),
+        ),
+      );
+
+      blocTest<ServerOnboardingBloc, ServerOnboardingState>(
+        "a link's address that answers as another server is refused",
+        build: () => build(expectedServer: expected),
+        setUp: () => answerAs('srv-2'),
+        act: (bloc) => bloc.add(
+          const ServerOnboardingSubmitted(url: 'https://example.org'),
+        ),
+        expect: () => const [
+          ServerOnboardingInProgress(),
+          ServerOnboardingWrongServer(),
+        ],
+        verify: (_) => verifyNothingAdded(),
+      );
+
+      blocTest<ServerOnboardingBloc, ServerOnboardingState>(
+        "a link's address spelled differently is still checked",
+        build: () => build(expectedServer: expected),
+        setUp: () => answerAs('srv-2'),
+        act: (bloc) =>
+            bloc.add(const ServerOnboardingSubmitted(url: 'EXAMPLE.org/')),
+        expect: () => const [
+          ServerOnboardingInProgress(),
+          ServerOnboardingWrongServer(),
+        ],
+        verify: (_) => verifyNothingAdded(),
+      );
+
+      // Normalizing drops one trailing slash a pass, so a link's
+      // `https://example.org//` reaches the bloc as `https://example.org/`,
+      // and the form it prefilled submits it as `https://example.org`.
+      blocTest<ServerOnboardingBloc, ServerOnboardingState>(
+        "a link's address left as it was is checked when normalizing it "
+        'again changes it',
+        build: () => build(
+          expectedServer: const ExpectedServer(
+            address: 'https://example.org/',
+            bgeServerId: 'srv-1',
+          ),
+        ),
+        setUp: () => answerAs('srv-2'),
+        act: (bloc) => bloc.add(
+          const ServerOnboardingSubmitted(url: 'https://example.org/'),
+        ),
+        expect: () => const [
+          ServerOnboardingInProgress(),
+          ServerOnboardingWrongServer(),
+        ],
+        verify: (_) => verifyNothingAdded(),
+      );
+
+      blocTest<ServerOnboardingBloc, ServerOnboardingState>(
+        "a link's address that answers as its server is added",
+        build: () => build(expectedServer: expected),
+        setUp: () => answerAs('srv-1'),
+        act: (bloc) => bloc.add(
+          const ServerOnboardingSubmitted(url: 'https://example.org'),
+        ),
+        expect: () => const [
+          ServerOnboardingInProgress(),
+          ServerOnboardingSucceeded(
+            serverId: 'local-id-1',
+            displayName: 'Home BGE',
+          ),
+        ],
+      );
+
+      blocTest<ServerOnboardingBloc, ServerOnboardingState>(
+        'an address the user typed instead is an ordinary add',
+        build: () => build(expectedServer: expected),
+        setUp: () => answerAs('srv-9'),
+        act: (bloc) => bloc.add(
+          const ServerOnboardingSubmitted(url: 'https://other.example'),
+        ),
+        expect: () => const [
+          ServerOnboardingInProgress(),
+          ServerOnboardingSucceeded(
+            serverId: 'local-id-1',
+            displayName: 'Home BGE',
+          ),
+        ],
+      );
+
+      blocTest<ServerOnboardingBloc, ServerOnboardingState>(
+        'the wrong server is reported before a version mismatch',
+        build: () => build(expectedServer: expected),
+        setUp: () {
+          answerAs('srv-2');
+          when(
+            () => negotiator.negotiate(
+              buildInfo: any(named: 'buildInfo'),
+              identity: any(named: 'identity'),
+            ),
+          ).thenReturn(
+            const ClientTooOld(
+              clientVersion: '1.2.3',
+              requiredMinimum: '2.0.0',
+            ),
+          );
+        },
+        act: (bloc) => bloc.add(
+          const ServerOnboardingSubmitted(url: 'https://example.org'),
+        ),
+        expect: () => const [
+          ServerOnboardingInProgress(),
+          ServerOnboardingWrongServer(),
+        ],
+        verify: (_) => verifyNothingAdded(),
+      );
+
+      blocTest<ServerOnboardingBloc, ServerOnboardingState>(
+        'without an expected server nothing is compared',
+        build: build,
+        setUp: () => answerAs('srv-2'),
+        act: (bloc) => bloc.add(
+          const ServerOnboardingSubmitted(url: 'https://example.org'),
+        ),
+        expect: () => const [
+          ServerOnboardingInProgress(),
+          ServerOnboardingSucceeded(
+            serverId: 'local-id-1',
+            displayName: 'Home BGE',
+          ),
+        ],
       );
     });
 
