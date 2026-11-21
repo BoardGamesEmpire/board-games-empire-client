@@ -51,8 +51,8 @@ class ServerOnboardingBloc
 
   /// The server a link names, when the form was opened from one (#971).
   ///
-  /// The check applies only while the submitted address normalizes to
-  /// [ExpectedServer.address]: a server whose identity has another id is
+  /// The check applies only while the submitted address normalizes to what
+  /// [ExpectedServer.address] does: a server whose identity has another id is
   /// refused with [ServerOnboardingWrongServer], so a link can't get a
   /// different server added by naming the wrong address. An address the user
   /// typed instead is an ordinary add, with nothing compared.
@@ -114,9 +114,14 @@ class ServerOnboardingBloc
     // After discovery, since the id is only known from the identity, and
     // before negotiation, so a different server is never reported as a
     // version problem or saved.
+    //
+    // The link's address is normalized again, as the submitted one was:
+    // normalizing drops one trailing slash a pass, so an address the form
+    // was prefilled with and submitted unchanged can come out one slash
+    // shorter than the link's.
     final expected = _expectedServer;
     if (expected != null &&
-        serverUrl == expected.address &&
+        normalizeServerUrl(expected.address) == urlResult &&
         identity.serverId != expected.bgeServerId) {
       emit(const ServerOnboardingWrongServer());
       return;

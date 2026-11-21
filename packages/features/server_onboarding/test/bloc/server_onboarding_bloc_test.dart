@@ -379,6 +379,29 @@ void main() {
         verify: (_) => verifyNothingAdded(),
       );
 
+      // Normalizing drops one trailing slash a pass, so a link's
+      // `https://example.org//` reaches the bloc as `https://example.org/`,
+      // and the form it prefilled submits it as `https://example.org`.
+      blocTest<ServerOnboardingBloc, ServerOnboardingState>(
+        "a link's address left as it was is checked when normalizing it "
+        'again changes it',
+        build: () => build(
+          expectedServer: const ExpectedServer(
+            address: 'https://example.org/',
+            bgeServerId: 'srv-1',
+          ),
+        ),
+        setUp: () => answerAs('srv-2'),
+        act: (bloc) => bloc.add(
+          const ServerOnboardingSubmitted(url: 'https://example.org/'),
+        ),
+        expect: () => const [
+          ServerOnboardingInProgress(),
+          ServerOnboardingWrongServer(),
+        ],
+        verify: (_) => verifyNothingAdded(),
+      );
+
       blocTest<ServerOnboardingBloc, ServerOnboardingState>(
         "a link's address that answers as its server is added",
         build: () => build(expectedServer: expected),

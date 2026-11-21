@@ -10,8 +10,10 @@ import 'package:flutter/foundation.dart' show immutable;
 final class ExpectedServer {
   const ExpectedServer({required this.address, required this.bgeServerId});
 
-  /// The link's address, already through `normalizeServerUrl`, so it compares
-  /// equal to a submitted address that normalizes the same way.
+  /// The link's address, already through `normalizeServerUrl`. The bloc
+  /// normalizes it again before comparing, as it does the submitted one:
+  /// a pass drops only one trailing slash, so this may not be the form a
+  /// prefilled field submits as.
   final String address;
 
   /// The `bgeServerId` the link names.
