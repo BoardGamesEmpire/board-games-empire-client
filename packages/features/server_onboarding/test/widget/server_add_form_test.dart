@@ -379,6 +379,12 @@ void main() {
             'Please update the app.',
       ),
       (
+        'wrong server',
+        ServerOnboardingWrongServer(),
+        "The server at that address isn't the one the link is for, so it "
+            "wasn't added.",
+      ),
+      (
         'duplicate',
         ServerOnboardingDuplicate(),
         'That server is already registered on this device.',
@@ -692,6 +698,7 @@ void _exhaustiveness(ServerOnboardingFailure failure) {
     case ServerOnboardingClientTooOld():
     case ServerOnboardingClientTooNew():
     case ServerOnboardingSchemaTooNew():
+    case ServerOnboardingWrongServer():
     case ServerOnboardingDuplicate():
     case ServerOnboardingCapacityExceeded():
     case ServerOnboardingUnexpectedFailure():

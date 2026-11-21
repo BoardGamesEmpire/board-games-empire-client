@@ -68,6 +68,10 @@
   "@serverAddErrorServerError": {
     "description": "Error when the server answers discovery with a 5xx: it is there but failing for now, usually while the server behind a reverse proxy is down or starting. Must not blame the address, the connection or the app version."
   },
+  "serverAddErrorWrongServer": "The server at that address isn't the one the link is for, so it wasn't added.",
+  "@serverAddErrorWrongServer": {
+    "description": "Error shown when a link pre-filled the address and the server there has a different id than the link names"
+  },
   "serverAddErrorNotBge": "No Board Games Empire server was found at that address.",
   "@serverAddErrorNotBge": {
     "description": "Error when the well-known document returns 404"

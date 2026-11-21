@@ -38,7 +38,11 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// — so the widget can stay `const` without risking a per-build group
 /// that discards typed input.
 class ServerAddForm extends StatelessWidget {
-  const ServerAddForm({super.key});
+  const ServerAddForm({this.initialAddress, super.key});
+
+  /// An address to start the URL field with, such as a link's (#971). The
+  /// user can edit it; the bloc decides what a submit of it means.
+  final String? initialAddress;
 
   static const urlControlName = 'url';
   static const aliasControlName = 'alias';
@@ -84,6 +88,7 @@ class ServerAddForm extends StatelessWidget {
         // does `.trim().isEmpty` on Strings, so the hand-rolled delegate
         // household and feedback carry (#196) would add nothing.
         urlControlName: FormControl<String>(
+          value: initialAddress,
           validators: [
             Validators.required,
             Validators.delegate(serverUrlValidator),
@@ -182,6 +187,7 @@ String _failureMessage(
   ServerOnboardingClientTooNew(:final clientVersion, :final supportedMaximum) =>
     l10n.serverAddErrorClientTooNew(supportedMaximum, clientVersion),
   ServerOnboardingSchemaTooNew() => l10n.serverAddErrorSchemaTooNew,
+  ServerOnboardingWrongServer() => l10n.serverAddErrorWrongServer,
   ServerOnboardingDuplicate() => l10n.serverAddErrorDuplicate,
   ServerOnboardingCapacityExceeded() => l10n.serverAddErrorCapacity,
   ServerOnboardingUnexpectedFailure() => l10n.serverAddErrorUnexpected,

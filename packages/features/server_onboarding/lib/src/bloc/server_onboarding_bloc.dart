@@ -6,6 +6,7 @@ import 'package:interfaces/services.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
+import 'package:server_onboarding/src/bloc/expected_server.dart';
 import 'package:server_onboarding/src/bloc/server_onboarding_event.dart';
 import 'package:server_onboarding/src/bloc/server_onboarding_state.dart';
 import 'package:server_onboarding/src/url/server_url_input.dart';
@@ -13,8 +14,9 @@ import 'package:server_onboarding/src/url/server_url_input.dart';
 /// Drives the first-run server-add flow (#36):
 ///
 /// normalize/validate the URL → connectivity fast-fail (#9) →
-/// `WellKnownClient.fetchIdentity` → `VersionNegotiator.negotiate` (#13)
-/// → `ServerOrchestrator.addAndActivateServer`.
+/// `WellKnownClient.fetchIdentity` → expected-server check, only while the
+/// submitted address is the link's (#971) → `VersionNegotiator.negotiate`
+/// (#13) → `ServerOrchestrator.addAndActivateServer`.
 ///
 /// Invariants enforced here (and pinned by bloc tests):
 /// - a version-negotiation mismatch **never** reaches the persist step;
@@ -33,6 +35,7 @@ class ServerOnboardingBloc
     required this._connectivityService,
     required this._buildInfo,
     required this._orchestrator,
+    this._expectedServer,
     BgeLogger? logger,
   }) : _logger = logger ?? BgeLogger('bge.onboarding'),
        super(const ServerOnboardingIdle()) {
@@ -45,6 +48,15 @@ class ServerOnboardingBloc
   final ConnectivityService _connectivityService;
   final BuildInfo _buildInfo;
   final ServerOrchestrator _orchestrator;
+
+  /// The server a link names, when the form was opened from one (#971).
+  ///
+  /// The check applies only while the submitted address normalizes to
+  /// [ExpectedServer.address]: a server whose identity has another id is
+  /// refused with [ServerOnboardingWrongServer], so a link can't get a
+  /// different server added by naming the wrong address. An address the user
+  /// typed instead is an ordinary add, with nothing compared.
+  final ExpectedServer? _expectedServer;
   final BgeLogger _logger;
 
   /// Retires a failure the user has already been told about by other means.
@@ -95,6 +107,18 @@ class ServerOnboardingBloc
       return;
     } on WellKnownInvalidResponseException {
       emit(const ServerOnboardingInvalidResponse());
+      return;
+    }
+
+    // 3b. A link's address must answer as the server the link names (#971).
+    // After discovery, since the id is only known from the identity, and
+    // before negotiation, so a different server is never reported as a
+    // version problem or saved.
+    final expected = _expectedServer;
+    if (expected != null &&
+        serverUrl == expected.address &&
+        identity.serverId != expected.bgeServerId) {
+      emit(const ServerOnboardingWrongServer());
       return;
     }
 
