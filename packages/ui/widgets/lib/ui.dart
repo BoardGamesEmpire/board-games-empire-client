@@ -19,8 +19,9 @@
 /// cards on them (#669), `BgePointerFocus` by those covers, which take focus
 /// from a tap (#707), and by every `BgeRowFocusRing`, whose rows take focus
 /// from a tap only with `focusOnTap` (#709, #758), `BgeRowFocusRing` by
-/// Collection's entry and stack rows, the first of the tappable list rows
-/// #758 moves onto it, `BgeCoverTile` by
+/// every tappable `ListTile` and selection tile outside `packages/ui`, 36
+/// call sites (#758),
+/// `BgeCoverTile` by
 /// the home shelves' covers and the Games and Collection grids' tiles (#707,
 /// #710), `BgeKeyedSliverGrid`,
 /// `bgeCoverGridDelegate`, `BgeLayoutToggle` and `BgeRememberedLayout` by
@@ -33,10 +34,12 @@
 /// screens, the home events section and the catalog's from-cache screens and
 /// quick look (#573, #607), `BgeInertButton` by buttons that keep focus
 /// while they can do nothing, at 16 call sites in `lib/` (#607, #807),
-/// `BgeFabLabel` by the 5 extended floating buttons, which it keeps on screen
-/// at large text (#50), `replaceSnackBar` by every SnackBar, at 4 uses in
-/// `lib/` (#343), `closeWhenSettled` by the 8 screens that save and then
-/// leave, at 8 call sites in `lib/`, all outside this package (#464),
+/// `BgeExtendedFab` by all 6 extended floating buttons, which it rings
+/// inside their edge on keyboard focus (#760) and whose label, a
+/// `BgeFabLabel`, it keeps on screen at large text (#50), `replaceSnackBar`
+/// by every SnackBar, at 4 uses in `lib/` (#343), `closeWhenSettled` by the
+/// 8 screens that save and then leave, at 8 call sites in `lib/`, all
+/// outside this package (#464),
 /// `SessionMessenger` by those 8 screens and the collection's add sheet,
 /// which say every bar through it, at 9 constructor calls in `lib/`, all
 /// outside this package (#464, #694), and
@@ -92,6 +95,7 @@ export 'src/banners/bge_offline_strip.dart';
 export 'src/banners/bge_refresh_banner.dart';
 export 'src/banners/bge_snack_bars.dart';
 export 'src/banners/unverified_session_banner.dart';
+export 'src/buttons/bge_extended_fab.dart';
 export 'src/buttons/bge_fab_label.dart';
 export 'src/buttons/bge_inert_button.dart';
 export 'src/buttons/bge_submit_button.dart';

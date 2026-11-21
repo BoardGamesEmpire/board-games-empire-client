@@ -127,11 +127,11 @@ class _EventGroupPage extends StatelessWidget {
       // to make the next event.
       floatingActionButton: create == null
           ? null
-          : FloatingActionButton.extended(
+          : BgeExtendedFab(
               key: EventGroupScreen.createKey,
               onPressed: () => create(context),
               icon: const Icon(Icons.add),
-              label: BgeFabLabel(l10n.eventsCreate),
+              label: l10n.eventsCreate,
             ),
       slivers: [
         EventListStatesSliver(

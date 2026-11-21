@@ -5,6 +5,9 @@ import 'package:flutter/material.dart';
 /// The label of a [FloatingActionButton.extended] that has an icon, shrunk
 /// to fit the window rather than pushing the button off it (#50).
 ///
+/// A screen uses `BgeExtendedFab`, which takes the label's text and builds
+/// this around it.
+///
 /// An extended button lays out its icon and label with no width limit. With a
 /// large text size on a narrow window, a long label makes the button wider
 /// than the space between Scaffold's margins. Scaffold keeps the button's end

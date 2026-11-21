@@ -436,11 +436,11 @@ class _HouseholdListViewState extends State<_HouseholdListView> {
             semanticChildCount: households.isEmpty ? null : households.length,
             floatingActionButton: create == null
                 ? null
-                : FloatingActionButton.extended(
+                : BgeExtendedFab(
                     key: HouseholdListScreen.createFabKey,
                     onPressed: () => create(context),
                     icon: const Icon(Icons.group_add_outlined),
-                    label: BgeFabLabel(l10n.createHouseholdTitle),
+                    label: l10n.createHouseholdTitle,
                   ),
             slivers: [
               if (state

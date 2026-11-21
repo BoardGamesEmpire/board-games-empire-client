@@ -329,12 +329,12 @@ class _DataGatewayListViewState extends State<_DataGatewayListView> {
                 : ready.gateways.length,
             floatingActionButton: add == null || !mayCreate
                 ? null
-                : FloatingActionButton.extended(
+                : BgeExtendedFab(
                     key: DataGatewayListScreen.addKey,
                     focusNode: _add,
                     onPressed: () => add(context),
                     icon: const Icon(Icons.add),
-                    label: BgeFabLabel(l10n.dataGatewayAdd),
+                    label: l10n.dataGatewayAdd,
                   ),
             slivers: [
               if (ready?.outcome case final outcome?)

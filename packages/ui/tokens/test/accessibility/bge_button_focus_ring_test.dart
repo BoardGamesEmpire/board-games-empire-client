@@ -909,41 +909,6 @@ void main() {
       },
     );
 
-    group(
-      'an extended floating action button is ringed on keyboard focus',
-      skip: 'see #760',
-      () {
-        testWidgets('FloatingActionButton.extended', (tester) async {
-          await host(tester, [
-            FloatingActionButton.extended(
-              key: goKey,
-              onPressed: () {},
-              label: const Text('Create'),
-            ),
-          ]);
-          // The ring may sit on the edge or outside it.
-          final around = tester
-              .getRect(find.byKey(goKey))
-              .inflate(tokens.focusRingGap + tokens.focusOutlineWidth);
-          int ringPixels(Color Function(Offset) pixels) =>
-              pixelCentres(around).where((p) => near(pixels(p), ring)).length;
-          final atRest = ringPixels(await capturePixels(tester, boundary));
-
-          await tab(tester);
-          await tester.pumpAndSettle();
-          expect(
-            Focus.of(tester.element(find.text('Create'))).hasPrimaryFocus,
-            isTrue,
-          );
-
-          expect(
-            ringPixels(await capturePixels(tester, boundary)),
-            greaterThan(atRest),
-          );
-        });
-      },
-    );
-
     // A drawer entry and a filter chip show focus as a fill alone.
     group(
       "a drawer entry's and a filter chip's keyboard focus differs from their "

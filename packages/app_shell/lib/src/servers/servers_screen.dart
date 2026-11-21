@@ -93,7 +93,7 @@ class _ServersView extends StatelessWidget {
           ServerListReady(:final rows) => rows.length,
           _ => null,
         },
-        floatingActionButton: FloatingActionButton.extended(
+        floatingActionButton: BgeExtendedFab(
           key: ServersScreen.addKey,
           // Disabled while a switch runs: a pick that lands goes home, and
           // would take an add form opened in the meantime with it, along
@@ -104,7 +104,7 @@ class _ServersView extends StatelessWidget {
               ? null
               : () => unawaited(context.push<void>(AppRoutes.serversAdd)),
           icon: const Icon(Icons.add),
-          label: BgeFabLabel(l10n.shellServersAdd),
+          label: l10n.shellServersAdd,
         ),
         slivers: [
           switch (state) {
