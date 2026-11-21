@@ -535,6 +535,21 @@ void main() {
       },
     );
 
+    testWidgets('a focused capability switch is ringed (#758)', (tester) async {
+      remote.onFetchOne = (_) async => row();
+      await pumpScreen(tester);
+      await tester.ensureVisible(capability(search));
+      await tester.pumpAndSettle();
+
+      expect(
+        await keyboardFocusShowsRing(
+          tester,
+          textIn(capability(search), 'Search'),
+        ),
+        isTrue,
+      );
+    });
+
     testWidgets('a focused switch moves on when access falls, which stops '
         'it', (tester) async {
       remote.onFetchOne = (_) async => row();

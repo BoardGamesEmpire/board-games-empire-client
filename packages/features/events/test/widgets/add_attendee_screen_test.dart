@@ -229,6 +229,21 @@ void main() {
     }
   });
 
+  testWidgets('a focused role is ringed (#758)', (tester) async {
+    await open(tester);
+
+    expect(
+      await keyboardFocusShowsRing(
+        tester,
+        find.descendant(
+          of: find.byKey(AddAttendeeScreen.roleKey(EventRole.participant)),
+          matching: find.text('Participant'),
+        ),
+      ),
+      isTrue,
+    );
+  });
+
   testWidgets("an organizer's page offers only participant, guest and "
       'spectator', (tester) async {
     await open(tester, args: _organizerArgs);

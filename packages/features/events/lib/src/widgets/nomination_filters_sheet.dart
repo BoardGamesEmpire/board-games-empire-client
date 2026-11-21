@@ -178,41 +178,59 @@ class _FiltersSheet extends StatelessWidget {
                         const WholeEventScope(),
                         for (final date in dates) DateScope(date.id),
                       ])
-                        RadioListTile<NominationScope?>(
-                          key: EventDetailScreen.nominationsDateKey(scope),
-                          value: scope,
-                          contentPadding: EdgeInsets.zero,
-                          title: Text(
-                            scope == null
-                                ? l10n.eventsNominationsAnyDate
-                                : nominationScopeLabel(
-                                    context,
-                                    scope,
-                                    dates: dates,
-                                    now: now,
-                                  ),
-                          ),
+                        BgeRowFocusRing(
+                          outsideSides: true,
+                          builder: (context, tile) =>
+                              RadioListTile<NominationScope?>(
+                                key: EventDetailScreen.nominationsDateKey(
+                                  scope,
+                                ),
+                                focusNode: tile.focusNode,
+                                onFocusChange: tile.onFocusChange,
+                                value: scope,
+                                contentPadding: EdgeInsets.zero,
+                                title: Text(
+                                  scope == null
+                                      ? l10n.eventsNominationsAnyDate
+                                      : nominationScopeLabel(
+                                          context,
+                                          scope,
+                                          dates: dates,
+                                          now: now,
+                                        ),
+                                ),
+                              ),
                         ),
                     ],
                   ),
                 ),
                 if (offersMine)
-                  SwitchListTile(
-                    key: EventDetailScreen.nominationsMineKey,
-                    contentPadding: EdgeInsets.zero,
-                    title: Text(l10n.eventsNominationsMine),
-                    value: filter.mine,
-                    onChanged: (on) =>
-                        _change((filter) => filter.copyWith(mine: on)),
+                  BgeRowFocusRing(
+                    outsideSides: true,
+                    builder: (context, tile) => SwitchListTile(
+                      key: EventDetailScreen.nominationsMineKey,
+                      focusNode: tile.focusNode,
+                      onFocusChange: tile.onFocusChange,
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(l10n.eventsNominationsMine),
+                      value: filter.mine,
+                      onChanged: (on) =>
+                          _change((filter) => filter.copyWith(mine: on)),
+                    ),
                   ),
                 if (offersNotVoted)
-                  SwitchListTile(
-                    key: EventDetailScreen.nominationsNotVotedKey,
-                    contentPadding: EdgeInsets.zero,
-                    title: Text(l10n.eventsNominationsNotVoted),
-                    value: filter.notVotedYet,
-                    onChanged: (on) =>
-                        _change((filter) => filter.copyWith(notVotedYet: on)),
+                  BgeRowFocusRing(
+                    outsideSides: true,
+                    builder: (context, tile) => SwitchListTile(
+                      key: EventDetailScreen.nominationsNotVotedKey,
+                      focusNode: tile.focusNode,
+                      onFocusChange: tile.onFocusChange,
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(l10n.eventsNominationsNotVoted),
+                      value: filter.notVotedYet,
+                      onChanged: (on) =>
+                          _change((filter) => filter.copyWith(notVotedYet: on)),
+                    ),
                   ),
               ],
             ),

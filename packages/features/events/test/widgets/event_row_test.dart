@@ -1,3 +1,4 @@
+import 'package:bge_test_support/widgets.dart';
 import 'package:events/events.dart';
 import 'package:events/l10n/events_localizations.dart';
 import 'package:flutter/material.dart';
@@ -339,6 +340,31 @@ void main() {
     await tester.tap(find.byKey(EventOverviewScreen.rowKey('e-1')));
 
     expect(opened, ['e-1']);
+  });
+
+  testWidgets('a focused row is ringed (#758)', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: BgeTheme.light(),
+        localizationsDelegates: EventsLocalizations.localizationsDelegates,
+        supportedLocales: EventsLocalizations.supportedLocales,
+        home: Scaffold(
+          body: EventRowTile(
+            row: undated(beingChosen: false),
+            now: () => now,
+            onOpen: (_, _) {},
+          ),
+        ),
+      ),
+    );
+
+    expect(
+      await keyboardFocusShowsRing(
+        tester,
+        find.text(item('e-1').event.title),
+      ),
+      isTrue,
+    );
   });
 
   testWidgets('keeps its focus when it gains or loses its separator', (

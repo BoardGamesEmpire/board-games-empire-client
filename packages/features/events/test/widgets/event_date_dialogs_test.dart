@@ -583,6 +583,17 @@ void main() {
       );
     });
 
+    testWidgets('a focused decline-the-others box is ringed (#758)', (
+      tester,
+    ) async {
+      await openConfirm(tester, offerDeclineOthers: true);
+
+      expect(
+        await keyboardFocusShowsRing(tester, find.text(declineOthers)),
+        isTrue,
+      );
+    });
+
     testWidgets('confirm returns declineOthers when checked, and null when '
         'kept', (tester) async {
       var popped = await openConfirm(tester, offerDeclineOthers: true);
