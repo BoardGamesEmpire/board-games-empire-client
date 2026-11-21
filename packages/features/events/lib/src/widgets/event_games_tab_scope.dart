@@ -1031,6 +1031,70 @@ class EventGamesTabController extends ChangeNotifier {
     );
   }
 
+  /// Answers the date view going from [previous], with the nominations'
+  /// filter [previousFilter] and the event's dates [previousDates], to the
+  /// one shown now on [dates] (#1042), as the change is told and before the
+  /// frame that builds it, from [context], the scope's, with [lineup] and
+  /// [nominations] as their blocs last emitted them, for the viewer
+  /// [viewerId].
+  ///
+  /// A view can leave out the row that holds focus: the location names
+  /// another date, as Back and Forward do, or a read takes the date shown
+  /// away. That row hands focus on as one a read takes away does
+  /// ([lineupChanged], [nominationsChanged]): to the next row the new view
+  /// shows, else the one before it, with the same rules. A date chosen
+  /// from the row of dates hands nothing on, as focus is on the row.
+  void dateViewChanged(
+    BuildContext context, {
+    required GamesDateView? previous,
+    required NominationFilter previousFilter,
+    required List<EventOccurrence> previousDates,
+    required EventLineupState lineup,
+    required EventNominationsState nominations,
+    required List<EventOccurrence> dates,
+    required String? viewerId,
+  }) {
+    List<String> lineupShown(GamesDateView? view, List<EventOccurrence> on) => [
+      for (final group in lineupGroupsFor(view, lineup.games, on))
+        for (final game in group.games) game.id,
+    ];
+    _rowsLeft(
+      context,
+      shownBefore: lineupShown(previous, previousDates),
+      shownAfter: lineupShown(_dateView, dates),
+      kept: {for (final game in lineup.games) game.id},
+      areas: _lineupAreas,
+      entryOf: LineupEntry.new,
+      list: EventGamesSection.lineup,
+      handsOn: (_) => false,
+      fallback: _focusLineupHeader,
+    );
+    List<String> nominationsShown(
+      GamesDateView? view,
+      NominationFilter filter,
+    ) => [
+      for (final nomination in shownNominations(
+        nominations.nominations,
+        view: view,
+        filter: filter,
+        sort: _nominationSort,
+        viewerId: viewerId,
+      ))
+        nomination.id,
+    ];
+    _rowsLeft(
+      context,
+      shownBefore: nominationsShown(previous, previousFilter),
+      shownAfter: nominationsShown(_dateView, _nominationFilter),
+      kept: {for (final nomination in nominations.nominations) nomination.id},
+      areas: _nominationAreas,
+      entryOf: NominationEntry.new,
+      list: EventGamesSection.nominations,
+      handsOn: (_) => false,
+      fallback: _focusNominationsHeader,
+    );
+  }
+
   /// Answers rows leaving one of the tab's lists, before the frame that
   /// builds the change, as [poolChanged] and [nominationsChanged] have it:
   /// [shownBefore] and [shownAfter] are the ids of the rows shown before and
@@ -1347,6 +1411,13 @@ class _EventGamesTabScopeState extends State<EventGamesTabScope>
   StreamSubscription<EventLineupState>? _lineup;
   EventLineupState _lastLineup = const EventLineupState();
 
+  /// The date view, the nominations' filter and the event's dates as last
+  /// shown (#1042), which [_viewChanged] says a change of view left: a read
+  /// can take away the date shown along with the view of it.
+  GamesDateView? _viewShown;
+  NominationFilter _filterShown = const NominationFilter();
+  List<EventOccurrence> _datesShown = const [];
+
   @override
   void initState() {
     super.initState();
@@ -1355,7 +1426,10 @@ class _EventGamesTabScopeState extends State<EventGamesTabScope>
       ..takeDate(widget.initialDate, now: widget.now())
       // A date chosen, or taken from the location, can change the sub-tabs
       // shown (#519), as the detail and the nominations can.
-      ..addListener(_syncSections);
+      ..addListener(_syncSections)
+      ..addListener(_viewChanged);
+    _viewShown = _controller.dateView;
+    _filterShown = _controller.nominationFilter;
     // The screen can open on Games (#856), with no tab change to say so, and
     // on a detail already ready.
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1500,6 +1574,32 @@ class _EventGamesTabScopeState extends State<EventGamesTabScope>
     _useSections();
   }
 
+  /// Hands focus on from a row the date view now leaves out
+  /// ([EventGamesTabController.dateViewChanged], #1042), where the view
+  /// changed. Heard as the controller tells it, before the frame that
+  /// drops the row, while the row is still built.
+  void _viewChanged() {
+    final previous = _viewShown;
+    final previousFilter = _filterShown;
+    _viewShown = _controller.dateView;
+    _filterShown = _controller.nominationFilter;
+    final previousDates = _datesShown;
+    final detail = _detailBloc?.state;
+    final ready = detail is EventDetailReady ? detail.detail : null;
+    _datesShown = ready?.snapshot.occurrences ?? const [];
+    if (_viewShown == previous || !mounted) return;
+    _controller.dateViewChanged(
+      context,
+      previous: previous,
+      previousFilter: previousFilter,
+      previousDates: previousDates,
+      lineup: _lastLineup,
+      nominations: _lastNominations,
+      dates: _datesShown,
+      viewerId: ready?.attendance?.id,
+    );
+  }
+
   void _sectionChanged() {
     final index = _sections!.index;
     if (index == _notifiedSection) return;
@@ -1509,6 +1609,10 @@ class _EventGamesTabScopeState extends State<EventGamesTabScope>
 
   void _detailChanged(EventDetailState state) {
     _syncDates(state);
+    // Dates that changed no view are the ones the next change leaves from.
+    if (state is EventDetailReady) {
+      _datesShown = state.detail.snapshot.occurrences;
+    }
     _syncSections();
     _firstShowing();
   }
@@ -1592,7 +1696,9 @@ class _EventGamesTabScopeState extends State<EventGamesTabScope>
   @override
   void dispose() {
     _tabs?.removeListener(_firstShowing);
-    _controller.removeListener(_syncSections);
+    _controller
+      ..removeListener(_syncSections)
+      ..removeListener(_viewChanged);
     _sections?.dispose();
     unawaited(_detail?.cancel());
     unawaited(_pool?.cancel());

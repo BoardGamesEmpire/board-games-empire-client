@@ -137,7 +137,13 @@ void main() {
     unawaited(cache.close());
   });
 
+  /// The date the screen's location names (#1042), which a test moves as
+  /// Back or Forward would.
+  late ValueNotifier<String?> location;
+
   Widget harness(EventDetail detail, {ThemeData? theme}) {
+    location = ValueNotifier(null);
+    addTearDown(location.dispose);
     remote = FakeEventRemote.detail(
       (_) => detail.snapshot,
       pool: (_) => const [],
@@ -152,14 +158,18 @@ void main() {
         GameFiltersLocalizations.delegate,
       ],
       supportedLocales: EventsLocalizations.supportedLocales,
-      home: EventDetailScreen(
-        eventId: 'e-1',
-        repository: repository,
-        session: FakeSessionLease(),
-        remote: remote,
-        onBack: (_) {},
-        onOpenGame: (context, gameId) => openedGames.add(gameId),
-        now: () => now,
+      home: ValueListenableBuilder(
+        valueListenable: location,
+        builder: (context, date, _) => EventDetailScreen(
+          eventId: 'e-1',
+          repository: repository,
+          session: FakeSessionLease(),
+          remote: remote,
+          date: date,
+          onBack: (_) {},
+          onOpenGame: (context, gameId) => openedGames.add(gameId),
+          now: () => now,
+        ),
       ),
     );
   }
@@ -701,6 +711,52 @@ void main() {
 
       expect(row('l-1'), findsNothing);
       expect(headFocus(tester, 'l-2').hasPrimaryFocus, isTrue);
+    });
+
+    // A view that leaves the focused row out hands focus on as a read
+    // that takes the row away does (#1042).
+    testWidgets("a row the location's date leaves out, as Back or Forward "
+        "names another, hands focus to the next row's head", (tester) async {
+      lineupAnswer = (_) => [
+        _lineupGame('l-3', title: 'Root', occurrenceId: 'd-2'),
+        _lineupGame('l-2', title: 'Azul', occurrenceId: 'd-1'),
+        _lineupGame('l-1'),
+      ];
+      await showLineup(tester, detail: detailOf(dates: [friday, saturday]));
+      headFocus(tester, 'l-2').requestFocus();
+      await tester.pump();
+
+      location.value = 'd-2';
+      await animate(tester);
+
+      // Saturday's own game takes the place of Friday's.
+      expect(row('l-2'), findsNothing);
+      expect(headFocus(tester, 'l-3').hasPrimaryFocus, isTrue);
+    });
+
+    testWidgets('a row whose date a read takes away hands focus to the next '
+        "row's head", (tester) async {
+      lineupAnswer = (_) => [
+        _lineupGame('l-3', title: 'Root', occurrenceId: 'd-2'),
+        _lineupGame('l-2', title: 'Azul', occurrenceId: 'd-1'),
+        _lineupGame('l-1'),
+      ];
+      await showLineup(tester, detail: detailOf(dates: [friday, saturday]));
+      headFocus(tester, 'l-2').requestFocus();
+      await tester.pump();
+
+      // Friday is gone, so the view falls back to Saturday.
+      final sunday = confirmed(
+        'd-3',
+        DateTime(2026, 11, 8, 19),
+        sortOrder: 2,
+      ).copyWith(eventId: 'e-1');
+      cache.add(detailOf(dates: [saturday, sunday]));
+      await settle(tester);
+      await animate(tester);
+
+      expect(row('l-2'), findsNothing);
+      expect(headFocus(tester, 'l-3').hasPrimaryFocus, isTrue);
     });
   });
 

@@ -273,11 +273,17 @@ void main() {
     unawaited(cache.close());
   });
 
+  /// The date the screen's location names (#1042), which a test moves as
+  /// Back or Forward would.
+  late ValueNotifier<String?> location;
+
   Widget harness(
     EventDetail detail, {
     ValueListenable<bool>? offline,
     Future<HouseholdRole?> Function(String householdId)? householdRole,
   }) {
+    location = ValueNotifier(null);
+    addTearDown(location.dispose);
     remote = FakeEventRemote.detail(
       (_) => heldRead?.future ?? detail.snapshot,
       pool: (_) => pool,
@@ -317,16 +323,20 @@ void main() {
           ),
         );
       },
-      home: EventDetailScreen(
-        eventId: 'e-1',
-        repository: repository,
-        session: FakeSessionLease(),
-        remote: remote,
-        householdRole: householdRole,
-        onBack: (_) {},
-        onOpenGame: (context, gameId) =>
-            openedGames.add((ModalRoute.of(context), gameId)),
-        now: () => now,
+      home: ValueListenableBuilder(
+        valueListenable: location,
+        builder: (context, date, _) => EventDetailScreen(
+          eventId: 'e-1',
+          repository: repository,
+          session: FakeSessionLease(),
+          remote: remote,
+          householdRole: householdRole,
+          date: date,
+          onBack: (_) {},
+          onOpenGame: (context, gameId) =>
+              openedGames.add((ModalRoute.of(context), gameId)),
+          now: () => now,
+        ),
       ),
     );
   }
@@ -3392,6 +3402,25 @@ void main() {
 
       expect(row('n-9'), findsNothing);
       expect(headFocus(tester, 'n-1').hasPrimaryFocus, isTrue);
+    });
+
+    // A view that leaves the focused row out hands focus on as a read
+    // that takes the row away does.
+    testWidgets("a row the location's date leaves out, as Back or Forward "
+        "names another, hands focus to the next row's head", (tester) async {
+      useViewSize(tester, const Size(800, 2400));
+      nominationsAnswer = (_) => spread();
+      await showGames(tester, detail: detailOf(dates: [friday, saturday]));
+      expect(rowsShown(tester), ['n-2', 'n-1']);
+      headFocus(tester, 'n-2').requestFocus();
+      await tester.pump();
+
+      location.value = 'd-2';
+      await animate(tester);
+
+      // Saturday's own takes the place of Friday's.
+      expect(rowsShown(tester), ['n-3', 'n-1']);
+      expect(headFocus(tester, 'n-3').hasPrimaryFocus, isTrue);
     });
 
     testWidgets('Every date lists only whole-event nominations', (
