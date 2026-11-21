@@ -976,7 +976,7 @@
   },
   "eventsGamesStillSupplies": "{title} is nominated, or in the lineup for a date still to come, so it can't come off your games yet.",
   "@eventsGamesStillSupplies": {
-    "description": "Banner at the foot of an event's screen when a game the user tried to take back stays on the games they're bringing: it has been put forward for the event, or is set to be played on a date that hasn't happened. Shown when the lineup the screen holds doesn't show the game in it, else eventsGamesStillInLineup says what to do (#520).",
+    "description": "Banner at the foot of an event's screen when a game the user tried to take back stays on the games they're bringing: it has been put forward for the event, or is set to be played on a date that hasn't happened. Shown when nothing the screen has read says which, else eventsGamesStillSuppliesYours and its siblings, eventsGamesStillNominated or eventsGamesStillInLineup say what to do (#520, #905).",
     "placeholders": {
       "title": {
         "type": "String",
@@ -986,7 +986,7 @@
   },
   "eventsGamesStillSuppliesYours": "{title} is nominated, so it can't come off your games yet. Withdraw your nomination first.",
   "@eventsGamesStillSuppliesYours": {
-    "description": "Banner at the foot of an event's screen when a game the user tried to take back stays on the games they're bringing because the user themself put it forward for the event: they can take it back once they withdraw that nomination (eventsWithdraw, on the nomination on the Nominations sub-tab of the Games tab).",
+    "description": "Banner at the foot of an event's screen when a game the user tried to take back stays on the games they're bringing because the user themself put it forward for the event: they can take it back once they withdraw that nomination (eventsWithdraw, on the nomination on the Nominations sub-tab of the Games tab). The same words are the reason under a disabled Take back (eventsGamesTakeBack), on its row or in the game's quick look, and its hint, before any take-back is tried (#905).",
     "placeholders": {
       "title": {
         "type": "String",
@@ -996,7 +996,7 @@
   },
   "eventsGamesStillSuppliesYoursAndTheirs": "{title} is nominated, so it can't come off your games yet. Withdraw your nomination, and whoever else nominated it has to withdraw theirs.",
   "@eventsGamesStillSuppliesYoursAndTheirs": {
-    "description": "Banner at the foot of an event's screen when a game the user tried to take back stays on the games they're bringing because both the user and someone else put it forward for the event: the user can withdraw their own nomination (eventsWithdraw, on the nomination on the Nominations sub-tab of the Games tab), but the game comes off only once the others' nominations are withdrawn too, which only those people can do.",
+    "description": "Banner at the foot of an event's screen when a game the user tried to take back stays on the games they're bringing because both the user and someone else put it forward for the event: the user can withdraw their own nomination (eventsWithdraw, on the nomination on the Nominations sub-tab of the Games tab), but the game comes off only once the others' nominations are withdrawn too, which only those people can do. The same words are the reason under a disabled Take back (eventsGamesTakeBack), on its row or in the game's quick look, and its hint, before any take-back is tried (#905).",
     "placeholders": {
       "title": {
         "type": "String",
@@ -1006,7 +1006,7 @@
   },
   "eventsGamesStillSuppliesTheirs": "{title} is nominated, so it can't come off your games yet. Only whoever nominated it can withdraw it.",
   "@eventsGamesStillSuppliesTheirs": {
-    "description": "Banner at the foot of an event's screen when a game the user tried to take back stays on the games they're bringing because someone else put it forward for the event: only that person can withdraw the nomination, and the user can't.",
+    "description": "Banner at the foot of an event's screen when a game the user tried to take back stays on the games they're bringing because someone else put it forward for the event: only that person can withdraw the nomination, and the user can't. The same words are the reason under a disabled Take back (eventsGamesTakeBack), on its row or in the game's quick look, and its hint, before any take-back is tried (#905).",
     "placeholders": {
       "title": {
         "type": "String",
@@ -1030,7 +1030,7 @@
   },
   "eventsGamesTheirsStillSupplies": "{title} is nominated, or in the lineup for a date still to come, so it can't come off {name}'s games yet.",
   "@eventsGamesTheirsStillSupplies": {
-    "description": "Banner at the foot of an event's screen when a game someone else offered to bring, which the user tried to take back for them, stays on that person's games: it has been put forward for the event, or is set to be played on a date that hasn't happened. eventsGamesStillSupplies, for another person's game. {name} is that person's name, or eventsAttendeeSomeone for someone with none.",
+    "description": "Banner at the foot of an event's screen when a game someone else offered to bring, which the user tried to take back for them, stays on that person's games: it has been put forward for the event, or is set to be played on a date that hasn't happened. eventsGamesStillSupplies, for another person's game, shown when nothing the screen has read says which. {name} is that person's name, or eventsAttendeeSomeone for someone with none.",
     "placeholders": {
       "title": {
         "type": "String",
@@ -1044,7 +1044,7 @@
   },
   "eventsGamesTheirsStillSuppliesYours": "{title} is nominated, so it can't come off {name}'s games yet. Withdraw your nomination first.",
   "@eventsGamesTheirsStillSuppliesYours": {
-    "description": "Banner at the foot of an event's screen when a game someone else offered to bring, which the user tried to take back for them, stays on that person's games because the user themself put it forward for the event: they can take it back once they withdraw that nomination (eventsWithdraw, on the nomination on the Nominations sub-tab of the Games tab). eventsGamesStillSuppliesYours, for another person's game. {name} is the name of the person bringing the game, or eventsAttendeeSomeone for someone with none.",
+    "description": "Banner at the foot of an event's screen when a game someone else offered to bring, which the user tried to take back for them, stays on that person's games because the user themself put it forward for the event: they can take it back once they withdraw that nomination (eventsWithdraw, on the nomination on the Nominations sub-tab of the Games tab). eventsGamesStillSuppliesYours, for another person's game. {name} is the name of the person bringing the game, or eventsAttendeeSomeone for someone with none. The same words are the reason under a disabled Take back on that person's game, on its row or in the game's quick look, and its hint, before any take-back is tried (#905).",
     "placeholders": {
       "title": {
         "type": "String",
@@ -1058,7 +1058,7 @@
   },
   "eventsGamesTheirsStillSuppliesYoursAndTheirs": "{title} is nominated, so it can't come off {name}'s games yet. Withdraw your nomination, and whoever else nominated it has to withdraw theirs.",
   "@eventsGamesTheirsStillSuppliesYoursAndTheirs": {
-    "description": "Banner at the foot of an event's screen when a game someone else offered to bring, which the user tried to take back for them, stays on that person's games because both the user and someone else put it forward for the event: the user can withdraw their own nomination (eventsWithdraw, on the nomination on the Nominations sub-tab of the Games tab), but the game comes off only once the others' nominations are withdrawn too, which only those people can do. eventsGamesStillSuppliesYoursAndTheirs, for another person's game. {name} is the name of the person bringing the game, or eventsAttendeeSomeone for someone with none.",
+    "description": "Banner at the foot of an event's screen when a game someone else offered to bring, which the user tried to take back for them, stays on that person's games because both the user and someone else put it forward for the event: the user can withdraw their own nomination (eventsWithdraw, on the nomination on the Nominations sub-tab of the Games tab), but the game comes off only once the others' nominations are withdrawn too, which only those people can do. eventsGamesStillSuppliesYoursAndTheirs, for another person's game. {name} is the name of the person bringing the game, or eventsAttendeeSomeone for someone with none. The same words are the reason under a disabled Take back on that person's game, on its row or in the game's quick look, and its hint, before any take-back is tried (#905).",
     "placeholders": {
       "title": {
         "type": "String",
@@ -1072,7 +1072,7 @@
   },
   "eventsGamesTheirsStillSuppliesTheirs": "{title} is nominated, so it can't come off {name}'s games yet. Only whoever nominated it can withdraw it.",
   "@eventsGamesTheirsStillSuppliesTheirs": {
-    "description": "Banner at the foot of an event's screen when a game someone else offered to bring, which the user tried to take back for them, stays on that person's games because someone other than the user put it forward for the event: only whoever did can withdraw the nomination, and the user can't. eventsGamesStillSuppliesTheirs, for another person's game. {name} is the name of the person bringing the game, or eventsAttendeeSomeone for someone with none; the person who nominated it may be someone else again.",
+    "description": "Banner at the foot of an event's screen when a game someone else offered to bring, which the user tried to take back for them, stays on that person's games because someone other than the user put it forward for the event: only whoever did can withdraw the nomination, and the user can't. eventsGamesStillSuppliesTheirs, for another person's game. {name} is the name of the person bringing the game, or eventsAttendeeSomeone for someone with none; the person who nominated it may be someone else again. The same words are the reason under a disabled Take back on that person's game, on its row or in the game's quick look, and its hint, before any take-back is tried (#905).",
     "placeholders": {
       "title": {
         "type": "String",
@@ -3827,7 +3827,7 @@
   },
   "eventsGamesStillInLineup": "{title} is in the lineup. A host can take it out of the lineup, then it can come off your games.",
   "@eventsGamesStillInLineup": {
-    "description": "Banner at the foot of an event's screen when a game the user tried to take back stays on the games they're bringing because it is in the lineup: a host can take it out of the lineup (eventsLineupRemove), and then it can come off. The title is the game's title, with its subtitle where it has one (#920).",
+    "description": "Banner at the foot of an event's screen when a game the user tried to take back stays on the games they're bringing because it is in the lineup: a host can take it out of the lineup (eventsLineupRemove), and then it can come off. The title is the game's title, with its subtitle where it has one (#920). The same words are the reason under a disabled Take back (eventsGamesTakeBack), on its row or in the game's quick look, and its hint, before any take-back is tried (#905).",
     "placeholders": {
       "title": {
         "type": "String",
@@ -3837,7 +3837,31 @@
   },
   "eventsGamesTheirsStillInLineup": "{title} is in the lineup. A host can take it out of the lineup, then it can come off {name}'s games.",
   "@eventsGamesTheirsStillInLineup": {
-    "description": "Banner at the foot of an event's screen when a game someone else offered to bring, which the user tried to take back for them, stays on that person's games because it is in the lineup. eventsGamesStillInLineup, for another person's game. {name} is that person's name, or eventsAttendeeSomeone for someone with none.",
+    "description": "Banner at the foot of an event's screen when a game someone else offered to bring, which the user tried to take back for them, stays on that person's games because it is in the lineup. eventsGamesStillInLineup, for another person's game. {name} is that person's name, or eventsAttendeeSomeone for someone with none. The same words are the reason under a disabled Take back on that person's game, on its row or in the game's quick look, and its hint, before any take-back is tried (#905).",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      },
+      "name": {
+        "type": "String",
+        "example": "Ada Lovelace"
+      }
+    }
+  },
+  "eventsGamesStillNominated": "{title} is nominated, so it can't come off your games yet. Whoever nominated it can withdraw it.",
+  "@eventsGamesStillNominated": {
+    "description": "The reason under a disabled Take back (eventsGamesTakeBack), on its row or in the game's quick look on the Games tab, and its hint, where the list of games says the game is nominated but the nominations the screen has read don't say by whom; and the banner at the foot of an event's screen when a take-back is refused then. Whoever nominated it can withdraw the nomination (eventsWithdraw), and then the game can come off the games the user is bringing (#905). The title is the game's title, with its subtitle where it has one (#851).",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsGamesTheirsStillNominated": "{title} is nominated, so it can't come off {name}'s games yet. Whoever nominated it can withdraw it.",
+  "@eventsGamesTheirsStillNominated": {
+    "description": "eventsGamesStillNominated, for a game someone else offered to bring, which the user may take back for them: the reason under its disabled Take back and its hint, and the banner when a take-back of it is refused (#905). {name} is the name of the person bringing the game, or eventsAttendeeSomeone for someone with none.",
     "placeholders": {
       "title": {
         "type": "String",

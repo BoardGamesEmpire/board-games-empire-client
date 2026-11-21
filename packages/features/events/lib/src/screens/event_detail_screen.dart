@@ -2339,12 +2339,13 @@ class _ReadyPage extends StatelessWidget {
               state: gamesState,
               nominations: nominationsState,
               lineup: lineupState,
-              // A take-back's 409 names a host's step for a game in the
-              // lineup (#520).
-              inLineup: (id) => lineupHoldsRemovable(
-                state,
-                knownLineup(lineupState),
-                id,
+              // A take-back's 409 names the step that frees the game, as
+              // Take back says up front (#520, #905).
+              supplies: takeBackSuppliesById(
+                state.detail,
+                pool: gamesState.games,
+                nominations: nominationsState?.nominations,
+                lineup: knownLineup(lineupState),
                 now: now(),
               ),
               viewerId: state.detail.attendance?.id,

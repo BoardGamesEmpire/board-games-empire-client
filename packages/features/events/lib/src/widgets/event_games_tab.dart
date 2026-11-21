@@ -726,6 +726,7 @@ class EventGamesTab extends StatelessWidget {
                   acting: acting,
                   scopes: scopes,
                   addScopes: addScopes,
+                  now: now,
                   lineup: lineup,
                 );
                 final buttons = poolRowButtons(
@@ -742,20 +743,26 @@ class EventGamesTab extends StatelessWidget {
                 final add = gates.addToLineup?.onRow ?? false
                     ? buttons.addToLineup
                     : null;
+                final nominate = buttons.nominate;
                 return _PoolRow(
                   game: game,
                   area: controller.poolRowArea(game.id),
                   head: controller.rowHeadFocus(OfferedCopyEntry(game.id)),
                   who: gates.who,
                   nominated: gates.nominatedLine,
+                  // Why the main action can't be pressed, where its hint
+                  // says so for the ear: Take back's, where it is that
+                  // action, says what the game still supplies (#905).
                   note: add != null
                       ? gates.addToLineup?.notGoing
-                      : gates.nominate?.notGoing,
+                      : nominate != null
+                      ? gates.nominate?.notGoing
+                      : gates.takeBack?.blockedReason,
                   // One main action (#946): Nominate where the viewer is
                   // offered it, or Add to lineup in its place, else Take back
                   // where they may take it back. Take back beside either is
                   // the quick look's.
-                  action: add ?? buttons.nominate ?? buttons.takeBack,
+                  action: add ?? nominate ?? buttons.takeBack,
                 );
               },
             ),

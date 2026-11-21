@@ -163,7 +163,10 @@ Future<void> showEventGameQuickLook(
 /// press, and sent only once a running detail read has ended
 /// ([nominateGame], [addToLineup], [takeBackGame]).
 /// Take back arms the tab's hand-off as the row's does
-/// ([EventGamesTabController.armTakeBack]).
+/// ([EventGamesTabController.armTakeBack]). Where a read says the copy
+/// still supplies a live nomination or a lineup game still ahead, Take back
+/// is disabled, and says why under the controls, as a row whose main action
+/// it is says it under it (#905).
 ///
 /// ## A nomination
 ///
@@ -366,15 +369,19 @@ class _EventGameQuickLookState extends State<EventGameQuickLook> {
         !EventPoolOutcomeBanner.says(pool)) {
       return null;
     }
-    final known = knownLineup(lineup);
-    final now = EventGamesTabScope.of(context).clock();
     return EventPoolOutcomeBanner(
       outcome: pool,
       nominations: nominations.nominations,
-      // A take-back's 409 names a host's step for a game in the lineup
-      // (#520).
-      inLineup: detail is EventDetailReady
-          ? (id) => lineupHoldsRemovable(detail, known, id, now: now)
+      // A take-back's 409 names the step that frees the game, as Take back
+      // says up front (#520, #905).
+      supplies: detail is EventDetailReady
+          ? takeBackSuppliesById(
+              detail.detail,
+              pool: games.games,
+              nominations: nominations.nominations,
+              lineup: knownLineup(lineup),
+              now: EventGamesTabScope.of(context).clock(),
+            )
           : null,
       viewerId: viewerId,
       names: names,
@@ -479,6 +486,7 @@ class _EventGameQuickLookState extends State<EventGameQuickLook> {
         now: now,
       ),
       addScopes: lineupAddChoicesIn(detail, view: controller.dateView),
+      now: now,
       lineup: lineup,
     );
     final medium = switch (shown.medium) {
@@ -550,8 +558,13 @@ class _EventGameQuickLookState extends State<EventGameQuickLook> {
       // Nominate, Add to lineup and Take back, each where the row's rules
       // offer it: each, where the row has room for one (#946, #519).
       controls: [?nominate, ?add, ?takeBack],
-      // Whoever brings it not going stops Nominate and Add to lineup alike.
-      note: gates.nominate?.notGoing ?? gates.addToLineup?.notGoing,
+      notes: [
+        // Whoever brings it not going stops Nominate and Add to lineup
+        // alike.
+        ?(gates.nominate?.notGoing ?? gates.addToLineup?.notGoing),
+        // What it still supplies stops Take back (#905).
+        ?gates.takeBack?.blockedReason,
+      ],
       // Each is a write.
       offlineNote: nominate != null || add != null || takeBack != null,
       outcomes: outcomes,
@@ -722,9 +735,9 @@ class _EventGameQuickLookState extends State<EventGameQuickLook> {
       ],
       controls: [?remove],
       // Its hint already says why it can't be pressed.
-      note: remove != null && remove.started
-          ? l10n.eventsLineupStartedHint
-          : null,
+      notes: [
+        if (remove != null && remove.started) l10n.eventsLineupStartedHint,
+      ],
       // A write.
       offlineNote: remove != null,
       outcomes: outcomes,
@@ -980,7 +993,7 @@ class _NominationLookState extends State<_NominationLook>
 /// The frame every form of the quick look shares (#957): the cover beside
 /// the name, as its heading; then, while the entry is there, [lines] as one
 /// node, [vote] under them at full width, [controls] in a row that wraps,
-/// [note] under them, drawn only, as their hints say it, and one online-only
+/// [notes] under them, drawn only, as their hints say it, and one online-only
 /// note while offline where [offlineNote] asks for it, then [outcomes], then
 /// View game where [onOpenGame] is given. Where the entry has gone, [gone]
 /// in a live region in place of all but [outcomes], so nothing is left to
@@ -994,7 +1007,7 @@ class _QuickLookFrame extends StatelessWidget {
     this.wrapLines,
     this.vote,
     this.controls = const [],
-    this.note,
+    this.notes = const [],
     this.offlineNote = false,
     this.outcomes = const [],
     this.onOpenGame,
@@ -1018,8 +1031,9 @@ class _QuickLookFrame extends StatelessWidget {
   /// The entry's other controls, each a node of its own.
   final List<Widget> controls;
 
-  /// Why one of [controls] can't be pressed, which its hint already says.
-  final String? note;
+  /// Why each of [controls] that can't be pressed can't, in their order,
+  /// which their hints already say.
+  final List<String> notes;
 
   /// Whether one online-only note goes under [controls] while offline: they
   /// hold a write whose reason nothing else under them says.
@@ -1038,7 +1052,6 @@ class _QuickLookFrame extends StatelessWidget {
     final theme = Theme.of(context);
     final tokens = BgeTokens.of(context);
     final gone = this.gone;
-    final note = this.note;
     final vote = this.vote;
     final onOpenGame = this.onOpenGame;
     final offline = BgeConnectivityScope.offlineOf(context);
@@ -1091,7 +1104,7 @@ class _QuickLookFrame extends StatelessWidget {
                 crossAxisAlignment: WrapCrossAlignment.center,
                 children: controls,
               ),
-            if (note != null)
+            for (final note in notes)
               ExcludeSemantics(
                 child: Text(
                   note,

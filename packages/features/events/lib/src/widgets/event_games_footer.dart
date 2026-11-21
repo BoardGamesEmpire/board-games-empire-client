@@ -64,15 +64,18 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// alone.
 ///
 /// A take-back the server refuses because the game still supplies a
-/// nomination or a lineup (a 409) says what to do where the nominations
-/// held can tell (#517): withdraw your nomination first, where only the
-/// viewer made a live one the row supplies; that, and that the others who
-/// nominated it must withdraw theirs, where both they and someone else did;
-/// that only whoever nominated it can withdraw it, where only someone else
-/// did; and otherwise that it is nominated or in the lineup, as before,
-/// since the lineup is #520's. The row is found by the outcome's offered
-/// game id, which is all a nomination names it by, whether or not the pool
-/// still holds it. A take-back of someone else's
+/// nomination or a lineup (a 409) says what to do where the screen's reads
+/// can tell ([stillSuppliesMessage], #517, #520, #905), in the words a
+/// disabled Take back says up front: withdraw your nomination first, where
+/// only the viewer made a live one the row supplies; that, and that the
+/// others who nominated it must withdraw theirs, where both they and
+/// someone else did; that only whoever nominated it can withdraw it, where
+/// only someone else did; that whoever nominated it can, where only the
+/// pool's count says it is nominated; that a host can take it out of the
+/// lineup, where it is in one; and otherwise that it is nominated or in the
+/// lineup, as before. The row is found by the outcome's offered game id,
+/// which is all a nomination names it by, whether or not the pool still
+/// holds it. A take-back of someone else's
 /// game (#518) says whose games it is off, or can't come off yet, naming
 /// them as the pool's row does, from the roster ([names]); the viewer's own
 /// says "your games". The pool's banner keeps the words it landed with: the
@@ -86,7 +89,7 @@ class EventGamesFooter extends StatelessWidget {
     required this.names,
     this.nominations,
     this.lineup,
-    this.inLineup,
+    this.supplies,
     this.viewerId,
     this.saidInQuickLook,
     super.key,
@@ -104,11 +107,11 @@ class EventGamesFooter extends StatelessWidget {
   /// Null shows neither.
   final EventLineupState? lineup;
 
-  /// Whether the lineup holds a game the pool row it is given supplies that
-  /// a host could take out (#520, [lineupHoldsRemovable]): what a take-back's
-  /// 409 names as the step that frees it. Null, as where the lineup isn't
-  /// read, says none does.
-  final bool Function(String offeredGameId)? inLineup;
+  /// What the pool row it is given still supplies by the screen's reads
+  /// (#905, [takeBackSuppliesById]): what a take-back's 409 names as the step
+  /// that frees it, as Take back says up front. Null, as where the detail
+  /// isn't shown, says nothing does.
+  final StillSupplies Function(String offeredGameId)? supplies;
 
   /// The viewer's roster row id, which says which nominations are theirs, or
   /// null where they have none.
@@ -166,7 +169,7 @@ class EventGamesFooter extends StatelessWidget {
           EventPoolOutcomeBanner(
             outcome: outcome,
             nominations: nominations?.nominations ?? const [],
-            inLineup: inLineup,
+            supplies: supplies,
             viewerId: viewerId,
             names: names,
             announce: !(saidInQuickLook?.call(outcome) ?? false),
@@ -269,7 +272,7 @@ class EventPoolOutcomeBanner extends StatelessWidget {
     required this.nominations,
     required this.viewerId,
     required this.names,
-    this.inLineup,
+    this.supplies,
     this.announce = true,
   }) : assert(says(outcome), 'Build it only where it says something.'),
        super(key: ObjectKey(outcome));
@@ -288,11 +291,11 @@ class EventPoolOutcomeBanner extends StatelessWidget {
   /// someone else's game was about (#518).
   final Map<String, String?> names;
 
-  /// Whether the lineup holds a game the pool row it is given supplies that
-  /// a host could take out (#520, [lineupHoldsRemovable]): where nobody holds
-  /// a live nomination of the row, a take-back's 409 names that step. Null
-  /// says none does.
-  final bool Function(String offeredGameId)? inLineup;
+  /// What the pool row it is given still supplies by the screen's reads
+  /// (#905, [takeBackSuppliesById]): where the nominations held name no live
+  /// one of the row, a take-back's 409 names the step that frees it from
+  /// this ([stillSuppliesMessage]). Null says nothing does.
+  final StillSupplies Function(String offeredGameId)? supplies;
 
   /// Whether it is a live region ([BgeInlineBanner.announce]): not where a
   /// quick look said the outcome (#957).
@@ -313,10 +316,14 @@ class EventPoolOutcomeBanner extends StatelessWidget {
       l10n,
       outcome,
       _suppliedBy(outcome, nominations: nominations, viewerId: viewerId),
-      inLineup:
-          outcome is EventTakeBackOutcome &&
-          outcome.offeredGameId != null &&
-          (inLineup?.call(outcome.offeredGameId!) ?? false),
+      supplies: switch (outcome) {
+        EventTakeBackOutcome(
+          result: EventTakeBackResult.stillSupplies,
+          offeredGameId: final id?,
+        ) =>
+          supplies?.call(id) ?? StillSupplies.nothing,
+        _ => StillSupplies.nothing,
+      },
     );
 
     // In the words it landed with, which the nominations' changes leave as
@@ -355,19 +362,19 @@ class EventPoolOutcomeBanner extends StatelessWidget {
   }
 
   /// The banner's copy, by the write it answers. A take-back's 409 names
-  /// what to do by [supplied] (#517).
+  /// what to do by [supplied] (#517), then by [supplies] (#905).
   String _message(
     EventsLocalizations l10n,
     EventGamesOutcome outcome,
     StillSuppliedBy supplied, {
-    required bool inLineup,
+    required StillSupplies supplies,
   }) => switch (outcome) {
     EventOfferOutcome() => _offerMessage(l10n, outcome),
     EventTakeBackOutcome() => _takeBackMessage(
       l10n,
       outcome,
       supplied,
-      inLineup: inLineup,
+      supplies: supplies,
     ),
   };
 
@@ -414,11 +421,11 @@ class EventPoolOutcomeBanner extends StatelessWidget {
 
   /// A take-back's copy, naming its game by its title and subtitle
   /// ([gameName], #851): the banner is built only where [says], where the
-  /// outcome names one. A 409 says what to do by [supplied] (#517): where
-  /// nobody holds a live nomination of the row, it says a host can take it
-  /// out of the lineup where it is in one ([inLineup], #520), and else that it
-  /// is nominated, or in the lineup for a date still to come, in a way the
-  /// nominations held don't show.
+  /// outcome names one. A 409 says what to do as a disabled Take back says
+  /// it up front ([stillSuppliesMessage], #905), by [supplied] (#517), then
+  /// by what the screen's reads say the row still supplies ([supplies],
+  /// #520), and else that it is nominated, or in the lineup for a date still
+  /// to come, in a way the reads held don't show.
   ///
   /// Whose games it was about comes from the roster row the outcome names
   /// (#518): someone else's where that isn't the viewer's [viewerId], and
@@ -430,7 +437,7 @@ class EventPoolOutcomeBanner extends StatelessWidget {
     EventsLocalizations l10n,
     EventTakeBackOutcome outcome,
     StillSuppliedBy supplied, {
-    required bool inLineup,
+    required StillSupplies supplies,
   }) {
     final name = gameName(l10n, outcome.title!, outcome.subtitle);
     final id = outcome.attendeeId;
@@ -441,40 +448,75 @@ class EventPoolOutcomeBanner extends StatelessWidget {
         theirs
             ? l10n.eventsGamesTheirsTakenBack(name, offeredBy())
             : l10n.eventsGamesTakenBack(name),
-      EventTakeBackResult.stillSupplies => switch ((supplied, theirs)) {
-        (StillSuppliedBy.viewer, false) => l10n.eventsGamesStillSuppliesYours(
-          name,
-        ),
-        (StillSuppliedBy.viewer, true) =>
-          l10n.eventsGamesTheirsStillSuppliesYours(name, offeredBy()),
-        (StillSuppliedBy.viewerAndSomeoneElse, false) =>
-          l10n.eventsGamesStillSuppliesYoursAndTheirs(name),
-        (StillSuppliedBy.viewerAndSomeoneElse, true) =>
-          l10n.eventsGamesTheirsStillSuppliesYoursAndTheirs(
-            name,
-            offeredBy(),
-          ),
-        (StillSuppliedBy.someoneElse, false) =>
-          l10n.eventsGamesStillSuppliesTheirs(name),
-        (StillSuppliedBy.someoneElse, true) =>
-          l10n.eventsGamesTheirsStillSuppliesTheirs(name, offeredBy()),
-        // In the lineup, which a host can take it out of (#520).
-        (StillSuppliedBy.none, false) when inLineup =>
-          l10n.eventsGamesStillInLineup(name),
-        (StillSuppliedBy.none, true) when inLineup =>
-          l10n.eventsGamesTheirsStillInLineup(name, offeredBy()),
-        (StillSuppliedBy.none, false) => l10n.eventsGamesStillSupplies(name),
-        (StillSuppliedBy.none, true) => l10n.eventsGamesTheirsStillSupplies(
-          name,
-          offeredBy(),
-        ),
-      },
+      // As Take back says it up front (#905), else in words that name
+      // neither.
+      EventTakeBackResult.stillSupplies =>
+        stillSuppliesMessage(
+              l10n,
+              title: name,
+              supplies: supplies,
+              by: supplied,
+              offeredBy: theirs ? offeredBy() : null,
+            ) ??
+            (theirs
+                ? l10n.eventsGamesTheirsStillSupplies(name, offeredBy())
+                : l10n.eventsGamesStillSupplies(name)),
       EventTakeBackResult.refused => l10n.eventsGamesTakeBackRefused(name),
       EventTakeBackResult.dropped => l10n.eventsGamesTakeBackDropped(name),
       EventTakeBackResult.failed => l10n.eventsGamesTakeBackFailed(name),
     };
   }
 }
+
+/// What keeps a take-back of a pool row from going (#905), in words, or null
+/// where nothing does that the screen's reads can tell: the step that frees
+/// it, which a disabled Take back says up front, on its row or in its quick
+/// look, and a take-back's 409 says in the footer
+/// ([EventPoolOutcomeBanner]), so the two read alike.
+///
+/// A live nomination the nominations held name ([by], [stillSuppliedBy])
+/// says who can withdraw it (#517): the viewer, where only they nominated
+/// it; the viewer, and the others theirs, where both did; only whoever
+/// nominated it, where only someone else did. Else, by what the reads say
+/// the row still supplies ([supplies], [stillSupplies]): a nomination only
+/// the pool's count shows, that whoever nominated it can withdraw it; a
+/// game in the lineup still ahead, that a host can take it out of the
+/// lineup (#520).
+///
+/// [title] names the game as its row does ([gameName], #851), and
+/// [offeredBy] whoever brings it where that isn't the viewer (#518), as the
+/// pool's row names them: null on the viewer's own, which says "your games".
+String? stillSuppliesMessage(
+  EventsLocalizations l10n, {
+  required String title,
+  required StillSupplies supplies,
+  required StillSuppliedBy by,
+  required String? offeredBy,
+}) => switch ((by, offeredBy)) {
+  (StillSuppliedBy.viewer, null) => l10n.eventsGamesStillSuppliesYours(title),
+  (StillSuppliedBy.viewer, final name?) =>
+    l10n.eventsGamesTheirsStillSuppliesYours(title, name),
+  (StillSuppliedBy.viewerAndSomeoneElse, null) =>
+    l10n.eventsGamesStillSuppliesYoursAndTheirs(title),
+  (StillSuppliedBy.viewerAndSomeoneElse, final name?) =>
+    l10n.eventsGamesTheirsStillSuppliesYoursAndTheirs(title, name),
+  (StillSuppliedBy.someoneElse, null) => l10n.eventsGamesStillSuppliesTheirs(
+    title,
+  ),
+  (StillSuppliedBy.someoneElse, final name?) =>
+    l10n.eventsGamesTheirsStillSuppliesTheirs(title, name),
+  (StillSuppliedBy.none, _) => switch ((supplies, offeredBy)) {
+    (StillSupplies.nomination, null) => l10n.eventsGamesStillNominated(title),
+    (StillSupplies.nomination, final name?) =>
+      l10n.eventsGamesTheirsStillNominated(title, name),
+    (StillSupplies.lineup, null) => l10n.eventsGamesStillInLineup(title),
+    (StillSupplies.lineup, final name?) => l10n.eventsGamesTheirsStillInLineup(
+      title,
+      name,
+    ),
+    (StillSupplies.nothing, _) => null,
+  },
+};
 
 /// The banner saying how a host's last lineup write went (#519, #520),
 /// [outcome]: an add or a removal. Keyed by [outcome], so each is a banner
