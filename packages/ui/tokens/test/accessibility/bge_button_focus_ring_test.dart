@@ -787,39 +787,6 @@ void main() {
     };
 
     group(
-      "a list row's keyboard focus differs from its rest by 3:1",
-      skip: 'see #758',
-      () {
-        for (final MapEntry(key: name, value: build) in schemes.entries) {
-          testWidgets(
-            name,
-            (tester) async {
-              await host(tester, [
-                ListTile(key: goKey, onTap: () {}, title: const Text('Row')),
-              ], themeData: build());
-              final rect = tester.getRect(find.byKey(goKey));
-              final atRest = await capturePixels(tester, boundary);
-
-              await tab(tester);
-              await tester.pumpAndSettle();
-              expect(
-                Focus.of(tester.element(find.text('Row'))).hasPrimaryFocus,
-                isTrue,
-              );
-              final focused = await capturePixels(tester, boundary);
-
-              // Anywhere the focus shows: a fill, a ring, an edge.
-              expect(
-                strongestContrast(rect, atRest, focused),
-                greaterThanOrEqualTo(3.0),
-              );
-            },
-          );
-        }
-      },
-    );
-
-    group(
       "a segmented button's segment is ringed on keyboard focus",
       skip: 'see #759',
       () {

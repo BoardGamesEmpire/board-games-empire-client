@@ -37,6 +37,7 @@ class BgeFocusRing extends StatefulWidget {
     this.suppressed = false,
     this.color,
     this.overPicture = false,
+    this.outsideSides = false,
     super.key,
   }) : assert(
          color == null || !overPicture,
@@ -91,6 +92,17 @@ class BgeFocusRing extends StatefulWidget {
   /// Giving both fails an assert.
   final bool overPicture;
 
+  /// Whether the ring is drawn outside the content's box at its sides, by
+  /// the ring's own width, rather than on the box's edge.
+  ///
+  /// For content that runs to its box's sides, as a list tile with no
+  /// content padding does: a ring on the edge would cover the first glyph of
+  /// its title, or its icon's edge. The top and bottom stay on the edge,
+  /// where a tile centres its content. Nothing clips the ring to the box, so
+  /// the content needs that much room either side, which the page's, the
+  /// sheet's or the dialog's padding gives.
+  final bool outsideSides;
+
   /// Builds the content, given the `onFocusChange` for its control.
   final Widget Function(BuildContext context, ValueChanged<bool> onFocusChange)
   builder;
@@ -140,6 +152,7 @@ class _BgeFocusRingState extends State<BgeFocusRing> {
     final shown = _showRing && !widget.suppressed;
     final width = BgeTokens.of(context).focusOutlineWidth;
     final scheme = Theme.of(context).colorScheme;
+    final outset = widget.outsideSides ? width : 0.0;
     final Color outer;
     final Color? inner;
     if (widget.overPicture) {
@@ -158,6 +171,7 @@ class _BgeFocusRingState extends State<BgeFocusRing> {
           ? _RingDecoration(
               borderRadius: widget.borderRadius,
               border: Border.all(color: outer, width: width),
+              sidesOutset: outset,
             )
           : const _RingDecoration(),
       child: DecoratedBox(
@@ -166,6 +180,7 @@ class _BgeFocusRingState extends State<BgeFocusRing> {
             ? _RingDecoration(
                 borderRadius: widget.borderRadius,
                 border: Border.all(color: inner, width: width * 2),
+                sidesOutset: outset,
               )
             : const _RingDecoration(),
         child: widget.builder(context, _onFocusChange),
@@ -179,10 +194,65 @@ class _BgeFocusRingState extends State<BgeFocusRing> {
 /// margin between the ring and its content, and a caller that sends a missed
 /// press on elsewhere, as the game detail's chip tap target sends it to the
 /// chip, would never see the miss (#708).
+///
+/// With [sidesOutset], it paints that far outside the box at its left and
+/// right, for [BgeFocusRing.outsideSides].
 class _RingDecoration extends BoxDecoration {
-  const _RingDecoration({super.border, super.borderRadius});
+  const _RingDecoration({
+    super.border,
+    super.borderRadius,
+    this.sidesOutset = 0,
+  });
+
+  /// How far outside the box, at each side, the decoration paints.
+  final double sidesOutset;
 
   @override
   bool hitTest(Size size, Offset position, {TextDirection? textDirection}) =>
       false;
+
+  @override
+  BoxPainter createBoxPainter([VoidCallback? onChanged]) {
+    final painter = super.createBoxPainter(onChanged);
+    return sidesOutset == 0
+        ? painter
+        : _SidesOutsetPainter(painter, sidesOutset, onChanged);
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      super == other &&
+      other is _RingDecoration &&
+      other.sidesOutset == sidesOutset;
+
+  @override
+  int get hashCode => Object.hash(super.hashCode, sidesOutset);
+}
+
+/// Paints [_inner] over a box widened by [_outset] at each side.
+class _SidesOutsetPainter extends BoxPainter {
+  _SidesOutsetPainter(this._inner, this._outset, super.onChanged);
+
+  final BoxPainter _inner;
+  final double _outset;
+
+  @override
+  void paint(Canvas canvas, Offset offset, ImageConfiguration configuration) {
+    final size = configuration.size;
+    _inner.paint(
+      canvas,
+      offset.translate(-_outset, 0),
+      size == null
+          ? configuration
+          : configuration.copyWith(
+              size: Size(size.width + 2 * _outset, size.height),
+            ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _inner.dispose();
+    super.dispose();
+  }
 }
