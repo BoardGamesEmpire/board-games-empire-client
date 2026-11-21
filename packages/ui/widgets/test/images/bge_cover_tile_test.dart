@@ -58,35 +58,9 @@ Future<Color> _colourAt(
   WidgetTester tester,
   GlobalKey boundary,
   Offset at,
-) async {
-  final local = at - tester.getTopLeft(find.byKey(boundary));
-  return pixel(await _paintUnder(tester, boundary), local.dx, local.dy);
-}
-
-/// What is drawn under [boundary] now, as `(width, RGBA bytes)`.
-Future<(int, ByteData)> _paintUnder(
-  WidgetTester tester,
-  GlobalKey boundary,
-) async {
-  final render =
-      boundary.currentContext!.findRenderObject()! as RenderRepaintBoundary;
-  return (await tester.runAsync(() async {
-    final image = await render.toImage();
-    return (image.width, (await image.toByteData())!);
-  }))!;
-}
-
-/// The colour at ([x], [y]) in [image].
-Color pixel((int, ByteData) image, double x, double y) {
-  final (width, bytes) = image;
-  final at = (y.floor() * width + x.floor()) * 4;
-  return Color.fromARGB(
-    bytes.getUint8(at + 3),
-    bytes.getUint8(at),
-    bytes.getUint8(at + 1),
-    bytes.getUint8(at + 2),
-  );
-}
+) async => (await capturePixels(tester, boundary))(
+  at - tester.getTopLeft(find.byKey(boundary)),
+);
 
 void main() {
   /// The primary focus, if it is inside [finder].
@@ -293,9 +267,9 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    /// What is drawn now, as `(width, RGBA bytes)`.
-    Future<(int, ByteData)> paint(WidgetTester tester) =>
-        _paintUnder(tester, boundary);
+    /// What is drawn now.
+    Future<Pixels> paint(WidgetTester tester) =>
+        capturePixels(tester, boundary);
 
     /// Tabs to the tile, as a keyboard user would.
     Future<void> focusTile(WidgetTester tester) async {
@@ -303,7 +277,11 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    final primary = BgeTheme.light().colorScheme.primary;
+    /// The outer tone of a ring over a picture, which both the cover's ring
+    /// and the badge's are (#812).
+    final ringTone = BgeFocusRing.pictureTonesOf(
+      BgeTheme.light().colorScheme,
+    ).$1;
 
     setUp(() {
       FocusManager.instance.highlightStrategy =
@@ -319,15 +297,15 @@ void main() {
       // Just inside the cover's left edge, halfway down it.
       final onTheRing = Offset(tile.left + 1, tile.top + 60);
       expect(
-        pixel(await paint(tester), onTheRing.dx, onTheRing.dy),
-        isNot(primary),
+        (await paint(tester))(onTheRing),
+        isNot(ringTone),
       );
 
       await focusTile(tester);
 
       expect(
-        pixel(await paint(tester), onTheRing.dx, onTheRing.dy),
-        primary,
+        (await paint(tester))(onTheRing),
+        ringTone,
         reason: 'the cover is opaque, so the ring has to be drawn over it',
       );
     });
@@ -338,15 +316,15 @@ void main() {
       final tile = await showTile(tester);
       final onTheRing = Offset(tile.left + 1, tile.top + 60);
       await focusTile(tester);
-      expect(pixel(await paint(tester), onTheRing.dx, onTheRing.dy), primary);
+      expect((await paint(tester))(onTheRing), ringTone);
 
       FocusManager.instance.highlightStrategy =
           FocusHighlightStrategy.alwaysTouch;
       await tester.pumpAndSettle();
 
       expect(
-        pixel(await paint(tester), onTheRing.dx, onTheRing.dy),
-        isNot(primary),
+        (await paint(tester))(onTheRing),
+        isNot(ringTone),
       );
     });
 
@@ -358,15 +336,15 @@ void main() {
       await focusTile(tester);
 
       expect(
-        pixel(await paint(tester), tile.left + 1, tile.top + 60),
-        isNot(primary),
+        (await paint(tester))(Offset(tile.left + 1, tile.top + 60)),
+        isNot(ringTone),
       );
     });
 
     testWidgets('hovering tints the cover', (tester) async {
       final tile = await showTile(tester);
       final coverCentre = Offset(tile.left + 60, tile.top + 30);
-      final before = pixel(await paint(tester), coverCentre.dx, coverCentre.dy);
+      final before = (await paint(tester))(coverCentre);
 
       final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
       await mouse.addPointer(location: Offset.zero);
@@ -375,7 +353,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(
-        pixel(await paint(tester), coverCentre.dx, coverCentre.dy),
+        (await paint(tester))(coverCentre),
         isNot(before),
       );
     });
@@ -393,8 +371,8 @@ void main() {
       expect(focused, findsOneWidget);
       expect(FocusManager.instance.highlightMode, FocusHighlightMode.touch);
       expect(
-        pixel(await paint(tester), tile.left + 1, tile.top + 60),
-        isNot(primary),
+        (await paint(tester))(Offset(tile.left + 1, tile.top + 60)),
+        isNot(ringTone),
       );
     });
 
@@ -410,7 +388,10 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(focused, findsOneWidget);
-      expect(pixel(await paint(tester), tile.left + 1, tile.top + 60), primary);
+      expect(
+        (await paint(tester))(Offset(tile.left + 1, tile.top + 60)),
+        ringTone,
+      );
     });
 
     testWidgets('a mouse click leaves the tile focused, unringed and '
@@ -420,11 +401,7 @@ void main() {
       final tile = await showTile(tester);
       final onTheRing = Offset(tile.left + 1, tile.top + 60);
       final coverCentre = Offset(tile.left + 60, tile.top + 30);
-      final unfocused = pixel(
-        await paint(tester),
-        coverCentre.dx,
-        coverCentre.dy,
-      );
+      final unfocused = (await paint(tester))(coverCentre);
 
       await click(tester, await connectMouse(tester), coverCentre);
 
@@ -436,9 +413,9 @@ void main() {
         FocusHighlightMode.traditional,
       );
       final clicked = await paint(tester);
-      expect(pixel(clicked, onTheRing.dx, onTheRing.dy), isNot(primary));
+      expect(clicked(onTheRing), isNot(ringTone));
       expect(
-        pixel(clicked, coverCentre.dx, coverCentre.dy),
+        clicked(coverCentre),
         unfocused,
         reason: 'no focus tint for focus a pointer gave',
       );
@@ -447,7 +424,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(focused, findsOneWidget);
-      expect(pixel(await paint(tester), onTheRing.dx, onTheRing.dy), primary);
+      expect((await paint(tester))(onTheRing), ringTone);
     }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
 
     testWidgets('after a mouse click, a shortcut held with Meta or Control '
@@ -472,8 +449,8 @@ void main() {
         await tester.pumpAndSettle();
 
         expect(
-          pixel(await paint(tester), onTheRing.dx, onTheRing.dy),
-          isNot(primary),
+          (await paint(tester))(onTheRing),
+          isNot(ringTone),
           reason: '$modifier+C',
         );
       }
@@ -481,7 +458,7 @@ void main() {
       await tester.sendKeyEvent(LogicalKeyboardKey.tab);
       await tester.pumpAndSettle();
 
-      expect(pixel(await paint(tester), onTheRing.dx, onTheRing.dy), primary);
+      expect((await paint(tester))(onTheRing), ringTone);
     }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
 
     testWidgets('after a mouse click, focus that comes back from a closed '
@@ -497,11 +474,7 @@ void main() {
       );
       final onTheRing = Offset(tile.left + 1, tile.top + 60);
       final coverCentre = Offset(tile.left + 60, tile.top + 30);
-      final unfocused = pixel(
-        await paint(tester),
-        coverCentre.dx,
-        coverCentre.dy,
-      );
+      final unfocused = (await paint(tester))(coverCentre);
 
       final mouse = await connectMouse(tester);
       await click(tester, mouse, coverCentre);
@@ -512,8 +485,8 @@ void main() {
 
       expect(focused, findsOneWidget);
       final back = await paint(tester);
-      expect(pixel(back, onTheRing.dx, onTheRing.dy), isNot(primary));
-      expect(pixel(back, coverCentre.dx, coverCentre.dy), unfocused);
+      expect(back(onTheRing), isNot(ringTone));
+      expect(back(coverCentre), unfocused);
     }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
 
     testWidgets("the badge's focus is ringed from the keyboard, not after a "
@@ -533,8 +506,8 @@ void main() {
       final onTheBadgeRing = Offset(badge.left + 1, badge.center.dy);
       final onTheTileRing = Offset(tile.left + 1, tile.top + 30);
       expect(
-        pixel(await paint(tester), onTheBadgeRing.dx, onTheBadgeRing.dy),
-        isNot(primary),
+        (await paint(tester))(onTheBadgeRing),
+        isNot(ringTone),
       );
 
       // The tile first, then the badge.
@@ -547,10 +520,10 @@ void main() {
 
       expect(badgeFocused, findsOneWidget);
       final keyed = await paint(tester);
-      expect(pixel(keyed, onTheBadgeRing.dx, onTheBadgeRing.dy), primary);
+      expect(keyed(onTheBadgeRing), ringTone);
       expect(
-        pixel(keyed, onTheTileRing.dx, onTheTileRing.dy),
-        isNot(primary),
+        keyed(onTheTileRing),
+        isNot(ringTone),
         reason: "the ring is the badge's own, not the tile's",
       );
 
@@ -565,8 +538,8 @@ void main() {
         FocusHighlightMode.traditional,
       );
       expect(
-        pixel(await paint(tester), onTheBadgeRing.dx, onTheBadgeRing.dy),
-        isNot(primary),
+        (await paint(tester))(onTheBadgeRing),
+        isNot(ringTone),
       );
 
       // The next key press brings the ring back, where focus already is.
@@ -575,8 +548,8 @@ void main() {
 
       expect(badgeFocused, findsOneWidget);
       expect(
-        pixel(await paint(tester), onTheBadgeRing.dx, onTheBadgeRing.dy),
-        primary,
+        (await paint(tester))(onTheBadgeRing),
+        ringTone,
       );
     }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
 
@@ -640,7 +613,10 @@ void main() {
 
         expect(_badge, findsNothing);
         expect(focusedIn(find.byType(BgeCoverTile)), findsOneWidget);
-        expect(pixel(await paint(tester), onTheRing.dx, onTheRing.dy), primary);
+        expect(
+          (await paint(tester))(onTheRing),
+          ringTone,
+        );
       });
 
       testWidgets('the cover takes it, unringed after a click', (tester) async {
@@ -663,8 +639,8 @@ void main() {
           FocusHighlightMode.traditional,
         );
         expect(
-          pixel(await paint(tester), onTheRing.dx, onTheRing.dy),
-          isNot(primary),
+          (await paint(tester))(onTheRing),
+          isNot(ringTone),
           reason: 'the click on the badge was a click on the tile',
         );
 
@@ -672,9 +648,162 @@ void main() {
         await tester.sendKeyEvent(LogicalKeyboardKey.shiftLeft);
         await tester.pumpAndSettle();
 
-        expect(pixel(await paint(tester), onTheRing.dx, onTheRing.dy), primary);
+        expect(
+          (await paint(tester))(onTheRing),
+          ringTone,
+        );
       }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
     });
+  });
+
+  group('a focused ring over a picture (#812)', () {
+    final boundary = GlobalKey();
+    final themes = {
+      'light': BgeTheme.light,
+      'dark': BgeTheme.dark,
+      'highContrastLight': BgeTheme.highContrastLight,
+      'highContrastDark': BgeTheme.highContrastDark,
+    };
+    // The picture's colour, given the theme: its primary, which a one-tone
+    // ring vanishes on, and a mid grey, between light and dark tones.
+    final fills = <String, Color Function(ColorScheme)>{
+      'primary': (scheme) => scheme.primary,
+      'Color(0xFF777777)': (_) => const Color(0xFF777777),
+    };
+
+    setUp(() {
+      FocusManager.instance.highlightStrategy =
+          FocusHighlightStrategy.alwaysTraditional;
+      addTearDown(
+        () => FocusManager.instance.highlightStrategy =
+            FocusHighlightStrategy.automatic,
+      );
+    });
+
+    /// A tile whose cover is filled with [fill], drawn through [boundary].
+    ///
+    /// With no address the cover is its placeholder, which fills the square
+    /// in `surfaceContainerHighest`, so that role stands in for the artwork.
+    Future<void> showTile(
+      WidgetTester tester,
+      ThemeData theme,
+      Color fill, {
+      BgeCoverExpansions? expansions,
+    }) async {
+      await tester.pumpWidget(
+        hostAtSize(
+          tester,
+          RepaintBoundary(
+            key: boundary,
+            child: Theme(
+              data: theme.copyWith(
+                colorScheme: theme.colorScheme.copyWith(
+                  surfaceContainerHighest: fill,
+                ),
+              ),
+              child: Scaffold(
+                body: Align(
+                  alignment: Alignment.topLeft,
+                  child: BgeCoverTile(
+                    label: 'Azul',
+                    onTap: () {},
+                    expansions: expansions,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    /// The stronger of the ring's two tones against [fill], sampled halfway
+    /// down the left edge of [box]: the outer stroke at 1 in, the inner at 3.
+    ///
+    /// Each sample has to be its tone from [scheme], so a sample that drifts
+    /// off its stroke, or an inner stroke that isn't drawn, fails here rather
+    /// than passing on the other tone's contrast.
+    Future<double> strongestTone(
+      WidgetTester tester,
+      Rect box,
+      Color fill,
+      ColorScheme scheme,
+    ) async {
+      final pixels = await capturePixels(tester, boundary);
+      final origin = tester.getTopLeft(find.byKey(boundary));
+      final y = box.center.dy - origin.dy;
+      final outer = pixels(Offset(box.left - origin.dx + 1, y));
+      final inner = pixels(Offset(box.left - origin.dx + 3, y));
+      final (outerTone, innerTone) = BgeFocusRing.pictureTonesOf(scheme);
+      expect(outer, outerTone, reason: 'the outer stroke');
+      expect(inner, innerTone, reason: 'the inner stroke');
+      return [
+        Wcag.contrastRatio(outer, fill),
+        Wcag.contrastRatio(inner, fill),
+      ].reduce((a, b) => a > b ? a : b);
+    }
+
+    test("the badge's ring gap is one stroke wide, so the inner stroke fills "
+        'it', () {
+      // The badge keeps focusRingGap clear inside its ring, and the inner
+      // stroke is focusOutlineWidth wide. A wider gap would show picture
+      // between the inner stroke and the badge.
+      const tokens = BgeTokens.standard;
+      expect(tokens.focusRingGap, tokens.focusOutlineWidth);
+    });
+
+    for (final MapEntry(key: themeName, value: build) in themes.entries) {
+      for (final MapEntry(key: fillName, value: fillOf) in fills.entries) {
+        testWidgets('a focused ring over a picture filled with $fillName '
+            'keeps a tone 3:1 from it: the cover ($themeName)', (tester) async {
+          final theme = build();
+          final fill = fillOf(theme.colorScheme);
+          await showTile(tester, theme, fill);
+          final tile = tester.getRect(find.byType(BgeCoverTile));
+          final before = await capturePixels(tester, boundary);
+          expect(
+            before(Offset(tile.left + 1, tile.center.dy)),
+            fill,
+            reason: 'unfocused, the edge is the picture',
+          );
+
+          await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+          await tester.pumpAndSettle();
+
+          expect(
+            await strongestTone(tester, tile, fill, theme.colorScheme),
+            greaterThanOrEqualTo(3.0),
+          );
+        });
+
+        testWidgets('a focused ring over a picture filled with $fillName '
+            'keeps a tone 3:1 from it: the expansions badge ($themeName)', (
+          tester,
+        ) async {
+          final theme = build();
+          final fill = fillOf(theme.colorScheme);
+          await showTile(tester, theme, fill, expansions: _expansions());
+          final badge = tester.getRect(_badge);
+          final before = await capturePixels(tester, boundary);
+          expect(
+            before(Offset(badge.left + 1, badge.center.dy)),
+            fill,
+            reason: "unfocused, the ring's place is the picture",
+          );
+
+          // The tile first, then the badge.
+          await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+          await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+          await tester.pumpAndSettle();
+
+          expect(
+            await strongestTone(tester, badge, fill, theme.colorScheme),
+            greaterThanOrEqualTo(3.0),
+          );
+        });
+      }
+    }
   });
 
   group('when the badge goes while a route covers the page (#813)', () {

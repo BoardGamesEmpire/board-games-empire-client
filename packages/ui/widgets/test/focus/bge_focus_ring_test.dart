@@ -76,6 +76,7 @@ void main() {
     FocusNode? focusNode,
     void Function(BuildContext context)? onTap,
     Color? color,
+    bool overPicture = false,
     ThemeData? theme,
   }) async {
     await tester.pumpWidget(
@@ -96,6 +97,7 @@ void main() {
                   BgeFocusRing(
                     borderRadius: BorderRadius.zero,
                     color: color,
+                    overPicture: overPicture,
                     builder: (context, onFocusChange) => _Content(
                       onFocusChange: onFocusChange,
                       onMount: () => mounts++,
@@ -120,21 +122,10 @@ void main() {
   }
 
   /// The colour drawn now just inside the content's left edge, halfway down.
-  Future<Color> onTheRing(WidgetTester tester, Rect content) async {
-    final render =
-        boundary.currentContext!.findRenderObject()! as RenderRepaintBoundary;
-    final (width, bytes) = (await tester.runAsync(() async {
-      final image = await render.toImage();
-      return (image.width, (await image.toByteData())!);
-    }))!;
-    final at = (content.center.dy.floor() * width + content.left.floor()) * 4;
-    return Color.fromARGB(
-      bytes.getUint8(at + 3),
-      bytes.getUint8(at),
-      bytes.getUint8(at + 1),
-      bytes.getUint8(at + 2),
-    );
-  }
+  Future<Color> onTheRing(WidgetTester tester, Rect content) async =>
+      (await capturePixels(tester, boundary))(
+        Offset(content.left, content.center.dy),
+      );
 
   Future<void> tab(WidgetTester tester) =>
       tester.sendKeyEvent(LogicalKeyboardKey.tab);
@@ -355,5 +346,66 @@ void main() {
         expect(await onTheRing(tester, content), given);
       });
     }
+  });
+  group('over a picture (#812)', () {
+    final themes = {
+      'light': BgeTheme.light,
+      'dark': BgeTheme.dark,
+      'highContrastLight': BgeTheme.highContrastLight,
+      'highContrastDark': BgeTheme.highContrastDark,
+    };
+
+    for (final MapEntry(key: name, value: build) in themes.entries) {
+      test('pictureTonesOf stands 9:1 apart in all four themes ($name)', () {
+        final (outer, inner) = BgeFocusRing.pictureTonesOf(build().colorScheme);
+        expect(
+          Wcag.contrastRatio(outer, inner),
+          greaterThanOrEqualTo(9),
+          reason: 'one of two tones 9:1 apart stands 3:1 from any colour',
+        );
+      });
+
+      testWidgets('the outer tone rings the edge and the inner lies just '
+          'inside it ($name)', (tester) async {
+        final theme = build();
+        final (outer, inner) = BgeFocusRing.pictureTonesOf(theme.colorScheme);
+        final content = await show(tester, overPicture: true, theme: theme);
+
+        await tab(tester);
+        await tester.pump();
+
+        final pixels = await capturePixels(tester, boundary);
+        final y = content.center.dy;
+        expect(pixels(Offset(content.left + 1, y)), outer);
+        expect(pixels(Offset(content.left + 3, y)), inner);
+        expect(pixels(Offset(content.left + 5, y)), Colors.black);
+      });
+    }
+
+    test('a ring over a picture takes no color', () {
+      expect(
+        () => BgeFocusRing(
+          borderRadius: BorderRadius.zero,
+          overPicture: true,
+          color: const Color(0xFF00FF00),
+          builder: (context, onFocusChange) => const SizedBox(),
+        ),
+        throwsAssertionError,
+      );
+    });
+
+    testWidgets('a ring not over a picture draws one stroke, as before', (
+      tester,
+    ) async {
+      final content = await show(tester);
+
+      await tab(tester);
+      await tester.pump();
+
+      final pixels = await capturePixels(tester, boundary);
+      final y = content.center.dy;
+      expect(pixels(Offset(content.left + 1, y)), primary);
+      expect(pixels(Offset(content.left + 3, y)), Colors.black);
+    });
   });
 }

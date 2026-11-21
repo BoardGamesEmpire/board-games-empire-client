@@ -25,6 +25,9 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// ([BgePointerPressed], #758): focus a dialog hands back after a click, or
 /// that code moves here, stays unringed. A control may also hide the ring
 /// with [suppressed], as one does while its focus is a pointer's (#707).
+///
+/// A ring drawn over a picture sets [overPicture], and draws two tones side
+/// by side (#812).
 class BgeFocusRing extends StatefulWidget {
   /// Creates a ring with the corners of [borderRadius] around what [builder]
   /// builds.
@@ -33,8 +36,28 @@ class BgeFocusRing extends StatefulWidget {
     required this.builder,
     this.suppressed = false,
     this.color,
+    this.overPicture = false,
     super.key,
-  });
+  }) : assert(
+         color == null || !overPicture,
+         'A ring over a picture takes its tones from pictureTonesOf, so it '
+         'takes no color.',
+       );
+
+  /// The two tones of a ring over a picture: the outer stroke's, then the
+  /// inner's.
+  ///
+  /// Artwork can be any colour, and two tones at least 9:1 apart leave one of
+  /// them 3:1 from any colour beside the ring (WCAG technique C40). So the
+  /// pair is `primary` and `surface` where they stand that far apart, and
+  /// otherwise `onSurface` and `surface`, which do.
+  static (Color outer, Color inner) pictureTonesOf(ColorScheme scheme) =>
+      Wcag.contrastRatio(scheme.primary, scheme.surface) >= _pictureTonesApart
+      ? (scheme.primary, scheme.surface)
+      : (scheme.onSurface, scheme.surface);
+
+  /// How far apart the two tones of a ring over a picture stand, at least.
+  static const double _pictureTonesApart = 9;
 
   /// The ring's corners, the same as the content's.
   final BorderRadius borderRadius;
@@ -49,6 +72,24 @@ class BgeFocusRing extends StatefulWidget {
   /// Give it where the control sits on something other than a surface, which
   /// `primary` was never solved against: pass a colour that holds 3:1 there.
   final Color? color;
+
+  /// Whether the ring is drawn over a picture, which can be any colour.
+  ///
+  /// Such a ring draws [pictureTonesOf]'s outer tone in a
+  /// [BgeTokens.focusOutlineWidth] stroke on the edge, and the inner tone in
+  /// a second stroke as wide just inside it, so the ring reaches twice that
+  /// width in. Where the content leaves a [BgeTokens.focusRingGap] margin
+  /// inside the ring, as the cover's expansions badge does, the inner stroke
+  /// fills it while that gap is as wide as a [BgeTokens.focusOutlineWidth]
+  /// stroke, as the tokens are now. A wider gap would leave picture showing
+  /// between the inner stroke and the content. A ring on a theme's surfaces
+  /// holds its contrast through the palette, so it leaves this false and
+  /// draws one stroke.
+  ///
+  /// The tones are the picture's, so a ring over a picture takes no [color]:
+  /// one colour given for a single stroke can't keep both tones 9:1 apart.
+  /// Giving both fails an assert.
+  final bool overPicture;
 
   /// Builds the content, given the `onFocusChange` for its control.
   final Widget Function(BuildContext context, ValueChanged<bool> onFocusChange)
@@ -95,19 +136,42 @@ class _BgeFocusRingState extends State<BgeFocusRing> {
   }
 
   @override
-  Widget build(BuildContext context) => DecoratedBox(
-    position: DecorationPosition.foreground,
-    decoration: _showRing && !widget.suppressed
-        ? _RingDecoration(
-            borderRadius: widget.borderRadius,
-            border: Border.all(
-              color: widget.color ?? Theme.of(context).colorScheme.primary,
-              width: BgeTokens.of(context).focusOutlineWidth,
-            ),
-          )
-        : const _RingDecoration(),
-    child: widget.builder(context, _onFocusChange),
-  );
+  Widget build(BuildContext context) {
+    final shown = _showRing && !widget.suppressed;
+    final width = BgeTokens.of(context).focusOutlineWidth;
+    final scheme = Theme.of(context).colorScheme;
+    final Color outer;
+    final Color? inner;
+    if (widget.overPicture) {
+      (outer, inner) = BgeFocusRing.pictureTonesOf(scheme);
+    } else {
+      (outer, inner) = (widget.color ?? scheme.primary, null);
+    }
+    // Two boxes whether or not the ring shows or has two tones, so that the
+    // content keeps its element as either changes. The inner tone is drawn
+    // twice the stroke wide, under the outer stroke, which covers its outer
+    // half: what shows is a stroke just inside the outer one, with its
+    // corners shrunk by the stroke's width.
+    return DecoratedBox(
+      position: DecorationPosition.foreground,
+      decoration: shown
+          ? _RingDecoration(
+              borderRadius: widget.borderRadius,
+              border: Border.all(color: outer, width: width),
+            )
+          : const _RingDecoration(),
+      child: DecoratedBox(
+        position: DecorationPosition.foreground,
+        decoration: shown && inner != null
+            ? _RingDecoration(
+                borderRadius: widget.borderRadius,
+                border: Border.all(color: inner, width: width * 2),
+              )
+            : const _RingDecoration(),
+        child: widget.builder(context, _onFocusChange),
+      ),
+    );
+  }
 }
 
 /// A [BoxDecoration] that a press goes through. A [DecoratedBox] takes a

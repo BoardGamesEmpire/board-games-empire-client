@@ -273,6 +273,7 @@ class _BgeCoverTileState extends State<BgeCoverTile>
             return BgeFocusRing(
               borderRadius: radius,
               suppressed: pointerFocus,
+              overPicture: true,
               builder: (context, onFocusChange) => SizedBox.square(
                 dimension: side,
                 child: Stack(
