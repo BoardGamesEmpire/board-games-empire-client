@@ -11,13 +11,19 @@ import 'package:events/src/bloc/event_nominations_state.dart';
 import 'package:events/src/detail/event_games_pool.dart';
 import 'package:events/src/detail/event_lineup.dart';
 import 'package:events/src/detail/event_nominations.dart';
+import 'package:events/src/detail/games_date_view.dart';
 import 'package:events/src/screens/event_detail_screen.dart';
 import 'package:events/src/widgets/event_detail_tabs.dart';
 import 'package:events/src/widgets/event_game_quick_look.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:models/domain.dart'
-    show CollectionFilter, EventNomination, EventOccurrence, LineupGame;
+    show
+        CollectionFilter,
+        EventDetail,
+        EventNomination,
+        EventOccurrence,
+        LineupGame;
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
@@ -25,12 +31,15 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// controller (#945), its filter, whether it has been shown, the ids the pool
 /// was last asked with, how the pool's last read ended and how the nominations'
 /// (#517) and the lineup's (#519) did, the nominations' own filter and order
-/// (#517), the focus nodes a control that leaves hands focus on to, and what
-/// the tab's quick looks reach the screen by (#957).
+/// (#517), the focus nodes a control that leaves hands focus on to, what
+/// the tab's quick looks reach the screen by (#957), and which of the event's
+/// dates it shows (#1042).
 ///
 /// It notifies its listeners when the chosen sub-tab changes, once for each
 /// change and as the change starts, and when the sub-tabs' controller is
 /// replaced, so the screen's page, which listens to it, builds on the new one.
+/// So too when the date shown changes, or the date the location is to name
+/// ([dateQuery]).
 ///
 /// One per screen, held by [EventGamesTabScope] above the detail's builder,
 /// beside the tab controller, so no read, write, clock tick or switch to the
@@ -111,6 +120,165 @@ class EventGamesTabController extends ChangeNotifier {
   /// screen's own tab bar tells the page: the page swaps the list under the
   /// bar at once, not once the indicator has settled.
   void sectionChanged() => notifyListeners();
+
+  /// Which of the event's dates the tab shows (#1042): every date, or one;
+  /// null on an event with no row of dates ([showsDateRow]), and until
+  /// [syncDates] is first given the event's dates.
+  GamesDateView? get dateView => _dateView;
+  GamesDateView? _dateView;
+
+  /// The event's dates as [syncDates] was last given them, which a date
+  /// from the location ([takeDate]) is looked for among: null until then.
+  EventDetail? _dates;
+
+  /// Whether a read of the event has confirmed the dates: [syncDates] has
+  /// been given dates a read brought, one that ended and didn't fail.
+  bool _datesRead = false;
+
+  /// The date the location names ([takeDate]) while [syncDates] has yet to
+  /// be given the dates that say which view it opens.
+  String? _locationDate;
+
+  /// A date the location named that the dates given so far can't show (#1042):
+  /// an id the event's dates don't hold, an empty one, or any date on an event
+  /// with no row. The cache's dates can be older than the server's, as where
+  /// the date was added since the event was last read, so it isn't judged
+  /// until a read has confirmed the dates ([_datesRead]): meanwhile the
+  /// default shows, and the location keeps naming it. It is kept after that
+  /// too, until the viewer chooses a date or the location names another,
+  /// since the read that confirms the dates ends before what it wrote
+  /// reaches the screen (`EventDetailBloc`), and that can bring it. In that
+  /// order the location can name the default for a moment, between the
+  /// read's end and its answer, before it names the date again.
+  String? _heldDate;
+
+  /// Whether the view is the default the tab opened on for a location that
+  /// names no date, or as the row appeared: one the location goes on naming
+  /// none for, since none opens the default (#1042).
+  bool _unnamedDefault = false;
+
+  /// The date the screen's location is to name beside the tab (#1042), its
+  /// `date` parameter: the view's [GamesDateView.query]; none where there is
+  /// no row, or where the view is the default the tab opened on for a
+  /// location that named none, or as the row appeared, which a location
+  /// naming none opens again. Until the dates are known, the one the
+  /// location named, as it came, so a tab told meanwhile keeps it; and so
+  /// too a date the location named that the dates can't show, until a read
+  /// has confirmed them ([_heldDate]).
+  ///
+  /// So the location names the view shown: a date the event doesn't have,
+  /// or an empty one, gives way to the default's, as does a date chosen
+  /// that the event no longer has, and a date on an event with no row gives
+  /// way to none. Back and a shared link come back to what was shown.
+  String? get dateQuery => switch (_dates) {
+    null => _locationDate,
+    _ when _heldDate != null && !_datesRead => _heldDate,
+    _ when _unnamedDefault => null,
+    _ => _dateView?.query,
+  };
+
+  /// Shows [view], the viewer's choice from the row of dates (#1042), which
+  /// the location is to name, and tells the listeners where it changes. The
+  /// sub-tab stays.
+  void chooseDate(GamesDateView view) => _updateDates(() {
+    // Before the dates are known, as the location's would, it waits for
+    // them.
+    if (_dates == null) _locationDate = view.query;
+    _dateView = view;
+    _heldDate = null;
+    _unnamedDefault = false;
+  });
+
+  /// Takes the date the screen's location names, [query] (#1042): as the
+  /// scope opens, and each time the location names another. Once the dates
+  /// are known, shows the view it opens ([dateViewOf]) as of [now], holding
+  /// [query] where they can't show it ([_heldDate]); before, holds it for
+  /// [syncDates]. Tells the listeners where the view or [dateQuery] changes.
+  void takeDate(String? query, {required DateTime now}) => _updateDates(() {
+    final dates = _dates;
+    if (dates == null) {
+      _locationDate = query;
+      return;
+    }
+    _open(query, dates, now: now);
+  });
+
+  /// Keeps the view in step with the event's dates in [detail], as of
+  /// [now]: for the scope, on each of the detail's states (#1042). [read]
+  /// says whether a read of the event has confirmed them: it has ended, and
+  /// didn't fail.
+  ///
+  /// The first time, it opens the view the location named ([takeDate]). A
+  /// date the location named that these dates can't show waits for a read to
+  /// confirm the dates, with the default shown meanwhile; once one has, the
+  /// default stays, and the location is to name it. Whenever the dates show
+  /// a date still held, as the read's own answer can just after it ends,
+  /// that one shows. Otherwise the view stays as it is, except where the
+  /// dates change what can be shown: where the row appears, as a second
+  /// date is added, it opens on the default ([defaultDateView]); where it
+  /// goes, it is null; and where the date shown is no longer the event's, it
+  /// falls back to the default. The sub-tab stays whatever happens. It tells
+  /// the listeners only where the view or [dateQuery] changes, so a read
+  /// that changes no date moves nothing, the location included.
+  void syncDates(
+    EventDetail detail, {
+    required DateTime now,
+    bool read = true,
+  }) => _updateDates(() {
+    final first = _dates == null;
+    final shown = _dateView;
+    final confirming = read && !_datesRead;
+    _dates = detail;
+    if (read) _datesRead = true;
+    if (first) {
+      _open(_locationDate, detail, now: now);
+      _locationDate = null;
+      return;
+    }
+    if (_heldDate case final held?) {
+      final view = dateViewOf(held, detail, now: now);
+      if (view?.query == held) {
+        _dateView = view;
+        _heldDate = null;
+        _unnamedDefault = false;
+        return;
+      }
+    }
+    if (!showsDateRow(detail.snapshot)) {
+      _dateView = null;
+    } else if (shown == null) {
+      _dateView = defaultDateView(detail, now: now);
+      _unnamedDefault = true;
+    } else if (shown is OneDateView &&
+        !detail.snapshot.occurrences.any(
+          (date) => date.id == shown.occurrenceId,
+        )) {
+      // Named as the one before it was, or not.
+      _dateView = defaultDateView(detail, now: now);
+    }
+    // The date the location named is now known to be none of the event's,
+    // so the location is to name the view shown.
+    if (confirming && _heldDate != null) _unnamedDefault = false;
+  });
+
+  /// Shows the view [query], the location's date, opens on [dates] as of
+  /// [now] ([dateViewOf]): one the location names none for where [query] is
+  /// none. Holds [query] where the view isn't the one it names.
+  void _open(String? query, EventDetail dates, {required DateTime now}) {
+    final view = dateViewOf(query, dates, now: now);
+    _dateView = view;
+    _heldDate = query != null && view?.query != query ? query : null;
+    _unnamedDefault = query == null;
+  }
+
+  /// Makes the date changes [update] makes, and tells the listeners where
+  /// they change the view or [dateQuery].
+  void _updateDates(void Function() update) {
+    final view = _dateView;
+    final query = dateQuery;
+    update();
+    if (_dateView != view || dateQuery != query) notifyListeners();
+  }
 
   /// What the tab narrows the pool to.
   PoolFilter get filter => _filter;
@@ -983,6 +1151,11 @@ class EventGamesTabController extends ChangeNotifier {
 /// its last read ended ([EventGamesTabController.lineupEmitted]) and a row
 /// leaving it ([EventGamesTabController.lineupChanged], #519).
 ///
+/// It gives the controller the date the location names ([initialDate]), and
+/// on each of the detail's states, and after its first frame, the event's
+/// dates, where the event is one the server knows, so the date view follows
+/// them ([EventGamesTabController.syncDates], #1042).
+///
 /// ## A pool row's hand-off
 ///
 /// It hears each change of the pool before the frame that builds it, while
@@ -1033,6 +1206,7 @@ class EventGamesTabScope extends StatefulWidget {
     required this.onFirstShown,
     required this.child,
     this.initialSection = EventGamesSection.lineup,
+    this.initialDate,
     this.now = DateTime.now,
     this.onOpenGame,
     super.key,
@@ -1054,6 +1228,12 @@ class EventGamesTabScope extends StatefulWidget {
   /// location names, if it names one (#856). Read once, as the sub-tabs'
   /// controller is made.
   final EventGamesSection initialSection;
+
+  /// The date the screen's location names (#1042), its `date` parameter as
+  /// it came: what the tab's date view opens on once the event's dates are
+  /// known ([EventGamesTabController.takeDate]). Read once, as the scope is
+  /// made; the screen hands the controller each later one.
+  final String? initialDate;
 
   /// The screen's clock, which the tab's quick looks read (#957):
   /// [EventGamesTabController.clock].
@@ -1108,8 +1288,13 @@ class _EventGamesTabScopeState extends State<EventGamesTabScope>
   void initState() {
     super.initState();
     _useScreen();
-    // The screen can open on Games (#856), with no tab change to say so.
-    WidgetsBinding.instance.addPostFrameCallback((_) => _firstShowing());
+    _controller.takeDate(widget.initialDate, now: widget.now());
+    // The screen can open on Games (#856), with no tab change to say so, and
+    // on a detail already ready.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_detailBloc case final detail?) _syncDates(detail.state);
+      _firstShowing();
+    });
   }
 
   @override
@@ -1142,7 +1327,7 @@ class _EventGamesTabScopeState extends State<EventGamesTabScope>
       // reads none of the pool, the nominations and the lineup, and leaves
       // them to that read's end (the screen's `_readPoolAgain`), rather than
       // reading them beside it.
-      _detail = detail.stream.listen((_) => _firstShowing());
+      _detail = detail.stream.listen(_detailChanged);
     }
     final bloc = context.read<EventGamesBloc>();
     if (bloc != _bloc) {
@@ -1205,6 +1390,30 @@ class _EventGamesTabScopeState extends State<EventGamesTabScope>
     if (index == _notifiedSection) return;
     _notifiedSection = index;
     _controller.sectionChanged();
+  }
+
+  void _detailChanged(EventDetailState state) {
+    _syncDates(state);
+    _firstShowing();
+  }
+
+  /// Keeps the tab's date view in step with the dates of [state], where it
+  /// is ready and of an event the server knows (#1042). An event only this
+  /// device knows has no Games tab, so no row of dates, and the location's
+  /// date waits for the event to reach the server.
+  void _syncDates(EventDetailState state) {
+    if (!mounted ||
+        state is! EventDetailReady ||
+        state.detail.snapshot.event.isLocalOnly) {
+      return;
+    }
+    _controller.syncDates(
+      state.detail,
+      now: widget.now(),
+      // The dates a read brought: the open's read has ended, and didn't
+      // fail. Until then they are the cache's, which can be older.
+      read: !state.reading && !state.refreshFailed,
+    );
   }
 
   /// Asks [EventGamesTabScope.onFirstShown] for the Games tab's first

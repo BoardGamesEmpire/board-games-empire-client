@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:bloc_test/bloc_test.dart';
 import 'package:events/src/bloc/event_detail_bloc.dart';
 import 'package:events/src/bloc/event_detail_event.dart';
@@ -11,12 +13,15 @@ import 'package:events/src/bloc/event_lineup_state.dart';
 import 'package:events/src/bloc/event_nominations_bloc.dart';
 import 'package:events/src/bloc/event_nominations_event.dart';
 import 'package:events/src/bloc/event_nominations_state.dart';
+import 'package:events/src/detail/games_date_view.dart';
 import 'package:events/src/widgets/event_detail_tabs.dart';
 import 'package:events/src/widgets/event_games_tab_scope.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:models/domain.dart';
+
+import '../support/event_list_items.dart';
 
 class _MockGames extends MockBloc<EventGamesEvent, EventGamesState>
     implements EventGamesBloc {}
@@ -32,11 +37,16 @@ class _MockLineup extends MockBloc<EventLineupEvent, EventLineupState>
     implements EventLineupBloc {}
 
 /// The scope under the screen's tab controller and the blocs it reads, with
-/// the controller it holds handed to [onBuild] on each build.
+/// the controller it holds handed to [onBuild] on each build. The detail's
+/// bloc emits [details], and the scope opens on [initialDate], the date the
+/// location names (#1042), by the clock [now].
 Widget _harness({
   required void Function(EventGamesTabController controller) onBuild,
   EventGamesSection initialSection = EventGamesSection.nominations,
   bool disableAnimations = false,
+  Stream<EventDetailState> details = const Stream.empty(),
+  String? initialDate,
+  DateTime Function() now = DateTime.now,
 }) {
   final games = _MockGames();
   final nominations = _MockNominations();
@@ -57,11 +67,7 @@ Widget _harness({
     const Stream<EventLineupState>.empty(),
     initialState: const EventLineupState(),
   );
-  whenListen(
-    detail,
-    const Stream<EventDetailState>.empty(),
-    initialState: const EventDetailLoading(),
-  );
+  whenListen(detail, details, initialState: const EventDetailLoading());
   return MediaQuery(
     data: MediaQueryData(disableAnimations: disableAnimations),
     child: MultiBlocProvider(
@@ -78,6 +84,8 @@ Widget _harness({
           child: EventGamesTabScope(
             onFirstShown: (_, _) => false,
             initialSection: initialSection,
+            initialDate: initialDate,
+            now: now,
             child: Builder(
               builder: (context) {
                 onBuild(EventGamesTabScope.of(context));
@@ -184,6 +192,384 @@ void main() {
 
       expect(controller.section, EventGamesSection.lineup);
       expect(notified, 2);
+    });
+  });
+
+  // Which of the event's dates the tab shows, as each of the detail's
+  // states arrives, and what the location is to name for it.
+  group('the date view (#1042)', () {
+    final now = DateTime.utc(2026, 10, 1, 12);
+
+    /// A confirmed date [days] after [now], [order]th among the event's.
+    EventOccurrence date(String id, int days, {int order = 0}) =>
+        confirmed(id, now.add(Duration(days: days)), sortOrder: order);
+
+    final soon = date('soon', 2);
+    final later = date('later', 9, order: 1);
+    final last = date('last', 16, order: 2);
+
+    /// The event with [dates], ready, made offline where [localOnly], with a
+    /// read running where [reading], and the last read failed where
+    /// [refreshFailed]. By default a read has ended with these dates.
+    EventDetailReady ready(
+      List<EventOccurrence> dates, {
+      bool localOnly = false,
+      String title = 'Game night',
+      bool reading = false,
+      bool refreshFailed = false,
+    }) => EventDetailReady(
+      detail: EventDetail(
+        snapshot: EventSnapshot(
+          event: item(
+            'e',
+            title: title,
+          ).event.copyWith(isLocalOnly: localOnly),
+          occurrences: dates,
+        ),
+      ),
+      actions: const {},
+      reading: reading,
+      refreshFailed: refreshFailed,
+    );
+
+    late StreamController<EventDetailState> details;
+    late EventGamesTabController controller;
+
+    /// How many times the controller has told its listeners since [open].
+    late int notified;
+
+    /// Opens the scope on the location's [date] and [section], with nothing
+    /// yet read.
+    Future<void> open(
+      WidgetTester tester, {
+      String? date,
+      EventGamesSection section = EventGamesSection.nominations,
+    }) async {
+      details = StreamController<EventDetailState>();
+      addTearDown(() => unawaited(details.close()));
+      await tester.pumpWidget(
+        _harness(
+          details: details.stream,
+          initialDate: date,
+          initialSection: section,
+          now: () => now,
+          onBuild: (c) => controller = c,
+        ),
+      );
+      notified = 0;
+      controller.addListener(() => notified++);
+    }
+
+    Future<void> emit(WidgetTester tester, EventDetailState state) async {
+      details.add(state);
+      await tester.pump();
+    }
+
+    testWidgets('a date added makes the row appear on the default and keeps '
+        'the sub-tab', (tester) async {
+      await open(tester, section: EventGamesSection.pool);
+
+      await emit(tester, ready([soon]));
+      expect(controller.dateView, isNull);
+      expect(notified, 0);
+
+      await emit(tester, ready([soon, later]));
+
+      expect(controller.dateView, const OneDateView('soon'));
+      // A location naming none opens the default, so it is to name none.
+      expect(controller.dateQuery, isNull);
+      expect(controller.section, EventGamesSection.pool);
+      expect(notified, 1);
+    });
+
+    testWidgets('a date removed takes the row away and keeps the sub-tab', (
+      tester,
+    ) async {
+      await open(tester, date: 'later', section: EventGamesSection.pool);
+      await emit(tester, ready([soon, later]));
+      expect(controller.dateView, const OneDateView('later'));
+      notified = 0;
+
+      await emit(tester, ready([soon]));
+
+      expect(controller.dateView, isNull);
+      // The location is to name no date then.
+      expect(controller.dateQuery, isNull);
+      expect(controller.section, EventGamesSection.pool);
+      expect(notified, 1);
+    });
+
+    testWidgets('the chosen date removed falls back to the default', (
+      tester,
+    ) async {
+      await open(tester);
+      await emit(tester, ready([soon, later, last]));
+      controller.chooseDate(const OneDateView('later'));
+      expect(controller.dateView, const OneDateView('later'));
+      expect(notified, 2);
+
+      await emit(tester, ready([soon, last]));
+
+      expect(controller.dateView, const OneDateView('soon'));
+      expect(controller.dateQuery, 'soon');
+      expect(notified, 3);
+    });
+
+    testWidgets('Every date chosen stays as the dates change', (
+      tester,
+    ) async {
+      await open(tester);
+      await emit(tester, ready([soon, later, last]));
+      controller.chooseDate(const EveryDateView());
+      notified = 0;
+
+      await emit(tester, ready([later, last]));
+
+      expect(controller.dateView, const EveryDateView());
+      expect(controller.dateQuery, 'all');
+      expect(notified, 0);
+    });
+
+    testWidgets("the location's date opens that date once the dates are "
+        'known', (tester) async {
+      await open(tester, date: 'later');
+      // Until then the location's date stands as it came.
+      expect(controller.dateView, isNull);
+      expect(controller.dateQuery, 'later');
+
+      await emit(tester, ready([soon, later]));
+
+      expect(controller.dateView, const OneDateView('later'));
+      expect(controller.dateQuery, 'later');
+    });
+
+    testWidgets('a date the event lacks opens the default, which the '
+        'location is to name', (tester) async {
+      await open(tester, date: 'gone');
+
+      await emit(tester, ready([soon, later]));
+
+      expect(controller.dateView, const OneDateView('soon'));
+      expect(controller.dateQuery, 'soon');
+    });
+
+    testWidgets('a location that names no date opens the default, and is to '
+        'name none for it, as the date shown goes too', (tester) async {
+      await open(tester);
+
+      await emit(tester, ready([soon, later, last]));
+      expect(controller.dateView, const OneDateView('soon'));
+      expect(controller.dateQuery, isNull);
+      expect(notified, 1);
+
+      await emit(tester, ready([later, last]));
+      expect(controller.dateView, const OneDateView('later'));
+      expect(controller.dateQuery, isNull);
+      expect(notified, 2);
+    });
+
+    testWidgets('date=all opens Every date', (tester) async {
+      await open(tester, date: 'all');
+
+      await emit(tester, ready([soon, later]));
+
+      expect(controller.dateView, const EveryDateView());
+      expect(controller.dateQuery, 'all');
+    });
+
+    testWidgets('on an event with one date the location is to name none', (
+      tester,
+    ) async {
+      await open(tester, date: 'soon');
+
+      await emit(tester, ready([soon]));
+
+      expect(controller.dateView, isNull);
+      expect(controller.dateQuery, isNull);
+      expect(notified, 1);
+    });
+
+    testWidgets('a state that changes no date tells nobody', (tester) async {
+      await open(tester, date: 'later');
+      await emit(tester, ready([soon, later]));
+      expect(notified, 1);
+
+      await emit(tester, ready([soon, later]));
+      await emit(tester, ready([soon, later], title: 'Renamed'));
+      await emit(tester, ready([soon, later], reading: true));
+      await emit(tester, const EventDetailNotFound());
+
+      expect(controller.dateView, const OneDateView('later'));
+      expect(notified, 1);
+    });
+
+    testWidgets('an event made offline has no date view, and the location '
+        'keeps its date', (tester) async {
+      await open(tester, date: 'later');
+
+      await emit(tester, ready([soon, later], localOnly: true));
+
+      expect(controller.dateView, isNull);
+      expect(controller.dateQuery, 'later');
+      expect(notified, 0);
+    });
+
+    testWidgets('a later date from the location moves the view; one the '
+        'event lacks moves it to the default', (tester) async {
+      await open(tester);
+      await emit(tester, ready([soon, later]));
+      notified = 0;
+
+      controller.takeDate('later', now: now);
+      expect(controller.dateView, const OneDateView('later'));
+      expect(notified, 1);
+
+      controller.takeDate('later', now: now);
+      expect(notified, 1);
+
+      controller.takeDate('all', now: now);
+      expect(controller.dateView, const EveryDateView());
+
+      controller.takeDate('gone', now: now);
+      expect(controller.dateView, const OneDateView('soon'));
+      expect(controller.dateQuery, 'soon');
+      expect(notified, 3);
+
+      // A location that names none opens the default, and is to name none.
+      controller.takeDate(null, now: now);
+      expect(controller.dateView, const OneDateView('soon'));
+      expect(controller.dateQuery, isNull);
+      expect(notified, 4);
+    });
+
+    testWidgets('a date from the location before the dates are known waits '
+        'for them', (tester) async {
+      await open(tester, date: 'soon');
+
+      controller.takeDate('later', now: now);
+      expect(controller.dateView, isNull);
+      expect(controller.dateQuery, 'later');
+
+      await emit(tester, ready([soon, later]));
+
+      expect(controller.dateView, const OneDateView('later'));
+    });
+
+    testWidgets('choosing a date tells the listeners once, and choosing it '
+        'again tells nothing', (tester) async {
+      await open(tester);
+      await emit(tester, ready([soon, later]));
+      notified = 0;
+
+      controller.chooseDate(const OneDateView('later'));
+      expect(controller.dateView, const OneDateView('later'));
+      expect(controller.dateQuery, 'later');
+      expect(notified, 1);
+
+      controller.chooseDate(const OneDateView('later'));
+      expect(notified, 1);
+    });
+
+    // The cache's dates can be older than the server's: a link to a date
+    // added since the event was last read is held until a read ends.
+    group('a date the cached dates lack', () {
+      testWidgets('waits for the read, and shows once it brings it', (
+        tester,
+      ) async {
+        await open(tester, date: 'later', section: EventGamesSection.pool);
+
+        await emit(tester, ready([soon, last], reading: true));
+        expect(controller.dateView, const OneDateView('soon'));
+        // The location keeps naming it.
+        expect(controller.dateQuery, 'later');
+
+        // What the read wrote reaches the cache before it ends.
+        await emit(tester, ready([soon, later, last], reading: true));
+        expect(controller.dateView, const OneDateView('later'));
+        expect(controller.dateQuery, 'later');
+        expect(controller.section, EventGamesSection.pool);
+
+        await emit(tester, ready([soon, later, last]));
+        expect(controller.dateView, const OneDateView('later'));
+        expect(controller.dateQuery, 'later');
+      });
+
+      testWidgets("gives way to the default once a read ends that doesn't "
+          'bring it, and the location is to name that', (tester) async {
+        await open(tester, date: 'later');
+        await emit(tester, ready([soon, last], reading: true));
+        expect(controller.dateQuery, 'later');
+
+        await emit(tester, ready([soon, last]));
+
+        expect(controller.dateView, const OneDateView('soon'));
+        expect(controller.dateQuery, 'soon');
+      });
+
+      testWidgets("still shows once the read's own answer brings it, just "
+          'after the read ends', (tester) async {
+        await open(tester, date: 'later');
+        await emit(tester, ready([soon, last], reading: true));
+        // The read settles before the cache delivers what it wrote.
+        await emit(tester, ready([soon, last]));
+        expect(controller.dateQuery, 'soon');
+
+        await emit(tester, ready([soon, later, last]));
+
+        expect(controller.dateView, const OneDateView('later'));
+        expect(controller.dateQuery, 'later');
+      });
+
+      testWidgets("isn't judged by a read that failed", (tester) async {
+        await open(tester, date: 'later');
+        await emit(tester, ready([soon, last], reading: true));
+
+        await emit(tester, ready([soon, last], refreshFailed: true));
+        expect(controller.dateView, const OneDateView('soon'));
+        expect(controller.dateQuery, 'later');
+
+        // A retry that succeeds settles it.
+        await emit(tester, ready([soon, last]));
+        expect(controller.dateQuery, 'soon');
+      });
+
+      testWidgets('on a cached event with one date, waits for the read', (
+        tester,
+      ) async {
+        await open(tester, date: 'later');
+
+        await emit(tester, ready([soon], reading: true));
+        expect(controller.dateView, isNull);
+        expect(controller.dateQuery, 'later');
+
+        await emit(tester, ready([soon, later]));
+        expect(controller.dateView, const OneDateView('later'));
+        expect(controller.dateQuery, 'later');
+      });
+
+      testWidgets('a date chosen meanwhile ends the wait', (tester) async {
+        await open(tester, date: 'later');
+        await emit(tester, ready([soon, last], reading: true));
+
+        controller.chooseDate(const EveryDateView());
+        expect(controller.dateQuery, 'all');
+
+        await emit(tester, ready([soon, later, last]));
+        expect(controller.dateView, const EveryDateView());
+        expect(controller.dateQuery, 'all');
+      });
+
+      testWidgets('Every date, or a date the cache has, needs no wait', (
+        tester,
+      ) async {
+        await open(tester, date: 'all');
+        await emit(tester, ready([soon, last], reading: true));
+        expect(controller.dateView, const EveryDateView());
+
+        controller.takeDate('last', now: now);
+        expect(controller.dateView, const OneDateView('last'));
+        expect(controller.dateQuery, 'last');
+      });
     });
   });
 }

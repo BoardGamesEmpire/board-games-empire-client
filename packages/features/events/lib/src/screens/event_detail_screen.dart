@@ -123,9 +123,28 @@ typedef OpenEventGame = void Function(BuildContext context, String gameId);
 /// for a new [tab]: its blocs and its state stay.
 ///
 /// Beside the tab, the location can name a date, [date], its `date` parameter
-/// (#1042). Each tab told goes with the date the location names as it came, so
-/// a tab change keeps it. A new [date] alone is not told back, and the screen
-/// is not built anew for it either.
+/// (#1042): which of the event's dates the Games tab shows, on an event with
+/// two or more. Once the event's dates are known, the tab shows the date it
+/// names, or every date for `all`; where it names none, or none of the event's,
+/// the default: the next date still to come, else every date. Each tab told
+/// goes with the date the location is to name
+/// ([EventGamesTabController.dateQuery]), so a tab change keeps it, and that
+/// date is told on its own where it differs from the one last told or taken
+/// from [date]. So the location names the date shown: the one the user
+/// chooses; the default's, in place of a date the event doesn't have, or an
+/// empty one, and of a date shown that the event no longer has; and none on an
+/// event with no row. None stands for the default, so a location naming none
+/// goes on naming none while the default shows, as when the row appears with a
+/// date added. The sub-tab stays. Until the dates are known, the date told is
+/// the one the location named, as it came; and so too a date the event's
+/// cached dates can't show, with the default shown meanwhile, until a read of
+/// the event has ended, and not failed: the cache can be older than the
+/// server, as where the date was added since the event was last read. Where
+/// the read brings it, it shows, even as what the read wrote reaches the
+/// screen just after it ends. A later [date] that names another date than the
+/// one last told or taken moves the Games tab there, as a later [tab] moves
+/// the bars, and isn't told back, unless the location is to name another: then
+/// that one is told. The screen is not built anew for it either.
 ///
 /// ## Which actions it offers
 ///
@@ -1000,9 +1019,10 @@ class EventDetailScreen extends StatelessWidget {
   final String? date;
 
   /// Tells, with this screen's context, each tab the user's choice settles
-  /// on, where it differs from the one last told or taken from [tab], with
-  /// [date] beside it (#856, #1042). The feature package doesn't know the
-  /// route table. Null tells nobody, and the location still moves the bars.
+  /// on, with the date the Games tab shows beside it, where either differs
+  /// from the one last told or taken from [tab] and [date] (#856, #1042).
+  /// The feature package doesn't know the route table. Null tells nobody,
+  /// and the location still moves the bars and the date.
   final EventLocationChanged? onLocationChanged;
 
   @override
@@ -1282,8 +1302,9 @@ class _EventDetailView extends StatelessWidget {
     // are made, and a later location moves it through _EventTabLocation.
     // Under reduced motion the bar's indicator moves at once; the controller
     // keeps its tab when that setting changes. Beside it, what the Games tab
-    // keeps: its sub-tab, its filter, and whether it has shown, which decides
-    // whether a detail read reads the pool, the nominations and the lineup.
+    // keeps: its sub-tab, its date (#1042), its filter, and whether it has
+    // shown, which decides whether a detail read reads the pool, the
+    // nominations and the lineup.
     return DefaultTabController(
       length: EventDetailTab.values.length,
       initialIndex: screenTab.tab.index,
@@ -1294,6 +1315,9 @@ class _EventDetailView extends StatelessWidget {
       child: EventGamesTabScope(
         onFirstShown: _gamesFirstShown,
         initialSection: screenTab.section ?? EventGamesSection.lineup,
+        // The date the Games tab opens on, once the event's dates are known
+        // (#1042); a later location moves it through _EventTabLocation.
+        initialDate: date,
         // What the tab's quick looks reach the screen by (#957).
         now: now,
         onOpenGame: onOpenGame,
@@ -1442,9 +1466,11 @@ class _EventDetailView extends StatelessWidget {
 /// pop-up on the root navigator over the app's shell, as [showBgePopup] and
 /// [showDialog] open one, leaves the route current, so a change under it is
 /// reported at once, and the caller keeps the location to the event's
-/// ([EventDetailScreen.onLocationChanged]). Each report carries [date], the
-/// date the location names beside the tab, as it came (#1042), so a tab
-/// change keeps it. A new [date] alone moves nothing and isn't reported.
+/// ([EventDetailScreen.onLocationChanged]). Each report carries the date the
+/// Games tab shows beside the tab ([EventGamesTabController.dateQuery],
+/// #1042), so a tab change keeps it. That date is reported on its own too,
+/// where it differs from the one last reported or taken from [date], once the
+/// frame it changed in has ended, by the same rules as a tab.
 ///
 /// A [tab] that names another tab than the location did, and than the one last
 /// reported or taken, moves the bars there, and becomes the one taken. Its move
@@ -1457,6 +1483,14 @@ class _EventDetailView extends StatelessWidget {
 /// event made offline shows Details alone, doesn't wait in the controllers: the
 /// page puts them back on Details at once ([_ReadyPage]), and that move is
 /// reported as the user's are, so the location drops the tab.
+///
+/// A [date] that names another date than the location did, and than the one
+/// last reported or taken, is handed to the Games tab, which shows the view
+/// it opens ([EventGamesTabController.takeDate]), and becomes the one taken,
+/// on the same terms as a tab. Its move isn't reported, except where the
+/// location is to name another, as where it names none of the event's dates,
+/// or the event has no row of them: then that one is reported, so the
+/// location names the view shown.
 class _EventTabLocation extends StatefulWidget {
   const _EventTabLocation({
     required this.tab,
@@ -1489,6 +1523,9 @@ class _EventTabLocationState extends State<_EventTabLocation> {
   /// The tab last reported, or last taken from the location.
   late EventScreenTab _last;
 
+  /// The date last reported, or last taken from the location (#1042).
+  String? _lastDate;
+
   /// Whether the location is moving the bars, whose changes aren't the
   /// user's to report.
   bool _moving = false;
@@ -1497,6 +1534,7 @@ class _EventTabLocationState extends State<_EventTabLocation> {
   void initState() {
     super.initState();
     _last = widget.tab;
+    _lastDate = widget.date;
   }
 
   @override
@@ -1511,10 +1549,17 @@ class _EventTabLocationState extends State<_EventTabLocation> {
   @override
   void didUpdateWidget(_EventTabLocation oldWidget) {
     super.didUpdateWidget(oldWidget);
+    _takeTab(oldWidget.tab);
+    _takeDate(oldWidget.date);
+  }
+
+  /// Moves the bars to the tab the location names, where it names another
+  /// than [old] did, and than the one last reported or taken. Built again
+  /// with the location it had, as before a report's location comes back, it
+  /// stays where the user is.
+  void _takeTab(EventScreenTab old) {
     final wanted = widget.tab;
-    // Built again with the location it had, as before a report's location
-    // comes back, it stays where the user is.
-    if (wanted == oldWidget.tab || wanted == _last) return;
+    if (wanted == old || wanted == _last) return;
     _last = wanted;
     // The screen's controller can have been replaced in this same build,
     // before this widget hears of it.
@@ -1530,11 +1575,22 @@ class _EventTabLocationState extends State<_EventTabLocation> {
     }
   }
 
+  /// Moves the Games tab's date view to the date the location names, where
+  /// it names another than [old] did, and than the one last reported or
+  /// taken (#1042), as [_takeTab] does the tab.
+  void _takeDate(String? old) {
+    final wanted = widget.date;
+    if (wanted == old || wanted == _lastDate) return;
+    _lastDate = wanted;
+    final games = _games!;
+    games.takeDate(wanted, now: games.clock());
+  }
+
   @override
   void dispose() {
     _tabs?.removeListener(_changed);
     _sections?.removeListener(_changed);
-    _games?.removeListener(_followSections);
+    _games?.removeListener(_gamesChanged);
     super.dispose();
   }
 
@@ -1550,11 +1606,21 @@ class _EventTabLocationState extends State<_EventTabLocation> {
     }
     final games = EventGamesTabScope.of(context);
     if (games != _games) {
-      _games?.removeListener(_followSections);
-      // It says when it replaces the sub-tabs' controller.
-      _games = games..addListener(_followSections);
+      _games?.removeListener(_gamesChanged);
+      // It says when it replaces the sub-tabs' controller, and when the date
+      // the location is to name changes (#1042).
+      _games = games..addListener(_gamesChanged);
     }
     _followSections();
+  }
+
+  void _gamesChanged() {
+    _followSections();
+    // A new date for the location to name, as the user chooses one or the
+    // event's dates change, or as the location names one the event doesn't
+    // have, is reported as a settled tab is, once this frame has ended: the
+    // location can move it while the screen builds.
+    if (_games!.dateQuery != _lastDate) _changedAfterFrame();
   }
 
   void _followSections() {
@@ -1586,9 +1652,11 @@ class _EventTabLocationState extends State<_EventTabLocation> {
       EventDetailTab.values[tabs.index],
       EventGamesSection.values[sections.index],
     );
-    if (shown == _last) return;
+    final date = _games!.dateQuery;
+    if (shown == _last && date == _lastDate) return;
     _last = shown;
-    widget.onLocationChanged?.call(context, shown, widget.date);
+    _lastDate = date;
+    widget.onLocationChanged?.call(context, shown, date);
   }
 
   @override

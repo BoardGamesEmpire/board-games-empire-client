@@ -5,6 +5,7 @@ import 'package:bge_test_support/widgets.dart';
 import 'package:events/events.dart';
 import 'package:events/l10n/events_localizations.dart';
 import 'package:events/l10n/events_localizations_en.dart';
+import 'package:events/src/widgets/event_games_tab_scope.dart';
 import 'package:flutter/foundation.dart'
     show SynchronousFuture, ValueListenable;
 import 'package:flutter/material.dart';
@@ -79,6 +80,36 @@ void main() {
       ],
     ),
     attendance: viewer,
+  );
+
+  /// [hosted] with a second date, a week after its first: an event with a
+  /// row of dates (#1042), which opens on its first.
+  final twoDated = hosted.copyWith(
+    snapshot: hosted.snapshot.copyWith(
+      occurrences: [
+        ...hosted.snapshot.occurrences,
+        confirmed(
+          'o-2',
+          DateTime(2026, 11, 13, 19),
+          sortOrder: 1,
+        ).copyWith(eventId: 'e-1'),
+      ],
+    ),
+  );
+
+  /// [twoDated] with a third date, a week after its second, which the
+  /// cache can lack while the server has it (#1042).
+  final threeDated = twoDated.copyWith(
+    snapshot: twoDated.snapshot.copyWith(
+      occurrences: [
+        ...twoDated.snapshot.occurrences,
+        confirmed(
+          'o-3',
+          DateTime(2026, 11, 20, 19),
+          sortOrder: 2,
+        ).copyWith(eventId: 'e-1'),
+      ],
+    ),
   );
 
   setUpAll(() {
@@ -648,6 +679,19 @@ void main() {
       expect(find.byKey(EventDetailScreen.tabBarKey), findsOneWidget);
     }
 
+    /// Shows [twoDated], with its row of dates (#1042), on whichever tab is
+    /// chosen, and lets the read it starts end.
+    Future<void> showingDated(WidgetTester tester) async {
+      cache.add(twoDated);
+      await tester.pumpAndSettle();
+      expect(find.byKey(EventDetailScreen.tabBarKey), findsOneWidget);
+    }
+
+    /// The Games tab's controller, which holds the date view (#1042).
+    EventGamesTabController games(WidgetTester tester) => EventGamesTabScope.of(
+      tester.element(find.byKey(EventDetailScreen.tabBarKey)),
+    );
+
     /// Taps [control], then lets one frame and a third of the indicator's
     /// move run: mid-change.
     Future<void> tapAndHold(WidgetTester tester, Finder control) async {
@@ -988,13 +1032,16 @@ void main() {
       expect(reports, isEmpty);
     });
 
-    // The date beside the tab (#1042) is told back as the location named
-    // it, so a tab change never drops it.
+    // The date beside the tab (#1042): the screen opens on the date the
+    // location names, tells the location the date it shows where the two
+    // differ, and keeps it as the tab changes.
     testWidgets('choosing a sub-tab keeps the date in the location', (
       tester,
     ) async {
-      await open(tester, 'lineup', date: 'occ-2');
-      await showingOnAnyTab(tester);
+      await open(tester, 'lineup', date: 'o-2');
+      await showingDated(tester);
+      expect(games(tester).dateView, const OneDateView('o-2'));
+      expect(reports, isEmpty);
 
       await tester.tap(section(EventGamesSection.pool));
       await tester.pumpAndSettle();
@@ -1002,30 +1049,254 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(reports, [EventScreenTab.pool, EventScreenTab.details]);
-      expect(reportedDates, ['occ-2', 'occ-2']);
+      expect(reportedDates, ['o-2', 'o-2']);
     });
 
-    testWidgets('a new date from the location reports nothing, and goes '
-        'with the next tab told', (tester) async {
-      await open(tester, null, date: 'occ-2');
-      await showing(tester);
+    testWidgets('a date the event lacks opens the default, and the location '
+        'is told it', (tester) async {
+      await open(tester, 'pool', date: 'gone');
+      await showingDated(tester);
 
-      dateLocation.value = 'occ-3';
-      await tester.pumpAndSettle();
+      expect(games(tester).dateView, const OneDateView('o-1'));
+      expect(shown(tester), EventScreenTab.pool);
+      expect(reports, [EventScreenTab.pool]);
+      expect(reportedDates, ['o-1']);
+    });
+
+    // None opens the default again, so the location stays as it is.
+    testWidgets('a location that names no date opens the default, and is '
+        'told nothing', (tester) async {
+      await open(tester, null);
+      await showingDated(tester);
+
+      expect(games(tester).dateView, const OneDateView('o-1'));
       expect(reports, isEmpty);
 
       await tester.tap(tab(EventDetailTab.games));
       await tester.pumpAndSettle();
       expect(reports, [EventScreenTab.lineup]);
-      expect(reportedDates, ['occ-3']);
+      expect(reportedDates, [null]);
+    });
 
-      // A location that names none leaves it out of the next.
+    testWidgets('a date on an event with one date is dropped from the '
+        'location', (tester) async {
+      await open(tester, 'lineup', date: 'o-1');
+      await showingOnAnyTab(tester);
+
+      expect(games(tester).dateView, isNull);
+      expect(reports, [EventScreenTab.lineup]);
+      expect(reportedDates, [null]);
+    });
+
+    testWidgets('a date chosen is told beside the tab shown', (tester) async {
+      await open(tester, 'lineup', date: 'o-2');
+      await showingDated(tester);
+
+      games(tester).chooseDate(const EveryDateView());
+      await tester.pump();
+
+      expect(reports, [EventScreenTab.lineup]);
+      expect(reportedDates, ['all']);
+    });
+
+    testWidgets('a date chosen while a sub-tab change runs is told with it, '
+        'once it settles', (tester) async {
+      await open(tester, 'lineup', date: 'o-2');
+      await showingDated(tester);
+
+      await tapAndHold(tester, section(EventGamesSection.pool));
+      games(tester).chooseDate(const EveryDateView());
+      await tester.pump();
+      expect(sections(tester).indexIsChanging, isTrue);
+      expect(reports, isEmpty);
+      await tester.pumpAndSettle();
+
+      expect(reports, [EventScreenTab.pool]);
+      expect(reportedDates, ['all']);
+    });
+
+    testWidgets('a new date from the location moves the view, reports '
+        'nothing, and goes with the next tab told', (tester) async {
+      await open(tester, null, date: 'o-1');
+      await showingDated(tester);
+      expect(reports, isEmpty);
+
+      dateLocation.value = 'o-2';
+      await tester.pumpAndSettle();
+      expect(games(tester).dateView, const OneDateView('o-2'));
+      expect(reports, isEmpty);
+
+      await tester.tap(tab(EventDetailTab.games));
+      await tester.pumpAndSettle();
+      expect(reports, [EventScreenTab.lineup]);
+      expect(reportedDates, ['o-2']);
+    });
+
+    // None opens the default, which the location goes on naming none for.
+    testWidgets('a location that moves from a date to none opens the '
+        'default, and the next tab told carries none', (tester) async {
+      await open(tester, 'lineup', date: 'o-2');
+      await showingDated(tester);
+      expect(games(tester).dateView, const OneDateView('o-2'));
+
       dateLocation.value = null;
       await tester.pumpAndSettle();
+      expect(games(tester).dateView, const OneDateView('o-1'));
+      expect(reports, isEmpty);
+
       await tester.tap(section(EventGamesSection.pool));
       await tester.pumpAndSettle();
-      expect(reports, [EventScreenTab.lineup, EventScreenTab.pool]);
-      expect(reportedDates, ['occ-3', null]);
+      expect(reports, [EventScreenTab.pool]);
+      expect(reportedDates, [null]);
+    });
+
+    testWidgets('a new date from the location that the event lacks opens the '
+        'default, and the location is told it once', (tester) async {
+      await open(tester, 'lineup', date: 'o-2');
+      await showingDated(tester);
+
+      dateLocation.value = 'gone';
+      await tester.pumpAndSettle();
+
+      expect(games(tester).dateView, const OneDateView('o-1'));
+      expect(reports, [EventScreenTab.lineup]);
+      expect(reportedDates, ['o-1']);
+
+      // The location the report asked for, given back, changes nothing.
+      dateLocation.value = 'o-1';
+      await tester.pumpAndSettle();
+      expect(games(tester).dateView, const OneDateView('o-1'));
+      expect(reports, [EventScreenTab.lineup]);
+    });
+
+    testWidgets('a read that changes no date tells nothing', (tester) async {
+      // On Details, where the title shows.
+      await open(tester, null, date: 'o-2');
+      await showingDated(tester);
+
+      cache.add(
+        twoDated.copyWith(
+          snapshot: twoDated.snapshot.copyWith(
+            event: twoDated.snapshot.event.copyWith(title: 'Azul night'),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Azul night'), findsOneWidget);
+
+      expect(games(tester).dateView, const OneDateView('o-2'));
+      expect(reports, isEmpty);
+    });
+
+    // A link to a date added since the event was last read: the cache lacks
+    // it, so it isn't judged until the open's read has ended.
+    group('a date the cache lacks', () {
+      /// The server's answer to the open's read, held until a test gives it.
+      late Completer<EventSnapshot> answer;
+
+      /// A few frames, while the read is held: the Pool waits on it with a
+      /// spinner, which never settles.
+      Future<void> frames(WidgetTester tester) async {
+        for (var i = 0; i < 3; i++) {
+          await tester.pump();
+        }
+      }
+
+      /// Opens the screen on Pool and [date], with the cache's dates, older
+      /// than the server's, and the open's read held.
+      Future<void> openHeld(WidgetTester tester, String date) async {
+        answer = Completer<EventSnapshot>();
+        await open(
+          tester,
+          'pool',
+          date: date,
+          remote: FakeEventRemote.detail(
+            (_) => answer.future,
+            pool: (_) => const [],
+          ),
+        );
+        cache.add(twoDated);
+        await frames(tester);
+        expect(games(tester).dateView, const OneDateView('o-1'));
+        expect(reports, isEmpty);
+      }
+
+      testWidgets('shows once the read brings it, and the location keeps '
+          'naming it', (tester) async {
+        await openHeld(tester, 'o-3');
+
+        // What the read wrote reaches the cache, and then the read ends.
+        cache.add(threeDated);
+        await frames(tester);
+        expect(games(tester).dateView, const OneDateView('o-3'));
+        answer.complete(threeDated.snapshot);
+        await tester.pumpAndSettle();
+
+        expect(games(tester).dateView, const OneDateView('o-3'));
+        expect(shown(tester), EventScreenTab.pool);
+        expect(reports, isEmpty);
+      });
+
+      testWidgets("shows once the read's own answer brings it, after the "
+          'read has ended', (tester) async {
+        await openHeld(tester, 'o-3');
+
+        // The read ends before the cache delivers what it wrote, and the
+        // location is told the default meanwhile.
+        answer.complete(threeDated.snapshot);
+        await tester.pumpAndSettle();
+        expect(games(tester).dateView, const OneDateView('o-1'));
+        expect(reports, [EventScreenTab.pool]);
+        expect(reportedDates, ['o-1']);
+
+        cache.add(threeDated);
+        await tester.pumpAndSettle();
+
+        expect(games(tester).dateView, const OneDateView('o-3'));
+        expect(shown(tester), EventScreenTab.pool);
+        expect(reports, [EventScreenTab.pool, EventScreenTab.pool]);
+        expect(reportedDates, ['o-1', 'o-3']);
+      });
+
+      testWidgets("opens the default where the read doesn't bring it either, "
+          'and the location names that once the read has ended', (
+        tester,
+      ) async {
+        await openHeld(tester, 'gone');
+
+        answer.complete(twoDated.snapshot);
+        await tester.pumpAndSettle();
+
+        expect(games(tester).dateView, const OneDateView('o-1'));
+        expect(reports, [EventScreenTab.pool]);
+        expect(reportedDates, ['o-1']);
+      });
+
+      testWidgets('keeps the location as it is where the read fails', (
+        tester,
+      ) async {
+        await openHeld(tester, 'o-3');
+
+        answer.completeError(Exception('offline'));
+        await tester.pumpAndSettle();
+
+        expect(games(tester).dateView, const OneDateView('o-1'));
+        expect(reports, isEmpty);
+      });
+    });
+
+    testWidgets('the event losing its second date drops the date from the '
+        'location, and keeps the sub-tab', (tester) async {
+      await open(tester, 'pool', date: 'o-2');
+      await showingDated(tester);
+
+      cache.add(hosted);
+      await tester.pumpAndSettle();
+
+      expect(games(tester).dateView, isNull);
+      expect(shown(tester), EventScreenTab.pool);
+      expect(reports, [EventScreenTab.pool]);
+      expect(reportedDates, [null]);
     });
   });
 }

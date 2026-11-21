@@ -2018,12 +2018,27 @@ void main() {
       /// nothing in its lineup: enough for the Games tab and its sub-tabs.
       /// The pool is read for the roster, so an empty one would never read
       /// it. Who answered its poll reads as nobody, for the page that lists
-      /// them. [id] names the event in place of e-0.
-      Future<void> pumpHosted(WidgetTester tester, {String id = 'e-0'}) {
+      /// them. [id] names the event in place of e-0. With [secondDate], the
+      /// event has a second date, `o-<id>-2`, a week after its first, and so
+      /// a row of dates whose choice the location keeps (#1042).
+      Future<void> pumpHosted(
+        WidgetTester tester, {
+        String id = 'e-0',
+        bool secondDate = false,
+      }) {
         final me = _hosting(id);
+        final first = _upcoming(id).occurrences.single;
         final hosted = EventSnapshot(
           event: _upcoming(id).event,
-          occurrences: _upcoming(id).occurrences,
+          occurrences: [
+            first,
+            if (secondDate)
+              first.copyWith(
+                id: 'o-$id-2',
+                startDate: first.startDate!.add(const Duration(days: 7)),
+                sortOrder: 1,
+              ),
+          ],
           attendees: [me],
         );
         final remote = _MockEventRemote();
@@ -2213,21 +2228,21 @@ void main() {
       testWidgets('choosing Pool replaces the location and keeps Back', (
         tester,
       ) async {
-        // The date the event was opened on stays beside the tab (#1042).
-        // Each sub-tab chosen takes the event's history entry, with the
-        // date kept, and adds none, so browser Back leaves the event for
-        // Home rather than stepping through its tabs.
+        // The date the event was opened on, its second, stays beside the
+        // tab (#1042). Each sub-tab chosen takes the event's history entry,
+        // with the date kept, and adds none, so browser Back leaves the
+        // event for Home rather than stepping through its tabs.
         final history = FakeBrowserHistory.install(tester);
-        await pumpHosted(tester);
+        await pumpHosted(tester, secondDate: true);
         unawaited(
           routerOf(
             tester,
-          ).push<void>(AppRoutes.eventDetailOf('e-0', date: 'occ-2')),
+          ).push<void>(AppRoutes.eventDetailOf('e-0', date: 'o-e-0-2')),
         );
         await tester.pumpAndSettle();
         expect(
           history.locations.last,
-          AppRoutes.eventDetailOf('e-0', date: 'occ-2'),
+          AppRoutes.eventDetailOf('e-0', date: 'o-e-0-2'),
         );
         final entries = history.allLocations.length;
 
@@ -2237,7 +2252,7 @@ void main() {
         );
         expect(
           history.locations.last,
-          AppRoutes.eventDetailOf('e-0', tab: 'lineup', date: 'occ-2'),
+          AppRoutes.eventDetailOf('e-0', tab: 'lineup', date: 'o-e-0-2'),
         );
         await choose(
           tester,
@@ -2246,11 +2261,11 @@ void main() {
 
         expect(
           history.locations.last,
-          AppRoutes.eventDetailOf('e-0', tab: 'pool', date: 'occ-2'),
+          AppRoutes.eventDetailOf('e-0', tab: 'pool', date: 'o-e-0-2'),
         );
         expect(Uri.parse(history.locations.last).queryParameters, {
           AppRoutes.eventTabParam: 'pool',
-          AppRoutes.eventDateParam: 'occ-2',
+          AppRoutes.eventDateParam: 'o-e-0-2',
         });
         expect(history.allLocations, hasLength(entries));
         expect(find.byKey(EventDetailScreen.poolSearchKey), findsOneWidget);
@@ -2259,6 +2274,38 @@ void main() {
 
         expect(find.byType(EventDetailScreen), findsNothing);
         expect(find.byType(HomeScreen), findsOneWidget);
+        expect(history.locations.last, AppRoutes.home);
+      });
+
+      testWidgets('a link to a date the event lacks takes its entry with the '
+          'date it opens on, and keeps Back', (tester) async {
+        // A date since removed opens the next one still to come (#1042), and
+        // once the open's read has ended without it, the location names
+        // that one in the same history entry, so Back and a shared link come
+        // back to what was shown.
+        final history = FakeBrowserHistory.install(tester);
+        await pumpHosted(tester, secondDate: true);
+        final entries = history.allLocations.length;
+        unawaited(
+          routerOf(tester).push<void>(
+            AppRoutes.eventDetailOf('e-0', tab: 'lineup', date: 'gone'),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(
+          history.locations.last,
+          AppRoutes.eventDetailOf('e-0', tab: 'lineup', date: 'o-e-0'),
+        );
+        expect(history.allLocations, hasLength(entries + 1));
+        expect(
+          tester.widget<EventDetailScreen>(find.byType(EventDetailScreen)).date,
+          'o-e-0',
+        );
+
+        await history.back();
+
+        expect(find.byType(EventDetailScreen), findsNothing);
         expect(history.locations.last, AppRoutes.home);
       });
 
@@ -2310,20 +2357,20 @@ void main() {
         }
       });
 
-      testWidgets('a link to ?tab=lineup&date=occ-2 reaches the screen with '
+      testWidgets('a link to ?tab=lineup&date=o-e-0-2 reaches the screen with '
           'both', (tester) async {
         final handle = tester.ensureSemantics();
         try {
-          await pumpHosted(tester);
+          await pumpHosted(tester, secondDate: true);
 
-          routerOf(tester).go('/events/e-0?tab=lineup&date=occ-2');
+          routerOf(tester).go('/events/e-0?tab=lineup&date=o-e-0-2');
           await tester.pumpAndSettle();
 
           final screen = tester.widget<EventDetailScreen>(
             find.byType(EventDetailScreen),
           );
           expect(screen.tab, 'lineup');
-          expect(screen.date, 'occ-2');
+          expect(screen.date, 'o-e-0-2');
           expect(
             tester.getSemantics(
               find.byKey(
