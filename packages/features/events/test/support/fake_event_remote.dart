@@ -148,6 +148,7 @@ class FakeEventRemote implements EventRemoteDataSource {
     this.offeredBatch = _noOfferBatch,
     this.takenBack = _noTakeBack,
     this.nominations = _noNominations,
+    this.lineup = _noLineup,
     this.nomination = _noNomination,
     this.nominated = _noNominate,
     this.voteCast = _noVoteCast,
@@ -178,6 +179,7 @@ class FakeEventRemote implements EventRemoteDataSource {
     this.offeredBatch = _noOfferBatch,
     this.takenBack = _noTakeBack,
     this.nominations = _noNominations,
+    this.lineup = _noLineup,
     this.nomination = _noNomination,
     this.nominated = _noNominate,
     this.voteCast = _noVoteCast,
@@ -212,6 +214,7 @@ class FakeEventRemote implements EventRemoteDataSource {
     this.offeredBatch = _noOfferBatch,
     this.takenBack = _noTakeBack,
     this.nominations = _noNominations,
+    this.lineup = _noLineup,
     this.nomination = _noNomination,
     this.nominated = _noNominate,
     this.voteCast = _noVoteCast,
@@ -259,6 +262,9 @@ class FakeEventRemote implements EventRemoteDataSource {
 
   static Never _noNominations(NominationsRequest request) =>
       throw UnimplementedError('fetchNominations is not faked');
+
+  static Never _noLineup(String eventId) =>
+      throw UnimplementedError('fetchLineup is not faked');
 
   static Never _noNomination(NominationRequest request) =>
       throw UnimplementedError('fetchNomination is not faked');
@@ -387,6 +393,13 @@ class FakeEventRemote implements EventRemoteDataSource {
 
   /// Each nominations list read, in order, recorded before it is answered.
   final List<NominationsRequest> nominationReads = [];
+
+  /// Answers each lineup read (#519), which throws unless a test supplies
+  /// one.
+  final FutureOr<List<LineupGame>> Function(String eventId) lineup;
+
+  /// The event of each lineup read, in order, recorded before it is answered.
+  final List<String> lineupRequests = [];
 
   /// Answers each single nomination read (#517).
   final FutureOr<EventNomination> Function(NominationRequest request)
@@ -780,6 +793,12 @@ class FakeEventRemote implements EventRemoteDataSource {
     );
     takeBacks.add(request);
     return takenBack(request);
+  }
+
+  @override
+  Future<List<LineupGame>> fetchLineup(String eventId) async {
+    lineupRequests.add(eventId);
+    return lineup(eventId);
   }
 
   @override

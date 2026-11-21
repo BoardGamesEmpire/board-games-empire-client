@@ -181,6 +181,14 @@ void main() {
     toWire: (mode) => mode.toWire(),
   );
 
+  _wireContract<ScheduledGameRole>(
+    wireNames: const ['Primary', 'Filler'],
+    values: ScheduledGameRole.values,
+    unknown: ScheduledGameRole.unknown,
+    fromWire: ScheduledGameRole.fromWire,
+    toWire: (role) => role.toWire(),
+  );
+
   _wireContract<OccurrenceOverrideScope>(
     wireNames: const ['None', 'TightenOnly', 'Any'],
     values: OccurrenceOverrideScope.values,
