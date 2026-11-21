@@ -141,6 +141,9 @@ void main() {
         'SwitchListTile.adaptive(value: v, onChanged: set)':
             'tile-without-ring',
         'RadioListTile<String>(value: v, title: Text(t))': 'tile-without-ring',
+        // A bracket in a string is text: the tile's own arguments run past it.
+        "SwitchListTile(title: Text('Hi :)'), onChanged: s)":
+            'tile-without-ring',
         // The shared extended FAB carries the ring (#760).
         'FloatingActionButton.extended(onPressed: f, label: Text(l))':
             'raw-extended-fab',
@@ -190,6 +193,10 @@ void main() {
         'ListTileTheme.merge(shape: shape, child: child)',
         'BgeExtendedFab(onPressed: f, label: l)',
         'FloatingActionButton(onPressed: f, child: icon)',
+        // A bracket in a string neither closes the tile's call nor hides
+        // the arguments after it.
+        "SwitchListTile(title: Text('Hi :)'), onChanged: s, onFocusChange: f)",
+        "RadioListTile<String>(value: '(', onFocusChange: f)",
       ];
 
       shouldFire.forEach((source, ruleId) {
@@ -527,6 +534,11 @@ List<String> _topLevelArgs(String args) {
   var depth = 0;
   var start = 0;
   for (var i = 0; i < args.length; i++) {
+    final string = _stringEnd(args, i);
+    if (string != -1) {
+      i = string - 1;
+      continue;
+    }
     final c = args[i];
     if (c == '(' || c == '[' || c == '{') {
       depth++;
@@ -592,10 +604,16 @@ List<_Violation> _scanDimensionalConstructors(String source) {
 }
 
 /// The index of the `)` that closes the `(` at [open], or -1. Walking to it,
-/// rather than to the first `)`, means nested calls cannot truncate a scan.
+/// rather than to the first `)`, means nested calls cannot truncate a scan,
+/// and a bracket in a string literal, `Text('Smileys :)')`, is not counted.
 int _closingParen(String source, int open) {
   var depth = 0;
   for (var i = open; i < source.length; i++) {
+    final string = _stringEnd(source, i);
+    if (string != -1) {
+      i = string - 1;
+      continue;
+    }
     final c = source[i];
     if (c == '(') {
       depth++;
@@ -605,6 +623,40 @@ int _closingParen(String source, int open) {
     }
   }
   return -1;
+}
+
+/// The index just past the string literal that opens at [start], or -1 if
+/// none opens there: single or double quotes, tripled or not, raw or not.
+///
+/// A literal that is not tripled ends at its line's end at the latest. Dart
+/// allows no newline in one, and the comment stripping in [_scanSource]
+/// blanks a line from a `//` inside a string, so `Text('https://…')` reaches
+/// here unterminated; it must not run on into the lines after it.
+///
+/// Not interpolation-aware: a quote of the same kind inside `${…}` ends the
+/// literal early, which splits it in two, both skipped.
+int _stringEnd(String source, int start) {
+  final q = source[start];
+  if (q != "'" && q != '"') return -1;
+  final raw =
+      start > 0 &&
+      source[start - 1] == 'r' &&
+      (start < 2 || !RegExp(r'[\w$]').hasMatch(source[start - 2]));
+  final quote = source.startsWith(q * 3, start) ? q * 3 : q;
+  var i = start + quote.length;
+  while (i < source.length) {
+    final c = source[i];
+    if (c == r'\' && !raw) {
+      i += 2;
+    } else if (source.startsWith(quote, i)) {
+      return i + quote.length;
+    } else if (c == '\n' && quote.length == 1) {
+      return i;
+    } else {
+      i++;
+    }
+  }
+  return source.length;
 }
 
 /// Finds bottom sheets opened off the root navigator (#414).

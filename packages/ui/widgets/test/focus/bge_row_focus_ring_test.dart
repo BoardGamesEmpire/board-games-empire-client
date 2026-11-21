@@ -408,6 +408,65 @@ void main() {
     return (box.decoration as BoxDecoration).border != null;
   }
 
+  testWidgets('a focused node given up for one with no focus takes the ring '
+      'with it; the same node given again keeps it', (tester) async {
+    final first = FocusNode(debugLabel: 'first');
+    final second = FocusNode(debugLabel: 'second');
+    addTearDown(first.dispose);
+    addTearDown(second.dispose);
+    Future<void> showWith(FocusNode node) =>
+        host(tester, ringedTile(focusNode: node, onTap: () {}));
+
+    await showWith(first);
+    await tab(tester);
+    expect(first.hasPrimaryFocus, isTrue);
+    expect(ringDrawn(tester, find.text('Row')), isTrue, reason: 'focused');
+
+    await showWith(first);
+    expect(
+      ringDrawn(tester, find.text('Row')),
+      isTrue,
+      reason: 'the same node, still focused',
+    );
+
+    await showWith(second);
+    expect(second.hasPrimaryFocus, isFalse);
+    expect(
+      ringDrawn(tester, find.text('Row')),
+      isFalse,
+      reason: 'the new node has no focus',
+    );
+  });
+
+  testWidgets(
+    "a held key's repeat after a click brings the ring back, as its press "
+    'would',
+    (tester) async {
+      await host(tester, ringedTile(onTap: () {}, focusOnTap: true));
+      final row = tester.getCenter(find.byType(BgeRowFocusRing));
+
+      // Held from before the click, so what follows it is a repeat.
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.keyA);
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      addTearDown(mouse.removePointer);
+      await mouse.down(row);
+      await mouse.up();
+      await tester.pump();
+      expect(
+        Focus.of(tester.element(find.text('Row'))).hasPrimaryFocus,
+        isTrue,
+        reason: 'the click gave the row focus',
+      );
+      expect(ringDrawn(tester, find.text('Row')), isFalse, reason: 'clicked');
+
+      await tester.sendKeyRepeatEvent(LogicalKeyboardKey.keyA);
+      await tester.pump();
+      expect(ringDrawn(tester, find.text('Row')), isTrue, reason: 'a repeat');
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.keyA);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.macOS),
+  );
+
   testWidgets(
     "the ring is the tile's own: none while focus is on a control in its "
     'trailing',

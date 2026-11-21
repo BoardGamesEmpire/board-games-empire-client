@@ -161,6 +161,10 @@ class _BgeRowFocusRingState extends State<BgeRowFocusRing>
     if (identical(node, _listened)) return;
     _listened?.removeListener(_onNodeChange);
     _listened = node..addListener(_onNodeChange);
+    // The tile's `Focus` takes up a new node without a word, so the ring
+    // would keep the old one's focus until the new one's next change. A
+    // first build has no ring to tell yet.
+    _onNodeChange();
   }
 
   void _onNodeChange() =>

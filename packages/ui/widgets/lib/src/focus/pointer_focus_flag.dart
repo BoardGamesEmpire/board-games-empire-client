@@ -6,7 +6,10 @@ import 'package:flutter/widgets.dart';
 /// `:focus-visible` is (#707). `BgePointerFocus` sets it and reads it.
 ///
 /// The next key press ends it, unless Control, Alt or Meta is held: a
-/// shortcut isn't navigation. Only while it is true does it listen for that
+/// shortcut isn't navigation. A held key's repeats count as presses, as
+/// they do for `BgePointerPressed`, the app's own flag: a key held down
+/// through a click would otherwise leave this control unringed after the
+/// app's flag had cleared. Only while it is true does it listen for that
 /// key press, and it stops when it is disposed, so no key handler is left
 /// behind.
 ///
@@ -40,7 +43,7 @@ class PointerFocusFlag extends ValueNotifier<bool> {
   /// The user is at the keyboard again, unless a shortcut is held.
   bool _onKey(KeyEvent event) {
     final keyboard = HardwareKeyboard.instance;
-    if (event is! KeyDownEvent ||
+    if ((event is! KeyDownEvent && event is! KeyRepeatEvent) ||
         keyboard.isControlPressed ||
         keyboard.isAltPressed ||
         keyboard.isMetaPressed) {
