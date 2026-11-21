@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:app_shell/app_shell.dart';
 import 'package:bge_test_support/widgets.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
@@ -1675,65 +1674,29 @@ void main() {
           boundary: boundary,
         );
 
-        Future<Color Function(Offset)> capture() async {
-          final render =
-              boundary.currentContext!.findRenderObject()!
-                  as RenderRepaintBoundary;
-          final (width, bytes) = (await tester.runAsync(() async {
-            final image = await render.toImage();
-            final bytes = (await image.toByteData())!;
-            final width = image.width;
-            image.dispose();
-            return (width, bytes);
-          }))!;
-          Color colourAt(Offset point) {
-            final at = (point.dy.floor() * width + point.dx.floor()) * 4;
-            return Color.fromARGB(
-              bytes.getUint8(at + 3),
-              bytes.getUint8(at),
-              bytes.getUint8(at + 1),
-              bytes.getUint8(at + 2),
-            );
-          }
-
-          return colourAt;
-        }
-
         // The second destination: the first is selected.
         final icon = tester.getRect(_destination('collection'));
         final area = icon.inflate(8);
-        final atRest = await capture();
+        final atRest = await capturePixels(tester, boundary);
 
         _destinationNode(tester, 'collection').requestFocus();
         await tester.pumpAndSettle();
-        final focused = await capture();
+        final focused = await capturePixels(tester, boundary);
 
         // Around the icon only, so a change of icon colour can't stand in
         // for the fill. A medium rail labels its selected destination alone,
         // so no label sits there.
-        var strongest = 1.0;
-        for (var y = area.top.ceil(); y < area.bottom.floor(); y++) {
-          for (var x = area.left.ceil(); x < area.right.floor(); x++) {
-            final point = Offset(x + 0.5, y + 0.5);
-            if (icon.contains(point)) continue;
-            final ratio = Wcag.contrastRatio(atRest(point), focused(point));
-            if (ratio > strongest) strongest = ratio;
-          }
-        }
+        final strongest = strongestContrast(
+          area,
+          atRest,
+          focused,
+          skip: icon.contains,
+        );
         expect(strongest, greaterThanOrEqualTo(3.0), reason: 'the fill');
 
         // The icon against the fill beside it.
         final fill = focused(Offset(icon.left - 4, icon.center.dy));
-        var iconRatio = 1.0;
-        for (var y = icon.top.ceil(); y < icon.bottom.floor(); y++) {
-          for (var x = icon.left.ceil(); x < icon.right.floor(); x++) {
-            final ratio = Wcag.contrastRatio(
-              focused(Offset(x + 0.5, y + 0.5)),
-              fill,
-            );
-            if (ratio > iconRatio) iconRatio = ratio;
-          }
-        }
+        final iconRatio = strongestContrast(icon, focused, (_) => fill);
         expect(iconRatio, greaterThanOrEqualTo(3.0), reason: 'the icon');
       });
     }

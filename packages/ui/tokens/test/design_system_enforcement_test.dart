@@ -244,6 +244,8 @@ const Map<String, List<String>> _allowlist = {
   // A test fixture, not UI: the banded image's two colours are pixels of a
   // picture a golden draws, and must not follow any theme.
   'packages/testing/support/lib/src/images/image_host.dart': ['color'],
+  // Decodes captured pixels into colours; none is a design colour.
+  'packages/testing/support/lib/src/widgets/pixels.dart': ['color'],
 };
 
 // This list started at seven entries covering most of the token package, and

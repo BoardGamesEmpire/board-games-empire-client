@@ -1,3 +1,4 @@
+import 'package:bge_test_support/widgets.dart';
 import 'package:flutter/gestures.dart' show GestureBinding, PointerDeviceKind;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -133,50 +134,6 @@ void main() {
       .descendant(of: find.byKey(key), matching: find.byType(Material))
       .first;
 
-  /// What is drawn now, as a colour at each point of the window.
-  Future<Color Function(Offset)> capture(WidgetTester tester) async {
-    final render =
-        boundary.currentContext!.findRenderObject()! as RenderRepaintBoundary;
-    final (width, bytes) = (await tester.runAsync(() async {
-      final image = await render.toImage();
-      final bytes = (await image.toByteData())!;
-      final width = image.width;
-      image.dispose();
-      return (width, bytes);
-    }))!;
-    Color colourAt(Offset point) {
-      final at = (point.dy.floor() * width + point.dx.floor()) * 4;
-      return Color.fromARGB(
-        bytes.getUint8(at + 3),
-        bytes.getUint8(at),
-        bytes.getUint8(at + 1),
-        bytes.getUint8(at + 2),
-      );
-    }
-
-    return colourAt;
-  }
-
-  /// The points of [rect], one per pixel, each at the pixel's centre.
-  Iterable<Offset> pixelsOf(Rect rect) sync* {
-    for (var y = rect.top.ceil(); y < rect.bottom.floor(); y++) {
-      for (var x = rect.left.ceil(); x < rect.right.floor(); x++) {
-        yield Offset(x + 0.5, y + 0.5);
-      }
-    }
-  }
-
-  /// The most any pixel of [rect] stands out between [a] and [b], as a
-  /// contrast ratio: 1 where the two draw it alike.
-  double strongestContrast(
-    Rect rect,
-    Color Function(Offset) a,
-    Color Function(Offset) b,
-  ) =>
-      pixelsOf(rect)
-          .map((p) => Wcag.contrastRatio(a(p), b(p)))
-          .fold<double>(1, (most, ratio) => ratio > most ? ratio : most);
-
   // Within a little of the ring's colour: the ring's edge is a curve, so a
   // pixel on it can be a shade off at the tangent.
   final isRingColour = predicate<Color>(
@@ -292,7 +249,7 @@ void main() {
     Offset onInsideRing(Rect r) =>
         Offset(r.left + tokens.focusOutlineWidth / 2, r.center.dy);
 
-    final atRest = await capture(tester);
+    final atRest = await capturePixels(tester, boundary);
     for (final c in _cases) {
       final rect = tester.getRect(materialOf(c.key));
       final where = c.placement == BgeButtonFocusRingPlacement.outside
@@ -316,7 +273,7 @@ void main() {
       expect(painter.placement, c.placement, reason: c.name);
 
       final rect = tester.getRect(materialOf(c.key));
-      final pixels = await capture(tester);
+      final pixels = await capturePixels(tester, boundary);
       switch (c.placement) {
         case BgeButtonFocusRingPlacement.outside:
           // An outside ring under a clip is cut away whole. The Material
@@ -781,7 +738,7 @@ void main() {
         final icon = tester.getRect(find.byIcon(Icons.search));
         // Round the icon, where the indicator's pill shows the fill.
         final area = icon.inflate(8);
-        final atRest = await capture(tester);
+        final atRest = await capturePixels(tester, boundary);
 
         await tab(tester);
         await tab(tester);
@@ -790,7 +747,7 @@ void main() {
           Focus.of(tester.element(find.text('Entry'))).hasPrimaryFocus,
           isTrue,
         );
-        final focused = await capture(tester);
+        final focused = await capturePixels(tester, boundary);
 
         // Anywhere the focus shows: a fill, a ring, an edge.
         expect(
@@ -841,7 +798,7 @@ void main() {
                 ListTile(key: goKey, onTap: () {}, title: const Text('Row')),
               ], themeData: build());
               final rect = tester.getRect(find.byKey(goKey));
-              final atRest = await capture(tester);
+              final atRest = await capturePixels(tester, boundary);
 
               await tab(tester);
               await tester.pumpAndSettle();
@@ -849,7 +806,7 @@ void main() {
                 Focus.of(tester.element(find.text('Row'))).hasPrimaryFocus,
                 isTrue,
               );
-              final focused = await capture(tester);
+              final focused = await capturePixels(tester, boundary);
 
               // Anywhere the focus shows: a fill, a ring, an edge.
               expect(
@@ -890,8 +847,8 @@ void main() {
                 .getRect(segment)
                 .inflate(tokens.focusRingGap + tokens.focusOutlineWidth);
             int ringPixels(Color Function(Offset) pixels) =>
-                pixelsOf(around).where((p) => near(pixels(p), ring)).length;
-            final atRest = ringPixels(await capture(tester));
+                pixelCentres(around).where((p) => near(pixels(p), ring)).length;
+            final atRest = ringPixels(await capturePixels(tester, boundary));
 
             await tab(tester);
             await tester.pumpAndSettle();
@@ -900,7 +857,10 @@ void main() {
               isTrue,
             );
 
-            expect(ringPixels(await capture(tester)), greaterThan(atRest));
+            expect(
+              ringPixels(await capturePixels(tester, boundary)),
+              greaterThan(atRest),
+            );
           },
         );
       },
@@ -953,7 +913,7 @@ void main() {
                 ),
               );
               await tester.pumpAndSettle();
-              return capture(tester);
+              return capturePixels(tester, boundary);
             }
 
             final themed = await draw(null);
@@ -975,7 +935,7 @@ void main() {
             );
             final whole = await draw(Clip.none);
 
-            final cut = pixelsOf(rect).where((p) => themed(p) != whole(p));
+            final cut = pixelCentres(rect).where((p) => themed(p) != whole(p));
             expect(cut, isEmpty, reason: 'glyph pixels the clip cut away');
           },
         );
@@ -999,8 +959,8 @@ void main() {
               .getRect(find.byKey(goKey))
               .inflate(tokens.focusRingGap + tokens.focusOutlineWidth);
           int ringPixels(Color Function(Offset) pixels) =>
-              pixelsOf(around).where((p) => near(pixels(p), ring)).length;
-          final atRest = ringPixels(await capture(tester));
+              pixelCentres(around).where((p) => near(pixels(p), ring)).length;
+          final atRest = ringPixels(await capturePixels(tester, boundary));
 
           await tab(tester);
           await tester.pumpAndSettle();
@@ -1009,7 +969,10 @@ void main() {
             isTrue,
           );
 
-          expect(ringPixels(await capture(tester)), greaterThan(atRest));
+          expect(
+            ringPixels(await capturePixels(tester, boundary)),
+            greaterThan(atRest),
+          );
         });
       },
     );
@@ -1045,7 +1008,7 @@ void main() {
             testWidgets('$control, $name', (tester) async {
               await host(tester, [widget], themeData: build());
               final rect = tester.getRect(find.byKey(goKey));
-              final atRest = await capture(tester);
+              final atRest = await capturePixels(tester, boundary);
 
               await tab(tester);
               await tester.pumpAndSettle();
@@ -1053,7 +1016,7 @@ void main() {
                 Focus.of(tester.element(find.text('Entry'))).hasPrimaryFocus,
                 isTrue,
               );
-              final focused = await capture(tester);
+              final focused = await capturePixels(tester, boundary);
 
               // Anywhere the focus shows: a fill, a ring, an edge.
               expect(
