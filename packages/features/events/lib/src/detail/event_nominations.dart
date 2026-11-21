@@ -310,33 +310,54 @@ enum NominateTaken {
 
 /// Whether [game] can be nominated for [scope] given [all]: not while the row
 /// supplies a live nomination for it, nor while its game is in the lineup
-/// for it. Live comes first, as the row's own.
+/// for it ([inLineupFor], by [lineup] where it is known). Live comes first,
+/// as the row's own.
 NominateTaken nominateTaken(
   OfferedGame game,
   List<EventNomination> all, {
   required NominationScope scope,
+  List<LineupGame>? lineup,
 }) {
   if (suppliesLive(game, all, scope: scope)) return NominateTaken.nominated;
-  if (inLineupFor(game, all, scope: scope)) return NominateTaken.inLineup;
+  if (inLineupFor(game, all, scope: scope, lineup: lineup)) {
+    return NominateTaken.inLineup;
+  }
   return NominateTaken.no;
 }
 
-/// Whether [game]'s game is in the lineup for [scope], by the nominations in
-/// [all] that put it there (approved or passed), whoever's copy they named:
-/// the lineup holds the game, and a second copy of it isn't nominated until
-/// it leaves the lineup. One in the lineup for the whole event is in it for
-/// every date. A game a host added directly has no nomination, so it isn't
-/// seen here (#518).
+/// Whether [game]'s game is in the lineup for [scope] (#519).
+///
+/// By the [lineup] itself where it is known, an empty one included: the
+/// lineup holds the game, whoever's copy supplies it, and a second copy of
+/// it isn't nominated until it leaves. A game in it for the whole event is
+/// in it for every date; one on a date doesn't hold the whole event. A game
+/// a host added directly is there with no nomination, and one whose supplier
+/// has left is not, though its nomination stays passed.
+///
+/// With no known [lineup] (not read yet, hidden from the viewer, or failed
+/// before it answered) by the nominations in [all] that put a game there
+/// (approved or passed), the rule before the lineup was read (#517): it
+/// can't see a game added directly (#518).
 bool inLineupFor(
   OfferedGame game,
   List<EventNomination> all, {
   required NominationScope scope,
-}) => all.any(
-  (n) =>
-      n.status.inLineup &&
-      n.platformGameId == game.platformGameId &&
-      (n.occurrenceId == null || _inScope(n, scope)),
-);
+  List<LineupGame>? lineup,
+}) {
+  if (lineup != null) {
+    return lineup.any(
+      (g) =>
+          g.platformGameId == game.platformGameId &&
+          (g.occurrenceId == null || scope == DateScope(g.occurrenceId!)),
+    );
+  }
+  return all.any(
+    (n) =>
+        n.status.inLineup &&
+        n.platformGameId == game.platformGameId &&
+        (n.occurrenceId == null || _inScope(n, scope)),
+  );
+}
 
 /// Who holds the live nominations a pool row still supplies.
 enum StillSuppliedBy {

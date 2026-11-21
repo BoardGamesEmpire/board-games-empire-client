@@ -177,6 +177,13 @@ void main() {
       find.byKey(EventDetailScreen.tabKey(EventDetailTab.games)),
     );
     await animate(tester);
+    // Games opens on Lineup (#519).
+    await tester.tap(
+      find.byKey(
+        EventDetailScreen.sectionTabKey(EventGamesSection.nominations),
+      ),
+    );
+    await animate(tester);
     await openQuickLook(tester);
     final open = find.byKey(EventDetailScreen.quickLookVotersKey);
     await tester.ensureVisible(open);
@@ -358,6 +365,13 @@ void main() {
     await settle(tester);
     await tester.tap(
       find.byKey(EventDetailScreen.tabKey(EventDetailTab.games)),
+    );
+    await animate(tester);
+    // Games opens on Lineup (#519).
+    await tester.tap(
+      find.byKey(
+        EventDetailScreen.sectionTabKey(EventGamesSection.nominations),
+      ),
     );
     await animate(tester);
     await openQuickLook(tester);

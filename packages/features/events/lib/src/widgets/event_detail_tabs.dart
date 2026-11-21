@@ -15,6 +15,9 @@ enum EventDetailTab {
 /// The Games tab's sub-tabs (#945), in the order its second bar shows them.
 /// Each one's `index` is its place in the sub-tabs' [TabController].
 enum EventGamesSection {
+  /// The games lined up for the event (#519).
+  lineup,
+
   /// The nominations for the event's games.
   nominations,
 
@@ -29,6 +32,9 @@ enum EventScreenTab {
   /// The Details tab, which a location with no `tab` names.
   details,
 
+  /// The Games tab, on Lineup.
+  lineup,
+
   /// The Games tab, on Nominations.
   nominations,
 
@@ -42,6 +48,7 @@ enum EventScreenTab {
       switch (tab) {
         EventDetailTab.details => EventScreenTab.details,
         EventDetailTab.games => switch (section) {
+          EventGamesSection.lineup => EventScreenTab.lineup,
           EventGamesSection.nominations => EventScreenTab.nominations,
           EventGamesSection.pool => EventScreenTab.pool,
         },
@@ -49,9 +56,9 @@ enum EventScreenTab {
 
   /// The tab the location's `tab` parameter, [value], names: none, `details`
   /// or a value that names no tab is Details, and `games` is the Games tab
-  /// on its first sub-tab. Case matters.
+  /// on its first sub-tab, Lineup. Case matters.
   static EventScreenTab parse(String? value) => switch (value) {
-    'games' => nominations,
+    'games' => lineup,
     final value? => values.asNameMap()[value] ?? details,
     null => details,
   };
@@ -63,12 +70,15 @@ enum EventScreenTab {
   /// The screen's tab this names: Details, or Games for a sub-tab.
   EventDetailTab get tab => switch (this) {
     EventScreenTab.details => EventDetailTab.details,
-    EventScreenTab.nominations || EventScreenTab.pool => EventDetailTab.games,
+    EventScreenTab.lineup ||
+    EventScreenTab.nominations ||
+    EventScreenTab.pool => EventDetailTab.games,
   };
 
   /// The Games tab's sub-tab this names, or null for Details.
   EventGamesSection? get section => switch (this) {
     EventScreenTab.details => null,
+    EventScreenTab.lineup => EventGamesSection.lineup,
     EventScreenTab.nominations => EventGamesSection.nominations,
     EventScreenTab.pool => EventGamesSection.pool,
   };
@@ -117,21 +127,21 @@ class EventDetailTabBar extends StatelessWidget {
   }
 }
 
-/// The Games tab's sub-tab bar (#945): Nominations, then Pool, under the
-/// screen's own bar.
+/// The Games tab's sub-tab bar (#945): Lineup, then Nominations, then Pool,
+/// under the screen's own bar.
 ///
 /// Material's secondary [TabBar], not scrollable, so each sub-tab has the
-/// tab role, says whether it is selected and where it stands, and takes half
-/// the bar. Its labels scale down as the screen's own bar's do, rather than
-/// being cut.
+/// tab role, says whether it is selected and where it stands, and takes a
+/// third of the bar. Its labels scale down as the screen's own bar's do,
+/// rather than being cut.
 ///
 /// Choosing a sub-tab moves no focus: the Games tab swaps what is under the
 /// bar and keeps the bar, so focus stays on the sub-tab pressed.
 class EventGamesSectionBar extends StatelessWidget {
   const EventGamesSectionBar({required this.controller, super.key});
 
-  /// Length 2: [EventGamesSection.nominations], then
-  /// [EventGamesSection.pool].
+  /// Length 3: [EventGamesSection.lineup], [EventGamesSection.nominations],
+  /// then [EventGamesSection.pool].
   final TabController controller;
 
   @override
@@ -145,6 +155,7 @@ class EventGamesSectionBar extends StatelessWidget {
           Tab(
             key: EventDetailScreen.sectionTabKey(section),
             child: _TabLabel(switch (section) {
+              EventGamesSection.lineup => l10n.eventsGamesSectionLineup,
               EventGamesSection.nominations =>
                 l10n.eventsGamesSectionNominations,
               EventGamesSection.pool => l10n.eventsGamesSectionPool,

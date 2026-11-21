@@ -2014,11 +2014,11 @@ void main() {
               as GoRouter;
 
       /// Pumps home with e-0 hosted by the viewer, alone on its roster, and
-      /// a server that reads it with nothing offered and nothing nominated:
-      /// enough for the Games tab and its sub-tabs. The pool is read for the
-      /// roster, so an empty one would never read it. Who answered its poll
-      /// reads as nobody, for the page that lists them. [id] names the event
-      /// in place of e-0.
+      /// a server that reads it with nothing offered, nothing nominated and
+      /// nothing in its lineup: enough for the Games tab and its sub-tabs.
+      /// The pool is read for the roster, so an empty one would never read
+      /// it. Who answered its poll reads as nobody, for the page that lists
+      /// them. [id] names the event in place of e-0.
       Future<void> pumpHosted(WidgetTester tester, {String id = 'e-0'}) {
         final me = _hosting(id);
         final hosted = EventSnapshot(
@@ -2037,6 +2037,7 @@ void main() {
         ).thenAnswer((_) async => const []);
         when(() => remote.fetchNominations(any()))
             .thenAnswer((_) async => const []);
+        when(() => remote.fetchLineup(any())).thenAnswer((_) async => const []);
         when(() => remote.fetchAvailabilitySummary(any())).thenAnswer(
           (_) async => const AvailabilitySummary(occurrences: []),
         );
@@ -2227,6 +2228,30 @@ void main() {
             isSemantics(isSelected: true),
           );
           expect(find.byKey(EventDetailScreen.poolSearchKey), findsOneWidget);
+        } finally {
+          handle.dispose();
+        }
+      });
+
+      testWidgets('a link to ?tab=lineup opens the event on Lineup', (
+        tester,
+      ) async {
+        final handle = tester.ensureSemantics();
+        try {
+          await pumpHosted(tester);
+
+          routerOf(tester).go('/events/e-0?tab=lineup');
+          await tester.pumpAndSettle();
+
+          expect(
+            tester.getSemantics(
+              find.byKey(
+                EventDetailScreen.sectionTabKey(EventGamesSection.lineup),
+              ),
+            ),
+            isSemantics(isSelected: true),
+          );
+          expect(find.byKey(EventDetailScreen.poolSearchKey), findsNothing);
         } finally {
           handle.dispose();
         }

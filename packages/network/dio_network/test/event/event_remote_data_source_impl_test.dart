@@ -317,6 +317,8 @@ Map<String, dynamic> _nominationRow({
   String? pausedFrom,
   String? votingDeadline,
   String? thumbnail = 'https://cdn.example.com/brass.png',
+  String? subtitle,
+  Map<String, dynamic>? elevatedTo,
   bool guest = false,
   List<Map<String, dynamic>> votes = const [],
 }) => {
@@ -337,6 +339,7 @@ Map<String, dynamic> _nominationRow({
     'game': {
       'id': 'game_1',
       'title': 'Brass: Birmingham',
+      'subtitle': subtitle,
       'thumbnail': thumbnail,
     },
     'platform': {
@@ -345,12 +348,59 @@ Map<String, dynamic> _nominationRow({
       'platformType': 'Physical',
     },
   },
+  'elevatedTo': elevatedTo,
   'nominatedBy': {
     'id': 'att_1',
     'user': guest ? null : {'id': 'u_1', 'username': 'ada'},
   },
   'suppliedFrom': {'id': 'og_1'},
   'votes': votes,
+};
+
+/// A lineup game as `GET /api/events/:id/lineup` serves it (#519, #920): the
+/// row's columns, the nested platform game and the pool row that supplies it,
+/// with the supplier's attendee, or null for a caller who cannot read them.
+Map<String, dynamic> _lineupRow({
+  String id = 'lg_1',
+  String? occurrenceId,
+  String role = 'Primary',
+  int sortOrder = 0,
+  String? thumbnail = 'https://cdn.example.com/brass.png',
+  Object? attendee = const {
+    'id': 'att_2',
+    'status': 'Attending',
+    'guestName': null,
+    'user': {
+      'id': 'u_2',
+      'username': 'grace',
+      'profile': {'displayName': 'Grace H.', 'avatarUrl': null},
+    },
+  },
+}) => {
+  'id': id,
+  'occurrenceId': occurrenceId,
+  'platformGameId': 'pg_1',
+  'role': role,
+  'sortOrder': sortOrder,
+  'notes': null,
+  'maxPlayTime': null,
+  'nominationId': null,
+  'addedById': 'att_1',
+  'platformGame': {
+    'id': 'pg_1',
+    'game': {
+      'id': 'game_1',
+      'title': 'Brass: Birmingham',
+      'subtitle': 'Deluxe Edition',
+      'thumbnail': thumbnail,
+    },
+    'platform': {
+      'id': 'plat_1',
+      'name': 'Tabletop',
+      'platformType': 'Physical',
+    },
+  },
+  'suppliedBy': {'id': 'og_1', 'attendeeId': 'att_2', 'attendee': attendee},
 };
 
 /// An offered game as `GET /api/events/:id/offered-games` serves it (#851):
@@ -5214,6 +5264,237 @@ void main() {
       );
       expect(adapter.sent, isEmpty);
     });
+  });
+
+  group('lineup (#519)', () {
+    late _PathAdapter pathAdapter;
+
+    EventRemoteDataSource routed(
+      Future<_Reply> Function(RequestOptions options) answer,
+    ) {
+      pathAdapter = _PathAdapter(answer);
+      final dio = Dio(BaseOptions(validateStatus: (_) => true))
+        ..httpClientAdapter = pathAdapter;
+      return EventRemoteDataSourceImpl(dio);
+    }
+
+    Future<_Reply> reply(String body, {int status = 200}) async =>
+        (body: body, status: status);
+
+    String page(
+      List<Map<String, dynamic>> rows, {
+      required int page,
+      required bool hasMore,
+    }) => jsonEncode({
+      'lineup': rows,
+      'pagination': _pagination(
+        page: page,
+        total: rows.length,
+        totalPages: hasMore ? page + 1 : page,
+        hasMore: hasMore,
+      ),
+    });
+
+    test("fetchLineup reads every page in the server's order", () async {
+      final remote = routed((options) {
+        final pageNumber = options.queryParameters['page'];
+        return reply(
+          pageNumber == 1
+              ? page(
+                  [
+                    _lineupRow(id: 'lg_2', occurrenceId: 'occ_1'),
+                    _lineupRow(occurrenceId: 'occ_1', sortOrder: 1),
+                  ],
+                  page: 1,
+                  hasMore: true,
+                )
+              : page(
+                  [
+                    // A row a page boundary repeated is kept once.
+                    _lineupRow(occurrenceId: 'occ_1', sortOrder: 1),
+                    _lineupRow(id: 'lg_3', role: 'Filler', sortOrder: 2),
+                  ],
+                  page: 2,
+                  hasMore: false,
+                ),
+        );
+      });
+
+      final games = await remote.fetchLineup('e1');
+
+      expect(games.map((game) => game.id), ['lg_2', 'lg_1', 'lg_3']);
+      expect(games.last.role, ScheduledGameRole.filler);
+      expect(pathAdapter.paths, [
+        '/api/events/e1/lineup',
+        '/api/events/e1/lineup',
+      ]);
+    });
+
+    test('maps a lineup game whole', () async {
+      final remote = routed(
+        (_) => reply(
+          page(
+            [
+              _lineupRow(occurrenceId: 'occ_1')
+                ..['notes'] = 'Teach first'
+                ..['nominationId'] = 'n1',
+            ],
+            page: 1,
+            hasMore: false,
+          ),
+        ),
+      );
+
+      final game = (await remote.fetchLineup('e1')).single;
+
+      expect(
+        game,
+        const LineupGame(
+          id: 'lg_1',
+          occurrenceId: 'occ_1',
+          platformGameId: 'pg_1',
+          gameId: 'game_1',
+          title: 'Brass: Birmingham',
+          subtitle: 'Deluxe Edition',
+          platformName: 'Tabletop',
+          thumbnail: 'https://cdn.example.com/brass.png',
+          role: ScheduledGameRole.primary,
+          sortOrder: 0,
+          notes: 'Teach first',
+          nominationId: 'n1',
+          addedById: 'att_1',
+          suppliedById: 'og_1',
+          supplierAttendeeId: 'att_2',
+          supplierName: 'Grace H.',
+        ),
+      );
+    });
+
+    test('a lineup game names its supplier, or null when the attendee '
+        "can't be read", () async {
+      final remote = routed(
+        (_) => reply(
+          page(
+            [
+              _lineupRow(),
+              _lineupRow(id: 'lg_2', attendee: null),
+              _lineupRow(
+                id: 'lg_3',
+                attendee: {
+                  'id': 'att_2',
+                  'status': 'Attending',
+                  'guestName': 'Pat',
+                  'user': null,
+                },
+              ),
+              _lineupRow(
+                id: 'lg_4',
+                attendee: {
+                  'id': 'att_2',
+                  'status': 'Attending',
+                  'guestName': null,
+                  'user': {'id': 'u_2', 'username': 'grace', 'profile': null},
+                },
+              ),
+              _lineupRow(id: 'lg_5', thumbnail: ''),
+            ],
+            page: 1,
+            hasMore: false,
+          ),
+        ),
+      );
+
+      final games = await remote.fetchLineup('e1');
+
+      expect(games.map((game) => game.supplierName), [
+        'Grace H.',
+        null,
+        'Pat',
+        'grace',
+        'Grace H.',
+      ]);
+      expect(games[1].supplierAttendeeId, 'att_2');
+      expect(games.last.thumbnail, isNull);
+    });
+
+    test('a lineup game for the event itself has no occurrenceId', () async {
+      final remote = routed(
+        (_) => reply(page([_lineupRow()], page: 1, hasMore: false)),
+      );
+
+      final game = (await remote.fetchLineup('e1')).single;
+
+      expect(game.occurrenceId, isNull);
+    });
+
+    test('an unknown role reads as unknown', () async {
+      final remote = routed(
+        (_) => reply(
+          page([_lineupRow(role: 'Intermission')], page: 1, hasMore: false),
+        ),
+      );
+
+      expect(
+        (await remote.fetchLineup('e1')).single.role,
+        ScheduledGameRole.unknown,
+      );
+    });
+
+    test('fetchLineup: 403 is Forbidden and 404 is NotFound', () async {
+      final forbidden = routed(
+        (_) => reply(_envelope(403, 'Forbidden', 'No'), status: 403),
+      );
+      await expectLater(
+        forbidden.fetchLineup('e1'),
+        throwsA(isA<EventRemoteForbiddenException>()),
+      );
+      final gone = routed(
+        (_) => reply(_envelope(404, 'Not Found', 'Gone'), status: 404),
+      );
+      await expectLater(
+        gone.fetchLineup('e1'),
+        throwsA(isA<EventRemoteNotFoundException>()),
+      );
+    });
+
+    test('an empty id is refused before anything is sent', () async {
+      final remote = routed((_) => reply(page([], page: 1, hasMore: false)));
+
+      await expectLater(remote.fetchLineup(''), throwsArgumentError);
+      expect(pathAdapter.paths, isEmpty);
+    });
+
+    test(
+      'a nomination carries its subtitle and the lineup game it became',
+      () async {
+        final remote = routed(
+          (_) => reply(
+            jsonEncode({
+              'nominations': [
+                _nominationRow(
+                  subtitle: 'Deluxe Edition',
+                  elevatedTo: {'id': 'lg-1', 'occurrenceId': null},
+                ),
+                _nominationRow(
+                  id: 'n2',
+                  elevatedTo: {'id': 'lg-2', 'occurrenceId': 'occ_1'},
+                ),
+                _nominationRow(id: 'n3'),
+              ],
+              'pagination': _pagination(total: 3),
+            }),
+          ),
+        );
+
+        final rows = await remote.fetchNominations('e1');
+
+        expect(rows[0].subtitle, 'Deluxe Edition');
+        expect(rows[0].elevatedTo, (id: 'lg-1', occurrenceId: null));
+        expect(rows[1].subtitle, isNull);
+        expect(rows[1].elevatedTo, (id: 'lg-2', occurrenceId: 'occ_1'));
+        expect(rows[2].elevatedTo, isNull);
+      },
+    );
   });
 
   group('classification', () {

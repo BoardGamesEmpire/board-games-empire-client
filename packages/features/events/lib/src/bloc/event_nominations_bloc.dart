@@ -1,5 +1,6 @@
 import 'package:events/src/bloc/event_nominations_event.dart';
 import 'package:events/src/bloc/event_nominations_state.dart';
+import 'package:events/src/bloc/session_checked_reads.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
@@ -124,9 +125,9 @@ ResolveResult _resolved(_Decided decided) => switch (decided) {
 /// As each starts it clears the last outcome, and
 /// [EventNominationsState.writing] names it until its outcome comes in, in
 /// the same state as any row its answer changes. So the outcome never lands
-/// beside the row as it was. The outcome carries the game's title: the pool
-/// row's for a nominate, with its subtitle (#851), and the nomination's for
-/// every other write.
+/// beside the row as it was. The outcome carries the game's title and
+/// subtitle: the pool row's for a nominate (#851), and the nomination's for
+/// every other write (#920).
 ///
 /// A row's change is kept over a read that was out as the write ended, whose
 /// answer can predate the write: the change is made again on that answer. A
@@ -206,7 +207,7 @@ ResolveResult _resolved(_Decided decided) => switch (decided) {
 ///
 /// [NominationWriteDropped] is a write the screen's own re-check stopped. It
 /// sends nothing and sets an outcome of dropped for that write, with the
-/// title, and a nominate's subtitle (#851), since a screen reader hears
+/// title and subtitle (#851, #920), since a screen reader hears
 /// nothing happen when a press sends nothing. It clears the last outcome
 /// first, as a write starting does, so a drop like the one before it is
 /// still a new outcome. It is ignored while a write is out, whose own
@@ -262,24 +263,20 @@ class EventNominationsBloc
   final Future<bool> Function()? _confirmSession;
   final BgeLogger _logger;
 
+  /// The sequencing of reads, and the session check every read and write
+  /// asks.
+  late final SessionCheckedReads _reads = SessionCheckedReads(
+    confirmSession: _confirmSession,
+    logger: _logger,
+  );
+
   /// Set once [close] starts. A send's or a read's answer can land after it,
   /// and emits nothing then.
-  bool _closing = false;
-
-  /// Whether a read is out, or asking the session before it goes.
-  bool _reading = false;
-
-  /// What to read once the read that is out ends: the event the latest
-  /// request while it was out named.
-  String? _readAgain;
+  bool get _closing => _reads.closing;
 
   /// The event named last, by a request to read or a write that started. A
   /// write's read is for this one.
   late String _lastNamed;
-
-  /// Whether a retry joined the reads running now, which
-  /// [EventNominationsState.refreshing] says until they end.
-  bool _retrying = false;
 
   /// The changes writes made to the rows since the read that is out started,
   /// in order. Its answer can predate them, so they are made again on it.
@@ -294,7 +291,7 @@ class EventNominationsBloc
     EventNominationsRetryRequested event,
     Emitter<EventNominationsState> emit,
   ) {
-    _retrying = true;
+    _reads.retrying = true;
     // At once, before the session is asked, so the retry shows under way
     // from the press.
     if (!_closing) emit(state.copyWith(refreshing: true));
@@ -333,7 +330,7 @@ class EventNominationsBloc
   _nominate(GameNominated event) async {
     const notSent = (result: NominateResult.failed, answer: null, sent: false);
     const failed = (result: NominateResult.failed, answer: null, sent: true);
-    if (!await _confirmed('Nominate not sent')) return notSent;
+    if (!await _reads.confirmed('Nominate not sent')) return notSent;
     if (_closing) return notSent;
 
     final EventNomination answer;
@@ -374,7 +371,7 @@ class EventNominationsBloc
       _logger.warn('Nominate failed', error: error, stackTrace: stackTrace);
       return failed;
     }
-    if (!await _confirmed('Nominate answer dropped')) return failed;
+    if (!await _reads.confirmed('Nominate answer dropped')) return failed;
     return (result: _nominated(answer.status), answer: answer, sent: true);
   }
 
@@ -394,6 +391,7 @@ class EventNominationsBloc
     final outcome = VoteOutcome(
       result,
       title: nomination.title,
+      subtitle: nomination.subtitle,
       voteType: result == VoteResult.done ? event.voteType : null,
     );
     switch (result) {
@@ -413,7 +411,7 @@ class EventNominationsBloc
     NominationVoteCast event,
   ) async {
     const notSent = (result: VoteResult.failed, sent: false);
-    if (!await _confirmed('Vote not sent')) return notSent;
+    if (!await _reads.confirmed('Vote not sent')) return notSent;
     if (_closing) return notSent;
 
     try {
@@ -429,7 +427,7 @@ class EventNominationsBloc
     } on EventRemoteNotFoundException catch (error) {
       _logger.info('Vote found the nomination gone', error: error);
       // It drops the row, so it is used as an answer is.
-      if (!await _confirmed('Vote answer dropped')) {
+      if (!await _reads.confirmed('Vote answer dropped')) {
         return (result: VoteResult.failed, sent: true);
       }
       return (result: VoteResult.gone, sent: true);
@@ -464,7 +462,11 @@ class EventNominationsBloc
     await _endedDeciding(
       nomination.id,
       result,
-      WithdrawOutcome(_withdrawn(result), title: nomination.title),
+      WithdrawOutcome(
+        _withdrawn(result),
+        title: nomination.title,
+        subtitle: nomination.subtitle,
+      ),
       emit,
       answer: answer,
       sent: sent,
@@ -520,6 +522,7 @@ class EventNominationsBloc
         _hostDecision(result),
         write: write,
         title: nomination.title,
+        subtitle: nomination.subtitle,
       ),
       emit,
       answer: answer,
@@ -550,6 +553,7 @@ class EventNominationsBloc
       ResolveOutcome(
         _resolved(result),
         title: nomination.title,
+        subtitle: nomination.subtitle,
         resolution: answer?.resolution,
       ),
       emit,
@@ -568,7 +572,7 @@ class EventNominationsBloc
   ) async {
     const notSent = (result: _Decided.failed, answer: null, sent: false);
     const failed = (result: _Decided.failed, answer: null, sent: true);
-    if (!await _confirmed('$name not sent')) return notSent;
+    if (!await _reads.confirmed('$name not sent')) return notSent;
     if (_closing) return notSent;
 
     final A answer;
@@ -580,7 +584,7 @@ class EventNominationsBloc
     } on EventRemoteNotFoundException catch (error) {
       _logger.info('$name found the nomination gone', error: error);
       // It drops the row, so it is used as an answer is.
-      if (!await _confirmed('$name answer dropped')) return failed;
+      if (!await _reads.confirmed('$name answer dropped')) return failed;
       return (result: _Decided.gone, answer: null, sent: true);
     } on EventWriteRefusedException catch (error) {
       _logger.info('$name refused', error: error);
@@ -589,7 +593,7 @@ class EventNominationsBloc
       _logger.warn('$name failed', error: error, stackTrace: stackTrace);
       return failed;
     }
-    if (!await _confirmed('$name answer dropped')) return failed;
+    if (!await _reads.confirmed('$name answer dropped')) return failed;
     return (result: _Decided.done, answer: answer, sent: true);
   }
 
@@ -672,7 +676,7 @@ class EventNominationsBloc
   /// session says yes, and answers it, or null when the read failed or the
   /// session stopped it. Never throws.
   Future<EventNomination?> _readOne(String eventId, String nominationId) async {
-    if (!await _confirmed('Nomination not read')) return null;
+    if (!await _reads.confirmed('Nomination not read')) return null;
     if (_closing) return null;
 
     final EventNomination row;
@@ -692,7 +696,7 @@ class EventNominationsBloc
       );
       return null;
     }
-    if (!await _confirmed('Nomination answer dropped')) return null;
+    if (!await _reads.confirmed('Nomination answer dropped')) return null;
     return row;
   }
 
@@ -706,6 +710,7 @@ class EventNominationsBloc
     // one: Bloc emits a state equal to the initial one if it is the first.
     if (state.outcome != null) emit(state.copyWith(outcome: () => null));
     final title = event.title;
+    final subtitle = event.subtitle;
     final write = event.write;
     emit(
       state.copyWith(
@@ -715,51 +720,37 @@ class EventNominationsBloc
             title: title,
             subtitle: event.subtitle,
           ),
-          NominationWrite.vote => VoteOutcome(VoteResult.dropped, title: title),
+          NominationWrite.vote => VoteOutcome(
+            VoteResult.dropped,
+            title: title,
+            subtitle: subtitle,
+          ),
           NominationWrite.withdraw => WithdrawOutcome(
             WithdrawResult.dropped,
             title: title,
+            subtitle: subtitle,
           ),
           NominationWrite.approve ||
           NominationWrite.reject => HostDecisionOutcome(
             HostDecisionResult.dropped,
             write: write,
             title: title,
+            subtitle: subtitle,
           ),
           NominationWrite.resolve => ResolveOutcome(
             ResolveResult.dropped,
             title: title,
+            subtitle: subtitle,
           ),
         },
       ),
     );
   }
 
-  /// Reads the nominations of the event [eventId], then again for the latest
-  /// request that came in meanwhile, once each run. While a read is out, this
-  /// marks one more and returns. Never throws.
   Future<void> _read(
     String eventId,
     Emitter<EventNominationsState> emit,
-  ) async {
-    if (_reading) {
-      _readAgain = eventId;
-      return;
-    }
-    _reading = true;
-    try {
-      String? next = eventId;
-      while (next != null && !_closing) {
-        _readAgain = null;
-        await _readOnce(next, emit);
-        next = _readAgain;
-      }
-    } finally {
-      _readAgain = null;
-      _reading = false;
-      _retrying = false;
-    }
-  }
+  ) => _reads.run(eventId, (id) => _readOnce(id, emit));
 
   /// Reads the nominations of the event [eventId] once the session says yes,
   /// and fails the read when the session says no. Never throws.
@@ -774,7 +765,7 @@ class EventNominationsBloc
     // A read that started once a nominate's answer was lost is after it, so
     // its answer says whether the server saved it.
     final settles = state.settling;
-    if (!await _confirmed('Nominations not read')) {
+    if (!await _reads.confirmed('Nominations not read')) {
       _readEnded(EventNominationsLoad.failed, state.nominations, emit);
       return;
     }
@@ -787,7 +778,7 @@ class EventNominationsBloc
           EventNominationsLoad.gone => state.load,
           _ => EventNominationsLoad.loading,
         },
-        refreshing: _retrying,
+        refreshing: _reads.retrying,
       ),
     );
 
@@ -816,7 +807,7 @@ class EventNominationsBloc
       _readEnded(EventNominationsLoad.failed, state.nominations, emit);
       return;
     }
-    if (!await _confirmed('Nominations answer dropped')) {
+    if (!await _reads.confirmed('Nominations answer dropped')) {
       _readEnded(EventNominationsLoad.failed, state.nominations, emit);
       return;
     }
@@ -832,7 +823,7 @@ class EventNominationsBloc
           ),
         ),
         refreshFailed: false,
-        refreshing: _stillRefreshing,
+        refreshing: _reads.stillRefreshing,
         settling: settles ? false : null,
       ),
     );
@@ -844,7 +835,7 @@ class EventNominationsBloc
     EventNominationsLoad load,
     Emitter<EventNominationsState> emit,
   ) async {
-    if (await _confirmed('Nominations answer dropped')) {
+    if (await _reads.confirmed('Nominations answer dropped')) {
       _readEnded(load, const [], emit);
     } else {
       _readEnded(EventNominationsLoad.failed, state.nominations, emit);
@@ -864,39 +855,9 @@ class EventNominationsBloc
         load: load,
         nominations: nominations,
         refreshFailed: load == EventNominationsLoad.failed,
-        refreshing: _stillRefreshing,
+        refreshing: _reads.stillRefreshing,
       ),
     );
-  }
-
-  /// Whether a retry is still under way as a read ends: one joined the
-  /// reads, and another is to run after this one.
-  bool get _stillRefreshing => _retrying && _readAgain != null;
-
-  /// Whether the session is still this viewer's: `confirmSession` said yes,
-  /// or there is none to ask. A no is logged, as is a throw, each saying
-  /// what [stopped].
-  Future<bool> _confirmed(String stopped) async {
-    final confirm = _confirmSession;
-    if (confirm == null) return true;
-
-    final bool confirmed;
-    try {
-      confirmed = await confirm();
-    } on Object catch (error, stackTrace) {
-      _logger.warn(
-        '$stopped: the session could not be checked',
-        error: error,
-        stackTrace: stackTrace,
-      );
-      return false;
-    }
-    if (!confirmed) {
-      _logger.info(
-        "$stopped: the session could not be confirmed as this user's",
-      );
-    }
-    return confirmed;
   }
 
   void _onOutcomeDismissed(
@@ -909,7 +870,7 @@ class EventNominationsBloc
 
   @override
   Future<void> close() {
-    _closing = true;
+    _reads.closing = true;
     return super.close();
   }
 }

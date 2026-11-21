@@ -266,6 +266,13 @@ void main() {
       find.byKey(EventDetailScreen.tabKey(EventDetailTab.games)),
     );
     await animate(tester);
+    // Games opens on Lineup (#519).
+    await tester.tap(
+      find.byKey(
+        EventDetailScreen.sectionTabKey(EventGamesSection.nominations),
+      ),
+    );
+    await animate(tester);
   }
 
   /// The screen's blocs. Their providers are inside the screen, so the

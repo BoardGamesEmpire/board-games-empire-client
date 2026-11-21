@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:events/l10n/events_localizations.dart';
 import 'package:events/src/detail/event_nominations.dart';
 import 'package:events/src/screens/event_detail_screen.dart';
+import 'package:events/src/widgets/game_name.dart';
 import 'package:flutter/material.dart';
 import 'package:models/domain.dart';
 import 'package:reactive_forms/reactive_forms.dart';
@@ -150,7 +151,7 @@ class _NominationVoteControlState extends State<NominationVoteControl> {
     final tokens = BgeTokens.of(context);
     final nomination = widget.nomination;
     final id = nomination.id;
-    final title = nomination.title;
+    final title = gameName(l10n, nomination.title, nomination.subtitle);
     // A vote this client can't read is none it can show, nor send a note
     // with: it has no name to send.
     final voted = switch (widget.vote?.voteType) {
@@ -309,7 +310,7 @@ class _NoteButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = EventsLocalizations.of(context);
-    final title = nomination.title;
+    final title = gameName(l10n, nomination.title, nomination.subtitle);
     final (label, named) = switch ((inert, edits)) {
       (true, _) => (
         l10n.eventsVoteNoteInProgress,

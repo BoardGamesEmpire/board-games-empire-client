@@ -13,6 +13,7 @@ import 'package:events/src/widgets/event_game_row_head.dart';
 import 'package:events/src/widgets/event_games_footer.dart';
 import 'package:events/src/widgets/event_games_row_lines.dart';
 import 'package:events/src/widgets/event_games_tab_scope.dart';
+import 'package:events/src/widgets/game_name.dart';
 import 'package:events/src/widgets/nomination_filters_sheet.dart';
 import 'package:events/src/widgets/nomination_row_controls.dart';
 import 'package:flutter/material.dart';
@@ -646,7 +647,7 @@ class _NominationRow extends StatelessWidget {
             EventGameRowHead(
               key: EventDetailScreen.nominationRowHeadKey(nomination.id),
               thumbnail: nomination.thumbnail,
-              title: nomination.title,
+              title: gameName(l10n, nomination.title, nomination.subtitle),
               entry: NominationEntry(nomination.id),
               focusNode: head,
               lines: [

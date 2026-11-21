@@ -1,0 +1,402 @@
+import 'dart:async';
+
+import 'package:events/events.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:mocktail/mocktail.dart';
+import 'package:models/domain.dart';
+import 'package:network_interface/network_interface.dart';
+import 'package:observability/observability.dart';
+
+import '../support/fake_event_remote.dart';
+
+class _MockBgeLogger extends Mock implements BgeLogger {}
+
+/// Requests that wait for the test to answer them, in the order they were
+/// sent.
+final class _Held<R, T> {
+  final List<R> requests = [];
+  final List<Completer<T>> _replies = [];
+
+  Future<T> call(R request) {
+    final reply = Completer<T>();
+    requests.add(request);
+    _replies.add(reply);
+    return reply.future;
+  }
+
+  /// Answers the [index]th request with [value].
+  void answer(int index, T value) => _replies[index].complete(value);
+
+  /// Answers the [index]th request with [error].
+  void fail(int index, Object error) => _replies[index].completeError(error);
+}
+
+const _gone = EventRemoteNotFoundException('gone', statusCode: 404);
+const _forbidden = EventRemoteForbiddenException('hidden', statusCode: 403);
+const _offline = EventRemoteTransientException('offline');
+
+const _loading = EventLineupState(load: EventLineupLoad.loading);
+
+/// The lineup game `l-[n]` of `Game [n]`.
+LineupGame _game(int n) => LineupGame(
+  id: 'l-$n',
+  platformGameId: 'pg-$n',
+  gameId: 'game-$n',
+  title: 'Game $n',
+  platformName: 'Tabletop',
+  role: ScheduledGameRole.primary,
+  sortOrder: n,
+  suppliedById: 'g-$n',
+  supplierAttendeeId: 'a-$n',
+);
+
+/// The lineup of an event, read online and never cached (#519).
+void main() {
+  late _MockBgeLogger logger;
+  late List<LineupGame> one;
+  late List<LineupGame> two;
+
+  setUp(() {
+    logger = _MockBgeLogger();
+    one = [_game(1)];
+    two = [_game(1), _game(2)];
+  });
+
+  FakeEventRemote serving(
+    FutureOr<List<LineupGame>> Function(String eventId) lineup,
+  ) => FakeEventRemote.detail(
+    (_) => throw UnimplementedError('the lineup reads no event'),
+    lineup: lineup,
+  );
+
+  EventLineupBloc build(
+    FakeEventRemote remote, {
+    Future<bool> Function()? confirmSession,
+  }) => EventLineupBloc(
+    remote: remote,
+    confirmSession: confirmSession,
+    logger: logger,
+  );
+
+  List<EventLineupState> record(EventLineupBloc bloc) {
+    final states = <EventLineupState>[];
+    final subscription = bloc.stream.listen(states.add);
+    addTearDown(subscription.cancel);
+    return states;
+  }
+
+  EventLineupState loaded(List<LineupGame> games) => EventLineupState(
+    load: EventLineupLoad.loaded,
+    games: games,
+    answered: true,
+  );
+
+  void verifyWarnings(int count) => verify(
+    () => logger.warn(
+      any(),
+      error: any(named: 'error'),
+      stackTrace: any(named: 'stackTrace'),
+    ),
+  ).called(count);
+
+  test('a read loads the lineup', () async {
+    final remote = serving((_) => two);
+    final bloc = build(remote);
+    addTearDown(bloc.close);
+    final states = record(bloc);
+
+    bloc.add(const EventLineupRequested('e-1'));
+    await pumpEventQueue();
+
+    expect(remote.lineupRequests, ['e-1']);
+    expect(states, [_loading, loaded(two)]);
+    expect(knownLineup(bloc.state), two);
+  });
+
+  test('knownLineup is null until a read has answered', () {
+    expect(knownLineup(null), isNull);
+    expect(knownLineup(const EventLineupState()), isNull);
+    expect(knownLineup(loaded(const [])), isEmpty);
+  });
+
+  test('a second request while reading reads once more after', () async {
+    final reads = _Held<String, List<LineupGame>>();
+    final remote = serving(reads.call);
+    final bloc = build(remote);
+    addTearDown(bloc.close);
+    final states = record(bloc);
+
+    bloc.add(const EventLineupRequested('e-1'));
+    await pumpEventQueue();
+    bloc
+      ..add(const EventLineupRequested('e-2'))
+      ..add(const EventLineupRequested('e-3'));
+    await pumpEventQueue();
+
+    // Never two at once.
+    expect(remote.lineupRequests, ['e-1']);
+
+    reads.answer(0, one);
+    await pumpEventQueue();
+
+    // One more, for the latest request's event.
+    expect(remote.lineupRequests, ['e-1', 'e-3']);
+
+    reads.answer(1, two);
+    await pumpEventQueue();
+
+    expect(remote.lineupRequests, hasLength(2));
+    expect(states, [
+      _loading,
+      loaded(one),
+      EventLineupState(
+        load: EventLineupLoad.loading,
+        games: one,
+        answered: true,
+      ),
+      loaded(two),
+    ]);
+  });
+
+  test('403 hides the lineup', () async {
+    final bloc = build(serving((_) => throw _forbidden));
+    addTearDown(bloc.close);
+    final states = record(bloc);
+
+    bloc.add(const EventLineupRequested('e-1'));
+    await pumpEventQueue();
+
+    expect(states, [
+      _loading,
+      const EventLineupState(load: EventLineupLoad.hidden),
+    ]);
+    expect(knownLineup(bloc.state), isNull);
+  });
+
+  test('404 is gone, and failed when the read started gone', () async {
+    final bloc = build(serving((_) => throw _gone));
+    addTearDown(bloc.close);
+    final states = record(bloc);
+
+    bloc.add(const EventLineupRequested('e-1'));
+    await pumpEventQueue();
+    // No loading between, so a refused viewer sees nothing change.
+    bloc.add(const EventLineupRequested('e-1'));
+    await pumpEventQueue();
+
+    expect(states, [
+      _loading,
+      const EventLineupState(load: EventLineupLoad.gone),
+      const EventLineupState(
+        load: EventLineupLoad.failed,
+        refreshFailed: true,
+      ),
+    ]);
+  });
+
+  test('a refusal clears the rows a read had answered', () async {
+    var refuse = false;
+    final bloc = build(serving((_) => refuse ? throw _forbidden : one));
+    addTearDown(bloc.close);
+
+    bloc.add(const EventLineupRequested('e-1'));
+    await pumpEventQueue();
+    expect(knownLineup(bloc.state), one);
+
+    refuse = true;
+    bloc.add(const EventLineupRequested('e-1'));
+    await pumpEventQueue();
+
+    expect(bloc.state, const EventLineupState(load: EventLineupLoad.hidden));
+  });
+
+  test('a failed re-read keeps the rows and stays answered', () async {
+    var fail = false;
+    final bloc = build(serving((_) => fail ? throw _offline : one));
+    addTearDown(bloc.close);
+
+    bloc.add(const EventLineupRequested('e-1'));
+    await pumpEventQueue();
+    fail = true;
+    bloc.add(const EventLineupRequested('e-1'));
+    await pumpEventQueue();
+
+    expect(
+      bloc.state,
+      EventLineupState(
+        load: EventLineupLoad.failed,
+        games: one,
+        answered: true,
+        refreshFailed: true,
+      ),
+    );
+    expect(knownLineup(bloc.state), one);
+    verifyWarnings(1);
+  });
+
+  test('retry marks refreshing', () async {
+    final reads = _Held<String, List<LineupGame>>();
+    Completer<bool>? asked;
+    final bloc = build(
+      serving(reads.call),
+      confirmSession: () => asked?.future ?? Future.value(true),
+    );
+    addTearDown(bloc.close);
+
+    bloc.add(const EventLineupRequested('e-1'));
+    await pumpEventQueue();
+    reads.fail(0, _offline);
+    await pumpEventQueue();
+    expect(bloc.state.load, EventLineupLoad.failed);
+
+    final session = asked = Completer();
+    final states = record(bloc);
+    bloc.add(const EventLineupRetryRequested('e-1'));
+    await pumpEventQueue();
+
+    // At once, before the session has answered.
+    expect(states, [
+      const EventLineupState(
+        load: EventLineupLoad.failed,
+        refreshFailed: true,
+        refreshing: true,
+      ),
+    ]);
+
+    session.complete(true);
+    await pumpEventQueue();
+    reads.answer(1, two);
+    await pumpEventQueue();
+
+    expect(states.sublist(1), [
+      const EventLineupState(
+        load: EventLineupLoad.loading,
+        refreshFailed: true,
+        refreshing: true,
+      ),
+      loaded(two),
+    ]);
+  });
+
+  test('a retry while a read is out is under way until the read after it '
+      'ends', () async {
+    final reads = _Held<String, List<LineupGame>>();
+    final bloc = build(serving(reads.call));
+    addTearDown(bloc.close);
+    final states = record(bloc);
+
+    bloc.add(const EventLineupRequested('e-1'));
+    await pumpEventQueue();
+    bloc.add(const EventLineupRetryRequested('e-1'));
+    await pumpEventQueue();
+    reads.answer(0, one);
+    await pumpEventQueue();
+
+    // The read that was out went before the retry, so the retry's own read
+    // follows it.
+    expect(reads.requests, hasLength(2));
+
+    reads.answer(1, two);
+    await pumpEventQueue();
+
+    expect(states, [
+      _loading,
+      const EventLineupState(load: EventLineupLoad.loading, refreshing: true),
+      EventLineupState(
+        load: EventLineupLoad.loaded,
+        games: one,
+        answered: true,
+        refreshing: true,
+      ),
+      EventLineupState(
+        load: EventLineupLoad.loading,
+        games: one,
+        answered: true,
+        refreshing: true,
+      ),
+      loaded(two),
+    ]);
+  });
+
+  test('a read after a retry is not narrated as refreshing', () async {
+    final bloc = build(serving((_) => one));
+    addTearDown(bloc.close);
+
+    bloc.add(const EventLineupRetryRequested('e-1'));
+    await pumpEventQueue();
+    expect(bloc.state, loaded(one));
+
+    final states = record(bloc);
+    bloc.add(const EventLineupRequested('e-1'));
+    await pumpEventQueue();
+
+    expect(states, [
+      EventLineupState(
+        load: EventLineupLoad.loading,
+        games: one,
+        answered: true,
+      ),
+      loaded(one),
+    ]);
+  });
+
+  test('a read that ends after close emits nothing', () async {
+    final reads = _Held<String, List<LineupGame>>();
+    final bloc = build(serving(reads.call));
+    final states = record(bloc);
+    final errors = <Object>[];
+    final watching = bloc.stream.listen(null, onError: errors.add);
+    addTearDown(watching.cancel);
+
+    bloc.add(const EventLineupRequested('e-1'));
+    await pumpEventQueue();
+    final before = List.of(states);
+
+    await bloc.close();
+    reads.answer(0, one);
+    await pumpEventQueue();
+
+    expect(states, before);
+    expect(errors, isEmpty);
+  });
+
+  test('a lost session ends the read without rows', () async {
+    final reads = _Held<String, List<LineupGame>>();
+    final answers = [true, false, false];
+    var asked = 0;
+    final bloc = build(
+      serving(reads.call),
+      confirmSession: () async => answers[asked++],
+    );
+    addTearDown(bloc.close);
+    final states = record(bloc);
+
+    bloc.add(const EventLineupRequested('e-1'));
+    await pumpEventQueue();
+    reads.answer(0, two);
+    await pumpEventQueue();
+
+    // The answer could be another user's, so it is dropped.
+    expect(states, [
+      _loading,
+      const EventLineupState(
+        load: EventLineupLoad.failed,
+        refreshFailed: true,
+      ),
+    ]);
+    expect(knownLineup(bloc.state), isNull);
+
+    // And a session that is lost before the send sends nothing.
+    bloc.add(const EventLineupRequested('e-1'));
+    await pumpEventQueue();
+    expect(reads.requests, hasLength(1));
+    // A no, not a throw from the check.
+    verifyNever(
+      () => logger.warn(
+        any(),
+        error: any(named: 'error'),
+        stackTrace: any(named: 'stackTrace'),
+      ),
+    );
+  });
+}

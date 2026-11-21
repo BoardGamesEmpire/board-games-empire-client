@@ -54,12 +54,14 @@ const _loading = EventNominationsState(load: EventNominationsLoad.loading);
 EventNomination _nomination(
   int n, {
   NominationStatus status = NominationStatus.open,
+  String? subtitle,
 }) => EventNomination(
   id: 'n-$n',
   eventId: 'e-1',
   platformGameId: 'pg-$n',
   gameId: 'game-$n',
   title: 'Game $n',
+  subtitle: subtitle,
   platformName: 'Tabletop',
   status: status,
   nominatedById: 'a-1',
@@ -1537,6 +1539,32 @@ void main() {
         loaded([n1, approved], outcome: done),
       ]);
       expect(calls, ['approve', 'read']);
+    });
+
+    test("every outcome carries its nomination's subtitle (#920)", () async {
+      final seafarers = _nomination(
+        2,
+        status: NominationStatus.awaitingApproval,
+        subtitle: 'Seafarers',
+      );
+      final remote = serving(
+        nominations: (_) => [n1, seafarers],
+        approved: (_) => seafarers.copyWith(status: NominationStatus.approved),
+      );
+      final bloc = await readFirst(remote);
+
+      bloc.add(NominationApproved('e-1', seafarers));
+      await pumpEventQueue();
+
+      expect(
+        bloc.state.outcome,
+        const HostDecisionOutcome(
+          HostDecisionResult.done,
+          write: NominationWrite.approve,
+          title: 'Game 2',
+          subtitle: 'Seafarers',
+        ),
+      );
     });
 
     test('reject replaces the row with the rejected nomination, and reads '

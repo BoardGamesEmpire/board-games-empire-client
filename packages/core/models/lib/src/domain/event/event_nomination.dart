@@ -5,6 +5,10 @@ import 'package:models/src/domain/event/vote_type.dart';
 
 part 'event_nomination.freezed.dart';
 
+/// The lineup game a nomination became (#519): its id, and the date it is on,
+/// or null for the event's own lineup.
+typedef LineupLink = ({String id, String? occurrenceId});
+
 /// One attendee's vote on a nomination (#517).
 @freezed
 abstract class EventNominationVote with _$EventNominationVote {
@@ -60,6 +64,13 @@ abstract class EventNomination with _$EventNomination {
 
     /// Read from `platformGame.game.thumbnail`; null when the game has none.
     String? thumbnail,
+
+    /// Read from `platformGame.game.subtitle`; null when the game has none.
+    String? subtitle,
+
+    /// The lineup game the nomination became, or null when it is not in the
+    /// lineup, or the caller cannot read the lineup or the game's date.
+    LineupLink? elevatedTo,
 
     /// The status a paused nomination returns to, or null when it is not
     /// paused.

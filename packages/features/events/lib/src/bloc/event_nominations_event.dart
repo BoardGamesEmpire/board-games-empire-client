@@ -132,9 +132,8 @@ final class NominationWriteDropped extends EventNominationsEvent {
   final NominationWrite write;
   final String title;
 
-  /// A nominate's pool row's subtitle, where it has one (#851), which its
-  /// outcome names the game with. Every other write's outcome names the
-  /// nomination's title alone, so it is ignored there.
+  /// The game's subtitle, where it has one (#851, #920), which the outcome
+  /// names the game with after its title.
   final String? subtitle;
 
   @override

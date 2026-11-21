@@ -1,5 +1,6 @@
 import 'package:events/l10n/events_localizations.dart';
 import 'package:events/src/detail/event_nominations.dart';
+import 'package:events/src/widgets/game_name.dart';
 import 'package:events/src/widgets/nomination_vote_control.dart';
 import 'package:flutter/material.dart';
 import 'package:models/domain.dart';
@@ -32,9 +33,7 @@ Future<void> showNominationVoters(
   String? viewerId,
 }) => showBgePopup<void>(
   context,
-  semanticLabel: EventsLocalizations.of(
-    context,
-  ).eventsVotersTitle(nomination.title),
+  semanticLabel: _votersTitle(context, nomination),
   builder: (_) => _VotersSheet(
     nomination: nomination,
     names: names,
@@ -42,6 +41,13 @@ Future<void> showNominationVoters(
     viewerId: viewerId,
   ),
 );
+
+String _votersTitle(BuildContext context, EventNomination nomination) {
+  final l10n = EventsLocalizations.of(context);
+  return l10n.eventsVotersTitle(
+    gameName(l10n, nomination.title, nomination.subtitle),
+  );
+}
 
 class _VotersSheet extends StatelessWidget {
   const _VotersSheet({
@@ -81,7 +87,9 @@ class _VotersSheet extends StatelessWidget {
             Semantics(
               header: true,
               child: Text(
-                l10n.eventsVotersTitle(nomination.title),
+                l10n.eventsVotersTitle(
+                  gameName(l10n, nomination.title, nomination.subtitle),
+                ),
                 style: theme.textTheme.titleLarge,
               ),
             ),

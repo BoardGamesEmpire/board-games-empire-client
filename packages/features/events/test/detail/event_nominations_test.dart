@@ -363,6 +363,109 @@ void main() {
       ];
       expect(nominateTaken(game, all, scope: whole), NominateTaken.nominated);
     });
+
+    group('from the lineup', () {
+      LineupGame lined({String? occurrenceId, String platformGameId = 'pg'}) =>
+          LineupGame(
+            id: 'l-1',
+            occurrenceId: occurrenceId,
+            platformGameId: platformGameId,
+            gameId: 'g',
+            title: 'Game',
+            platformName: 'Physical',
+            role: ScheduledGameRole.primary,
+            sortOrder: 0,
+            suppliedById: 'o2',
+            supplierAttendeeId: 'att-ada',
+          );
+
+      test('a game added directly is in the lineup', () {
+        expect(
+          nominateTaken(game, const [], scope: whole, lineup: [lined()]),
+          NominateTaken.inLineup,
+        );
+      });
+
+      test('after its supplier leaves, another copy can be nominated', () {
+        // The nomination is still Passed; the lineup no longer holds it.
+        final all = [nom('a', status: NominationStatus.passed, supplied: 'o2')];
+        expect(
+          nominateTaken(game, all, scope: whole, lineup: const []),
+          NominateTaken.no,
+        );
+      });
+
+      test('after the supplier returns the game is still free', () {
+        final all = [nom('a', status: NominationStatus.passed, supplied: 'o2')];
+        expect(
+          nominateTaken(game, all, scope: whole, lineup: const []),
+          NominateTaken.no,
+        );
+        expect(
+          inLineupFor(game, all, scope: d1, lineup: const []),
+          isFalse,
+        );
+      });
+
+      test('a whole-event lineup game blocks every date', () {
+        for (final scope in [whole, d1, d2]) {
+          expect(
+            inLineupFor(game, const [], scope: scope, lineup: [lined()]),
+            isTrue,
+            reason: '$scope',
+          );
+        }
+      });
+
+      test("a date's lineup game does not block the whole event", () {
+        final lineup = [lined(occurrenceId: 'd1')];
+        expect(inLineupFor(game, const [], scope: d1, lineup: lineup), isTrue);
+        expect(inLineupFor(game, const [], scope: d2, lineup: lineup), isFalse);
+        expect(
+          inLineupFor(game, const [], scope: whole, lineup: lineup),
+          isFalse,
+        );
+      });
+
+      test('another game in the lineup takes nothing', () {
+        expect(
+          inLineupFor(
+            game,
+            const [],
+            scope: whole,
+            lineup: [lined(platformGameId: 'pg-other')],
+          ),
+          isFalse,
+        );
+      });
+
+      test('an unknown lineup falls back to the nominations', () {
+        final all = [nom('a', status: NominationStatus.passed, supplied: 'o2')];
+        expect(
+          nominateTaken(game, all, scope: whole),
+          NominateTaken.inLineup,
+        );
+        expect(
+          nominateTaken(game, const [], scope: whole),
+          NominateTaken.no,
+        );
+      });
+
+      test('a hidden lineup falls back to the nominations', () {
+        // A 403 on the lineup read leaves no known lineup.
+        const hidden = EventLineupState(load: EventLineupLoad.hidden);
+        final all = [nom('a', status: NominationStatus.passed, supplied: 'o2')];
+        expect(
+          nominateTaken(
+            game,
+            all,
+            scope: whole,
+            lineup: knownLineup(hidden),
+          ),
+          NominateTaken.inLineup,
+        );
+      });
+    });
   });
 
   group('stillSuppliedBy', () {

@@ -36,7 +36,7 @@ typedef CreatedEvent = ({EventSnapshot snapshot, DateTime? deletedAt});
 /// collection at once and [takeBackGame] takes one back (#516, #851).
 /// [fetchNominations] and [fetchNomination] read the nominations, [nominate]
 /// makes one, [castVote] votes on one and [withdrawNomination] withdraws one
-/// (#517).
+/// (#517). [fetchLineup] reads the lineup the games became (#519).
 /// [approveNomination], [rejectNomination] and [resolveNomination] are the
 /// host's decisions on one (#518).
 ///
@@ -76,6 +76,7 @@ typedef CreatedEvent = ({EventSnapshot snapshot, DateTime? deletedAt});
 /// | [offerGames] | `POST /api/events/:id/attendees/:aid/games/batch` | `{ results }` |
 /// | [takeBackGame] | `DELETE /api/events/:id/attendees/:aid/games/:gid` | `{ message, entry }`, not read |
 /// | [fetchNominations] | `GET /api/events/:id/nominations`, paged to the end | `{ nominations, pagination }` |
+/// | [fetchLineup] | `GET /api/events/:id/lineup`, paged to the end | `{ lineup, pagination }` |
 /// | [fetchNomination] | `GET /api/events/:id/nominations/:nid` | `{ nomination }` |
 /// | [nominate] | `POST /api/events/:id/nominations` | `{ message, nomination }` |
 /// | [castVote] | `POST /api/events/:id/nominations/:nid/votes` | `{ message, vote }`, not read |
@@ -161,10 +162,10 @@ typedef CreatedEvent = ({EventSnapshot snapshot, DateTime? deletedAt});
 /// - [EventRemoteNotFoundException]: a 404 carrying the envelope, from
 ///   [fetchEvent], [fetchAvailabilitySummary], [deleteEvent],
 ///   [fetchHouseholdEvents], [fetchGamesPool], [fetchNominations],
-///   [fetchNomination], or a write naming a row. From [fetchEvent] the event
-///   is gone, or the caller may not read it. From [deleteEvent] no live event
-///   has the id. From [fetchHouseholdEvents] the household is missing or
-///   deleted.
+///   [fetchNomination], [fetchLineup], or a write naming a row. From
+///   [fetchEvent] the event is gone, or the caller may not read it. From
+///   [deleteEvent] no live event has the id. From [fetchHouseholdEvents] the
+///   household is missing or deleted.
 /// - [EventCreateRefusedException]: a 403 or 404 carrying the envelope, from
 ///   [createEvent], which says the API refused that create (below).
 /// - [EventWriteRefusedException]: a 403 carrying the envelope, from
@@ -770,6 +771,28 @@ abstract class EventRemoteDataSource {
   /// Throws [ArgumentError] before the request for an empty id, and otherwise
   /// [EventRemoteException] per the class doc.
   Future<List<EventNomination>> fetchNominations(String eventId);
+
+  /// `GET /api/events/:eventId/lineup`: reads the event's whole lineup, paged
+  /// to the end, `{ lineup, pagination }` (#519, #920).
+  ///
+  /// It holds the event's own games and the games of every date the caller
+  /// can read, each [LineupGame.occurrenceId] naming its date and null for
+  /// the event's own. The rows are in the server's order: by date, the dates
+  /// in their own order, then the event's own games; within each, the host's
+  /// order. A row repeated by a page boundary shifting under a live list is
+  /// kept once, where it was first read. A page that says there is more past
+  /// the page count it gives, or that adds no game not already read, is
+  /// [EventRemotePermanentException], and no later page is sent.
+  ///
+  /// A game names whose offered game supplies it, and the supplier's name
+  /// when the caller may read that attendee; it is null otherwise.
+  ///
+  /// A 403 carrying the envelope is [EventRemoteForbiddenException] and a 404
+  /// carrying it is [EventRemoteNotFoundException]: the event is gone.
+  ///
+  /// Throws [ArgumentError] before the request for an empty id, and otherwise
+  /// [EventRemoteException] per the class doc.
+  Future<List<LineupGame>> fetchLineup(String eventId);
 
   /// `GET /api/events/:eventId/nominations/:nominationId`: reads one
   /// nomination, `{ nomination }` (#517). A 403 carrying the envelope is

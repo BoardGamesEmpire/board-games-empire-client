@@ -1053,6 +1053,25 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
   static String _occurrencesPath(String eventId) =>
       '${_pathOf(eventId)}/occurrences';
 
+  @override
+  Future<List<LineupGame>> fetchLineup(String eventId) async {
+    _checkId(eventId, name: 'eventId');
+
+    // The list is ordered by date and then the host's order, and a page is an
+    // offset into it. A game added or removed mid-read shifts the rows after
+    // it, so a page can repeat a row an earlier one held: the first is kept.
+    // The path names one event, so an application 404 is the service saying
+    // it is gone.
+    return _readAllPages(
+      _lineupPath(eventId),
+      action: 'Lineup',
+      key: 'lineup',
+      noun: 'game',
+      item: _mapLineupGame,
+      idOf: (game) => game.id,
+    );
+  }
+
   static String _occurrencePath(String eventId, String occurrenceId) =>
       '${_occurrencesPath(eventId)}/${Uri.encodeComponent(occurrenceId)}';
 
@@ -1064,6 +1083,8 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
 
   static String _nominationsPath(String eventId) =>
       '${_pathOf(eventId)}/nominations';
+
+  static String _lineupPath(String eventId) => '${_pathOf(eventId)}/lineup';
 
   static String _nominationPath(String eventId, String nominationId) =>
       '${_nominationsPath(eventId)}/${Uri.encodeComponent(nominationId)}';
@@ -1196,6 +1217,7 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
         : null;
     final thumbnail = game['thumbnail'] as String?;
     final pausedFrom = json['pausedFrom'] as String?;
+    final elevatedTo = json['elevatedTo'];
     return EventNomination(
       id: json['id'] as String,
       eventId: json['eventId'] as String,
@@ -1205,6 +1227,10 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
       title: game['title'] as String,
       platformName: platform['name'] as String,
       thumbnail: thumbnail == null || thumbnail.isEmpty ? null : thumbnail,
+      subtitle: game['subtitle'] as String?,
+      elevatedTo: elevatedTo == null
+          ? null
+          : _mapLineupLink(_nestedObject(elevatedTo, 'elevatedTo')),
       status: NominationStatus.fromWire(json['status'] as String),
       pausedFrom: pausedFrom == null
           ? null
@@ -1220,6 +1246,61 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
         item: _mapNominationVote,
       ),
     );
+  }
+
+  static LineupLink _mapLineupLink(Map<String, dynamic> json) =>
+      (id: json['id'] as String, occurrenceId: json['occurrenceId'] as String?);
+
+  /// One lineup game as the server serves it (#519, #920).
+  ///
+  /// The game's title, subtitle, thumbnail and platform come from the nested
+  /// `platformGame`; an empty thumbnail is none. `suppliedBy` is the pool
+  /// row, `{ id, attendeeId, attendee }`. The supplier's name comes from its
+  /// `attendee` as the roster reads an attendee's: display name, else
+  /// username, else the guest's name. The attendee is null for a caller who
+  /// cannot read them, and so is the name.
+  static LineupGame _mapLineupGame(Map<String, dynamic> json) {
+    final platformGame = _nestedObject(json['platformGame'], 'platformGame');
+    final game = _nestedObject(platformGame['game'], 'platformGame.game');
+    final platform = _nestedObject(
+      platformGame['platform'],
+      'platformGame.platform',
+    );
+    final suppliedBy = _nestedObject(json['suppliedBy'], 'suppliedBy');
+    final attendee = suppliedBy['attendee'];
+    final thumbnail = game['thumbnail'] as String?;
+    return LineupGame(
+      id: json['id'] as String,
+      occurrenceId: json['occurrenceId'] as String?,
+      platformGameId: json['platformGameId'] as String,
+      gameId: game['id'] as String,
+      title: game['title'] as String,
+      subtitle: game['subtitle'] as String?,
+      platformName: platform['name'] as String,
+      thumbnail: thumbnail == null || thumbnail.isEmpty ? null : thumbnail,
+      role: ScheduledGameRole.fromWire(json['role'] as String),
+      sortOrder: json['sortOrder'] as int,
+      notes: json['notes'] as String?,
+      maxPlayTime: json['maxPlayTime'] as int?,
+      nominationId: json['nominationId'] as String?,
+      addedById: json['addedById'] as String?,
+      suppliedById: suppliedBy['id'] as String,
+      supplierAttendeeId: suppliedBy['attendeeId'] as String,
+      supplierName: attendee == null
+          ? null
+          : _attendeeName(_nestedObject(attendee, 'suppliedBy.attendee')),
+    );
+  }
+
+  /// The name to show for an attendee summary, as [EventAttendee.name] decides
+  /// it.
+  static String? _attendeeName(Map<String, dynamic> json) {
+    final user = readUserProjection(json['user'], row: 'attendee');
+    return personName(
+          displayName: user.displayName,
+          username: user.username,
+        ) ??
+        personName(username: json['guestName'] as String?);
   }
 
   static EventNominationVote _mapNominationVote(Map<String, dynamic> json) =>
@@ -1983,7 +2064,7 @@ enum _Route {
   /// `GET /api/events/:id` and the poll's summary under it, which name one
   /// event, `GET /api/events/:id/offered-games` (#851), and
   /// `GET /api/events/:id/nominations` with the single nomination under it
-  /// (#517).
+  /// (#517), and `GET /api/events/:id/lineup` (#519).
   row,
 
   /// `POST /api/events`, whose 403 and 404 refuse that create.

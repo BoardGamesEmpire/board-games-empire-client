@@ -71,6 +71,7 @@ EventNominationVote _vote(
 EventNomination _nomination(
   String id, {
   String title = 'Catan',
+  String? subtitle,
   NominationStatus status = NominationStatus.open,
   String by = 'att-bo',
   String? username,
@@ -85,6 +86,7 @@ EventNomination _nomination(
   platformGameId: 'pg-$id',
   gameId: 'g-$id',
   title: title,
+  subtitle: subtitle,
   platformName: 'Tabletop',
   status: status,
   nominatedById: by,
@@ -334,7 +336,7 @@ void main() {
   }
 
   /// Shows [detail] (the viewer's, by default) and opens the Games tab, on
-  /// its Nominations sub-tab, the one it opens on (#945), with the reads that
+  /// its Nominations sub-tab (#945), with the reads that
   /// starts ended. [householdRole] answers the viewer's role in the event's
   /// household; [offline] is the connection, online where it isn't given.
   Future<void> showGames(
@@ -352,6 +354,13 @@ void main() {
     await settle(tester);
     await tester.tap(
       find.byKey(EventDetailScreen.tabKey(EventDetailTab.games)),
+    );
+    await animate(tester);
+    // Games opens on Lineup (#519).
+    await tester.tap(
+      find.byKey(
+        EventDetailScreen.sectionTabKey(EventGamesSection.nominations),
+      ),
     );
     await animate(tester);
   }
@@ -521,6 +530,31 @@ void main() {
   }
 
   group('rows', () {
+    testWidgets('two editions of a game read apart in the nominations list '
+        '(#920)', (tester) async {
+      final handle = tester.ensureSemantics();
+      nominationsAnswer = (_) => [
+        _nomination('n-1', by: 'att-me'),
+        _nomination('n-2', subtitle: 'Seafarers'),
+      ];
+
+      await showGames(tester);
+
+      expect(inRow('n-1', 'Catan'), findsOneWidget);
+      expect(inRow('n-2', 'Catan: Seafarers'), findsOneWidget);
+      expect(
+        tester.getSemantics(inRow('n-2', 'Catan: Seafarers')).label,
+        startsWith('Catan: Seafarers\n'),
+      );
+      // The vote control names its game to a screen reader, with it.
+      expect(
+        find.bySemanticsLabel(RegExp(r'^For Catan: Seafarers$')),
+        findsOneWidget,
+      );
+      expect(find.bySemanticsLabel(RegExp(r'^For Catan$')), findsOneWidget);
+      handle.dispose();
+    });
+
     testWidgets('a nomination row is its cover, its title, "Voting · 3 for · '
         '1 against · 0 interested", spoken with commas, and the vote '
         'control', (tester) async {
@@ -1100,6 +1134,30 @@ void main() {
       matching: find.text(text),
     );
 
+    testWidgets("withdraw's confirm names the subtitle (#920)", (tester) async {
+      nominationsAnswer = (_) => [
+        _nomination(
+          'n-1',
+          title: 'Azul',
+          subtitle: 'Duel',
+          by: 'att-me',
+          from: 'o-2',
+        ),
+      ];
+
+      await showGames(tester);
+      await openQuickLook(tester, 'n-1');
+      await tester.tap(withdrawIn);
+      await animate(tester);
+
+      expect(find.text('Withdraw Azul: Duel?'), findsOneWidget);
+
+      await tester.tap(confirmWithdraw());
+      await animate(tester);
+
+      expect(outcomeIn('You withdrew Azul: Duel.'), findsOneWidget);
+    });
+
     testWidgets('Withdraw asks first and sends on confirm', (tester) async {
       nominationsAnswer = (_) => [mine()];
 
@@ -1483,6 +1541,29 @@ void main() {
       );
       await closeQuickLook(tester);
     }
+
+    testWidgets('an approve outcome names the subtitle (#920)', (tester) async {
+      nominationsAnswer = (_) => [
+        _nomination(
+          'n-1',
+          subtitle: 'Seafarers',
+          status: NominationStatus.awaitingApproval,
+        ),
+      ];
+
+      await showGames(tester, detail: as(host));
+      await openQuickLook(tester, 'n-1');
+      await tester.tap(approveIn);
+      await animate(tester);
+      expect(find.text('Approve Catan: Seafarers?'), findsOneWidget);
+      await tester.tap(confirmDecision());
+      await animate(tester);
+
+      expect(
+        inOutcome('Catan: Seafarers is approved and in the lineup.'),
+        findsOneWidget,
+      );
+    });
 
     testWidgets('Approve asks first and sends on confirm', (tester) async {
       nominationsAnswer = (_) => [catan()];
@@ -2769,6 +2850,7 @@ void main() {
         find.byKey(EventDetailScreen.tabKey(EventDetailTab.games)),
       );
       await animate(tester);
+      await chooseSection(tester, EventGamesSection.nominations);
 
       expect(rowsShown(tester), ['n-2', 'n-5', 'n-1']);
       expect(inUse('status_voting'), findsOneWidget);
