@@ -800,6 +800,25 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
   }
 
   @override
+  Future<List<LineupGame>> fetchLineup(String eventId) async {
+    _checkId(eventId, name: 'eventId');
+
+    // The list is ordered by date and then the host's order, and a page is an
+    // offset into it. A game added or removed mid-read shifts the rows after
+    // it, so a page can repeat a row an earlier one held: the first is kept.
+    // The path names one event, so an application 404 is the service saying
+    // it is gone.
+    return _readAllPages(
+      _lineupPath(eventId),
+      action: 'Lineup',
+      key: 'lineup',
+      noun: 'game',
+      item: _mapLineupGame,
+      idOf: (game) => game.id,
+    );
+  }
+
+  @override
   Future<EventNomination> fetchNomination(
     String eventId,
     String nominationId,
@@ -855,6 +874,90 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     return parseRemote(
       failures,
       () => _mapNomination(_nominationObject(result.body)),
+      action: action,
+      status: result.status,
+    );
+  }
+
+  @override
+  Future<LineupGame> directAddGame(
+    String eventId, {
+    required String platformGameId,
+    required String suppliedById,
+    String? occurrenceId,
+    ScheduledGameRole role = ScheduledGameRole.primary,
+    String? notes,
+    int? maxPlayTime,
+  }) async {
+    _checkId(eventId, name: 'eventId');
+    _checkId(platformGameId, name: 'platformGameId');
+    _checkId(suppliedById, name: 'suppliedById');
+    if (occurrenceId != null) _checkId(occurrenceId, name: 'occurrenceId');
+    // Before anything is sent: an unknown role has no wire name.
+    if (role == ScheduledGameRole.unknown) {
+      throw ArgumentError.value(role, 'role', 'has no wire name');
+    }
+    final isFiller = role == ScheduledGameRole.filler;
+    if (isFiller && maxPlayTime != null && maxPlayTime < 1) {
+      throw ArgumentError.value(
+        maxPlayTime,
+        'maxPlayTime',
+        'must be at least 1',
+      );
+    }
+
+    const action = 'Add game to lineup';
+    const failures = _EventFailures(_Route.lineupAdd);
+    final result = await sendForJson(
+      () => _dio.post<String>(
+        '${_nominationsPath(eventId)}/direct-add',
+        options: _plainBody,
+        data: {
+          'platformGameId': platformGameId,
+          'suppliedById': suppliedById,
+          'occurrenceId': ?occurrenceId,
+          'role': role.toWire(),
+          'notes': ?notes,
+          // Only a filler has a time: the server's field is "for Filler role
+          // only".
+          if (isFiller) 'maxPlayTime': ?maxPlayTime,
+        },
+      ),
+      action: action,
+      family: failures,
+    );
+    return parseRemote(
+      failures,
+      () =>
+          _mapLineupGame(_nestedObject(result.body['eventGame'], 'eventGame')),
+      action: action,
+      status: result.status,
+    );
+  }
+
+  @override
+  Future<LineupGame> removeLineupGame(
+    String eventId,
+    String lineupGameId,
+  ) async {
+    _checkId(eventId, name: 'eventId');
+    _checkId(lineupGameId, name: 'lineupGameId');
+
+    const action = 'Remove game from lineup';
+    const failures = _EventFailures(_Route.lineupRemove);
+    final result = await sendForJson(
+      () => _dio.delete<String>(
+        '${_lineupPath(eventId)}/${Uri.encodeComponent(lineupGameId)}',
+        options: _plainBody,
+      ),
+      action: action,
+      family: failures,
+    );
+    return parseRemote(
+      failures,
+      () => _mapLineupGame(
+        _nestedObject(result.body['lineupGame'], 'lineupGame'),
+      ),
       action: action,
       status: result.status,
     );
@@ -1052,25 +1155,6 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
 
   static String _occurrencesPath(String eventId) =>
       '${_pathOf(eventId)}/occurrences';
-
-  @override
-  Future<List<LineupGame>> fetchLineup(String eventId) async {
-    _checkId(eventId, name: 'eventId');
-
-    // The list is ordered by date and then the host's order, and a page is an
-    // offset into it. A game added or removed mid-read shifts the rows after
-    // it, so a page can repeat a row an earlier one held: the first is kept.
-    // The path names one event, so an application 404 is the service saying
-    // it is gone.
-    return _readAllPages(
-      _lineupPath(eventId),
-      action: 'Lineup',
-      key: 'lineup',
-      noun: 'game',
-      item: _mapLineupGame,
-      idOf: (game) => game.id,
-    );
-  }
 
   static String _occurrencePath(String eventId, String occurrenceId) =>
       '${_occurrencesPath(eventId)}/${Uri.encodeComponent(occurrenceId)}';
@@ -1779,6 +1863,9 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     required String field,
   }) => raw == null ? null : _stringList(raw, field: field);
 
+  /// Reads [raw], the payload's [field], as a list of strings, which it
+  /// must carry: absent, not a list, or holding anything but strings, it is
+  /// a contract break, a [FormatException] naming [field].
   static List<String> _stringList(Object? raw, {required String field}) {
     if (raw is! List) {
       throw FormatException(
@@ -1947,11 +2034,13 @@ final class _EventFailures extends RemoteFailureFamily<EventRemoteException> {
   /// only ever the validation pipe's (#851).
   @override
   EventRemoteException? refused(RemoteRefusal refusal) {
-    if (!refusal.fromApi) return null;
     final status = refusal.status;
     final body = refusal.body;
     final message = refusal.message;
     final cause = refusal.cause;
+    // A code is read only from the API's own envelope, which every coded
+    // refusal arrives in (backend#1260): a bare coded body is not the API's.
+    if (!refusal.fromApi) return null;
     if (status == 403) {
       return switch (route) {
         _Route.create => EventCreateRefusedException(
@@ -1963,7 +2052,9 @@ final class _EventFailures extends RemoteFailureFamily<EventRemoteException> {
         _Route.write ||
         _Route.attendeeAdd ||
         _Route.gameTakeBack ||
-        _Route.nominate => EventWriteRefusedException(
+        _Route.nominate ||
+        _Route.lineupAdd ||
+        _Route.lineupRemove => EventWriteRefusedException(
           message,
           cause: cause,
           statusCode: status,
@@ -1985,7 +2076,9 @@ final class _EventFailures extends RemoteFailureFamily<EventRemoteException> {
         _Route.write ||
         _Route.attendeeAdd ||
         _Route.gameTakeBack ||
-        _Route.nominate => EventRemoteNotFoundException(
+        _Route.nominate ||
+        _Route.lineupAdd ||
+        _Route.lineupRemove => EventRemoteNotFoundException(
           message,
           cause: cause,
           statusCode: status,
@@ -2002,11 +2095,14 @@ final class _EventFailures extends RemoteFailureFamily<EventRemoteException> {
     if (status == 409 &&
         (route == _Route.attendeeAdd ||
             route == _Route.gameTakeBack ||
-            route == _Route.nominate)) {
+            route == _Route.nominate ||
+            route == _Route.lineupAdd ||
+            route == _Route.lineupRemove)) {
       // The user is already on the event, the game still supplies a
-      // nomination or a lineup, or a nomination's supplier is not attending.
-      // A 409 asking for a retry never gets here: the shared classifier reads
-      // it as transient first.
+      // nomination or a lineup, a nomination's or a direct add's supplier is
+      // not attending, or a lineup game's lineup has started (its `code`,
+      // `LINEUP_STARTED`). A 409 asking for a retry never gets here: the
+      // shared classifier reads it as transient first.
       return EventWriteConflictException(
         message,
         cause: cause,
@@ -2083,4 +2179,17 @@ enum _Route {
   /// supplier who is not attending, and its enveloped 400 with one message a
   /// pool row that does not match the game.
   nominate,
+
+  /// `POST /api/events/:id/nominations/direct-add` (#519). Its 403 refuses the
+  /// add (the caller's role, or a mode that is not Direct or HostOnly), its
+  /// 404 is the event, the date or the pool row gone, its 409 a supplier who
+  /// is not attending, and its 400 a pool row that does not match the game or
+  /// a value the validation pipe refused: permanent.
+  lineupAdd,
+
+  /// `DELETE /api/events/:id/lineup/:lineupGameId` (#520). Its 403 refuses the
+  /// removal, its 404 is no such game in the lineup (or one removed a moment
+  /// before), and its 409 carries `LINEUP_STARTED`. The server never answers
+  /// it 400.
+  lineupRemove,
 }

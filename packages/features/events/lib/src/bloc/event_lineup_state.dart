@@ -29,7 +29,102 @@ enum EventLineupLoad {
   gone,
 }
 
-/// The lineup of an event, read online and never cached (#519).
+/// Which write a [LineupWriting] or an [EventLineupOutcome] is about.
+enum LineupWrite {
+  /// A host adding a game from the pool straight to the lineup (#519).
+  add,
+
+  /// A host taking a game out of the lineup (#520).
+  remove,
+}
+
+/// The write that is out: which [LineupWrite], and the id it is about. That
+/// is the pool row's id (`OfferedGame.id`) for an add, and the lineup game's
+/// id for a removal.
+typedef LineupWriting = ({LineupWrite write, String id});
+
+/// How an add ended (#519).
+enum LineupAddResult {
+  /// The game is in the lineup. The lineup is read again.
+  done,
+
+  /// The server refused the write: a 403.
+  refused,
+
+  /// Something the add names is gone: a 404. The server's 404s don't say
+  /// which, and it can be the event, the date or the pool row, so the event
+  /// is read again, and with it the pool.
+  gone,
+
+  /// The game's supplier isn't attending the event: a 409.
+  supplierNotGoing,
+
+  /// Anything else, a 429 among them, or the session could not be confirmed
+  /// as this viewer's (#432).
+  failed,
+
+  /// The screen's own re-check stopped the write, and nothing was sent.
+  dropped,
+}
+
+/// How a removal ended (#520).
+enum LineupRemoveResult {
+  /// The game is out of the lineup.
+  done,
+
+  /// The game isn't in the lineup any more: a 404. Its row is dropped.
+  alreadyGone,
+
+  /// The lineup has started, or the event was called off: a 409. It is read
+  /// again.
+  started,
+
+  /// The server refused the write: a 403.
+  refused,
+
+  /// Anything else, a 429 among them, or the session could not be confirmed
+  /// as this viewer's (#432).
+  failed,
+
+  /// The screen's own re-check stopped the write, and nothing was sent.
+  dropped,
+}
+
+/// How a lineup write ended, for the screen to announce. [title] names the
+/// game it was about, and [subtitle] follows it where the game has one.
+sealed class EventLineupOutcome extends Equatable {
+  const EventLineupOutcome({required this.title, this.subtitle});
+
+  final String title;
+  final String? subtitle;
+}
+
+/// How an add ended.
+final class LineupAddOutcome extends EventLineupOutcome {
+  const LineupAddOutcome(this.result, {required super.title, super.subtitle});
+
+  final LineupAddResult result;
+
+  @override
+  List<Object?> get props => [result, title, subtitle];
+}
+
+/// How a removal ended.
+final class LineupRemoveOutcome extends EventLineupOutcome {
+  const LineupRemoveOutcome(
+    this.result, {
+    required super.title,
+    super.subtitle,
+  });
+
+  final LineupRemoveResult result;
+
+  @override
+  List<Object?> get props => [result, title, subtitle];
+}
+
+/// The lineup of an event, read online and never cached (#519), and the
+/// host's write that is out.
 final class EventLineupState extends Equatable {
   const EventLineupState({
     this.load = EventLineupLoad.idle,
@@ -37,6 +132,8 @@ final class EventLineupState extends Equatable {
     this.answered = false,
     this.refreshFailed = false,
     this.refreshing = false,
+    this.writing,
+    this.outcome,
   });
 
   final EventLineupLoad load;
@@ -59,23 +156,46 @@ final class EventLineupState extends Equatable {
   /// reads it joined have ended. The reads nobody asked for are not narrated.
   final bool refreshing;
 
-  /// This state with the fields given changed.
+  /// The write that is out, until its outcome comes in.
+  final LineupWriting? writing;
+
+  /// A write's end the screen announces. Kept until dismissed, replaced, or
+  /// cleared as the next write starts.
+  final EventLineupOutcome? outcome;
+
+  /// Whether a write is out. A write that arrives meanwhile is ignored.
+  bool get busy => writing != null;
+
+  /// This state with the fields given changed. [writing] and [outcome] are
+  /// given as a function so each can be set back to null.
   EventLineupState copyWith({
     EventLineupLoad? load,
     List<LineupGame>? games,
     bool? answered,
     bool? refreshFailed,
     bool? refreshing,
+    LineupWriting? Function()? writing,
+    EventLineupOutcome? Function()? outcome,
   }) => EventLineupState(
     load: load ?? this.load,
     games: games ?? this.games,
     answered: answered ?? this.answered,
     refreshFailed: refreshFailed ?? this.refreshFailed,
     refreshing: refreshing ?? this.refreshing,
+    writing: writing == null ? this.writing : writing(),
+    outcome: outcome == null ? this.outcome : outcome(),
   );
 
   @override
-  List<Object?> get props => [load, games, answered, refreshFailed, refreshing];
+  List<Object?> get props => [
+    load,
+    games,
+    answered,
+    refreshFailed,
+    refreshing,
+    writing,
+    outcome,
+  ];
 }
 
 /// The lineup [state] has read, or null when no read has answered (or the

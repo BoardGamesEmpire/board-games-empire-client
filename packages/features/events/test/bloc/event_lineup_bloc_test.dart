@@ -399,4 +399,392 @@ void main() {
       ),
     );
   });
+
+  group('writes', () {
+    /// The pool row `g-[n]` of `Game [n]`, offered by `a-[n]`.
+    OfferedGame pool(int n) => OfferedGame(
+      id: 'g-$n',
+      attendeeId: 'a-$n',
+      collectionId: 'c-$n',
+      platformGameId: 'pg-$n',
+      gameId: 'game-$n',
+      title: 'Game $n',
+      subtitle: 'Sub $n',
+      platformName: 'Tabletop',
+    );
+
+    FakeEventRemote writing({
+      FutureOr<LineupGame> Function(DirectAddRequest request)? added,
+      FutureOr<LineupGame> Function(LineupRemoveRequest request)? removed,
+      FutureOr<List<LineupGame>> Function(String eventId)? lineup,
+    }) => FakeEventRemote.detail(
+      (_) => throw UnimplementedError('the lineup reads no event'),
+      lineup: lineup ?? (_) => two,
+      directAdded: added ?? (_) => _game(2),
+      lineupRemoved: removed ?? (_) => _game(1),
+    );
+
+    EventLineupState seen(
+      List<LineupGame> games, {
+      LineupWriting? writing,
+      EventLineupOutcome? outcome,
+    }) => EventLineupState(
+      load: EventLineupLoad.loaded,
+      games: games,
+      answered: true,
+      writing: writing,
+      outcome: outcome,
+    );
+
+    test('an add sends, re-reads and says done', () async {
+      final remote = writing(lineup: (_) => two);
+      final bloc = build(remote);
+      addTearDown(bloc.close);
+
+      bloc.add(
+        LineupGameAdded(
+          'e-1',
+          pool(2),
+          occurrenceId: 'o-1',
+          role: ScheduledGameRole.filler,
+          notes: 'late',
+          maxPlayTime: 30,
+        ),
+      );
+      await pumpEventQueue();
+
+      expect(remote.directAdds, [
+        (
+          eventId: 'e-1',
+          platformGameId: 'pg-2',
+          suppliedById: 'g-2',
+          occurrenceId: 'o-1',
+          role: ScheduledGameRole.filler,
+          notes: 'late',
+          maxPlayTime: 30,
+        ),
+      ]);
+      expect(remote.lineupRequests, ['e-1']);
+      expect(bloc.state.writing, isNull);
+      expect(bloc.state.games, two);
+      expect(
+        bloc.state.outcome,
+        const LineupAddOutcome(
+          LineupAddResult.done,
+          title: 'Game 2',
+          subtitle: 'Sub 2',
+        ),
+      );
+
+      bloc.add(const EventLineupOutcomeDismissed());
+      await pumpEventQueue();
+      expect(bloc.state.outcome, isNull);
+    });
+
+    test('an add shows itself writing, and clears the last outcome', () async {
+      final held = _Held<DirectAddRequest, LineupGame>();
+      final bloc = build(writing(added: held.call));
+      addTearDown(bloc.close);
+      final states = record(bloc);
+
+      bloc.add(LineupGameAdded('e-1', pool(2)));
+      await pumpEventQueue();
+
+      expect(states.first.writing, (write: LineupWrite.add, id: 'g-2'));
+      expect(states.first.busy, isTrue);
+
+      held.answer(0, _game(2));
+      await pumpEventQueue();
+      expect(bloc.state.busy, isFalse);
+    });
+
+    test('an add refused, gone, supplier not going', () async {
+      for (final (error, result) in <(Exception, LineupAddResult)>[
+        (
+          const EventWriteRefusedException('no', statusCode: 403),
+          LineupAddResult.refused,
+        ),
+        (_gone, LineupAddResult.gone),
+        (
+          const EventWriteConflictException('away', statusCode: 409),
+          LineupAddResult.supplierNotGoing,
+        ),
+        (_offline, LineupAddResult.failed),
+        (
+          const EventRemotePermanentException('bad', statusCode: 400),
+          LineupAddResult.failed,
+        ),
+      ]) {
+        final remote = writing(added: (_) => throw error);
+        final bloc = build(remote);
+        addTearDown(bloc.close);
+
+        bloc.add(LineupGameAdded('e-1', pool(2)));
+        await pumpEventQueue();
+
+        expect(
+          bloc.state.outcome,
+          LineupAddOutcome(result, title: 'Game 2', subtitle: 'Sub 2'),
+          reason: '$error',
+        );
+        // A sent write reads again, whatever it said.
+        expect(remote.lineupRequests, ['e-1'], reason: '$error');
+      }
+    });
+
+    test('a remove sends, re-reads and says done', () async {
+      var lineup = two;
+      final remote = writing(
+        lineup: (_) => lineup,
+        removed: (_) {
+          lineup = one;
+          return _game(2);
+        },
+      );
+      final bloc = build(remote);
+      addTearDown(bloc.close);
+      bloc.add(const EventLineupRequested('e-1'));
+      await pumpEventQueue();
+
+      bloc.add(LineupGameRemoved('e-1', _game(2)));
+      await pumpEventQueue();
+
+      expect(remote.lineupRemovals, [(eventId: 'e-1', lineupGameId: 'l-2')]);
+      expect(remote.lineupRequests, ['e-1', 'e-1']);
+      expect(bloc.state.games, one);
+      expect(
+        bloc.state.outcome,
+        const LineupRemoveOutcome(LineupRemoveResult.done, title: 'Game 2'),
+      );
+    });
+
+    test('a remove of a game already gone says so and drops it', () async {
+      final remote = writing(
+        lineup: (_) => two,
+        removed: (_) => throw _gone,
+      );
+      final bloc = build(remote);
+      addTearDown(bloc.close);
+      final states = record(bloc);
+      bloc.add(const EventLineupRequested('e-1'));
+      await pumpEventQueue();
+      states.clear();
+
+      bloc.add(LineupGameRemoved('e-1', _game(2)));
+      await pumpEventQueue();
+
+      // The row is dropped at once, with the outcome, ahead of the read.
+      expect(
+        states.firstWhere((each) => each.outcome != null),
+        seen(
+          [_game(1)],
+          outcome: const LineupRemoveOutcome(
+            LineupRemoveResult.alreadyGone,
+            title: 'Game 2',
+          ),
+        ),
+      );
+      expect(remote.lineupRequests, ['e-1', 'e-1']);
+    });
+
+    test('a read out across a removal answers without the game', () async {
+      final reads = _Held<String, List<LineupGame>>();
+      final remote = writing(lineup: reads.call);
+      final bloc = build(remote);
+      addTearDown(bloc.close);
+      bloc.add(const EventLineupRequested('e-1'));
+      await pumpEventQueue();
+      reads.answer(0, two);
+      await pumpEventQueue();
+
+      // A read goes out, then the removal ends while it is out.
+      bloc.add(const EventLineupRequested('e-1'));
+      await pumpEventQueue();
+      bloc.add(LineupGameRemoved('e-1', _game(2)));
+      await pumpEventQueue();
+      expect(bloc.state.games, one);
+
+      // Served before the delete, it still has the game.
+      reads.answer(1, two);
+      await pumpEventQueue();
+      expect(bloc.state.games, one);
+
+      // The read after the removal started after it, so it is taken as it
+      // comes, even with the game back in it.
+      expect(remote.lineupRequests, ['e-1', 'e-1', 'e-1']);
+      reads.answer(2, two);
+      await pumpEventQueue();
+      expect(bloc.state.games, two);
+    });
+
+    test('a read that fails after a removal keeps the game out', () async {
+      final reads = _Held<String, List<LineupGame>>();
+      final remote = writing(lineup: reads.call);
+      final bloc = build(remote);
+      addTearDown(bloc.close);
+      bloc.add(const EventLineupRequested('e-1'));
+      await pumpEventQueue();
+      reads.answer(0, two);
+      await pumpEventQueue();
+
+      bloc.add(const EventLineupRequested('e-1'));
+      await pumpEventQueue();
+      bloc.add(LineupGameRemoved('e-1', _game(2)));
+      await pumpEventQueue();
+      reads.answer(1, two);
+      await pumpEventQueue();
+      // The read after the removal fails, keeping what was shown.
+      reads.fail(2, _offline);
+      await pumpEventQueue();
+
+      expect(bloc.state.games, one);
+      expect(bloc.state.refreshFailed, isTrue);
+    });
+
+    test('a started lineup says started', () async {
+      final remote = writing(
+        removed: (_) => throw const EventWriteConflictException(
+          'started',
+          statusCode: 409,
+          code: 'LINEUP_STARTED',
+        ),
+      );
+      final bloc = build(remote);
+      addTearDown(bloc.close);
+
+      bloc.add(LineupGameRemoved('e-1', _game(1)));
+      await pumpEventQueue();
+
+      expect(
+        bloc.state.outcome,
+        const LineupRemoveOutcome(LineupRemoveResult.started, title: 'Game 1'),
+      );
+      // The lineup is read again, and the game is still in it.
+      expect(remote.lineupRequests, ['e-1']);
+    });
+
+    test('a remove refused or failed says so', () async {
+      for (final (error, result) in <(Exception, LineupRemoveResult)>[
+        (
+          const EventWriteRefusedException('no', statusCode: 403),
+          LineupRemoveResult.refused,
+        ),
+        (_offline, LineupRemoveResult.failed),
+        (
+          const EventWriteConflictException('odd', statusCode: 409),
+          LineupRemoveResult.failed,
+        ),
+      ]) {
+        final bloc = build(writing(removed: (_) => throw error));
+        addTearDown(bloc.close);
+
+        bloc.add(LineupGameRemoved('e-1', _game(1)));
+        await pumpEventQueue();
+
+        expect(
+          bloc.state.outcome,
+          LineupRemoveOutcome(result, title: 'Game 1'),
+          reason: '$error',
+        );
+      }
+    });
+
+    test('a second write while one is out is ignored', () async {
+      final held = _Held<LineupRemoveRequest, LineupGame>();
+      final remote = writing(removed: held.call);
+      final bloc = build(remote);
+      addTearDown(bloc.close);
+
+      bloc.add(LineupGameRemoved('e-1', _game(1)));
+      await pumpEventQueue();
+      bloc
+        ..add(LineupGameRemoved('e-1', _game(2)))
+        ..add(LineupGameAdded('e-1', pool(3)))
+        ..add(const LineupWriteDropped(LineupWrite.add, title: 'Game 3'));
+      await pumpEventQueue();
+
+      expect(held.requests, hasLength(1));
+      expect(remote.directAdds, isEmpty);
+      expect(bloc.state.outcome, isNull);
+      expect(bloc.state.writing, (write: LineupWrite.remove, id: 'l-1'));
+
+      held.answer(0, _game(1));
+      await pumpEventQueue();
+      expect(bloc.state.busy, isFalse);
+    });
+
+    test('a dropped write says so and sends nothing', () async {
+      final remote = writing();
+      final bloc = build(remote);
+      addTearDown(bloc.close);
+
+      bloc.add(
+        const LineupWriteDropped(
+          LineupWrite.remove,
+          title: 'Game 1',
+          subtitle: 'Sub',
+        ),
+      );
+      await pumpEventQueue();
+
+      expect(
+        bloc.state.outcome,
+        const LineupRemoveOutcome(
+          LineupRemoveResult.dropped,
+          title: 'Game 1',
+          subtitle: 'Sub',
+        ),
+      );
+      expect(remote.lineupRemovals, isEmpty);
+      expect(remote.lineupRequests, isEmpty);
+    });
+
+    test('the same drop twice is two outcomes, cleared between', () async {
+      // A screen reader hears an outcome as it lands, so a second drop must
+      // land as a state of its own.
+      final bloc = build(writing());
+      addTearDown(bloc.close);
+      final states = <EventLineupState>[];
+      final listening = bloc.stream.listen(states.add);
+      addTearDown(listening.cancel);
+      const drop = LineupWriteDropped(LineupWrite.add, title: 'Game 1');
+      const dropped = LineupAddOutcome(
+        LineupAddResult.dropped,
+        title: 'Game 1',
+      );
+
+      bloc.add(drop);
+      await pumpEventQueue();
+      bloc.add(drop);
+      await pumpEventQueue();
+
+      expect(
+        [for (final state in states) state.outcome],
+        [
+          dropped,
+          null,
+          dropped,
+        ],
+      );
+    });
+
+    test('a session that is lost sends nothing and says failed', () async {
+      final remote = writing();
+      final bloc = build(remote, confirmSession: () async => false);
+      addTearDown(bloc.close);
+
+      bloc.add(LineupGameAdded('e-1', pool(2)));
+      await pumpEventQueue();
+
+      expect(remote.directAdds, isEmpty);
+      expect(
+        bloc.state.outcome,
+        const LineupAddOutcome(
+          LineupAddResult.failed,
+          title: 'Game 2',
+          subtitle: 'Sub 2',
+        ),
+      );
+    });
+  });
 }

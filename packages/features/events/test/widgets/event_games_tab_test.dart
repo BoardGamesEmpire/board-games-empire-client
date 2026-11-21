@@ -36,6 +36,12 @@ const _stillSuppliesYoursCopy =
 const _stillSuppliesTheirsCopy =
     "Catan is nominated, so it can't come off your games yet. Only whoever "
     'nominated it can withdraw it.';
+const _stillInLineupCopy =
+    'Catan is in the lineup. A host can take it out of the lineup, then it '
+    'can come off your games.';
+const _stillNominatedCopy =
+    "Catan is nominated, so it can't come off your games yet. Whoever "
+    'nominated it can withdraw it.';
 const _notGoingCopy =
     "You've said you're not going, so a game you offer couldn't be picked. "
     'Change your answer to offer games.';
@@ -151,6 +157,15 @@ void main() {
   /// last nominations read served it.
   late FutureOr<EventNomination> Function(WithdrawRequest request)
   withdrawAnswer;
+
+  /// What each direct add answers (#519): the game, in the lineup as the
+  /// request put it, unless a test says otherwise.
+  late FutureOr<LineupGame> Function(DirectAddRequest request) directAddAnswer;
+
+  /// What each lineup removal answers (#520): none is faked unless a test
+  /// says so.
+  late FutureOr<LineupGame> Function(LineupRemoveRequest request)
+  lineupRemoveAnswer;
 
   /// What a quick look's View game asked to open (#957): the route it was
   /// asked from, and the game's id.
@@ -290,6 +305,28 @@ void main() {
           .firstWhere((each) => each.id == request.nominationId)
           .copyWith(status: NominationStatus.withdrawn);
     };
+    directAddAnswer = (request) {
+      final game = served.firstWhere(
+        (each) => each.id == request.suppliedById,
+      );
+      return LineupGame(
+        id: 'l-${request.suppliedById}',
+        occurrenceId: request.occurrenceId,
+        platformGameId: request.platformGameId,
+        gameId: game.gameId,
+        title: game.title,
+        subtitle: game.subtitle,
+        platformName: game.platformName,
+        role: request.role,
+        sortOrder: 0,
+        notes: request.notes,
+        maxPlayTime: request.maxPlayTime,
+        suppliedById: request.suppliedById,
+        supplierAttendeeId: game.attendeeId,
+      );
+    };
+    lineupRemoveAnswer = (_) =>
+        throw UnimplementedError('no lineup removal answer');
     heldRead = null;
     openedGames.clear();
     openGameAnswer = (_, _) {};
@@ -338,6 +375,8 @@ void main() {
       },
       nominated: (request) async => kept.keep(await nominateAnswer(request)),
       withdrawn: (request) async => kept.keep(await withdrawAnswer(request)),
+      directAdded: (request) async => directAddAnswer(request),
+      lineupRemoved: (request) async => lineupRemoveAnswer(request),
     );
     addTearDown(kept.clear);
     return MaterialApp(
@@ -2515,10 +2554,12 @@ void main() {
       final handle = tester.ensureSemantics();
       final adas = _game('o-2', 'att-ada', 'Azul', subtitle: 'Summer Pavilion');
       served = [seafarers, adas];
+      // A moderator, who may take anyone's game back and, unlike a host, is
+      // offered no Add to lineup in Nominate's place (#519).
       await showGames(
         tester,
         detail: detailOf(
-          viewer: _row('att-me', name: 'Me', role: EventRole.host),
+          viewer: _row('att-me', name: 'Me', role: EventRole.moderator),
         ),
       );
       await tester.ensureVisible(takeBack(seafarers.id));
@@ -2552,6 +2593,297 @@ void main() {
     // host-only event nobody is offered Nominate.
     setUp(() => defaultPolicy = policyOf(GameAdditionMode.hostOnly));
 
+    group('says up front what the game still supplies (#905)', () {
+      /// A lineup game the viewer's Catan supplies: on the date
+      /// [occurrenceId], or the event's own where it is null.
+      LineupGame catanInLineup({String? occurrenceId}) => LineupGame(
+        id: 'l-1',
+        occurrenceId: occurrenceId,
+        platformGameId: catanMine.platformGameId,
+        gameId: catanMine.gameId,
+        title: 'Catan',
+        platformName: 'Tabletop',
+        role: ScheduledGameRole.primary,
+        sortOrder: 0,
+        suppliedById: catanMine.id,
+        supplierAttendeeId: catanMine.attendeeId,
+      );
+
+      /// The viewer's Catan with the counts the pool's read served.
+      OfferedGame catanCounted({int nominations = 0, int lineup = 0}) =>
+          catanMine.copyWith(
+            suppliedNominations: nominations,
+            suppliedLineup: lineup,
+          );
+
+      /// [copy] drawn under Catan's Take back, on its row.
+      Finder reasonOnCatan(String copy) => find.descendant(
+        of: row(catanMine.id),
+        matching: find.text(copy, skipOffstage: false),
+        skipOffstage: false,
+      );
+
+      VoidCallback? catanPress(WidgetTester tester) =>
+          tester.widget<ButtonStyleButton>(takeBack(catanMine.id)).onPressed;
+
+      /// Catan's Take back is disabled, saying [copy] as its hint and under
+      /// it, where only the eye reads it.
+      Future<void> expectBlocked(WidgetTester tester, String copy) async {
+        await tester.ensureVisible(takeBack(catanMine.id));
+        await tester.pump();
+        expect(catanPress(tester), isNull);
+        expect(reasonOnCatan(copy), findsOneWidget);
+        expect(
+          tester.getSemantics(takeBack(catanMine.id)),
+          matchesSemantics(
+            label: 'Take back Catan',
+            hint: copy,
+            isButton: true,
+            hasEnabledState: true,
+          ),
+        );
+        expect(find.bySemanticsLabel(copy), findsNothing);
+      }
+
+      testWidgets("a row the pool says supplies the lineup can't be taken "
+          'back, and says why', (tester) async {
+        final handle = tester.ensureSemantics();
+        served = [catanCounted(lineup: 1), azul];
+        await showGames(tester);
+
+        await expectBlocked(tester, _stillInLineupCopy);
+        await tester.tap(takeBack(catanMine.id), warnIfMissed: false);
+        await animate(tester);
+        expect(remote.takeBacks, isEmpty);
+        handle.dispose();
+      });
+
+      testWidgets('a row only the lineup read shows supplying is blocked '
+          'too', (tester) async {
+        final handle = tester.ensureSemantics();
+        // The pool was read before the game went in: its count says none.
+        served = [catanCounted(), azul];
+        lineupAnswer = (_) => [catanInLineup()];
+        await showGames(tester);
+
+        await expectBlocked(tester, _stillInLineupCopy);
+        handle.dispose();
+      });
+
+      testWidgets('a null count and an unknown lineup leave Take back '
+          'enabled', (tester) async {
+        // No count the viewer may read, and a lineup that couldn't be read:
+        // neither says none, so the 409 is still the answer.
+        served = [catanMine, azul];
+        lineupAnswer = (_) => throw _offline;
+        takeBackAnswer = (_) => throw const EventWriteConflictException(
+          'supplies',
+          statusCode: 409,
+        );
+        await showGames(tester);
+
+        expect(catanPress(tester), isNotNull);
+        await press(tester, takeBack(catanMine.id));
+        await animate(tester);
+
+        expect(remote.takeBacks, hasLength(1));
+        expect(
+          find.descendant(
+            of: outcome(),
+            matching: find.text(_stillSuppliesCopy),
+          ),
+          findsOneWidget,
+        );
+      });
+
+      testWidgets('removing the game from the lineup re-enables Take back '
+          'after the pool re-read', (tester) async {
+        // A moderator, who may take a game out of the lineup, and on a
+        // host-only event has Take back as the row's main action (#519).
+        served = [catanCounted(lineup: 1), azul];
+        lineupAnswer = (_) => [catanInLineup()];
+        await showGames(
+          tester,
+          detail: detailOf(
+            viewer: _row('att-me', name: 'Me', role: EventRole.moderator),
+          ),
+        );
+        expect(catanPress(tester), isNull);
+
+        // Taken out: the lineup is read again, then the pool.
+        final pool = Completer<List<OfferedGame>>();
+        poolAnswer = (_) => pool.future;
+        lineupAnswer = (_) => const [];
+        lineupRemoveAnswer = (_) => catanInLineup();
+        blocOf<EventLineupBloc>(
+          tester,
+        ).add(LineupGameRemoved('e-1', catanInLineup()));
+        await animate(tester);
+
+        // The lineup no longer holds it, but the pool's count still says it
+        // does until the pool is read again.
+        expect(remote.lineupRemovals, hasLength(1));
+        expect(catanPress(tester), isNull);
+        expect(reasonOnCatan(_stillInLineupCopy), findsOneWidget);
+
+        pool.complete([catanCounted(), azul]);
+        await animate(tester);
+
+        expect(catanPress(tester), isNotNull);
+        expect(reasonOnCatan(_stillInLineupCopy), findsNothing);
+      });
+
+      testWidgets('an add that went through, and a removal that found the '
+          'game out already, each read the pool again; a refused add does '
+          'not', (tester) async {
+        // A moderator, who may take a game out of the lineup.
+        served = [catanCounted(), azul];
+        lineupAnswer = (_) => const [];
+        await showGames(
+          tester,
+          detail: detailOf(
+            viewer: _row('att-me', name: 'Me', role: EventRole.moderator),
+          ),
+        );
+        final lineup = blocOf<EventLineupBloc>(tester);
+        var reads = remote.poolRequests.length;
+
+        // Refused: nothing in the lineup changed.
+        directAddAnswer = (_) =>
+            throw const EventWriteRefusedException('no', statusCode: 403);
+        lineup.add(LineupGameAdded('e-1', catanCounted()));
+        await animate(tester);
+        expect(
+          lineup.state.outcome,
+          isA<LineupAddOutcome>().having(
+            (outcome) => outcome.result,
+            'result',
+            LineupAddResult.refused,
+          ),
+        );
+        expect(remote.poolRequests, hasLength(reads));
+
+        // Added: the row now supplies a lineup game (#905).
+        directAddAnswer = (_) => catanInLineup();
+        lineupAnswer = (_) => [catanInLineup()];
+        lineup.add(LineupGameAdded('e-1', catanCounted()));
+        await animate(tester);
+        expect(
+          lineup.state.outcome,
+          isA<LineupAddOutcome>().having(
+            (outcome) => outcome.result,
+            'result',
+            LineupAddResult.done,
+          ),
+        );
+        expect(remote.poolRequests, hasLength(reads + 1));
+        reads = remote.poolRequests.length;
+
+        // Already out (#520): the row may no longer supply it.
+        lineupRemoveAnswer = (_) =>
+            throw const EventRemoteNotFoundException('gone', statusCode: 404);
+        lineupAnswer = (_) => const [];
+        lineup.add(LineupGameRemoved('e-1', catanInLineup()));
+        await animate(tester);
+        expect(
+          lineup.state.outcome,
+          isA<LineupRemoveOutcome>().having(
+            (outcome) => outcome.result,
+            'result',
+            LineupRemoveResult.alreadyGone,
+          ),
+        );
+        expect(remote.poolRequests, hasLength(reads + 1));
+      });
+
+      testWidgets('a game in a started lineup does not block Take back', (
+        tester,
+      ) async {
+        // Its date has started: it stays in the lineup as the record of
+        // what was planned (#520), and the 409 no longer counts it.
+        served = [catanCounted(), azul];
+        lineupAnswer = (_) => [catanInLineup(occurrenceId: 'o-0')];
+        await showGames(
+          tester,
+          detail: detailOf(
+            occurrences: [
+              confirmed(
+                'o-0',
+                DateTime(2026, 10, 22, 19),
+              ).copyWith(eventId: 'e-1'),
+            ],
+          ),
+        );
+
+        expect(catanPress(tester), isNotNull);
+        expect(reasonOnCatan(_stillInLineupCopy), findsNothing);
+      });
+
+      testWidgets('a live nomination the pool counts names its step, with no '
+          'nominations held to say whose', (tester) async {
+        final handle = tester.ensureSemantics();
+        served = [catanCounted(nominations: 1, lineup: 1), azul];
+        await showGames(tester);
+
+        // The nomination's step comes before the lineup's, as the 409's
+        // banner names them.
+        await expectBlocked(tester, _stillNominatedCopy);
+        expect(reasonOnCatan(_stillInLineupCopy), findsNothing);
+        handle.dispose();
+      });
+
+      testWidgets('a 409, then a read that says why, keeps focus on Take '
+          'back, inert and saying why, until focus moves on', (tester) async {
+        final handle = tester.ensureSemantics();
+        // Nothing to tell from as it is pressed.
+        served = [catanMine, azul];
+        takeBackAnswer = (_) => throw const EventWriteConflictException(
+          'supplies',
+          statusCode: 409,
+        );
+        await showGames(tester);
+        await tester.ensureVisible(takeBack(catanMine.id));
+        await tester.pump();
+        final focus = takeBackFocus(tester, catanMine.id)..requestFocus();
+        await tester.pump();
+
+        // The pool's read after the 409 counts the nomination.
+        served = [catanCounted(nominations: 1), azul];
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+        await animate(tester);
+        await animate(tester);
+
+        expect(remote.takeBacks, hasLength(1));
+        expect(reasonOnCatan(_stillNominatedCopy), findsOneWidget);
+        // Still focused, so the keyboard user keeps their place, and read as
+        // unavailable, saying why.
+        expect(focus.hasPrimaryFocus, isTrue);
+        expect(
+          tester.getSemantics(takeBack(catanMine.id)),
+          matchesSemantics(
+            label: 'Take back Catan',
+            hint: _stillNominatedCopy,
+            isButton: true,
+            hasEnabledState: true,
+            isFocusable: true,
+            isFocused: true,
+            hasFocusAction: true,
+          ),
+        );
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+        await animate(tester);
+        expect(remote.takeBacks, hasLength(1));
+
+        // Once focus moves on, it is disabled.
+        headFocus(tester, catanMine.id).requestFocus();
+        await tester.pump();
+        expect(focus.hasFocus, isFalse);
+        await tester.pump();
+        expect(catanPress(tester), isNull);
+        handle.dispose();
+      });
+    });
+
     testWidgets('sends the viewer, the event and the game, and the footer says '
         "it's off", (tester) async {
       await showGames(tester);
@@ -2577,6 +2909,92 @@ void main() {
       );
       await tester.pump();
       expect(outcome(), findsNothing);
+    });
+
+    testWidgets("Take back refused for a lineup game names a host's step", (
+      tester,
+    ) async {
+      final held = Completer<void>();
+      takeBackAnswer = (_) => held.future;
+      await showGames(tester);
+
+      // Pressed with nothing to say it supplies anything, which would have
+      // disabled it (#905); a read finds it went into the lineup meanwhile.
+      await press(tester, takeBack(catanMine.id));
+      await animate(tester);
+      lineupAnswer = (_) => [
+        LineupGame(
+          id: 'l-1',
+          platformGameId: catanMine.platformGameId,
+          gameId: catanMine.gameId,
+          title: 'Catan',
+          platformName: 'Tabletop',
+          role: ScheduledGameRole.primary,
+          sortOrder: 0,
+          suppliedById: catanMine.id,
+          supplierAttendeeId: catanMine.attendeeId,
+        ),
+      ];
+      blocOf<EventLineupBloc>(tester).add(const EventLineupRequested('e-1'));
+      await animate(tester);
+      held.completeError(
+        const EventWriteConflictException('supplies', statusCode: 409),
+      );
+      await animate(tester);
+
+      expect(
+        find.descendant(
+          of: outcome(),
+          matching: find.text(
+            'Catan is in the lineup. A host can take it out of the lineup, '
+            'then it can come off your games.',
+          ),
+        ),
+        findsOneWidget,
+      );
+      expect(row(catanMine.id), findsOneWidget);
+    });
+
+    testWidgets('a lineup game that has started keeps the generic copy, as no '
+        'host can take it out', (tester) async {
+      takeBackAnswer = (_) => throw const EventWriteConflictException(
+        'supplies',
+        statusCode: 409,
+      );
+      lineupAnswer = (_) => [
+        LineupGame(
+          id: 'l-1',
+          occurrenceId: 'o-0',
+          platformGameId: catanMine.platformGameId,
+          gameId: catanMine.gameId,
+          title: 'Catan',
+          platformName: 'Tabletop',
+          role: ScheduledGameRole.primary,
+          sortOrder: 0,
+          suppliedById: catanMine.id,
+          supplierAttendeeId: catanMine.attendeeId,
+        ),
+      ];
+      await showGames(
+        tester,
+        detail: detailOf(
+          viewer: _row('att-me', name: 'Me', role: EventRole.moderator),
+          occurrences: [
+            confirmed(
+              'o-0',
+              DateTime(2026, 10, 22, 19),
+            ).copyWith(eventId: 'e-1'),
+          ],
+        ),
+      );
+
+      await press(tester, takeBack(catanMine.id));
+      await animate(tester);
+
+      expect(
+        find.descendant(of: outcome(), matching: find.text(_stillSuppliesCopy)),
+        findsOneWidget,
+      );
     });
 
     testWidgets('a 409 says the game is nominated or in the lineup, in the '
@@ -2632,13 +3050,34 @@ void main() {
       Finder says(String copy) =>
           find.descendant(of: outcome(), matching: find.text(copy));
 
-      testWidgets('a 409 on a game the viewer nominated says to withdraw the '
-          'nomination first', (tester) async {
-        nominationsAnswer = (_) => [catanNominated()];
+      /// Takes the viewer's Catan back with no nomination to say it
+      /// supplies one, which would have disabled it (#905), and reads the
+      /// nominations again, as [nominated] answers, while the take-back is
+      /// out: as one made meanwhile is found. Then the server refuses it.
+      Future<void> refusedAfterNominating(
+        WidgetTester tester,
+        List<EventNomination> nominated,
+      ) async {
+        final held = Completer<void>();
+        takeBackAnswer = (_) => held.future;
         await showGames(tester);
 
         await press(tester, takeBack(catanMine.id));
         await animate(tester);
+        nominationsAnswer = (_) => nominated;
+        blocOf<EventNominationsBloc>(
+          tester,
+        ).add(const EventNominationsRequested('e-1'));
+        await animate(tester);
+        held.completeError(
+          const EventWriteConflictException('supplies', statusCode: 409),
+        );
+        await animate(tester);
+      }
+
+      testWidgets('a 409 on a game the viewer nominated says to withdraw the '
+          'nomination first', (tester) async {
+        await refusedAfterNominating(tester, [catanNominated()]);
 
         expect(says(_stillSuppliesYoursCopy), findsOneWidget);
         expect(row(catanMine.id), findsOneWidget);
@@ -2646,13 +3085,9 @@ void main() {
 
       testWidgets('a 409 on a game someone else nominated says only they can '
           'withdraw it', (tester) async {
-        nominationsAnswer = (_) => [
+        await refusedAfterNominating(tester, [
           catanNominated(by: 'att-ada', status: NominationStatus.paused),
-        ];
-        await showGames(tester);
-
-        await press(tester, takeBack(catanMine.id));
-        await animate(tester);
+        ]);
 
         expect(says(_stillSuppliesTheirsCopy), findsOneWidget);
       });
@@ -2661,14 +3096,10 @@ void main() {
           'nominated says the others must withdraw theirs too', (
         tester,
       ) async {
-        nominationsAnswer = (_) => [
+        await refusedAfterNominating(tester, [
           catanNominated(),
           catanNominated(by: 'att-ada').copyWith(id: 'n-2'),
-        ];
-        await showGames(tester);
-
-        await press(tester, takeBack(catanMine.id));
-        await animate(tester);
+        ]);
 
         expect(
           says(
@@ -2700,10 +3131,16 @@ void main() {
           "nomination by the game's id", (tester) async {
         final held = Completer<void>();
         takeBackAnswer = (_) => held.future;
-        nominationsAnswer = (_) => [catanNominated()];
         await showGames(tester);
 
         await press(tester, takeBack(catanMine.id));
+        await animate(tester);
+        // The nominations, read again while the take-back is out, find one
+        // made meanwhile (#905).
+        nominationsAnswer = (_) => [catanNominated()];
+        blocOf<EventNominationsBloc>(
+          tester,
+        ).add(const EventNominationsRequested('e-1'));
         await animate(tester);
         // A read lands while the take-back is out, without the game.
         served = [azul, catanAdas, root];
@@ -2724,11 +3161,7 @@ void main() {
       testWidgets('the copy stays as it landed once the nomination is '
           'withdrawn', (tester) async {
         final handle = tester.ensureSemantics();
-        nominationsAnswer = (_) => [catanNominated()];
-        await showGames(tester);
-
-        await press(tester, takeBack(catanMine.id));
-        await animate(tester);
+        await refusedAfterNominating(tester, [catanNominated()]);
         expect(says(_stillSuppliesYoursCopy), findsOneWidget);
         final banner = tester.element(outcome());
 
@@ -3734,10 +4167,12 @@ void main() {
 
   group("Take back on someone else's row (#518)", () {
     // Take back is a row's main action only where Nominate isn't (#946): on a
-    // host-only event nobody is offered Nominate, the host included.
+    // host-only event nobody is offered Nominate. A host is offered Add to
+    // lineup in its place there (#519), so the viewer who takes anyone's game
+    // back from the row is a moderator, offered neither.
     setUp(() => defaultPolicy = policyOf(GameAdditionMode.hostOnly));
 
-    final host = _row('att-me', name: 'Me', role: EventRole.host);
+    final moderator = _row('att-me', name: 'Me', role: EventRole.moderator);
     const askAzul = "Take Azul off Ada's games?";
     const askBody = 'Only they can offer it again.';
 
@@ -3745,9 +4180,49 @@ void main() {
         find.byKey(EventDetailScreen.poolTakeBackConfirmKey);
     Finder keepIt() => find.byKey(EventDetailScreen.poolTakeBackKeepKey);
 
-    testWidgets("a host gets Take back on someone else's row", (tester) async {
+    testWidgets("Take back on someone else's row says up front whose games "
+        "the game can't come off (#905)", (tester) async {
       final handle = tester.ensureSemantics();
-      await showGames(tester, detail: detailOf(viewer: host));
+      const copy =
+          'Azul is in the lineup. A host can take it out of the lineup, then '
+          "it can come off Ada's games.";
+      served = [
+        catanMine,
+        azul.copyWith(suppliedNominations: 0, suppliedLineup: 1),
+      ];
+      await showGames(tester, detail: detailOf(viewer: moderator));
+      await tester.ensureVisible(takeBack(azul.id));
+      await tester.pump();
+
+      expect(
+        tester.widget<ButtonStyleButton>(takeBack(azul.id)).onPressed,
+        isNull,
+      );
+      expect(
+        find.descendant(
+          of: row(azul.id),
+          matching: find.text(copy, skipOffstage: false),
+          skipOffstage: false,
+        ),
+        findsOneWidget,
+      );
+      expect(
+        tester.getSemantics(takeBack(azul.id)),
+        matchesSemantics(
+          label: 'Take back Azul',
+          hint: copy,
+          isButton: true,
+          hasEnabledState: true,
+        ),
+      );
+      handle.dispose();
+    });
+
+    testWidgets("a moderator gets Take back on someone else's row", (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      await showGames(tester, detail: detailOf(viewer: moderator));
 
       for (final game in [catanMine, azul, catanAdas, root]) {
         expect(takeBack(game.id), findsOneWidget, reason: game.title);
@@ -3795,7 +4270,7 @@ void main() {
 
     testWidgets("taking back someone else's game asks first and sends their "
         'attendee id', (tester) async {
-      await showGames(tester, detail: detailOf(viewer: host));
+      await showGames(tester, detail: detailOf(viewer: moderator));
       served = [catanMine, catanAdas, root];
 
       await press(tester, takeBack(azul.id));
@@ -3847,7 +4322,7 @@ void main() {
 
     testWidgets('Keep it sends nothing, says nothing, and puts focus back on '
         'Take back', (tester) async {
-      await showGames(tester, detail: detailOf(viewer: host));
+      await showGames(tester, detail: detailOf(viewer: moderator));
       await tester.ensureVisible(takeBack(azul.id));
       await tester.pump();
       takeBackFocus(tester, azul.id).requestFocus();
@@ -3881,7 +4356,7 @@ void main() {
     testWidgets("the viewer's own Take back still sends without asking", (
       tester,
     ) async {
-      await showGames(tester, detail: detailOf(viewer: host));
+      await showGames(tester, detail: detailOf(viewer: moderator));
       served = [azul, catanAdas, root];
 
       await press(tester, takeBack(catanMine.id));
@@ -3900,7 +4375,10 @@ void main() {
 
       await showGames(
         tester,
-        detail: detailOf(viewer: host, roster: [host, _row('att-nn')]),
+        detail: detailOf(
+          viewer: moderator,
+          roster: [moderator, _row('att-nn')],
+        ),
       );
       await press(tester, takeBack('o-9'));
       await animate(tester);
@@ -3949,7 +4427,7 @@ void main() {
 
     testWidgets('sends nothing if the viewer may no longer take it back once '
         'the dialog closes, and the footer says so', (tester) async {
-      await showGames(tester, detail: detailOf(viewer: host));
+      await showGames(tester, detail: detailOf(viewer: moderator));
       await press(tester, takeBack(azul.id));
       await animate(tester);
       expect(find.text(askAzul), findsOneWidget);
@@ -3979,7 +4457,7 @@ void main() {
         'which gets focus back, and the take-back waits for the read', (
       tester,
     ) async {
-      await showGames(tester, detail: detailOf(viewer: host));
+      await showGames(tester, detail: detailOf(viewer: moderator));
       await tester.ensureVisible(takeBack(azul.id));
       await tester.pump();
       takeBackFocus(tester, azul.id).requestFocus();
@@ -4002,7 +4480,7 @@ void main() {
       expect(button.focusNode!.hasPrimaryFocus, isTrue);
 
       served = [catanMine, catanAdas, root];
-      heldRead!.complete(detailOf(viewer: host).snapshot);
+      heldRead!.complete(detailOf(viewer: moderator).snapshot);
       heldRead = null;
       await animate(tester);
       await animate(tester);
@@ -4022,7 +4500,7 @@ void main() {
       addTearDown(offline.dispose);
       await showGames(
         tester,
-        detail: detailOf(viewer: host),
+        detail: detailOf(viewer: moderator),
         offline: offline,
       );
       await tester.ensureVisible(takeBack(azul.id));
@@ -4094,27 +4572,51 @@ void main() {
         createdAt: kItemInstant,
       );
 
-      /// Shows the event as host and takes Ada's Azul back, confirmed, with
-      /// [after] what the pool's reads serve from the press on.
+      /// Shows the event as a moderator and takes Ada's Azul back,
+      /// confirmed, with [after] what the pool's reads serve from the press
+      /// on. While the dialog asks, the nominations are read again as
+      /// [nominatedMeanwhile] answers, and the lineup as [linedUpMeanwhile]
+      /// does, where given: a read that knew before the press would have
+      /// disabled Take back, saying why (#905), so the 409 names what was
+      /// done meanwhile.
       Future<void> takeBackAzul(
         WidgetTester tester, {
         List<OfferedGame>? after,
+        List<EventNomination>? nominatedMeanwhile,
+        List<LineupGame>? linedUpMeanwhile,
       }) async {
-        await showGames(tester, detail: detailOf(viewer: host));
+        await showGames(tester, detail: detailOf(viewer: moderator));
         if (after != null) served = after;
         await press(tester, takeBack(azul.id));
         await animate(tester);
+        if (nominatedMeanwhile != null) {
+          nominationsAnswer = (_) => nominatedMeanwhile;
+          blocOf<EventNominationsBloc>(
+            tester,
+          ).add(const EventNominationsRequested('e-1'));
+          await animate(tester);
+        }
+        if (linedUpMeanwhile != null) {
+          lineupAnswer = (_) => linedUpMeanwhile;
+          blocOf<EventLineupBloc>(
+            tester,
+          ).add(const EventLineupRequested('e-1'));
+          await animate(tester);
+        }
         await tester.tap(confirmTakeBack());
         await animate(tester);
       }
 
-      testWidgets("a host's take-back of someone else's game says it is off "
-          'their games', (tester) async {
-        await takeBackAzul(tester, after: [catanMine, catanAdas, root]);
+      testWidgets(
+        "a moderator's take-back of someone else's game says it is off "
+        'their games',
+        (tester) async {
+          await takeBackAzul(tester, after: [catanMine, catanAdas, root]);
 
-        expect(says("Azul is off Ada's games."), findsOneWidget);
-        expect(says('Azul is off your games.'), findsNothing);
-      });
+          expect(says("Azul is off Ada's games."), findsOneWidget);
+          expect(says('Azul is off your games.'), findsNothing);
+        },
+      );
 
       testWidgets("someone the roster doesn't name is this person", (
         tester,
@@ -4122,7 +4624,10 @@ void main() {
         served = [_game('o-9', 'att-nn', 'Azul')];
         await showGames(
           tester,
-          detail: detailOf(viewer: host, roster: [host, _row('att-nn')]),
+          detail: detailOf(
+            viewer: moderator,
+            roster: [moderator, _row('att-nn')],
+          ),
         );
         served = const [];
 
@@ -4156,11 +4661,40 @@ void main() {
           expect(row(azul.id), findsOneWidget);
         });
 
-        testWidgets('on a game the host nominated says to withdraw the '
-            'nomination first, naming whose games', (tester) async {
-          nominationsAnswer = (_) => [azulNominated('att-me')];
+        testWidgets("a game in the lineup names a host's step, naming whose "
+            'games', (tester) async {
+          await takeBackAzul(
+            tester,
+            linedUpMeanwhile: [
+              LineupGame(
+                id: 'l-1',
+                platformGameId: azul.platformGameId,
+                gameId: azul.gameId,
+                title: 'Azul',
+                platformName: 'Tabletop',
+                role: ScheduledGameRole.primary,
+                sortOrder: 0,
+                suppliedById: azul.id,
+                supplierAttendeeId: azul.attendeeId,
+              ),
+            ],
+          );
 
-          await takeBackAzul(tester);
+          expect(
+            says(
+              'Azul is in the lineup. A host can take it out of the lineup, '
+              "then it can come off Ada's games.",
+            ),
+            findsOneWidget,
+          );
+        });
+
+        testWidgets('on a game the viewer nominated says to withdraw the '
+            'nomination first, naming whose games', (tester) async {
+          await takeBackAzul(
+            tester,
+            nominatedMeanwhile: [azulNominated('att-me')],
+          );
 
           expect(
             says(
@@ -4171,18 +4705,20 @@ void main() {
           );
         });
 
-        testWidgets('on a game the host and someone else nominated says '
+        testWidgets('on a game the viewer and someone else nominated says '
             'the others must withdraw theirs too, naming whose games', (
           tester,
         ) async {
           // Tall enough that Azul's row is built under two nominations.
           useViewSize(tester, const Size(800, 2000));
-          nominationsAnswer = (_) => [
-            azulNominated('att-me'),
-            azulNominated('att-bo').copyWith(id: 'n-2'),
-          ];
 
-          await takeBackAzul(tester);
+          await takeBackAzul(
+            tester,
+            nominatedMeanwhile: [
+              azulNominated('att-me'),
+              azulNominated('att-bo').copyWith(id: 'n-2'),
+            ],
+          );
 
           expect(
             says(
@@ -4196,9 +4732,10 @@ void main() {
 
         testWidgets('on a game someone else nominated says only they can '
             'withdraw it, naming whose games', (tester) async {
-          nominationsAnswer = (_) => [azulNominated('att-bo')];
-
-          await takeBackAzul(tester);
+          await takeBackAzul(
+            tester,
+            nominatedMeanwhile: [azulNominated('att-bo')],
+          );
 
           expect(
             says(
@@ -4219,9 +4756,9 @@ void main() {
 
           cache.add(
             detailOf(
-              viewer: host,
+              viewer: moderator,
               roster: [
-                host,
+                moderator,
                 _row('att-ada', name: 'Adaline'),
                 bo,
               ],
@@ -4237,7 +4774,7 @@ void main() {
         testWidgets("on the viewer's own row keeps today's copy", (
           tester,
         ) async {
-          await showGames(tester, detail: detailOf(viewer: host));
+          await showGames(tester, detail: detailOf(viewer: moderator));
 
           await press(tester, takeBack(catanMine.id));
           await animate(tester);
@@ -4247,7 +4784,7 @@ void main() {
       });
 
       testWidgets("the viewer's own row keeps today's copy", (tester) async {
-        await showGames(tester, detail: detailOf(viewer: host));
+        await showGames(tester, detail: detailOf(viewer: moderator));
         served = [azul, catanAdas, root];
 
         await press(tester, takeBack(catanMine.id));
@@ -4276,7 +4813,7 @@ void main() {
       testWidgets("to the next row's Take back, whoever's it is", (
         tester,
       ) async {
-        await showGames(tester, detail: detailOf(viewer: host));
+        await showGames(tester, detail: detailOf(viewer: moderator));
         served = [catanMine, catanAdas, root];
 
         await takeBackByKeyboard(tester, azul.id);
@@ -4290,7 +4827,7 @@ void main() {
       ) async {
         final answer = Completer<void>();
         takeBackAnswer = (_) => answer.future;
-        await showGames(tester, detail: detailOf(viewer: host));
+        await showGames(tester, detail: detailOf(viewer: moderator));
         served = [catanMine, catanAdas, root];
 
         await takeBackByKeyboard(tester, azul.id);
@@ -4310,7 +4847,7 @@ void main() {
       });
 
       testWidgets("to the previous row's, from the last", (tester) async {
-        await showGames(tester, detail: detailOf(viewer: host));
+        await showGames(tester, detail: detailOf(viewer: moderator));
         served = [catanMine, azul, catanAdas];
 
         await takeBackByKeyboard(tester, root.id);
@@ -4322,7 +4859,7 @@ void main() {
       testWidgets("by a screen reader's activation, with focus on nothing, "
           "to the next row's Take back", (tester) async {
         final handle = tester.ensureSemantics();
-        await showGames(tester, detail: detailOf(viewer: host));
+        await showGames(tester, detail: detailOf(viewer: moderator));
         served = [catanMine, catanAdas, root];
         await tester.ensureVisible(takeBack(azul.id));
         await tester.pump();
@@ -4360,7 +4897,7 @@ void main() {
         // One nominated before the rules went host-only keeps the
         // Nominations sub-tab (#519).
         nominationsAnswer = (_) => [nominationOf('n-1', root)];
-        await showGames(tester, detail: detailOf(viewer: host));
+        await showGames(tester, detail: detailOf(viewer: moderator));
         served = [catanMine, catanAdas, root];
 
         await takeBackByKeyboard(tester, azul.id);
@@ -5473,6 +6010,94 @@ void main() {
       handle.dispose();
     });
 
+    testWidgets('a supplier who stops going frees their lineup game for '
+        "another copy, and it stays free once they're back (#519)", (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      // Bo's copy of Azul: the same game as Ada's.
+      final azulBos = azul.copyWith(id: 'o-9', attendeeId: 'att-bo');
+      served = [catanMine, azul, azulBos, root];
+      final ada = _row('att-ada', name: 'Ada');
+      final adaOut = _row(
+        'att-ada',
+        name: 'Ada',
+        status: EventParticipationStatus.notAttending,
+      );
+      // Ada's Azul passed its vote, and is in the lineup.
+      final passed = nominationOf(
+        'n-1',
+        azul,
+        status: NominationStatus.passed,
+      ).copyWith(elevatedTo: (id: 'l-1', occurrenceId: null));
+      nominationsAnswer = (_) => [passed];
+      lineupAnswer = (_) => [
+        LineupGame(
+          id: 'l-1',
+          platformGameId: azul.platformGameId,
+          gameId: azul.gameId,
+          title: 'Azul',
+          platformName: 'Tabletop',
+          role: ScheduledGameRole.primary,
+          sortOrder: 0,
+          suppliedById: azul.id,
+          supplierAttendeeId: azul.attendeeId,
+          nominationId: 'n-1',
+        ),
+      ];
+      useViewSize(tester, const Size(800, 2400));
+      await showGames(tester, detail: detailOf(roster: [me, ada, bo]));
+
+      Future<void> expectNominate(String id, {required bool enabled}) async {
+        await tester.ensureVisible(nominate(id));
+        await tester.pump();
+        expect(onPressed(tester, id), enabled ? isNotNull : isNull, reason: id);
+      }
+
+      await expectNominate(azulBos.id, enabled: false);
+      expect(
+        tester.getSemantics(nominate(azulBos.id)),
+        isSemantics(label: 'Nominated: Azul', hint: 'Already in the lineup'),
+      );
+
+      /// The event read again, its roster [roster] by then, and the
+      /// nominations and the lineup with it, as a read's end has them.
+      Future<void> readAgain(List<EventAttendee> roster) async {
+        final lineupReads = remote.lineupRequests.length;
+        heldRead = Completer<EventSnapshot>();
+        blocOf<EventDetailBloc>(tester).add(const EventDetailRetryRequested());
+        await animate(tester);
+        final detail = detailOf(roster: roster);
+        cache.add(detail);
+        heldRead!.complete(detail.snapshot);
+        heldRead = null;
+        await animate(tester);
+        expect(remote.lineupRequests.length, greaterThan(lineupReads));
+      }
+
+      // Ada stops going: the server takes her game out of the lineup, and
+      // her nomination, Passed still, no longer names it.
+      nominationsAnswer = (_) => [passed.copyWith(elevatedTo: null)];
+      lineupAnswer = (_) => const [];
+      await readAgain([me, adaOut, bo]);
+
+      await expectNominate(azulBos.id, enabled: true);
+      expect(
+        tester.getSemantics(nominate(azulBos.id)),
+        isSemantics(label: 'Nominate Azul', isEnabled: true),
+      );
+      // Hers can't be: she isn't going.
+      await expectNominate(azul.id, enabled: false);
+
+      // She comes back: nothing puts the game back in the lineup, so it is
+      // still free, her copy too.
+      await readAgain([me, ada, bo]);
+
+      await expectNominate(azulBos.id, enabled: true);
+      await expectNominate(azul.id, enabled: true);
+      handle.dispose();
+    });
+
     testWidgets('a game in the lineup for one date is taken in its view, and '
         "not in another's", (tester) async {
       final handle = tester.ensureSemantics();
@@ -6420,11 +7045,95 @@ void main() {
           ),
           reason: id,
         );
+        // Drawn under it too, as its hint says it (STYLE_GUIDE §4).
+        expect(
+          find.descendant(
+            of: row(azul.id),
+            matching: find.text('Nominations for this date have closed'),
+            skipOffstage: false,
+          ),
+          findsOneWidget,
+          reason: id,
+        );
       }
 
       // Every date still takes one, for the whole event.
       await chooseDate(tester, null);
       expect(onPressed(), isNotNull);
+      expect(
+        find.text('Nominations for this date have closed', skipOffstage: false),
+        findsNothing,
+      );
+      handle.dispose();
+    });
+
+    testWidgets("a date started under a supplier who isn't going draws the "
+        'reason Nominate says: the date closed', (tester) async {
+      final handle = tester.ensureSemantics();
+      final started = confirmed(
+        'd-0',
+        DateTime(2026, 10, 2, 19),
+      ).copyWith(eventId: 'e-1');
+      // Tall enough that every pool row is built.
+      useViewSize(tester, const Size(800, 2400));
+      await showGames(
+        tester,
+        detail: detailOf(
+          roster: [
+            me,
+            _row(
+              'att-ada',
+              name: 'Ada',
+              status: EventParticipationStatus.notAttending,
+            ),
+            bo,
+          ],
+          occurrences: [started, friday],
+          policy: policyOf(GameAdditionMode.requiresVote),
+        ),
+      );
+      const closed = 'Nominations for this date have closed';
+      const notGoing = "Whoever brings it isn't going";
+      // Under every date, not going is all that stops it.
+      expect(
+        find.descendant(
+          of: row(azul.id),
+          matching: find.text(notGoing, skipOffstage: false),
+          skipOffstage: false,
+        ),
+        findsOneWidget,
+      );
+
+      await chooseDate(tester, 'd-0');
+      await tester.ensureVisible(nominateOn(azul.id));
+      await tester.pump();
+
+      expect(
+        tester.getSemantics(nominateOn(azul.id)),
+        matchesSemantics(
+          label: 'Nominate Azul',
+          hint: closed,
+          isButton: true,
+          hasEnabledState: true,
+        ),
+      );
+      // The one reason, the hint's, drawn once on the row.
+      expect(
+        find.descendant(
+          of: row(azul.id),
+          matching: find.text(closed, skipOffstage: false),
+          skipOffstage: false,
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: row(azul.id),
+          matching: find.text(notGoing, skipOffstage: false),
+          skipOffstage: false,
+        ),
+        findsNothing,
+      );
       handle.dispose();
     });
 
@@ -6672,6 +7381,30 @@ void main() {
         tester.getSemantics(openGame),
         isSemantics(label: 'View game: Catan: Seafarers', isButton: true),
       );
+      handle.dispose();
+    });
+
+    testWidgets("Take back beside Nominate says in the quick look why it's "
+        'disabled, under it (#905)', (tester) async {
+      final handle = tester.ensureSemantics();
+      nominationsAnswer = (_) => [
+        nominationOf('n-1', catanMine).copyWith(nominatedById: 'att-me'),
+      ];
+      await showGames(tester);
+      await openQuickLook(tester, catanMine.id);
+
+      expect(tester.widget<ButtonStyleButton>(takeBackIn).onPressed, isNull);
+      expect(inQuickLook(find.text(_stillSuppliesYoursCopy)), findsOneWidget);
+      expect(
+        tester.getSemantics(takeBackIn),
+        matchesSemantics(
+          label: 'Take back Catan',
+          hint: _stillSuppliesYoursCopy,
+          isButton: true,
+          hasEnabledState: true,
+        ),
+      );
+      expect(find.bySemanticsLabel(_stillSuppliesYoursCopy), findsNothing);
       handle.dispose();
     });
 
@@ -6924,6 +7657,14 @@ void main() {
           hasEnabledState: true,
         ),
       );
+      // Drawn under the controls too, once (STYLE_GUIDE §4).
+      expect(
+        find.descendant(
+          of: quickLook,
+          matching: find.text('Nominations for this date have closed'),
+        ),
+        findsOneWidget,
+      );
       handle.dispose();
     });
 
@@ -7161,6 +7902,7 @@ void main() {
         'through their press, sent once a detail read has ended', (
       tester,
     ) async {
+      served = [catanMine, wingspanMine, azul];
       await showGames(tester);
       await openQuickLook(tester, catanMine.id);
 
@@ -7182,6 +7924,11 @@ void main() {
       await endDetailRead(tester);
       expect(remote.nominates, hasLength(1));
 
+      // Catan now supplies the nomination, so its Take back is disabled,
+      // saying why (#905): another of the viewer's copies takes it back.
+      expect(tester.widget<ButtonStyleButton>(takeBackIn).onPressed, isNull);
+      await closeQuickLook(tester);
+      await openQuickLook(tester, wingspanMine.id);
       await holdDetailRead(tester);
       await tester.tap(takeBackIn);
       await tester.pump();
@@ -7270,6 +8017,491 @@ void main() {
         ),
       );
       expect(paragraph.didExceedMaxLines, isFalse);
+    });
+  });
+
+  group('Add to lineup (#519)', () {
+    final host = _row('att-me', name: 'Me', role: EventRole.host);
+    final quickLook = find.byKey(EventDetailScreen.quickLookKey);
+    Finder inQuickLook(Finder finder) =>
+        find.descendant(of: quickLook, matching: finder);
+    final addInQuickLook = find.byKey(
+      EventDetailScreen.quickLookAddToLineupKey,
+    );
+    final takeBackIn = find.byKey(EventDetailScreen.quickLookTakeBackKey);
+    final confirm = find.byKey(EventDetailScreen.addToLineupConfirmKey);
+    Finder scopeChoice(String? occurrenceId) =>
+        find.byKey(EventDetailScreen.addToLineupScopeKey(occurrenceId));
+
+    /// A row's Add to lineup, its main action under a host-only view.
+    Finder addOn(String id) => find.byKey(
+      EventDetailScreen.poolAddToLineupKey(id),
+      skipOffstage: false,
+    );
+    Finder lineupOutcome() => find.byKey(EventDetailScreen.lineupOutcomeKey);
+    final all = [catanMine, azul, catanAdas, root];
+
+    Future<void> openQuickLook(WidgetTester tester, String id) async {
+      await press(tester, head(id));
+      await animate(tester);
+      expect(quickLook, findsOneWidget);
+    }
+
+    /// Friday the 6th and Saturday the 7th, at seven.
+    final friday = confirmed(
+      'd-1',
+      DateTime(2026, 11, 6, 19),
+    ).copyWith(eventId: 'e-1');
+    final saturday = confirmed(
+      'd-2',
+      DateTime(2026, 11, 7, 19),
+      sortOrder: 1,
+    ).copyWith(eventId: 'e-1');
+
+    testWidgets('a host under HostOnly sees Add to lineup on every pool row', (
+      tester,
+    ) async {
+      lineupAnswer = (_) => const [];
+      await showGames(
+        tester,
+        detail: detailOf(
+          viewer: host,
+          policy: policyOf(GameAdditionMode.hostOnly),
+        ),
+      );
+
+      for (final game in all) {
+        expect(addOn(game.id), findsOneWidget, reason: game.id);
+        // The row's one main action (#946), in Nominate's place: Take back
+        // is its quick look's.
+        expect(nominateOn(game.id), findsNothing, reason: game.id);
+        expect(takeBack(game.id), findsNothing, reason: game.id);
+      }
+      expect(
+        tester.getSemantics(addOn(azul.id)),
+        isSemantics(
+          label: 'Add Azul to the lineup',
+          isButton: true,
+          isEnabled: true,
+        ),
+      );
+
+      // The quick look has both, on the host's own copy and on anyone
+      // else's, which they may take back too (#518).
+      for (final game in [catanMine, azul]) {
+        await openQuickLook(tester, game.id);
+        expect(inQuickLook(addInQuickLook), findsOneWidget, reason: game.id);
+        expect(inQuickLook(takeBackIn), findsOneWidget, reason: game.id);
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await animate(tester);
+      }
+
+      // Anyone's copy: Ada's Azul, which the host doesn't bring.
+      await press(tester, addOn(azul.id));
+      await animate(tester);
+      // One date and no row of dates: it asks, the whole event chosen.
+      expect(scopeChoice(null), findsOneWidget);
+      expect(scopeChoice('o-1'), findsOneWidget);
+      await press(tester, confirm);
+      await animate(tester);
+
+      expect(remote.directAdds, [
+        (
+          eventId: 'e-1',
+          platformGameId: 'pg-o-2',
+          suppliedById: 'o-2',
+          occurrenceId: null,
+          role: ScheduledGameRole.primary,
+          notes: null,
+          maxPlayTime: null,
+        ),
+      ]);
+      expect(
+        find.descendant(
+          of: lineupOutcome(),
+          matching: find.text('Azul is in the lineup.'),
+        ),
+        findsOneWidget,
+      );
+      // Read again after the add.
+      expect(remote.lineupRequests, hasLength(2));
+    });
+
+    testWidgets("focus is back on a row's Add to lineup after the dialog's "
+        'Cancel, and after an add is sent', (tester) async {
+      lineupAnswer = (_) => const [];
+      await showGames(
+        tester,
+        detail: detailOf(
+          viewer: host,
+          policy: policyOf(GameAdditionMode.hostOnly),
+        ),
+      );
+      await tester.ensureVisible(addOn(azul.id));
+      await tester.pump();
+      FocusNode addFocus() =>
+          tester.widget<ButtonStyleButton>(addOn(azul.id)).focusNode!;
+      addFocus().requestFocus();
+      await tester.pump();
+
+      // Cancel: nothing sent.
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await animate(tester);
+      expect(find.byType(AlertDialog), findsOneWidget);
+      await tester.tap(find.text('Cancel'));
+      await animate(tester);
+
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(remote.directAdds, isEmpty);
+      expect(addFocus().hasPrimaryFocus, isTrue);
+
+      // Sent: held through the add, focus kept, and the copy stays.
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await animate(tester);
+      await press(tester, confirm);
+      await animate(tester);
+
+      expect(remote.directAdds, hasLength(1));
+      expect(row(azul.id), findsOneWidget);
+      expect(addFocus().hasPrimaryFocus, isTrue);
+    });
+
+    testWidgets('a copy already in the lineup can be added again', (
+      tester,
+    ) async {
+      // Azul is in the lineup already, for the whole event.
+      lineupAnswer = (_) => [
+        LineupGame(
+          id: 'l-o-2',
+          platformGameId: azul.platformGameId,
+          gameId: azul.gameId,
+          title: azul.title,
+          platformName: azul.platformName,
+          role: ScheduledGameRole.primary,
+          sortOrder: 0,
+          suppliedById: azul.id,
+          supplierAttendeeId: azul.attendeeId,
+        ),
+      ];
+      await showGames(
+        tester,
+        detail: detailOf(
+          viewer: host,
+          policy: policyOf(GameAdditionMode.hostOnly),
+        ),
+      );
+
+      // The server takes a second add of a copy (#519): nothing stops it
+      // here.
+      expect(
+        tester.widget<ButtonStyleButton>(addOn(azul.id)).onPressed,
+        isNotNull,
+      );
+      await press(tester, addOn(azul.id));
+      await animate(tester);
+      await press(tester, confirm);
+      await animate(tester);
+
+      expect(remote.directAdds.single.suppliedById, azul.id);
+    });
+
+    testWidgets('a participant under HostOnly sees no main action and keeps '
+        'Take back', (tester) async {
+      await showGames(
+        tester,
+        detail: detailOf(policy: policyOf(GameAdditionMode.hostOnly)),
+      );
+
+      for (final game in all) {
+        expect(addOn(game.id), findsNothing, reason: game.id);
+        expect(nominateOn(game.id), findsNothing, reason: game.id);
+      }
+      // Their own row keeps Take back; anyone else's has nothing.
+      expect(takeBack(catanMine.id), findsOneWidget);
+      for (final game in [azul, catanAdas, root]) {
+        expect(takeBack(game.id), findsNothing, reason: game.id);
+      }
+
+      await openQuickLook(tester, azul.id);
+      expect(addInQuickLook, findsNothing);
+    });
+
+    testWidgets('under Direct the add is in the quick look, and Nominate '
+        'stays on the row', (tester) async {
+      final handle = tester.ensureSemantics();
+      lineupAnswer = (_) => const [];
+      await showGames(
+        tester,
+        detail: detailOf(
+          viewer: host,
+          policy: policyOf(GameAdditionMode.direct),
+        ),
+      );
+
+      for (final game in all) {
+        expect(nominateOn(game.id), findsOneWidget, reason: game.id);
+        expect(addOn(game.id), findsNothing, reason: game.id);
+      }
+
+      await openQuickLook(tester, azul.id);
+      expect(
+        inQuickLook(find.byKey(EventDetailScreen.quickLookNominateKey)),
+        findsOneWidget,
+      );
+      await tester.tap(inQuickLook(addInQuickLook));
+      await animate(tester);
+
+      // A Filler of half an hour, with a note.
+      await tester.tap(
+        find.byKey(
+          EventDetailScreen.addToLineupRoleKey(ScheduledGameRole.filler),
+        ),
+      );
+      await animate(tester);
+      await tester.enterText(
+        find.byKey(EventDetailScreen.addToLineupMinutesKey),
+        '30',
+      );
+      await animate(tester);
+      await tester.enterText(
+        find.byKey(EventDetailScreen.addToLineupNotesKey),
+        ' Between rounds ',
+      );
+      await animate(tester);
+      await press(tester, confirm);
+      await animate(tester);
+
+      expect(remote.directAdds, [
+        (
+          eventId: 'e-1',
+          platformGameId: 'pg-o-2',
+          suppliedById: 'o-2',
+          occurrenceId: null,
+          role: ScheduledGameRole.filler,
+          notes: 'Between rounds',
+          maxPlayTime: 30,
+        ),
+      ]);
+      // Said inside the quick look, whose barrier hides the footer.
+      final said = inQuickLook(lineupOutcome());
+      expect(said, findsOneWidget);
+      expect(
+        find.descendant(
+          of: said,
+          matching: find.text('Azul is in the lineup.'),
+        ),
+        findsOneWidget,
+      );
+      final inFooter = find.descendant(
+        of: find.byType(EventGamesFooter),
+        matching: lineupOutcome(),
+      );
+      BgeInlineBanner banner(Finder finder) =>
+          tester.widget<BgeInlineBanner>(finder);
+      expect(banner(said).announce, isTrue);
+      expect(banner(inFooter).announce, isFalse);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await animate(tester);
+      expect(quickLook, findsNothing);
+
+      // Back in the tree as the barrier lifts, it isn't read out again.
+      expect(banner(inFooter).announce, isFalse);
+      expect(
+        tester.getSemantics(
+          find.descendant(of: inFooter, matching: find.byType(Icon)),
+        ),
+        isNot(isSemantics(isLiveRegion: true)),
+      );
+      handle.dispose();
+    });
+
+    testWidgets('under RequiresVote there is no add anywhere', (tester) async {
+      lineupAnswer = (_) => const [];
+      await show(
+        tester,
+        detail: detailOf(
+          viewer: host,
+          policy: policyOf(GameAdditionMode.requiresVote),
+        ),
+      );
+      // Games opens on Lineup, which has no Add a game.
+      await tester.tap(tab(EventDetailTab.games));
+      await animate(tester);
+      expect(
+        find.byKey(EventDetailScreen.lineupAddKey, skipOffstage: false),
+        findsNothing,
+      );
+
+      await chooseSection(tester, EventGamesSection.pool);
+      for (final game in all) {
+        expect(addOn(game.id), findsNothing, reason: game.id);
+        expect(nominateOn(game.id), findsOneWidget, reason: game.id);
+      }
+      await openQuickLook(tester, azul.id);
+      expect(addInQuickLook, findsNothing);
+    });
+
+    testWidgets('Add to lineup is disabled, saying why, where whoever brings '
+        "it isn't going", (tester) async {
+      final handle = tester.ensureSemantics();
+      await showGames(
+        tester,
+        detail: detailOf(
+          viewer: host,
+          roster: [
+            host,
+            _row(
+              'att-ada',
+              name: 'Ada',
+              status: EventParticipationStatus.notAttending,
+            ),
+            bo,
+          ],
+          policy: policyOf(GameAdditionMode.hostOnly),
+        ),
+      );
+
+      expect(
+        tester.widget<ButtonStyleButton>(addOn(azul.id)).onPressed,
+        isNull,
+      );
+      expect(
+        tester.getSemantics(addOn(azul.id)),
+        isSemantics(
+          label: 'Add Azul to the lineup',
+          hint: "Whoever brings it isn't going",
+          isEnabled: false,
+        ),
+      );
+      // Drawn under it too.
+      expect(
+        find.descendant(
+          of: row(azul.id),
+          matching: find.text("Whoever brings it isn't going"),
+        ),
+        findsOneWidget,
+      );
+      // Bo is going.
+      expect(
+        tester.widget<ButtonStyleButton>(addOn(root.id)).onPressed,
+        isNotNull,
+      );
+      handle.dispose();
+    });
+
+    testWidgets('a pool row follows the mode of the date view: Add to lineup '
+        'under a host-only date, for that date without asking', (
+      tester,
+    ) async {
+      lineupAnswer = (_) => const [];
+      final detail = detailOf(
+        viewer: host,
+        occurrences: [friday, saturday],
+        policy: policyOf(GameAdditionMode.requiresVote),
+      );
+      await showGames(
+        tester,
+        detail: detail.copyWith(
+          snapshot: detail.snapshot.copyWith(
+            occurrencePolicies: [
+              EventOccurrencePolicy(
+                id: 'op-d-2',
+                occurrenceId: 'd-2',
+                allowedCategoryIds: const [],
+                allowedPlatformIds: const [],
+                allowedPlatformTypes: const [],
+                platformTypesUnrestricted: false,
+                platformsUnrestricted: false,
+                capacityUnrestricted: false,
+                gameAdditionMode: GameAdditionMode.hostOnly,
+                createdAt: kItemInstant,
+                updatedAt: kItemInstant,
+              ),
+            ],
+          ),
+        ),
+      );
+      // Friday, the next date still to come, takes a vote.
+      expect(nominateOn(azul.id), findsOneWidget);
+      expect(addOn(azul.id), findsNothing);
+
+      final chip = find.byKey(
+        EventDetailScreen.dateChipKey('d-2'),
+        skipOffstage: false,
+      );
+      await press(tester, chip);
+      await animate(tester);
+
+      expect(nominateOn(azul.id), findsNothing);
+      await press(tester, addOn(azul.id));
+      await animate(tester);
+
+      // The view's date: nothing to ask.
+      expect(scopeChoice(null), findsNothing);
+      await press(tester, confirm);
+      await animate(tester);
+      expect(remote.directAdds.single.occurrenceId, 'd-2');
+    });
+
+    testWidgets("a date called off under a supplier who isn't going draws the "
+        'reason Add to lineup says, on the row and in its quick look', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      const closed = "This date isn't happening, so games can't be added to it";
+      const notGoing = "Whoever brings it isn't going";
+      await showGames(
+        tester,
+        detail: detailOf(
+          viewer: host,
+          roster: [
+            host,
+            _row(
+              'att-ada',
+              name: 'Ada',
+              status: EventParticipationStatus.notAttending,
+            ),
+            bo,
+          ],
+          occurrences: [
+            friday,
+            saturday.copyWith(status: OccurrenceStatus.cancelled),
+          ],
+          policy: policyOf(GameAdditionMode.hostOnly),
+        ),
+      );
+      final chip = find.byKey(
+        EventDetailScreen.dateChipKey('d-2'),
+        skipOffstage: false,
+      );
+      await press(tester, chip);
+      await animate(tester);
+      await tester.ensureVisible(addOn(azul.id));
+      await tester.pump();
+
+      expect(
+        tester.getSemantics(addOn(azul.id)),
+        isSemantics(
+          label: 'Add Azul to the lineup',
+          hint: closed,
+          isEnabled: false,
+        ),
+      );
+      // The one reason, the hint's, drawn once on the row.
+      expect(
+        find.descendant(of: row(azul.id), matching: find.text(closed)),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: row(azul.id), matching: find.text(notGoing)),
+        findsNothing,
+      );
+
+      await openQuickLook(tester, azul.id);
+      expect(inQuickLook(find.text(closed)), findsOneWidget);
+      expect(inQuickLook(find.text(notGoing)), findsNothing);
+      handle.dispose();
     });
   });
 
@@ -7465,6 +8697,53 @@ void main() {
       }
     });
 
+    testWidgets('a Take back that says why it is disabled, at 320×640 and '
+        '200% text: the reason wraps under it with no overflow, and the '
+        'guidelines pass (#905)', (tester) async {
+      useViewSize(tester, const Size(320, 640));
+      tester.platformDispatcher.textScaleFactorTestValue =
+          BgeTextScale.maxScaleFactor;
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      final handle = tester.ensureSemantics();
+      final mine = _game(
+        'o-1',
+        'att-me',
+        _longTitle,
+      ).copyWith(suppliedNominations: 0, suppliedLineup: 1);
+      served = [mine, azul];
+      // With no Nominate on a host-only event, Take back is the row's own
+      // main action (#946).
+      await showGames(
+        tester,
+        detail: detailOf(policy: policyOf(GameAdditionMode.hostOnly)),
+      );
+      await tester.ensureVisible(takeBack(mine.id));
+      await tester.pump();
+
+      expect(tester.takeException(), isNull);
+      final reason = find.descendant(
+        of: row(mine.id),
+        matching: find.text(
+          '$_longTitle is in the lineup. A host can take it out of the '
+          'lineup, then it can come off your games.',
+        ),
+      );
+      expect(reason, findsOneWidget);
+      await tester.ensureVisible(reason);
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+      final paragraph = tester.renderObject<RenderParagraph>(
+        find.descendant(of: reason, matching: find.byType(RichText)),
+      );
+      expect(paragraph.didExceedMaxLines, isFalse);
+      expect(
+        tester.getRect(reason).right,
+        lessThanOrEqualTo(tester.getRect(row(mine.id)).right),
+      );
+      await expectMeetsAccessibilityGuidelines(tester);
+      handle.dispose();
+    });
+
     testWidgets("a nominated row whose supplier isn't going, at 320×640 and "
         '200% text: no overflow, and the guidelines pass (#517)', (
       tester,
@@ -7540,12 +8819,14 @@ void main() {
       final long = _game('o-9', 'att-ada', _longTitle);
       served = [catanMine, long];
 
-      // A host-only event, where nobody is offered Nominate, so Take back is
-      // each row's main action (#946).
+      // A host-only event, where nobody is offered Nominate, seen by a
+      // moderator, who may take anyone's game back and, unlike a host, is
+      // offered no Add to lineup in its place (#519), so Take back is each
+      // row's main action (#946).
       await showGames(
         tester,
         detail: detailOf(
-          viewer: _row('att-me', name: 'Me', role: EventRole.host),
+          viewer: _row('att-me', name: 'Me', role: EventRole.moderator),
           policy: policyOf(GameAdditionMode.hostOnly),
         ),
       );
@@ -7707,11 +8988,13 @@ void main() {
     auditScreen(
       "EventDetailScreen, the Games tab asking before someone else's game "
       'is taken back (#518)',
-      // A host-only event, where nobody is offered Nominate, so Take back is
-      // each row's main action (#946).
+      // A host-only event, where nobody is offered Nominate, seen by a
+      // moderator, who may take anyone's game back and, unlike a host, is
+      // offered no Add to lineup in its place (#519), so Take back is each
+      // row's main action (#946).
       build: (theme) => harness(
         detail: detailOf(
-          viewer: _row('att-me', name: 'Me', role: EventRole.host),
+          viewer: _row('att-me', name: 'Me', role: EventRole.moderator),
           policy: policyOf(GameAdditionMode.hostOnly),
         ),
         theme: theme,
@@ -7719,7 +9002,7 @@ void main() {
       arrange: (tester) async {
         cache.add(
           detailOf(
-            viewer: _row('att-me', name: 'Me', role: EventRole.host),
+            viewer: _row('att-me', name: 'Me', role: EventRole.moderator),
             policy: policyOf(GameAdditionMode.hostOnly),
           ),
         );

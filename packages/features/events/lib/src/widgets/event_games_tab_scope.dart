@@ -28,19 +28,19 @@ import 'package:models/domain.dart'
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
-/// What the Games tab keeps across the screen's rebuilds (#516): its sub-tabs'
-/// controller (#945), its filter, whether it has been shown, the ids the pool
-/// was last asked with, how the pool's last read ended and how the nominations'
-/// (#517) and the lineup's (#519) did, the nominations' own filter and order
-/// (#517), the focus nodes a control that leaves hands focus on to, what
-/// the tab's quick looks reach the screen by (#957), and which of the event's
-/// dates it shows (#1042).
+/// What the Games tab keeps across the screen's rebuilds (#516): its
+/// sub-tabs' controller (#945), its filter, whether it has been shown, the
+/// ids the pool was last asked with, how the pool's last read ended and how
+/// the nominations' (#517) and the lineup's (#519) did, the nominations' own
+/// filter and order (#517), the focus nodes a control that leaves hands
+/// focus on to, what the tab's quick looks reach the screen by (#957), and
+/// which of the event's dates it shows (#1042).
 ///
 /// It notifies its listeners when the chosen sub-tab changes, once for each
 /// change and as the change starts, and when the sub-tabs' controller is
-/// replaced, so the screen's page, which listens to it, builds on the new one:
-/// as the motion setting changes, and as the sub-tabs shown do (#519). So too
-/// when the date shown changes, or the date the location is to name
+/// replaced, so the screen's page, which listens to it, builds on the new
+/// one: as the motion setting changes, and as the sub-tabs shown do (#519).
+/// So too when the date shown changes, or the date the location is to name
 /// ([dateQuery]), and when the row of dates clears the nominations' filter's
 /// date.
 ///
@@ -494,10 +494,11 @@ class EventGamesTabController extends ChangeNotifier {
   /// Notes a quick look closing (#957).
   void quickLookClosed() => _quickLooks--;
 
-  /// The pool's and the nominations' last outcomes to land while a quick
-  /// look was open (#957), which it said.
+  /// The pool's, the nominations' and the lineup's (#519) last outcomes to
+  /// land while a quick look was open (#957), which it said.
   EventGamesOutcome? _poolSaid;
   EventNominationsOutcome? _nominationsSaid;
+  EventLineupOutcome? _lineupSaid;
 
   /// Notes the pool's outcome going from [previous] to [outcome], as the
   /// pool emits it: one that lands while a quick look is open is said there.
@@ -522,13 +523,27 @@ class EventGamesTabController extends ChangeNotifier {
     }
   }
 
-  /// Whether [outcome], the pool's or the nominations', landed while a
-  /// quick look was open, which said it (#957). The footer's banner of it
-  /// is no live region, then or after: the pop-up's barrier hides the
-  /// footer from a screen reader, and a live region that comes back into
-  /// the tree as the barrier lifts is read out again.
+  /// Notes the lineup's outcome going from [previous] to [outcome] (#519),
+  /// as [poolOutcomeLanded] does the pool's: an add sent from a quick look
+  /// lands while it is open. For the scope only.
+  void lineupOutcomeLanded(
+    EventLineupOutcome? previous,
+    EventLineupOutcome? outcome,
+  ) {
+    if (_quickLooks > 0 && outcome != null && !identical(outcome, previous)) {
+      _lineupSaid = outcome;
+    }
+  }
+
+  /// Whether [outcome], the pool's, the nominations' or the lineup's
+  /// (#519), landed while a quick look was open, which said it (#957). The
+  /// footer's banner of it is no live region, then or after: the pop-up's
+  /// barrier hides the footer from a screen reader, and a live region that
+  /// comes back into the tree as the barrier lifts is read out again.
   bool saidInQuickLook(Object outcome) =>
-      identical(outcome, _poolSaid) || identical(outcome, _nominationsSaid);
+      identical(outcome, _poolSaid) ||
+      identical(outcome, _nominationsSaid) ||
+      identical(outcome, _lineupSaid);
 
   /// Hands focus on as the quick look of [entry] closes (#957), from
   /// [context], the scope's ([EventGamesTabScope.contextOf]), which outlives
@@ -538,8 +553,8 @@ class EventGamesTabController extends ChangeNotifier {
   /// as [poolChanged], [nominationsChanged] and [lineupChanged] noted; else
   /// to the sub-tab's first header control: Filters for a nomination; for an
   /// offered copy, Offer games where it is built and enabled, else the
-  /// search field. The lineup has none, so for a lineup game focus stays on
-  /// the page (#519).
+  /// search field; for a lineup game, Add a game where it is built and
+  /// enabled, else nothing, and focus stays on the page (#519).
   ///
   /// Once the frame that closes it has ended, as the lists' own hand-offs
   /// are, and only while focus is free then ([focusIsFree]): on nothing, on
@@ -826,6 +841,14 @@ class EventGamesTabController extends ChangeNotifier {
   /// Each lineup row, by the lineup game's id (#519).
   final Map<String, FocusNode> _lineupAreas = {};
 
+  /// Holds the Lineup sub-tab's Add a game (#519), whose own node its held
+  /// button keeps: where a hand-off with no lineup row left finds it.
+  final FocusNode lineupAddArea = FocusNode(
+    debugLabel: 'Add a game',
+    canRequestFocus: false,
+    skipTraversal: true,
+  );
+
   /// The node that holds lineup game [id]'s row (#519), so a row that
   /// leaves can say it held focus ([lineupChanged]). Made as it is first
   /// built and let go once the game leaves the lineup.
@@ -843,12 +866,16 @@ class EventGamesTabController extends ChangeNotifier {
   /// the scope's, with [dates] the event's dates, which order its rows in
   /// the date view ([lineupGroupsFor], #1042).
   ///
-  /// A row that leaves while focus is in it hands focus on once that frame
-  /// has ended, as a nominations row does ([nominationsChanged]): to the
-  /// next row shown, else the one before it, its head from its head. A row
-  /// leaves only by a read, as nothing on it can be changed here. Where no
-  /// row is left, focus stays on the page: the lineup has no header control
-  /// to take it. Only while the Lineup sub-tab is chosen (#945), and not
+  /// A row that leaves while focus is in it, or as the Remove from lineup
+  /// sent from it ends (#520), however it was pressed, hands focus on once
+  /// that frame has ended, as a nominations row does ([nominationsChanged]):
+  /// to the next row shown, else the one before it, in the same place among
+  /// its controls, its head from its head. A screen reader's activation moves
+  /// no input focus, so the write's end arms the hand-off too. A row also
+  /// leaves by a read. Where no
+  /// row is left, to Add a game where it is built and enabled
+  /// ([lineupAddArea]), else focus stays on the page. Only while the Lineup
+  /// sub-tab is chosen (#945), and not
   /// while a quick look is open (#957), where each row that leaves notes
   /// where it left from instead ([focusAfterQuickLook]).
   void lineupChanged(
@@ -858,6 +885,11 @@ class EventGamesTabController extends ChangeNotifier {
     required List<EventOccurrence> dates,
   }) {
     if (identical(previous.games, current.games)) return;
+    // The removal that ended in this change, if one did: its row's id.
+    final removed = switch (previous.writing) {
+      (write: LineupWrite.remove, :final id) when current.writing == null => id,
+      _ => null,
+    };
     List<String> shown(List<LineupGame> games) => [
       for (final group in lineupGroupsFor(_dateView, games, dates))
         for (final game in group.games) game.id,
@@ -870,8 +902,8 @@ class EventGamesTabController extends ChangeNotifier {
       areas: _lineupAreas,
       entryOf: LineupEntry.new,
       list: EventGamesSection.lineup,
-      // No write on the lineup can take its row away.
-      handsOn: (_) => false,
+      // The row whose removal ended, however it was pressed.
+      handsOn: (id) => id == removed,
       fallback: _focusLineupHeader,
     );
   }
@@ -1210,16 +1242,19 @@ class EventGamesTabController extends ChangeNotifier {
     }
   }
 
-  /// As a hand-off with no lineup row left to take focus does (#519): the
-  /// Lineup sub-tab has no header control to take it, so focus stays on the
+  /// Hands focus to the Lineup sub-tab's Add a game (#519), as a hand-off
+  /// with no lineup row left to take it does, where it is built and enabled.
+  /// Otherwise, as for a viewer offered no direct add, focus stays on the
   /// page, as where the tab has nothing left to take focus
   /// ([EventGamesTabScope]).
-  void _focusLineupHeader() {}
+  void _focusLineupHeader() =>
+      lineupAddArea.traversalDescendants.firstOrNull?.requestFocus();
 
   @override
   void dispose() {
     _disposed = true;
     offerArea.dispose();
+    lineupAddArea.dispose();
     peopleFocus.dispose();
     filtersFocus.dispose();
     clearFiltersFocus.dispose();
@@ -1265,8 +1300,10 @@ class EventGamesTabController extends ChangeNotifier {
 /// ended ([EventGamesTabController.nominationsEmitted]), and a row leaving
 /// the rows the nominations' filter keeps
 /// ([EventGamesTabController.nominationsChanged]); and the lineup, for how
-/// its last read ended ([EventGamesTabController.lineupEmitted]) and a row
-/// leaving it ([EventGamesTabController.lineupChanged], #519).
+/// its last read ended ([EventGamesTabController.lineupEmitted]), a row
+/// leaving it ([EventGamesTabController.lineupChanged], #519), and an
+/// outcome that a quick look says ([EventGamesTabController.saidInQuickLook]),
+/// as the pool's and the nominations' are.
 ///
 /// It gives the controller the date the location names ([initialDate]), and
 /// on each of the detail's states, and after its first frame, the event's
@@ -1680,7 +1717,9 @@ class _EventGamesTabScopeState extends State<EventGamesTabScope>
   void _lineupChanged(EventLineupState state) {
     final previous = _lastLineup;
     _lastLineup = state;
-    _controller.lineupEmitted(state);
+    _controller
+      ..lineupEmitted(state)
+      ..lineupOutcomeLanded(previous.outcome, state.outcome);
     if (!mounted) return;
     final detail = context.read<EventDetailBloc>().state;
     _controller.lineupChanged(

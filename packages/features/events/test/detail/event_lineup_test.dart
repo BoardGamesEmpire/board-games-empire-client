@@ -242,4 +242,491 @@ void main() {
       expect(lineupDrawsHeaders(groups, [friday]), isTrue);
     });
   });
+
+  /// The detail as the screen holds it: the event with [dates], the viewer's
+  /// row [attendance], and the [actions] the role table gave them.
+  EventDetailReady ready({
+    Event? event,
+    List<EventOccurrence> dates = const [],
+    Set<EventAction> actions = const {},
+    EventAttendee? attendance,
+  }) => EventDetailReady(
+    detail: EventDetail(
+      snapshot: EventSnapshot(
+        event: event ?? item('e').event,
+        occurrences: dates,
+      ),
+      attendance: attendance,
+    ),
+    actions: actions,
+  );
+
+  final going = attendance(EventParticipationStatus.attending);
+
+  Set<EventAction> actionsOf({
+    EventRole? eventRole,
+    HouseholdRole? householdRole,
+    bool household = false,
+  }) => eventActionsFor(
+    item('e', householdId: household ? 'h-1' : null).event,
+    eventRole: eventRole,
+    householdRole: householdRole,
+  );
+
+  group('lineupAddGate', () {
+    test('a host with a row is offered it under Direct and HostOnly', () {
+      final state = ready(
+        actions: actionsOf(eventRole: EventRole.host),
+        attendance: going,
+      );
+
+      for (final mode in [GameAdditionMode.direct, GameAdditionMode.hostOnly]) {
+        expect(lineupAddGate(state, mode: mode), LineupAddGate.open);
+      }
+    });
+
+    test('a participant has no add, even under HostOnly', () {
+      final state = ready(
+        actions: actionsOf(eventRole: EventRole.participant),
+        attendance: going,
+      );
+
+      expect(
+        lineupAddGate(state, mode: GameAdditionMode.hostOnly),
+        LineupAddGate.hidden,
+      );
+      expect(
+        lineupAddGate(state, mode: GameAdditionMode.direct),
+        LineupAddGate.hidden,
+      );
+    });
+
+    test('a household admin without a roster row has no add', () {
+      final state = ready(
+        event: item('e', householdId: 'h-1').event,
+        actions: actionsOf(
+          householdRole: HouseholdRole.householdAdmin,
+          household: true,
+        ),
+      );
+
+      expect(state.actions, contains(EventAction.addToLineup));
+      expect(
+        lineupAddGate(state, mode: GameAdditionMode.direct),
+        LineupAddGate.hidden,
+      );
+    });
+
+    test('RequiresVote and HostApproval have no add', () {
+      final state = ready(
+        actions: actionsOf(eventRole: EventRole.host),
+        attendance: going,
+      );
+
+      for (final mode in [
+        GameAdditionMode.requiresVote,
+        GameAdditionMode.hostApproval,
+        GameAdditionMode.unknown,
+      ]) {
+        expect(lineupAddGate(state, mode: mode), LineupAddGate.hidden);
+      }
+    });
+
+    test('a cancelled or local-only event has no add', () {
+      final actions = actionsOf(eventRole: EventRole.host);
+
+      for (final event in [
+        item('e').event.copyWith(status: EventStatus.cancelled),
+        item('e').event.copyWith(isLocalOnly: true),
+      ]) {
+        expect(
+          lineupAddGate(
+            ready(event: event, actions: actions, attendance: going),
+            mode: GameAdditionMode.direct,
+          ),
+          LineupAddGate.hidden,
+        );
+      }
+    });
+  });
+
+  group('lineupRemoveGate', () {
+    final now = DateTime(2026, 11, 20, 12);
+    final past = confirmed('d-past', DateTime(2026, 11, 1, 19));
+    final ahead = confirmed('d-ahead', DateTime(2026, 12, 1, 19));
+    final hostActions = actionsOf(eventRole: EventRole.host);
+
+    LineupRemoveGate gate(
+      LineupGame game, {
+      List<EventOccurrence> dates = const [],
+      Set<EventAction>? actions,
+      Event? event,
+    }) => lineupRemoveGate(
+      ready(event: event, dates: dates, actions: actions ?? hostActions),
+      game,
+      now: now,
+    );
+
+    test("a started date's game cannot be removed", () {
+      expect(
+        gate(game('l', occurrenceId: 'd-past'), dates: [past, ahead]),
+        LineupRemoveGate.started,
+      );
+      expect(
+        gate(game('l', occurrenceId: 'd-ahead'), dates: [past, ahead]),
+        LineupRemoveGate.open,
+      );
+    });
+
+    test("a cancelled or declined date's game cannot be removed", () {
+      for (final status in [
+        OccurrenceStatus.cancelled,
+        OccurrenceStatus.declined,
+      ]) {
+        expect(
+          gate(
+            game('l', occurrenceId: 'd-ahead'),
+            dates: [ahead.copyWith(status: status)],
+          ),
+          LineupRemoveGate.started,
+        );
+      }
+    });
+
+    test('a proposed date with no start is still to come', () {
+      final undated = EventOccurrence(
+        id: 'd-open',
+        eventId: 'e',
+        status: OccurrenceStatus.proposed,
+        sortOrder: 0,
+        createdAt: kItemInstant,
+        updatedAt: kItemInstant,
+      );
+
+      expect(
+        gate(game('l', occurrenceId: 'd-open'), dates: [undated]),
+        LineupRemoveGate.open,
+      );
+      expect(gate(game('l'), dates: [past, undated]), LineupRemoveGate.open);
+    });
+
+    test("the event's own game cannot be removed once no date is to come", () {
+      expect(gate(game('l'), dates: [past]), LineupRemoveGate.started);
+      expect(
+        gate(
+          game('l'),
+          dates: [
+            past,
+            ahead.copyWith(status: OccurrenceStatus.cancelled),
+          ],
+        ),
+        LineupRemoveGate.started,
+      );
+      expect(gate(game('l'), dates: [past, ahead]), LineupRemoveGate.open);
+    });
+
+    test('an event with no dates can still have its own games removed', () {
+      expect(gate(game('l')), LineupRemoveGate.open);
+    });
+
+    test("a date the event no longer lists is left to the server's word", () {
+      expect(
+        gate(game('l', occurrenceId: 'd-gone'), dates: [past]),
+        LineupRemoveGate.open,
+      );
+    });
+
+    test('a cancelled event has every game started', () {
+      final event = item('e').event.copyWith(status: EventStatus.cancelled);
+
+      expect(
+        gate(game('l'), event: event, dates: [ahead]),
+        LineupRemoveGate.started,
+      );
+      expect(
+        gate(
+          game('l', occurrenceId: 'd-ahead'),
+          event: event,
+          dates: [ahead],
+        ),
+        LineupRemoveGate.started,
+      );
+    });
+
+    test('an event cancelled and then archived has every game started', () {
+      final event = item('e').event.copyWith(
+        status: EventStatus.archived,
+        cancelledAt: DateTime(2026, 11, 10),
+      );
+
+      expect(
+        gate(game('l'), event: event, dates: [ahead]),
+        LineupRemoveGate.started,
+      );
+      expect(
+        gate(
+          game('l'),
+          event: item('e').event.copyWith(status: EventStatus.archived),
+          dates: [ahead],
+        ),
+        LineupRemoveGate.open,
+      );
+    });
+
+    test('a moderator may remove', () {
+      expect(
+        gate(
+          game('l'),
+          actions: actionsOf(eventRole: EventRole.moderator),
+          dates: [ahead],
+        ),
+        LineupRemoveGate.open,
+      );
+    });
+
+    test('a participant, and a local-only event, have no remove', () {
+      expect(
+        gate(game('l'), actions: actionsOf(eventRole: EventRole.participant)),
+        LineupRemoveGate.hidden,
+      );
+      expect(
+        gate(game('l'), event: item('e').event.copyWith(isLocalOnly: true)),
+        LineupRemoveGate.hidden,
+      );
+    });
+  });
+
+  group('lineupStartedFor (#520)', () {
+    final now = DateTime(2026, 11, 20, 12);
+    final past = confirmed('d-past', DateTime(2026, 11, 1, 19));
+    final ahead = confirmed('d-ahead', DateTime(2026, 12, 1, 19));
+
+    bool started(String? occurrenceId, List<EventOccurrence> dates) =>
+        lineupStartedFor(ready(dates: dates).detail, occurrenceId, now: now);
+
+    test("a date's lineup has started from its start, or once called off", () {
+      expect(started('d-past', [past, ahead]), isTrue);
+      expect(started('d-ahead', [past, ahead]), isFalse);
+      expect(
+        started('d-ahead', [ahead.copyWith(status: OccurrenceStatus.declined)]),
+        isTrue,
+      );
+    });
+
+    test("the event's own has started once no date is still to come, and "
+        'never with no dates', () {
+      expect(started(null, [past]), isTrue);
+      expect(started(null, [past, ahead]), isFalse);
+      expect(started(null, const []), isFalse);
+    });
+
+    test("a date the event doesn't list hasn't, as far as it can tell", () {
+      expect(started('d-gone', [past]), isFalse);
+    });
+
+    test('it asks for no right to take the game out', () {
+      final state = ready(
+        dates: [past],
+        actions: actionsOf(eventRole: EventRole.participant),
+      );
+
+      expect(lineupStartedFor(state.detail, 'd-past', now: now), isTrue);
+    });
+  });
+
+  group('lineupGameAhead (#905)', () {
+    final now = DateTime(2026, 11, 20, 12);
+    final past = confirmed('d-past', DateTime(2026, 11, 1, 19));
+    final ahead = confirmed('d-ahead', DateTime(2026, 12, 1, 19));
+
+    bool isAhead(LineupGame game, {List<EventOccurrence> dates = const []}) =>
+        lineupGameAhead(ready(dates: dates).detail, game, now: now);
+
+    test("a date's game is ahead until its date starts", () {
+      expect(
+        isAhead(game('l', occurrenceId: 'd-ahead'), dates: [past, ahead]),
+        isTrue,
+      );
+      expect(
+        isAhead(game('l', occurrenceId: 'd-past'), dates: [past, ahead]),
+        isFalse,
+      );
+    });
+
+    test('a date called off or declined holds no game ahead', () {
+      for (final status in [
+        OccurrenceStatus.cancelled,
+        OccurrenceStatus.declined,
+      ]) {
+        expect(
+          isAhead(
+            game('l', occurrenceId: 'd-ahead'),
+            dates: [ahead.copyWith(status: status)],
+          ),
+          isFalse,
+          reason: '$status',
+        );
+      }
+    });
+
+    test("the event's own game is ahead while a date is, or while it has "
+        'none', () {
+      expect(isAhead(game('l'), dates: [past, ahead]), isTrue);
+      expect(isAhead(game('l'), dates: [past]), isFalse);
+      expect(isAhead(game('l')), isTrue);
+    });
+
+    test("a date the event doesn't list can't be told, so isn't counted", () {
+      expect(
+        isAhead(game('l', occurrenceId: 'd-gone'), dates: [ahead]),
+        isFalse,
+      );
+    });
+
+    test('it asks for no right to take the game out', () {
+      // A participant can't remove it, which says nothing of its date.
+      final state = ready(
+        dates: [past],
+        actions: actionsOf(eventRole: EventRole.participant),
+      );
+
+      expect(
+        lineupGameAhead(
+          state.detail,
+          game('l', occurrenceId: 'd-past'),
+          now: now,
+        ),
+        isFalse,
+      );
+    });
+  });
+
+  group('stillSupplies (#905)', () {
+    /// The pool row `o-l`, which `game('l')` names as its supplier, with the
+    /// counts the pool's read served.
+    OfferedGame offered({int? nominations, int? lineup}) => OfferedGame(
+      id: 'o-l',
+      attendeeId: 'att-ada',
+      collectionId: 'col-l',
+      platformGameId: 'pg-l',
+      gameId: 'g-l',
+      title: 'Game l',
+      platformName: 'Tabletop',
+      suppliedNominations: nominations,
+      suppliedLineup: lineup,
+    );
+
+    /// A nomination as [status], supplied from the row [from].
+    EventNomination nominated(
+      NominationStatus status, {
+      String from = 'o-l',
+    }) => EventNomination(
+      id: 'n-1',
+      eventId: 'e',
+      platformGameId: 'pg-l',
+      gameId: 'g-l',
+      title: 'Game l',
+      platformName: 'Tabletop',
+      status: status,
+      nominatedById: 'att-bo',
+      suppliedFromId: from,
+      createdAt: kItemInstant,
+    );
+
+    bool always(LineupGame _) => true;
+    bool never(LineupGame _) => false;
+
+    StillSupplies of(
+      OfferedGame row, {
+      List<EventNomination>? nominations,
+      List<LineupGame>? lineup,
+      bool Function(LineupGame)? ahead,
+    }) => stillSupplies(
+      row,
+      nominations: nominations,
+      lineup: lineup,
+      ahead: ahead ?? always,
+    );
+
+    test("the pool's counts say what the row supplies", () {
+      expect(of(offered(nominations: 0, lineup: 1)), StillSupplies.lineup);
+      expect(of(offered(nominations: 2, lineup: 0)), StillSupplies.nomination);
+      expect(of(offered(nominations: 0, lineup: 0)), StillSupplies.nothing);
+    });
+
+    test('a null count and an unknown lineup say nothing, never none', () {
+      expect(of(offered()), StillSupplies.nothing);
+      expect(of(offered(), nominations: const []), StillSupplies.nothing);
+    });
+
+    test('the lineup read counts its games still ahead that the row '
+        'supplies, whatever the count says', () {
+      expect(of(offered(lineup: 0), lineup: [game('l')]), StillSupplies.lineup);
+      expect(of(offered(), lineup: [game('l')]), StillSupplies.lineup);
+      expect(
+        of(offered(lineup: 0), lineup: [game('l')], ahead: never),
+        StillSupplies.nothing,
+      );
+      // Another row's game.
+      expect(
+        of(offered(lineup: 0), lineup: [game('x')]),
+        StillSupplies.nothing,
+      );
+    });
+
+    test('a live nomination held counts, whatever the count says; a decided '
+        "one or another row's does not", () {
+      for (final status in [
+        NominationStatus.open,
+        NominationStatus.awaitingApproval,
+        NominationStatus.paused,
+      ]) {
+        expect(
+          of(offered(nominations: 0), nominations: [nominated(status)]),
+          StillSupplies.nomination,
+          reason: '$status',
+        );
+      }
+      for (final status in [
+        NominationStatus.passed,
+        NominationStatus.approved,
+        NominationStatus.withdrawn,
+        NominationStatus.rejected,
+      ]) {
+        expect(
+          of(offered(nominations: 0), nominations: [nominated(status)]),
+          StillSupplies.nothing,
+          reason: '$status',
+        );
+      }
+      expect(
+        of(
+          offered(),
+          nominations: [nominated(NominationStatus.open, from: 'o-x')],
+        ),
+        StillSupplies.nothing,
+      );
+    });
+
+    test(
+      'a live nomination comes before the lineup, as the 409 names them',
+      () {
+        expect(
+          of(offered(nominations: 1, lineup: 1)),
+          StillSupplies.nomination,
+        );
+        expect(
+          of(
+            offered(lineup: 1),
+            nominations: [nominated(NominationStatus.open)],
+          ),
+          StillSupplies.nomination,
+        );
+        expect(
+          of(offered(nominations: 1), lineup: [game('l')]),
+          StillSupplies.nomination,
+        );
+      },
+    );
+  });
 }

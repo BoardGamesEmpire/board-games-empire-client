@@ -507,15 +507,38 @@ void main() {
       });
 
       test('after the supplier returns the game is still free', () {
-        final all = [nom('a', status: NominationStatus.passed, supplied: 'o2')];
+        // In the lineup through its nomination while its supplier is going.
+        final passed = nom(
+          'a',
+          status: NominationStatus.passed,
+          supplied: 'o2',
+        ).copyWith(elevatedTo: (id: 'l-1', occurrenceId: null));
         expect(
-          nominateTaken(game, all, scope: whole, lineup: const []),
+          nominateTaken(game, [passed], scope: whole, lineup: [lined()]),
+          NominateTaken.inLineup,
+        );
+        // They leave: the server takes it out of the lineup, and the
+        // nomination, Passed still, no longer names it.
+        final left = passed.copyWith(elevatedTo: null);
+        expect(
+          nominateTaken(game, [left], scope: whole, lineup: const []),
           NominateTaken.no,
         );
-        expect(
-          inLineupFor(game, all, scope: d1, lineup: const []),
-          isFalse,
-        );
+        // They come back: nothing puts it back, so the lineup the next read
+        // brings holds other games, not it, and it stays free everywhere.
+        final later = [lined(platformGameId: 'pg-other')];
+        for (final scope in [whole, d1, d2]) {
+          expect(
+            nominateTaken(game, [left], scope: scope, lineup: later),
+            NominateTaken.no,
+            reason: '$scope',
+          );
+          expect(
+            inLineupFor(game, [left], scope: scope, lineup: later),
+            isFalse,
+            reason: '$scope',
+          );
+        }
       });
 
       test('a whole-event lineup game blocks every date', () {
