@@ -564,6 +564,11 @@ class EventDetailScreen extends StatelessWidget {
   static Key sectionTabKey(EventGamesSection section) =>
       Key('event_detail.section_${section.name}');
 
+  /// Key on the chip of one date in the Games tab's row of dates (#1042), or,
+  /// for a null [occurrenceId], on Every date's.
+  static Key dateChipKey(String? occurrenceId) =>
+      Key('event_detail.date_${occurrenceId ?? 'all'}');
+
   /// Key on what the Games tab shows under the bar (#516).
   static const Key gamesBodyKey = Key('event_detail.games_body');
 

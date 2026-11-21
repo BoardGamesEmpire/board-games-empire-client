@@ -1099,6 +1099,43 @@ void main() {
       expect(reportedDates, ['all']);
     });
 
+    // The row of dates above the sub-tabs (#1042).
+    testWidgets('tapping a date chooses it and reports the location', (
+      tester,
+    ) async {
+      await open(tester, 'lineup', date: 'o-2');
+      await showingDated(tester);
+      bool selected(String? id) => tester
+          .widget<ChoiceChip>(find.byKey(EventDetailScreen.dateChipKey(id)))
+          .selected;
+      expect(selected('o-2'), isTrue);
+      expect(reports, isEmpty);
+
+      // The row opens scrolled to the date the location names.
+      await tester.ensureVisible(
+        find.byKey(EventDetailScreen.dateChipKey(null)),
+      );
+      await tester.tap(find.byKey(EventDetailScreen.dateChipKey(null)));
+      await tester.pump();
+
+      expect(games(tester).dateView, const EveryDateView());
+      expect(selected(null), isTrue);
+      expect(selected('o-2'), isFalse);
+      expect(reports, [EventScreenTab.lineup]);
+      expect(reportedDates, ['all']);
+
+      dateLocation.value = 'o-1';
+      await tester.pumpAndSettle();
+      expect(selected('o-1'), isTrue);
+    });
+
+    testWidgets('an event with one date has no row', (tester) async {
+      await open(tester, 'lineup');
+      await showingOnAnyTab(tester);
+
+      expect(find.byKey(EventDetailScreen.dateChipKey(null)), findsNothing);
+    });
+
     testWidgets('a date chosen while a sub-tab change runs is told with it, '
         'once it settles', (tester) async {
       await open(tester, 'lineup', date: 'o-2');

@@ -19,6 +19,7 @@ import 'package:events/src/widgets/event_detail_tabs.dart';
 import 'package:events/src/widgets/event_game_filter_options.dart';
 import 'package:events/src/widgets/event_game_quick_look.dart';
 import 'package:events/src/widgets/event_game_row_head.dart';
+import 'package:events/src/widgets/event_games_date_row.dart';
 import 'package:events/src/widgets/event_games_footer.dart';
 import 'package:events/src/widgets/event_games_row_lines.dart';
 import 'package:events/src/widgets/event_games_tab_scope.dart';
@@ -448,6 +449,9 @@ class EventGamesTab extends StatelessWidget {
   /// Key on the sliver that holds the sub-tabs' bar (#945).
   static const _sectionBarKey = ValueKey<String>('event_games.section_bar');
 
+  /// Key on the sliver that holds the row of dates (#1042).
+  static const _dateRowKey = ValueKey<String>('event_games.date_row');
+
   /// Key on the Nominations section, so the pool's slivers never take its
   /// place as the sub-tabs swap (#945).
   static const _nominationsKey = ValueKey<String>('event_games.nominations');
@@ -484,6 +488,32 @@ class EventGamesTab extends StatelessWidget {
 
     return SliverMainAxisGroup(
       slivers: [
+        // The row of dates (#1042) above the sub-tabs it chooses for, where
+        // the event has one ([EventGamesTabController.dateView]). It listens
+        // to the controller itself: a date chosen changes nothing else the
+        // screen builds.
+        if (nominations != null && lineup != null)
+          SliverToBoxAdapter(
+            key: _dateRowKey,
+            child: ListenableBuilder(
+              listenable: controller,
+              builder: (context, _) => switch (controller.dateView) {
+                final view? => Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    EventGamesDateRow(
+                      dates: detail.detail.snapshot.occurrences,
+                      selected: view,
+                      onSelected: controller.chooseDate,
+                      now: now,
+                    ),
+                    const BgeGap.md(),
+                  ],
+                ),
+                null => const SizedBox.shrink(),
+              },
+            ),
+          ),
         // The sub-tabs' bar (#945), where there are sub-tabs to show: with no
         // nominations' or lineup's state the pool shows alone, with no bar.
         // Keyed, so it keeps its place, and the sub-tab chosen its focus, as
