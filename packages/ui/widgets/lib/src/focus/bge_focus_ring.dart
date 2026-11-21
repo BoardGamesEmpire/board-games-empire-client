@@ -20,9 +20,11 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// the ring, a press there hits nothing in it.
 ///
 /// A mouse or a trackpad leaves the highlight mode as it was, which on a
-/// desktop is the keyboard's, so a control that takes focus from a click would
-/// be ringed by it. Such a control hides the ring with [suppressed] while its
-/// focus is a pointer's (#707).
+/// desktop is the keyboard's. So a press from one, anywhere in the app, hides
+/// the ring until the next key press, as it hides every ring
+/// ([BgePointerPressed], #758): focus a dialog hands back after a click, or
+/// that code moves here, stays unringed. A control may also hide the ring
+/// with [suppressed], as one does while its focus is a pointer's (#707).
 class BgeFocusRing extends StatefulWidget {
   /// Creates a ring with the corners of [borderRadius] around what [builder]
   /// builds.
@@ -30,6 +32,7 @@ class BgeFocusRing extends StatefulWidget {
     required this.borderRadius,
     required this.builder,
     this.suppressed = false,
+    this.color,
     super.key,
   });
 
@@ -40,6 +43,12 @@ class BgeFocusRing extends StatefulWidget {
   /// caller knows a pointer gave. The ring follows the focus again as soon as
   /// this is false.
   final bool suppressed;
+
+  /// The ring's colour, or null for the scheme's `primary`.
+  ///
+  /// Give it where the control sits on something other than a surface, which
+  /// `primary` was never solved against: pass a colour that holds 3:1 there.
+  final Color? color;
 
   /// Builds the content, given the `onFocusChange` for its control.
   final Widget Function(BuildContext context, ValueChanged<bool> onFocusChange)
@@ -52,18 +61,23 @@ class BgeFocusRing extends StatefulWidget {
 class _BgeFocusRingState extends State<BgeFocusRing> {
   bool _hasFocus = false;
 
-  /// Whether the ring shows: the control has focus, and by keyboard.
+  /// Whether the ring shows: the control has focus, by keyboard, and no
+  /// mouse has pressed since the last key press.
   bool _showRing = false;
 
   @override
   void initState() {
     super.initState();
     FocusManager.instance.addHighlightModeListener(_sync);
+    BgePointerPressed.attach();
+    BgePointerPressed.listenable.addListener(_sync);
   }
 
   @override
   void dispose() {
     FocusManager.instance.removeHighlightModeListener(_sync);
+    BgePointerPressed.listenable.removeListener(_sync);
+    BgePointerPressed.detach();
     super.dispose();
   }
 
@@ -75,7 +89,8 @@ class _BgeFocusRingState extends State<BgeFocusRing> {
   void _sync([FocusHighlightMode? _]) {
     final show =
         _hasFocus &&
-        FocusManager.instance.highlightMode == FocusHighlightMode.traditional;
+        FocusManager.instance.highlightMode == FocusHighlightMode.traditional &&
+        !BgePointerPressed.value;
     if (mounted && show != _showRing) setState(() => _showRing = show);
   }
 
@@ -86,7 +101,7 @@ class _BgeFocusRingState extends State<BgeFocusRing> {
         ? _RingDecoration(
             borderRadius: widget.borderRadius,
             border: Border.all(
-              color: Theme.of(context).colorScheme.primary,
+              color: widget.color ?? Theme.of(context).colorScheme.primary,
               width: BgeTokens.of(context).focusOutlineWidth,
             ),
           )

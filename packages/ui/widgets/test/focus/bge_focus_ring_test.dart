@@ -1,4 +1,5 @@
 import 'package:bge_test_support/widgets.dart';
+import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
@@ -11,10 +12,17 @@ const _otherKey = Key('other');
 
 /// An opaque box with a tappable ink over it, counting its mounts.
 class _Content extends StatefulWidget {
-  const _Content({required this.onFocusChange, required this.onMount});
+  const _Content({
+    required this.onFocusChange,
+    required this.onMount,
+    this.focusNode,
+    this.onTap,
+  });
 
   final ValueChanged<bool> onFocusChange;
   final VoidCallback onMount;
+  final FocusNode? focusNode;
+  final VoidCallback? onTap;
 
   @override
   State<_Content> createState() => _ContentState();
@@ -34,7 +42,11 @@ class _ContentState extends State<_Content> {
     height: 60,
     child: ColoredBox(
       color: Colors.black,
-      child: InkWell(onTap: () {}, onFocusChange: widget.onFocusChange),
+      child: InkWell(
+        focusNode: widget.focusNode,
+        onTap: widget.onTap ?? () {},
+        onFocusChange: widget.onFocusChange,
+      ),
     ),
   );
 }
@@ -57,10 +69,21 @@ void main() {
   });
 
   /// The ringed content at the top left, and another control after it.
-  Future<Rect> show(WidgetTester tester) async {
+  ///
+  /// [onTap] is the content's, given a context under the navigator.
+  Future<Rect> show(
+    WidgetTester tester, {
+    FocusNode? focusNode,
+    void Function(BuildContext context)? onTap,
+    Color? color,
+    ThemeData? theme,
+  }) async {
     await tester.pumpWidget(
       hostAtSize(
         tester,
+        builder: theme == null
+            ? null
+            : (context, child) => Theme(data: theme, child: child!),
         RepaintBoundary(
           key: boundary,
           child: Scaffold(
@@ -72,9 +95,12 @@ void main() {
                 children: [
                   BgeFocusRing(
                     borderRadius: BorderRadius.zero,
+                    color: color,
                     builder: (context, onFocusChange) => _Content(
                       onFocusChange: onFocusChange,
                       onMount: () => mounts++,
+                      focusNode: focusNode,
+                      onTap: onTap == null ? null : () => onTap(context),
                     ),
                   ),
                   TextButton(
@@ -230,5 +256,104 @@ void main() {
     await tester.pump();
 
     expect(mounts, 1);
+  });
+
+  testWidgets(
+    'a mouse press anywhere hides the ring, and the next key press brings it '
+    'back (#758)',
+    (tester) async {
+      final node = FocusNode();
+      addTearDown(node.dispose);
+      final content = await show(tester, focusNode: node);
+
+      // On empty space: no control takes the press, or the focus.
+      await tester.tapAt(const Offset(300, 600), kind: PointerDeviceKind.mouse);
+      await tester.pump();
+      // Focus that arrives with the hand on the mouse, as in code. Settled,
+      // not one pump: the focus change lands in a microtask, and the ink
+      // rebuilds for it in the frame after.
+      node.requestFocus();
+      await tester.pumpAndSettle();
+
+      expect(node.hasPrimaryFocus, isTrue);
+      expect(
+        FocusManager.instance.highlightMode,
+        FocusHighlightMode.traditional,
+      );
+      expect(await onTheRing(tester, content), Colors.black);
+
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.keyA);
+      await tester.pump();
+      expect(await onTheRing(tester, content), primary, reason: 'a key press');
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.keyA);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.macOS),
+  );
+
+  testWidgets(
+    'focus handed back after a mouse press shows no ring',
+    (tester) async {
+      // Opened by keyboard, closed by mouse: the user's hand is on the mouse
+      // when focus comes back, and the mouse never pressed this control.
+      final node = FocusNode();
+      addTearDown(node.dispose);
+      final content = await show(
+        tester,
+        focusNode: node,
+        onTap: (context) => showDialog<void>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('Dialog'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                child: const Text('Close'),
+              ),
+            ],
+          ),
+        ),
+      );
+      await tab(tester);
+      await tester.pump();
+      expect(node.hasPrimaryFocus, isTrue);
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(find.byType(AlertDialog), findsOneWidget);
+
+      await tester.tap(find.text('Close'), kind: PointerDeviceKind.mouse);
+      await tester.pumpAndSettle();
+
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(node.hasPrimaryFocus, isTrue);
+      expect(
+        FocusManager.instance.highlightMode,
+        FocusHighlightMode.traditional,
+      );
+      expect(await onTheRing(tester, content), Colors.black);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.macOS),
+  );
+
+  group('color replaces primary', () {
+    // A colour no theme's primary is, so the ring can only be the given one.
+    const given = Color(0xFF00FF00);
+    final themes = {
+      'light': BgeTheme.light,
+      'dark': BgeTheme.dark,
+      'highContrastLight': BgeTheme.highContrastLight,
+      'highContrastDark': BgeTheme.highContrastDark,
+    };
+    for (final MapEntry(key: name, value: build) in themes.entries) {
+      testWidgets(name, (tester) async {
+        final theme = build();
+        expect(theme.colorScheme.primary, isNot(given));
+        final content = await show(tester, color: given, theme: theme);
+
+        await tab(tester);
+        await tester.pump();
+
+        expect(await onTheRing(tester, content), given);
+      });
+    }
   });
 }
