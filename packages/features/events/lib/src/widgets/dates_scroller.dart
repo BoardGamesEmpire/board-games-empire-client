@@ -45,8 +45,17 @@ class _DatesScrollerState extends State<DatesScroller> {
   /// Moves the dates half of what shows, towards the dates on the side the
   /// arrow points: which way that is along the scroller follows the text's
   /// direction.
+  ///
+  /// Keys a focused date leaves alone come here too, so chords pass: Alt+Left
+  /// is the browser's Back, and Control and Meta chords are the platform's.
   KeyEventResult _onKey(FocusNode _, KeyEvent event) {
     if (event is KeyUpEvent) return KeyEventResult.ignored;
+    final keyboard = HardwareKeyboard.instance;
+    if (keyboard.isAltPressed ||
+        keyboard.isControlPressed ||
+        keyboard.isMetaPressed) {
+      return KeyEventResult.ignored;
+    }
     final direction = switch (event.logicalKey) {
       LogicalKeyboardKey.arrowLeft => AxisDirection.left,
       LogicalKeyboardKey.arrowRight => AxisDirection.right,

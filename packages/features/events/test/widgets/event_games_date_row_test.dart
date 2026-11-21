@@ -269,7 +269,8 @@ void main() {
     await simulateKeyUpEvent(LogicalKeyboardKey.arrowLeft);
     await tester.sendKeyUpEvent(LogicalKeyboardKey.altLeft);
 
-    expect(result, isNotNull);
+    // Unhandled all the way up: the scroller round the chips lets it pass too.
+    expect(result, isFalse);
     expect(focusedChip(tester), 'o-1');
   });
 
@@ -329,6 +330,36 @@ void main() {
     await tester.pumpAndSettle();
     expect(scroller(tester).position.pixels, 0);
   });
+
+  for (final modifier in [
+    LogicalKeyboardKey.altLeft,
+    LogicalKeyboardKey.controlLeft,
+    LogicalKeyboardKey.metaLeft,
+  ]) {
+    testWidgets('with the scroller itself focused, '
+        '${modifier.keyLabel} and an arrow are left to the platform', (
+      tester,
+    ) async {
+      useViewSize(tester, const Size(400, 600));
+      await tester.pumpWidget(app(dates(12)));
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pumpAndSettle();
+      expect(focusedChip(tester), isNull);
+
+      await tester.sendKeyDownEvent(modifier);
+      final right = await simulateKeyDownEvent(LogicalKeyboardKey.arrowRight);
+      await simulateKeyUpEvent(LogicalKeyboardKey.arrowRight);
+      final left = await simulateKeyDownEvent(LogicalKeyboardKey.arrowLeft);
+      await simulateKeyUpEvent(LogicalKeyboardKey.arrowLeft);
+      await tester.sendKeyUpEvent(modifier);
+      await tester.pumpAndSettle();
+
+      expect(right, isFalse);
+      expect(left, isFalse);
+      expect(scroller(tester).position.pixels, 0);
+    });
+  }
 
   testWidgets('the focused scroller is ringed at the focus outline width', (
     tester,
