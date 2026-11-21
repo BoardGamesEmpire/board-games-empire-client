@@ -28,16 +28,19 @@ import 'package:observability/observability.dart';
 /// Passes coalesce: one asked for during a pass runs as one more pass after
 /// it, never alongside it.
 ///
-/// After a switch, the app is still Ready from the old server until the new
+/// After a switch, and after an add hands a link back ([holdUntilSignedIn],
+/// #971), the app is still Ready from the old server until the new
 /// server's sign-in outcome arrives. Until then nothing lands on the new
 /// server: a pass in that window, asked for by a link arriving or by the
 /// switch's own pass, leaves the link held. The outcome is [drain]: the
 /// shell's authenticated signal. A server that needs sign-in leaves Ready
 /// instead, and its sign-in drains later (#82). Links for other servers are
-/// acted on at once, so the newest link still wins. There is no wait when
-/// the switch lands back on the server the auth scope is still signed in on,
-/// before the scope rebuilt for another: its bloc never left, so no outcome
-/// would come, and the link lands at once (#985).
+/// acted on at once, so the newest link still wins, except the link handed
+/// back after an add: it waits for the added server's sign-in even when
+/// that server isn't the link's (#971). There is no wait
+/// when the switch lands back on the server the auth scope is still signed
+/// in on, before the scope rebuilt for another: its bloc never left, so no
+/// outcome would come, and the link lands at once (#985).
 ///
 /// A switch happens once per link delivery. If a later pass finds that
 /// link's server no longer active, the app has moved elsewhere since the
@@ -97,26 +100,42 @@ class DeepLinkConsumer {
   bool _draining = false;
   bool _again = false;
 
-  /// The link whose server this consumer last made active, while that
-  /// delivery of it is still held. Met again while that server isn't
-  /// active, the link is dropped: the switch happened, and the app has moved
-  /// off it since. A link arriving clears it.
+  /// The link whose server this consumer last made active, or an add did
+  /// ([holdUntilSignedIn]), while that delivery of it is still held. Met
+  /// again while that server isn't active, the link is dropped: the switch
+  /// happened, and the app has moved off it since. A link handed back whose
+  /// server isn't the one added is never dropped for this: it names no
+  /// server here, so the mark only holds it through the added server's
+  /// wait, and once that ends it shows the unknown-server screen, even when
+  /// the app has left the added server (#971). A link arriving clears it.
   ServerDeepLink? _switchRequestedFor;
 
+  /// The local id of the server made active for [_switchRequestedFor], by
+  /// the switch or by the add. Read only while that is set.
+  String? _switchedToLocalId;
+
   /// The local id of a server this consumer switched to that the auth
-  /// scope wasn't signed in on, until a sign-in outcome arrives ([drain]).
+  /// scope wasn't signed in on, or one a link was handed back for after its
+  /// add ([holdUntilSignedIn]), until a sign-in outcome arrives ([drain]).
+  /// The hand-back sets it even when a newer link keeps the handed-back one
+  /// out of the slot (#971).
+  ///
   /// While it is the active server, neither that server's links nor app
   /// links land, because the page an app link opens reads the active
-  /// server, and would show the old one's (#126). Links for other servers
-  /// still act at once. A switch back to
-  /// the server the scope is still signed in on never sets it (#985), so
-  /// after a round trip it can name a server the app has since left; it
-  /// holds links only for the active server, and the next outcome clears it.
+  /// server, and would show the old one's (#126). Nor does the handed-back
+  /// link when its server isn't the one added: its unknown-server screen
+  /// would leave that server's sign-in (#971). Links for other servers, and
+  /// any other link for a server not added here, still act at once. A
+  /// switch back to the server the scope is still signed in on never sets
+  /// it (#985), so after a round trip it can name a server the app has
+  /// since left; it holds links only for the active server, and the next
+  /// outcome clears it.
   String? _awaitingSignInOn;
 
-  /// Whether a switched-to server's sign-in outcome is still awaited and
-  /// [activeServerId] is that server. Web has no orchestrator and never sets
-  /// the wait, so it is false there.
+  /// Whether the sign-in outcome of a server switched to, or of one added
+  /// with a link handed back ([holdUntilSignedIn]), is still awaited and
+  /// [activeServerId] is that server. Web has no orchestrator, so no active
+  /// server, and it is false there.
   bool _awaitingSignInOnActive(String? activeServerId) {
     final awaiting = _awaitingSignInOn;
     return awaiting != null && awaiting == activeServerId;
@@ -131,7 +150,8 @@ class DeepLinkConsumer {
   /// Drains the slot on the shell's authenticated signal: the active server
   /// has a session. That is also how the app enters Ready, so it covers a
   /// link held through bootstrap and sign-in, and it is the sign-in outcome
-  /// a server switch waits for. Links that arrive drain on their own.
+  /// a server switch waits for, as does a link handed back after an add
+  /// ([holdUntilSignedIn]). Links that arrive drain on their own.
   ///
   /// A call during a pass coalesces into one more pass after it, and
   /// returns at once, before that pass has run, so awaiting [drain] does
@@ -156,6 +176,84 @@ class DeepLinkConsumer {
     } finally {
       _draining = false;
     }
+  }
+
+  /// Holds [link] until the server with [localServerId] has a sign-in
+  /// outcome, then lands it as any held link would, on the shell's next
+  /// [drain] (#971).
+  ///
+  /// For a link handed back after its server was added from it. After the
+  /// add, the app can still be Ready from the old server while the added
+  /// one is active and signed out, so a link put straight into the slot
+  /// would land at once, before sign-in, and be lost. This sets the same
+  /// wait a switch sets, then holds the link.
+  ///
+  /// Call it only once the added server is the active one. Any [drain]
+  /// after the call clears the wait, as it does a switch's.
+  ///
+  /// When the server added is the link's, the add counts as this link's
+  /// switch: if the app leaves the added server before the link lands, the
+  /// link is dropped, not switched back to (#82).
+  ///
+  /// The server added can be another one than the link names, when the user
+  /// changed the address. The link still waits for that server's sign-in,
+  /// and the drain that ends the wait shows the unknown-server screen, as
+  /// for any link whose server isn't added. It does so even when the app has
+  /// left the added server by then: the link names no server here, so
+  /// there is no switch to have moved off.
+  ///
+  /// When the slot already holds a link, that one arrived later, and wins:
+  /// [link] isn't put back, and the log says so. The wait is set all the
+  /// same, since a newer link for the added server would otherwise land at
+  /// once and be lost in the same way. Under the wait, the newer link:
+  /// - for the added server is held until its sign-in. A pass for it
+  ///   already in flight reads the wait after its lookup, so it holds the
+  ///   link too;
+  /// - that is an app link is held too, as after a switch;
+  /// - for another registered server still switches to it;
+  /// - for a server not added here still shows the unknown-server screen at
+  ///   once. Only the handed-back link waits in that case.
+  ///
+  /// The add doesn't count as the newer link's switch, so if the app leaves
+  /// the added server before its sign-in, a newer link for that server is
+  /// switched back to, as any link arriving for it would be.
+  ///
+  /// The exception is a newer link whose switch has already been made, to
+  /// another server than the one added. The add has since moved the app off
+  /// that server, so the next pass would drop it as it drops any switched
+  /// link the app has left. [link] takes its place instead, so the user's
+  /// last step, the add, still opens something. Not while a pass runs: it
+  /// may be that link's own, inside its switch.
+  ///
+  /// Does nothing after [dispose].
+  void holdUntilSignedIn(ServerDeepLink link, String localServerId) {
+    if (_disposed) return;
+    // The wait first: setting the link triggers a pass at once, through
+    // the holder's listener, and that pass must see it. A pass already in
+    // flight for a newer link sees it after its own await.
+    _awaitingSignInOn = localServerId;
+    final held = _holder.peek;
+    if (held != null) {
+      final leftBehind =
+          !_draining &&
+          _switchRequestedFor == held &&
+          _switchedToLocalId != localServerId;
+      if (!leftBehind) {
+        _logger.info(
+          'Deep link handed back after an add, discarded for a newer one: '
+          '$link',
+        );
+        return;
+      }
+      _logger.info(
+        'Deep link dropped: the add left the server it was switched to, '
+        'and the link handed back takes its place: $held',
+      );
+    }
+    _holder.set(link);
+    // After the link: its arrival forgets any earlier switch.
+    _switchRequestedFor = link;
+    _switchedToLocalId = localServerId;
   }
 
   /// Stops listening; a drain in flight navigates nowhere after this. The
@@ -220,9 +318,17 @@ class DeepLinkConsumer {
     if (!_stillCurrent(link)) return;
 
     if (localId == null) {
+      // Handed back after an add, and the server added at the address the
+      // user typed is another one (#971). Its sign-in comes first: routing
+      // to the unknown-server screen now would leave it, and the app, with
+      // no sign-in shown. Its outcome drains, and the screen shows then.
+      if (_switchRequestedFor == link &&
+          _awaitingSignInOnActive(orchestrator.activeServerId)) {
+        return;
+      }
       _holder.takeIf(link);
       _logger.info('Deep link names a server not added here: $link');
-      _go(AppRoutes.deepLinkUnknownServer);
+      _go(AppRoutes.deepLinkUnknownServerOf(link.location));
       return;
     }
 
@@ -250,6 +356,7 @@ class DeepLinkConsumer {
     }
 
     _switchRequestedFor = link;
+    _switchedToLocalId = localId;
     try {
       await activateServer(orchestrator, localId);
     } on Object catch (error, stackTrace) {

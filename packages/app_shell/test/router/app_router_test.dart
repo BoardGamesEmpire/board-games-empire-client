@@ -1086,6 +1086,29 @@ void main() {
     });
   });
 
+  group('AppRoutes link-carrying locations', () {
+    // Escapes, a query of its own, and an address: the parts a link's
+    // location carries that a hand-built query would mangle (#971).
+    const linkLocation = '/server/a%2Fb/event/1?address=x&tab=games';
+
+    test('deepLinkUnknownServerOf carries the link intact', () {
+      final uri = Uri.parse(AppRoutes.deepLinkUnknownServerOf(linkLocation));
+
+      expect(AppRoutes.deepLinkParam, 'link');
+      expect(uri.path, AppRoutes.deepLinkUnknownServer);
+      expect(uri.queryParameters.keys, ['link']);
+      expect(uri.queryParameters['link'], linkLocation);
+    });
+
+    test('serversAddOf carries the link intact', () {
+      final uri = Uri.parse(AppRoutes.serversAddOf(linkLocation));
+
+      expect(uri.path, AppRoutes.serversAdd);
+      expect(uri.queryParameters.keys, ['link']);
+      expect(uri.queryParameters['link'], linkLocation);
+    });
+  });
+
   group('AppRoutes.isServerManager', () {
     test('is the manager and everything under it', () {
       expect(AppRoutes.serversAdd, '${AppRoutes.servers}/add');

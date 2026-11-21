@@ -379,6 +379,18 @@ abstract final class AppRoutes {
 
   static const _serversAddSegment = 'add';
 
+  /// The query parameter both [deepLinkUnknownServerOf] and [serversAddOf]
+  /// carry a server link in: its router location, `/server/{id}/…?…`, with
+  /// the link's own query, address and all, inside it (#971).
+  static const deepLinkParam = 'link';
+
+  /// [serversAdd] carrying a server link's [linkLocation], so the form can
+  /// offer that link's server (#971).
+  static String serversAddOf(String linkLocation) => Uri(
+    path: serversAdd,
+    queryParameters: {deepLinkParam: linkLocation},
+  ).toString();
+
   /// Whether [location] is the server manager or one of its children (#134).
   static bool isServerManager(String location) {
     final path = Uri.tryParse(location)?.path ?? location;
@@ -389,6 +401,14 @@ abstract final class AppRoutes {
   /// Not in [bootstrapLocations]: it is reachable only once the app is
   /// ready, and a ready app is not bounced off it.
   static const deepLinkUnknownServer = '/link/unknown-server';
+
+  /// [deepLinkUnknownServer] carrying the link that led there, as its
+  /// [linkLocation], so the screen can offer to add the link's server
+  /// (#971).
+  static String deepLinkUnknownServerOf(String linkLocation) => Uri(
+    path: deepLinkUnknownServer,
+    queryParameters: {deepLinkParam: linkLocation},
+  ).toString();
 
   /// The bootstrap-owned locations a ready app is bounced away from.
   /// `settings` is deliberately absent: it is a normal post-ready

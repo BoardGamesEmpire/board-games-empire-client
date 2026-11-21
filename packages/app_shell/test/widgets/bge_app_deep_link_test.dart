@@ -279,16 +279,15 @@ void main() {
     );
     await pumpApp(tester, cubit, holder: holder);
 
-    holder.set(
-      const ServerDeepLink(
-        serverId: 'bge-unknown',
-        location: '/server/bge-unknown/event/ev-1',
-      ),
+    const link = ServerDeepLink(
+      serverId: 'bge-unknown',
+      location: '/server/bge-unknown/event/ev-1',
     );
+    holder.set(link);
     await tester.pumpAndSettle();
 
     expect(find.byType(UnknownServerLinkScreen), findsOneWidget);
-    expect(location(tester), AppRoutes.deepLinkUnknownServer);
+    expect(location(tester), AppRoutes.deepLinkUnknownServerOf(link.location));
     expect(holder.peek, isNull);
   });
 
