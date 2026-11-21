@@ -244,6 +244,62 @@ void main() {
       expect(await repo.lastWrite('e1'), greaterThan(before!));
     });
 
+    test('cacheEventPolicy writes the lists its answer carries', () async {
+      // Cached from the list, which carries none of the lists, and then
+      // edited: `PATCH /events/:id/policy` answers with all three, and the
+      // scope, so the edit's answer is the first news of them (#1009).
+      await cache(testSnapshot('e1', policy: listedPolicy(cached)));
+      final answer = edited.copyWith(
+        occurrenceOverrideScope: OccurrenceOverrideScope.none,
+        allowedPlatformTypes: const [PlatformType.mobile],
+        allowedPlatformIds: const [],
+        allowedCategoryIds: const ['category-9'],
+      );
+
+      expect(await repo.cacheEventPolicy(answer), isTrue);
+
+      expect((await repo.getEvent('e1'))!.policy, answer);
+
+      // And an answer without them, as from a server that doesn't serve
+      // them, leaves the cached lists as they were.
+      expect(await repo.cacheEventPolicy(listedPolicy(edited)), isTrue);
+
+      final policy = (await repo.getEvent('e1'))!.policy!;
+      expect(policy.allowedPlatformTypes, [PlatformType.mobile]);
+      expect(policy.allowedPlatformIds, isEmpty);
+      expect(policy.allowedCategoryIds, ['category-9']);
+    });
+
+    test(
+      "an edit's answer leaves the dates' rules as known as they were",
+      () async {
+        // Cached from the list: no read has carried the dates' rules (#1009).
+        await cache(testSnapshot('e1', policy: listedPolicy(cached)));
+
+        // The answer carries the lists, but not the dates' rules, so they are
+        // still not known.
+        expect(await repo.cacheEventPolicy(edited), isTrue);
+        var event = (await repo.getEvent('e1'))!;
+        expect(event.policy!.allowedPlatformIds, isNotNull);
+        expect(event.occurrencePolicies, isNull);
+
+        // A detail read carries them, none here, and an edit after it keeps
+        // them known.
+        await cache(
+          testSnapshot(
+            'e1',
+            occurrences: [testOccurrence('e1-o1', eventId: 'e1')],
+            policy: edited,
+            occurrencePolicies: const [],
+          ),
+        );
+        expect(await repo.cacheEventPolicy(cached), isTrue);
+        event = (await repo.getEvent('e1'))!;
+        expect(event.occurrencePolicies, isNotNull);
+        expect(event.occurrencePolicies, isEmpty);
+      },
+    );
+
     test("returns false for an event that isn't cached", () async {
       expect(await repo.cacheEventPolicy(edited), isFalse);
 
@@ -296,6 +352,34 @@ void main() {
       expect(removed, isTrue);
       expect((await cachedDates('e1')).map((o) => o.id), ['o2']);
       expect(await repo.lastWrite('e1'), greaterThan(before!));
+    });
+
+    test('removing a cached date removes its rules', () async {
+      await cache(
+        testSnapshot(
+          'e1',
+          occurrences: [
+            testOccurrence('o1', eventId: 'e1'),
+            testOccurrence('o2', eventId: 'e1', sortOrder: 1),
+          ],
+          policy: testPolicy(eventId: 'e1'),
+          occurrencePolicies: [
+            testOccurrencePolicy('o1'),
+            testOccurrencePolicy('o2'),
+          ],
+        ),
+      );
+
+      expect(
+        await repo.removeCachedOccurrence(eventId: 'e1', occurrenceId: 'o1'),
+        isTrue,
+      );
+
+      expect((await repo.getEvent('e1'))!.occurrencePolicies, [
+        testOccurrencePolicy('o2'),
+      ]);
+      final rows = await db.select(db.eventOccurrencePoliciesTable).get();
+      expect(rows.map((r) => r.occurrenceId), ['o2']);
     });
 
     test('is false for one not cached', () async {

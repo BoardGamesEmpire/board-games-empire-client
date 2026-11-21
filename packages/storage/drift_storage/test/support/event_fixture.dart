@@ -126,14 +126,58 @@ EventPolicy testPolicy({String id = 'pol-1', String eventId = 'e-1'}) =>
       voteEligibility: VoteEligibility.poolParticipants,
       interestedWeight: InterestedWeight.asAgainst,
       votingWindowHours: 48,
+      occurrenceOverrideScope: OccurrenceOverrideScope.tightenOnly,
+      allowedPlatformTypes: const [PlatformType.pc, PlatformType.tabletop],
+      allowedPlatformIds: const ['platform-1', 'platform-2'],
+      allowedCategoryIds: const ['category-1'],
       createdAt: kFixtureEventInstant,
       updatedAt: kFixtureEventInstant.add(const Duration(hours: 4)),
     );
 
+/// [policy] as the list reads carry it: without the three rule lists, which
+/// only the detail read, the create and a policy edit carry (#1009).
+EventPolicy listedPolicy(EventPolicy policy) => policy.copyWith(
+  allowedPlatformTypes: null,
+  allowedPlatformIds: null,
+  allowedCategoryIds: null,
+);
+
+/// The own rules of the date [occurrenceId], every override set, each to a
+/// value [testPolicy] doesn't use (#1009).
+EventOccurrencePolicy testOccurrencePolicy(String occurrenceId) =>
+    EventOccurrencePolicy(
+      id: '$occurrenceId-rules',
+      occurrenceId: occurrenceId,
+      allowedCategoryIds: const ['category-2', 'category-3'],
+      allowedPlatformIds: const ['platform-3'],
+      allowedPlatformTypes: const [PlatformType.console],
+      platformTypesUnrestricted: false,
+      platformsUnrestricted: true,
+      capacityUnrestricted: false,
+      restrictToGameCategories: false,
+      strictCapacity: true,
+      requireHostApprovalToJoin: true,
+      allowSpectators: false,
+      restrictToAttendeePool: false,
+      maxAttendees: 6,
+      maxTotalParticipants: 9,
+      fillerMaxPlayTime: 20,
+      voteThresholdValue: 3,
+      voteQuorumValue: 4,
+      votingWindowHours: 12,
+      gameAdditionMode: GameAdditionMode.requiresVote,
+      voteThresholdType: VoteThresholdType.fixedCount,
+      voteQuorumType: VoteQuorumType.fixedCount,
+      voteEligibility: VoteEligibility.confirmedOnly,
+      interestedWeight: InterestedWeight.asFor,
+      createdAt: kFixtureEventInstant.add(const Duration(hours: 5)),
+      updatedAt: kFixtureEventInstant.add(const Duration(hours: 6)),
+    );
+
 /// The event [id] as one read returned it: with one dated occurrence unless
-/// [occurrences] says otherwise, [policy] when given, and [attendees] and
-/// [attendance] as given. Leave [attendees] out for the list's snapshot,
-/// which carries no roster.
+/// [occurrences] says otherwise, [policy] when given, and [attendees],
+/// [attendance] and [occurrencePolicies] as given. Leave [attendees] and
+/// [occurrencePolicies] out for the list's snapshot, which carries neither.
 EventSnapshot testSnapshot(
   String id, {
   DateTime? createdAt,
@@ -143,6 +187,7 @@ EventSnapshot testSnapshot(
   EventPolicy? policy,
   List<EventAttendee>? attendees,
   EventAttendance? attendance,
+  List<EventOccurrencePolicy>? occurrencePolicies,
 }) => EventSnapshot(
   event: testEvent(
     id,
@@ -154,4 +199,5 @@ EventSnapshot testSnapshot(
   policy: policy,
   attendees: attendees,
   attendance: attendance,
+  occurrencePolicies: occurrencePolicies,
 );

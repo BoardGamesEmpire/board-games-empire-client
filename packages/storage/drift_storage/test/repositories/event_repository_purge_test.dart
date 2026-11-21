@@ -466,4 +466,32 @@ void main() {
       });
     },
   );
+
+  test('removing the last access row deletes the date rules too', () async {
+    // `event_occurrence_policies` references `events` with no cascade, so
+    // with foreign keys enforced the event's row can only go after them.
+    for (final id in ['e-gone', 'e-kept']) {
+      await a.cacheEvent(
+        testSnapshot(
+          id,
+          policy: testPolicy(id: '$id-policy', eventId: id),
+          occurrencePolicies: [testOccurrencePolicy('$id-o1')],
+        ),
+        source: EventAccessSource.attending,
+      );
+    }
+
+    final purged = await a.purgeAttendanceAbsentFrom({
+      'e-kept',
+    }, purgeable: await a.purgeableAttendance());
+
+    expect(purged, {'e-gone'});
+    final rows = await db.select(db.eventOccurrencePoliciesTable).get();
+    expect(rows.map((r) => (r.eventId, r.occurrenceId)), [
+      ('e-kept', 'e-kept-o1'),
+    ]);
+    expect((await db.select(db.eventsTable).get()).map((r) => r.id), [
+      'e-kept',
+    ]);
+  });
 }

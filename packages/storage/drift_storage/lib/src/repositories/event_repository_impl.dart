@@ -1,7 +1,10 @@
+import 'dart:convert';
+
 import 'package:cuid2/cuid2.dart';
 import 'package:drift/drift.dart';
 import 'package:drift_storage/src/databases/server_database.dart';
 import 'package:drift_storage/src/repositories/stored_enum_name.dart';
+import 'package:drift_storage/src/repositories/string_list_codec.dart';
 import 'package:drift_storage/src/repositories/watch_disposal.dart';
 import 'package:drift_storage/src/tables/event_access_table.dart';
 import 'package:interfaces/repositories.dart';
@@ -13,7 +16,7 @@ import 'package:models/domain.dart';
 ///
 /// ## One copy of each event, read per user
 ///
-/// `events` and the four tables beside it hold each row once per server,
+/// `events` and the five tables beside it hold each row once per server,
 /// whichever users it was cached for. Every write also records the event for
 /// this repository's user in `event_access`, under the source of the read
 /// that brought it, and every read returns only events recorded for that
@@ -206,11 +209,23 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
         if (s.attendees case final attendees? when attendees.isEmpty)
           s.event.id,
     };
+    // Only the detail read carries the dates' rules, and it carries the rules
+    // of every date it serves that has any, so they're replaced wholesale, as
+    // the occurrences are, and an empty list beside a policy clears them. A
+    // snapshot without them, as from the lists or a create, leaves the cached
+    // ones. So does one without a policy: the server serves a caller refused
+    // the policy `occurrencePolicies: []` beside `policy: null`, and that
+    // empty list says no more about the dates' rules than the null does
+    // about the policy (#1009).
+    final dateRules = {
+      for (final s in written)
+        if (s.policy != null) s.event.id: ?s.occurrencePolicies,
+    };
 
     await _db.batch((b) {
-      // The events first, since the other four tables reference them and
-      // foreign keys are enforced. An upsert, not a REPLACE, which would
-      // delete the rows their keys name before writing them again.
+      // The events first, since the other tables reference them and foreign
+      // keys are enforced. An upsert, not a REPLACE, which would delete the
+      // rows their keys name before writing them again.
       b.insertAllOnConflictUpdate(_db.eventsTable, [
         for (final s in written) _eventToCompanion(s.event),
       ]);
@@ -218,7 +233,10 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
 
       // A snapshot without a policy says nothing about the cached one: a
       // read serves none to a caller its own check refuses, and the server
-      // has no policy delete.
+      // has no policy delete. One with a policy is an upsert, never a delete
+      // and insert, and its update writes only the columns the companion
+      // holds. A list read's policy carries none of the three rule lists, so
+      // it leaves the lists a detail read cached (#1009).
       b
         ..insertAllOnConflictUpdate(_db.eventPoliciesTable, [
           for (final s in written)
@@ -234,6 +252,30 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
         ..insertAll(_db.eventOccurrencesTable, [
           for (final s in written) ...s.occurrences.map(_occurrenceToCompanion),
         ]);
+
+      if (dateRules.isNotEmpty) {
+        b
+          ..deleteWhere(
+            _db.eventOccurrencePoliciesTable,
+            (t) => t.eventId.isIn(dateRules.keys),
+          )
+          ..insertAll(_db.eventOccurrencePoliciesTable, [
+            for (final MapEntry(key: eventId, value: rules)
+                in dateRules.entries)
+              for (final rule in rules)
+                _occurrencePolicyToCompanion(rule, eventId: eventId),
+          ])
+          // Each of these events' policy rows was upserted above. A policy
+          // written any other way leaves the flag as it is, so it holds
+          // false until a read like this one.
+          ..update(
+            _db.eventPoliciesTable,
+            const EventPoliciesTableCompanion(
+              occurrencePoliciesRead: Value(true),
+            ),
+            where: (t) => t.eventId.isIn(dateRules.keys),
+          );
+      }
 
       if (rosters.isNotEmpty) {
         b
@@ -704,10 +746,10 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
     });
   }
 
-  /// Deletes the event [localId] with its occurrences, roster, policy and
-  /// every user's access to it, while it is `isLocalOnly`: an event [create]
-  /// wrote that the server has not confirmed. Anything else cached under
-  /// that id stays. Run inside the caller's transaction.
+  /// Deletes the event [localId] with its occurrences, roster, policy, its
+  /// dates' rules and every user's access to it, while it is `isLocalOnly`:
+  /// an event [create] wrote that the server has not confirmed. Anything
+  /// else cached under that id stays. Run inside the caller's transaction.
   Future<void> _deleteLocalOnly(String localId) async {
     final t = _db.eventsTable;
     final localOnly = _db.selectOnly(t)
@@ -719,10 +761,10 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
     await _deleteUnreachable({localId});
   }
 
-  /// Deletes the cached event [id] with its occurrences, roster, policy and
-  /// every user's access to it, unless the sync queue owns it: an event the
-  /// server says it deleted, which no user's read survives. Run inside the
-  /// caller's transaction.
+  /// Deletes the cached event [id] with its occurrences, roster, policy, its
+  /// dates' rules and every user's access to it, unless the sync queue owns
+  /// it: an event the server says it deleted, which no user's read survives.
+  /// Run inside the caller's transaction.
   Future<void> _deleteServerCopy(String id) async {
     if ((await _queueOwnedIds([id])).isNotEmpty) return;
     await (_db.delete(
@@ -1114,6 +1156,12 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
               ))
               .go();
       if (removed == 0) return false;
+      // And the date's own rules, which the server deletes with it (#1009).
+      await (_db.delete(_db.eventOccurrencePoliciesTable)..where(
+            (t) =>
+                t.occurrenceId.equals(occurrenceId) & t.eventId.equals(eventId),
+          ))
+          .go();
 
       await _db.batch((b) => _stampGeneration(b, [eventId]));
       return true;
@@ -1148,11 +1196,12 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
   }
 
   /// Deletes each of [eventIds] that no user, by any source, has an access
-  /// row for any longer, with its occurrences, roster and policy: an event
-  /// no read can reach.
+  /// row for any longer, with its occurrences, roster, policy and its dates'
+  /// rules: an event no read can reach.
   ///
-  /// The children go first, for their foreign keys. Run inside the
-  /// transaction that removed the access.
+  /// The children go first, for their foreign keys, none of which cascades.
+  /// This is the only delete of an `events` row, so every child table is
+  /// cleared here. Run inside the transaction that removed the access.
   Future<void> _deleteUnreachable(Set<String> eventIds) async {
     await (_db.delete(
       _db.eventOccurrencesTable,
@@ -1162,6 +1211,9 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
     )..where((t) => _unreachable(t.eventId, eventIds))).go();
     await (_db.delete(
       _db.eventPoliciesTable,
+    )..where((t) => _unreachable(t.eventId, eventIds))).go();
+    await (_db.delete(
+      _db.eventOccurrencePoliciesTable,
     )..where((t) => _unreachable(t.eventId, eventIds))).go();
     await (_db.delete(
       _db.eventsTable,
@@ -1329,6 +1381,12 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
     final policy = await (_db.select(
       _db.eventPoliciesTable,
     )..where((t) => t.eventId.equals(id))).getSingleOrNull();
+    // Null, not none, until a read has carried the dates' rules (#1009). The
+    // policy row says whether one has: its lists can't, since a create's
+    // answer and a policy edit's carry them without the rules.
+    final dateRules = policy?.occurrencePoliciesRead ?? false
+        ? await _readDateRules(id)
+        : null;
 
     // The snapshot's three states: the roster for a user it names or one
     // whose own detail read was shown it (#567), empty for anyone else, and
@@ -1345,7 +1403,38 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
       occurrences: occurrences.map(_mapOccurrence).toList(),
       policy: policy == null ? null : _mapPolicy(policy),
       attendees: roster,
+      occurrencePolicies: dateRules,
     );
+  }
+
+  /// The cached rules of [eventId]'s dates, in the dates' order, `sortOrder`
+  /// then id, as the detail read serves them (#1009).
+  ///
+  /// Joined to the dates, so a rules row whose date is no longer cached is
+  /// left out: the table has no key to `event_occurrences`, and a list read
+  /// that drops a date the server deleted leaves its rules row until the
+  /// next detail read replaces them.
+  Future<List<EventOccurrencePolicy>> _readDateRules(String eventId) async {
+    final rules = _db.eventOccurrencePoliciesTable;
+    final dates = _db.eventOccurrencesTable;
+    final query =
+        _db.select(rules).join([
+            innerJoin(
+              dates,
+              dates.id.equalsExp(rules.occurrenceId) &
+                  dates.eventId.equalsExp(rules.eventId),
+              useColumns: false,
+            ),
+          ])
+          ..where(rules.eventId.equals(eventId))
+          ..orderBy([
+            OrderingTerm.asc(dates.sortOrder),
+            OrderingTerm.asc(dates.id),
+          ]);
+    return [
+      for (final row in await query.get())
+        _mapOccurrencePolicy(row.readTable(rules)),
+    ];
   }
 
   /// Whether a roster is cached for [eventId], whoever is on it.
@@ -1375,7 +1464,7 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
   /// Re-reads the event whenever a table [getEvent] reads from changes, or
   /// the access that makes it readable does (#498).
   ///
-  /// The event is several queries over five tables, so the stream is a
+  /// The event is several queries over six tables, so the stream is a
   /// trigger and a read, not one query for Drift to follow: a constant select
   /// that declares the tables it stands for, so Drift emits on listen and
   /// after any write to them, and each emission re-reads the detail in one
@@ -1398,6 +1487,7 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
             _db.eventOccurrencesTable,
             _db.eventAttendeesTable,
             _db.eventPoliciesTable,
+            _db.eventOccurrencePoliciesTable,
             _db.eventAccessTable,
           },
         )
@@ -1777,10 +1867,22 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
     voteEligibility: VoteEligibility.fromWire(row.voteEligibility),
     interestedWeight: InterestedWeight.fromWire(row.interestedWeight),
     votingWindowHours: row.votingWindowHours,
+    occurrenceOverrideScope: OccurrenceOverrideScope.fromWire(
+      row.occurrenceOverrideScope,
+    ),
+    allowedPlatformTypes: _decodeRuleList(
+      row.allowedPlatformTypesJson,
+    )?.map(PlatformType.fromWire).toList(),
+    allowedPlatformIds: _decodeRuleList(row.allowedPlatformIdsJson),
+    allowedCategoryIds: _decodeRuleList(row.allowedCategoryIdsJson),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   );
 
+  /// [p]'s columns. A rule list [p] doesn't carry is left absent, so the
+  /// upsert keeps the cached one: null is a read that didn't carry it, not
+  /// an empty list (#1009). The scope is always written: every read that
+  /// carries a policy carries it, as a column of the row.
   EventPoliciesTableCompanion _policyToCompanion(EventPolicy p) =>
       EventPoliciesTableCompanion.insert(
         id: p.id,
@@ -1823,7 +1925,166 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
           (v) => v.toWire(),
         ),
         votingWindowHours: Value(p.votingWindowHours),
+        occurrenceOverrideScope: Value(
+          storedEnumName(
+            p.occurrenceOverrideScope,
+            OccurrenceOverrideScope.unknown,
+            (v) => v.toWire(),
+          ),
+        ),
+        allowedPlatformTypesJson: switch (p.allowedPlatformTypes) {
+          final types? => Value(
+            jsonEncode(types.map(_platformTypeName).toList()),
+          ),
+          null => const Value.absent(),
+        },
+        allowedPlatformIdsJson: switch (p.allowedPlatformIds) {
+          final ids? => Value(jsonEncode(ids)),
+          null => const Value.absent(),
+        },
+        allowedCategoryIdsJson: switch (p.allowedCategoryIds) {
+          final ids? => Value(jsonEncode(ids)),
+          null => const Value.absent(),
+        },
         createdAt: p.createdAt,
         updatedAt: p.updatedAt,
       );
+
+  EventOccurrencePolicy _mapOccurrencePolicy(
+    EventOccurrencePoliciesTableData row,
+  ) => EventOccurrencePolicy(
+    id: row.id,
+    occurrenceId: row.occurrenceId,
+    allowedCategoryIds: decodeStringList(row.allowedCategoryIdsJson),
+    allowedPlatformIds: decodeStringList(row.allowedPlatformIdsJson),
+    allowedPlatformTypes: decodeStringList(
+      row.allowedPlatformTypesJson,
+    ).map(PlatformType.fromWire).toList(),
+    platformTypesUnrestricted: row.platformTypesUnrestricted,
+    platformsUnrestricted: row.platformsUnrestricted,
+    capacityUnrestricted: row.capacityUnrestricted,
+    restrictToGameCategories: row.restrictToGameCategories,
+    strictCapacity: row.strictCapacity,
+    requireHostApprovalToJoin: row.requireHostApprovalToJoin,
+    allowSpectators: row.allowSpectators,
+    restrictToAttendeePool: row.restrictToAttendeePool,
+    maxAttendees: row.maxAttendees,
+    maxTotalParticipants: row.maxTotalParticipants,
+    fillerMaxPlayTime: row.fillerMaxPlayTime,
+    voteThresholdValue: row.voteThresholdValue,
+    voteQuorumValue: row.voteQuorumValue,
+    votingWindowHours: row.votingWindowHours,
+    gameAdditionMode: _fromStoredName(
+      row.gameAdditionMode,
+      GameAdditionMode.fromWire,
+    ),
+    voteThresholdType: _fromStoredName(
+      row.voteThresholdType,
+      VoteThresholdType.fromWire,
+    ),
+    voteQuorumType: _fromStoredName(
+      row.voteQuorumType,
+      VoteQuorumType.fromWire,
+    ),
+    voteEligibility: _fromStoredName(
+      row.voteEligibility,
+      VoteEligibility.fromWire,
+    ),
+    interestedWeight: _fromStoredName(
+      row.interestedWeight,
+      InterestedWeight.fromWire,
+    ),
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  );
+
+  /// [r]'s columns, under [eventId], which the model doesn't carry: the
+  /// snapshot it came in names it (#1009). A null override stays null, the
+  /// event's value.
+  EventOccurrencePoliciesTableCompanion _occurrencePolicyToCompanion(
+    EventOccurrencePolicy r, {
+    required String eventId,
+  }) => EventOccurrencePoliciesTableCompanion.insert(
+    id: r.id,
+    occurrenceId: r.occurrenceId,
+    eventId: eventId,
+    allowedCategoryIdsJson: Value(jsonEncode(r.allowedCategoryIds)),
+    allowedPlatformIdsJson: Value(jsonEncode(r.allowedPlatformIds)),
+    allowedPlatformTypesJson: Value(
+      jsonEncode(r.allowedPlatformTypes.map(_platformTypeName).toList()),
+    ),
+    platformTypesUnrestricted: r.platformTypesUnrestricted,
+    platformsUnrestricted: r.platformsUnrestricted,
+    capacityUnrestricted: r.capacityUnrestricted,
+    restrictToGameCategories: Value(r.restrictToGameCategories),
+    strictCapacity: Value(r.strictCapacity),
+    requireHostApprovalToJoin: Value(r.requireHostApprovalToJoin),
+    allowSpectators: Value(r.allowSpectators),
+    restrictToAttendeePool: Value(r.restrictToAttendeePool),
+    maxAttendees: Value(r.maxAttendees),
+    maxTotalParticipants: Value(r.maxTotalParticipants),
+    fillerMaxPlayTime: Value(r.fillerMaxPlayTime),
+    voteThresholdValue: Value(r.voteThresholdValue),
+    voteQuorumValue: Value(r.voteQuorumValue),
+    votingWindowHours: Value(r.votingWindowHours),
+    gameAdditionMode: Value(
+      _storedNameOrNull(
+        r.gameAdditionMode,
+        GameAdditionMode.unknown,
+        (v) => v.toWire(),
+      ),
+    ),
+    voteThresholdType: Value(
+      _storedNameOrNull(
+        r.voteThresholdType,
+        VoteThresholdType.unknown,
+        (v) => v.toWire(),
+      ),
+    ),
+    voteQuorumType: Value(
+      _storedNameOrNull(
+        r.voteQuorumType,
+        VoteQuorumType.unknown,
+        (v) => v.toWire(),
+      ),
+    ),
+    voteEligibility: Value(
+      _storedNameOrNull(
+        r.voteEligibility,
+        VoteEligibility.unknown,
+        (v) => v.toWire(),
+      ),
+    ),
+    interestedWeight: Value(
+      _storedNameOrNull(
+        r.interestedWeight,
+        InterestedWeight.unknown,
+        (v) => v.toWire(),
+      ),
+    ),
+    createdAt: r.createdAt,
+    updatedAt: r.updatedAt,
+  );
+
+  /// What a rule list stores for [type]: its wire name, as
+  /// `platform_games.platform_type` stores one (#1009).
+  static String _platformTypeName(PlatformType type) =>
+      storedEnumName(type, PlatformType.unknown, (v) => v.toWire());
+
+  /// What a nullable enum column stores for [value]: null for null, else
+  /// as [storedEnumName] has it.
+  static String? _storedNameOrNull<T extends Enum>(
+    T? value,
+    T unknown,
+    String Function(T) toWire,
+  ) => value == null ? null : storedEnumName(value, unknown, toWire);
+
+  /// The value a nullable enum column [name] holds, null for null.
+  static T? _fromStoredName<T>(String? name, T Function(String) fromWire) =>
+      name == null ? null : fromWire(name);
+
+  /// A policy's rule-list column read back: null where no read has carried
+  /// the list, else as [decodeStringList] reads it (#1009).
+  static List<String>? _decodeRuleList(String? json) =>
+      json == null ? null : decodeStringList(json);
 }

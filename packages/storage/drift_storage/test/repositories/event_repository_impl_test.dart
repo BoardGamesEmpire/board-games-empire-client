@@ -54,6 +54,8 @@ void main() {
       occurrences: [testOccurrence('o-1'), testOccurrence('o-2', sortOrder: 1)],
       policy: testPolicy(),
       attendees: [_me, _other],
+      // One date with rules of its own, and one taking the event's.
+      occurrencePolicies: [testOccurrencePolicy('o-2')],
     );
 
     await repo.cacheEvent(snapshot, source: EventAccessSource.attending);
@@ -84,14 +86,17 @@ void main() {
       'roster', () async {
     // The list carries no roster, and no detail read has cached one, so the
     // roster is not known: null, as the snapshot had it, rather than the
-    // empty list that says this user may not read it.
-    final snapshot = testSnapshot('e-1', policy: testPolicy());
+    // empty list that says this user may not read it. The same goes for
+    // the policy's lists and the dates' rules (#1009).
+    final snapshot = testSnapshot('e-1', policy: listedPolicy(testPolicy()));
 
     await repo.cacheEvent(snapshot, source: EventAccessSource.attending);
 
     final cached = await repo.getEvent('e-1');
     expect(cached, snapshot);
     expect(cached!.attendees, isNull);
+    expect(cached.policy!.allowedCategoryIds, isNull);
+    expect(cached.occurrencePolicies, isNull);
   });
 
   test("reads occurrences and the roster in the server's order", () async {
@@ -129,6 +134,59 @@ void main() {
 
     expect(cached!.occurrences.map((o) => o.id), ['o-b', 'o-a', 'o-c']);
     expect(cached.attendees!.map((a) => a.id), ['att-1', 'att-2', 'att-0']);
+  });
+
+  test("reads the dates' rules in the dates' order, and leaves out a date's "
+      'once the date is gone', () async {
+    final dates = [
+      testOccurrence('o-c', sortOrder: 1),
+      testOccurrence('o-b'),
+      testOccurrence('o-a', sortOrder: 1),
+    ];
+    await repo.cacheEvent(
+      testSnapshot(
+        'e-1',
+        occurrences: dates,
+        policy: testPolicy(),
+        occurrencePolicies: [
+          testOccurrencePolicy('o-c'),
+          testOccurrencePolicy('o-a'),
+          testOccurrencePolicy('o-b'),
+        ],
+      ),
+      source: EventAccessSource.read,
+    );
+
+    expect(
+      (await repo.getEvent('e-1'))!.occurrencePolicies!.map(
+        (r) => r.occurrenceId,
+      ),
+      ['o-b', 'o-a', 'o-c'],
+    );
+
+    // The server deleted `o-c`, and the list read that says so carries no
+    // date rules, so its row stays until a detail read replaces them. The
+    // table has no key to the dates, and a rules row for a date the cache no
+    // longer holds is left out of the read rather than failing it.
+    await repo.cacheEvent(
+      testSnapshot(
+        'e-1',
+        occurrences: dates.sublist(1),
+        policy: listedPolicy(testPolicy()),
+      ),
+      source: EventAccessSource.attending,
+    );
+
+    expect(
+      (await repo.getEvent('e-1'))!.occurrencePolicies!.map(
+        (r) => r.occurrenceId,
+      ),
+      ['o-b', 'o-a'],
+    );
+    expect(
+      await db.select(db.eventOccurrencePoliciesTable).get(),
+      hasLength(3),
+    );
   });
 
   test('replaces occurrences wholesale', () async {
@@ -303,7 +361,19 @@ void main() {
         voteQuorumType: VoteQuorumType.unknown,
         voteEligibility: VoteEligibility.unknown,
         interestedWeight: InterestedWeight.unknown,
+        occurrenceOverrideScope: OccurrenceOverrideScope.unknown,
+        allowedPlatformTypes: const [PlatformType.unknown, PlatformType.pc],
       ),
+      occurrencePolicies: [
+        testOccurrencePolicy('o-1').copyWith(
+          allowedPlatformTypes: const [PlatformType.unknown],
+          gameAdditionMode: GameAdditionMode.unknown,
+          voteThresholdType: VoteThresholdType.unknown,
+          voteQuorumType: VoteQuorumType.unknown,
+          voteEligibility: VoteEligibility.unknown,
+          interestedWeight: InterestedWeight.unknown,
+        ),
+      ],
       attendees: [
         _me.copyWith(
           status: EventParticipationStatus.unknown,
@@ -333,6 +403,14 @@ void main() {
         row.id: row.roleName,
     };
     expect(roleNames, {'att-me': 'Unknown', 'att-other': null});
+    final policyRow = await db.select(db.eventPoliciesTable).getSingle();
+    expect(policyRow.occurrenceOverrideScope, 'Unknown');
+    expect(policyRow.allowedPlatformTypesJson, '["Unknown","PC"]');
+    final rulesRow = await db
+        .select(db.eventOccurrencePoliciesTable)
+        .getSingle();
+    expect(rulesRow.gameAdditionMode, 'Unknown');
+    expect(rulesRow.allowedPlatformTypesJson, '["Unknown"]');
   });
 
   test('watchAttendingEvents lists attending events newest created first, and '
@@ -490,6 +568,7 @@ void main() {
         'e-3',
         policy: testPolicy(id: 'pol-3', eventId: 'e-3'),
         attendees: [testAttendee('att-me-3', userId: _kUserId, eventId: 'e-3')],
+        occurrencePolicies: [testOccurrencePolicy('e-3-o1')],
       );
 
       await repo.cacheEvents([

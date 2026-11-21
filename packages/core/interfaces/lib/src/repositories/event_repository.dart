@@ -103,7 +103,16 @@ enum EventAccessSource {
 ///   cached, no roster is left, and [getEvent] answers null.
 /// - **The policy** is replaced only by a snapshot carrying one. A read serves
 ///   none to a caller its own check refuses, and the server has no policy
-///   delete, so a missing one is never news.
+///   delete, so a missing one is never news. Its three rule lists are written
+///   only by a policy that carries them, as the detail read's, a create's
+///   answer and [cacheEventPolicy]'s do. A list read's policy carries none,
+///   so it keeps the lists cached before, and writes the rest (#1009).
+/// - **Each date's own rules** are replaced wholesale, an empty list included,
+///   by a snapshot carrying them beside a policy, which only the detail read
+///   does: it serves the rules of every date it serves that has any. A
+///   snapshot without them keeps the cached ones, and so does one without a
+///   policy: a caller who may not read the policy is served an empty list
+///   beside its null, which says nothing of the dates' rules (#1009).
 /// - **The user's own answer** is kept on their `attending` and `household`
 ///   access and on their row of a cached roster, and each read writes all
 ///   three where it can, so a later read of any kind replaces it (#667, #589,
@@ -131,8 +140,12 @@ enum EventAccessSource {
 abstract class EventRepository {
   /// Writes one read's [snapshot] for the current user, in one transaction:
   ///
-  /// - upserts the event, and its policy when the snapshot carries one;
+  /// - upserts the event, and its policy when the snapshot carries one,
+  ///   keeping a cached rule list that policy doesn't carry (#1009);
   /// - replaces its occurrences wholesale;
+  /// - replaces its dates' own rules wholesale when the snapshot carries a
+  ///   policy and `snapshot.occurrencePolicies` is non-null, and keeps them
+  ///   otherwise (#1009);
   /// - replaces its roster only when `snapshot.attendees` is non-empty, and
   ///   removes the current user's own row from it when it is empty;
   /// - records [source] access for the current user, beside any access they
@@ -242,7 +255,8 @@ abstract class EventRepository {
   /// answered, so they have none on these.
   ///
   /// An event left with no access row at all, from any user, is deleted with
-  /// its occurrences, roster and policy, since no read can reach it.
+  /// its occurrences, roster, policy and its dates' own rules, since no read
+  /// can reach it.
   Future<Set<String>> purgeAttendanceAbsentFrom(
     Set<String> snapshotIds, {
     required Map<String, int> purgeable,
@@ -280,7 +294,7 @@ abstract class EventRepository {
   /// what the household shows them and nothing else, so their `attending`
   /// and `read` access, their row on each roster and every other user's
   /// access stay. An event left with no access row at all, from any user, is
-  /// deleted with its occurrences, roster and policy.
+  /// deleted with its occurrences, roster, policy and its dates' own rules.
   Future<Set<String>> purgeHouseholdEventsAbsentFrom(
     String householdId,
     Set<String> snapshotIds, {
@@ -293,6 +307,15 @@ abstract class EventRepository {
   /// The occurrences come in the server's order, `sortOrder` then id, and the
   /// roster in its order, `createdAt` then id. The policy is null until a
   /// read carries one.
+  ///
+  /// The policy's rule lists are null until a read carries them (#1009).
+  /// `occurrencePolicies` is null until a read carries the dates' rules,
+  /// which only the detail read does: not known, which is not none. A
+  /// create's answer and [cacheEventPolicy] carry the lists without them, so
+  /// they leave it null. After, it is the rules of each date that has its
+  /// own, in the dates' order, and empty where none has. A rules row whose
+  /// date is no longer cached, as after a list read drops a date the server
+  /// deleted, is left out.
   ///
   /// `attendees` keeps "not asked" apart from "may not read", as
   /// [EventSnapshot.attendees] does (see "The roster, to whom the server
@@ -318,11 +341,11 @@ abstract class EventRepository {
   /// [getEvent] answers, paired with what [getCurrentUserAttendance] answers.
   ///
   /// Emits on listen, null where [getEvent] would answer null, and again
-  /// after any write to the event, its occurrences, its roster, its policy or
-  /// anyone's access to it: each [cacheEvent], each page [cacheEvents]
-  /// writes, each purge or [forgetEvent] that removed something, and each
-  /// [removeDeletedEvent] that did. So a subscriber sees the event leave the
-  /// cache, as null, when the user's access to it goes.
+  /// after any write to the event, its occurrences, its roster, its policy,
+  /// its dates' own rules or anyone's access to it: each [cacheEvent], each
+  /// page [cacheEvents] writes, each purge or [forgetEvent] that removed
+  /// something, and each [removeDeletedEvent] that did. So a subscriber sees
+  /// the event leave the cache, as null, when the user's access to it goes.
   ///
   /// The two halves of an emission are read in one transaction, so a write
   /// landing between them can't pair one state of the roster with another's
@@ -355,11 +378,11 @@ abstract class EventRepository {
   ///
   /// In one transaction it removes their access rows of every source, then
   /// their own row on the event's roster, and then deletes the event with its
-  /// occurrences, roster and policy if no user has an access row left, as
-  /// [purgeAttendanceAbsentFrom] does. Another user's access and their row
-  /// on the roster stay, so the event keeps reading for them. The roster row
-  /// goes for the reason [purgeAttendanceAbsentFrom] gives: kept, it would
-  /// still answer with the user's old role and RSVP.
+  /// occurrences, roster, policy and its dates' own rules if no user has an
+  /// access row left, as [purgeAttendanceAbsentFrom] does. Another user's
+  /// access and their row on the roster stay, so the event keeps reading for
+  /// them. The roster row goes for the reason [purgeAttendanceAbsentFrom]
+  /// gives: kept, it would still answer with the user's old role and RSVP.
   ///
   /// Returns true when it removed access. Returns false, and changes
   /// nothing, when the user had no access to the event, when it has been
@@ -376,15 +399,15 @@ abstract class EventRepository {
   ///
   /// The server deleted it for everyone, so unlike [forgetEvent] this goes
   /// past the current user: in one transaction it deletes every user's
-  /// access rows, and the event with its occurrences, roster and policy. And
-  /// it takes no [lastWrite] mark. A mark guards a read's 404 against a newer
-  /// answer the server may have sent, and nothing restores a deleted event,
-  /// so an event written since is removed too (#501). A hydrate page
-  /// already in flight can still cache it again: that is the cache's
-  /// last-write-wins (#589), not this method's.
+  /// access rows, and the event with its occurrences, roster, policy and its
+  /// dates' own rules. And it takes no [lastWrite] mark. A mark guards a
+  /// read's 404 against a newer answer the server may have sent, and nothing
+  /// restores a deleted event, so an event written since is removed too
+  /// (#501). A hydrate page already in flight can still cache it again: that
+  /// is the cache's last-write-wins (#589), not this method's.
   ///
-  /// It writes the event, its occurrences, its roster, its policy and
-  /// everyone's access to it, so [watchEvent] emits null and
+  /// It writes the event, its occurrences, its roster, its policy, its dates'
+  /// own rules and everyone's access to it, so [watchEvent] emits null and
   /// [watchAttendingEvents] and [watchAttendingEventListItems] emit their
   /// list without it, when it removed something.
   ///
@@ -455,8 +478,10 @@ abstract class EventRepository {
   /// Writes [policy], the rules a policy edit returned, over the cached
   /// ones of `policy.eventId` (#500).
   ///
-  /// It writes the policy's own columns and leaves the event row, dates,
-  /// roster and access alone: the answer carries none of them.
+  /// It writes the policy's own columns, its rule lists and override scope
+  /// among them (#1009), and leaves the event row, dates, the dates' own
+  /// rules, roster and access alone: the answer carries none of them. A rule
+  /// list [policy] doesn't carry keeps the cached one.
   ///
   /// Returns false, writing nothing, when the event isn't cached, or is
   /// `isDirty` or `isLocalOnly`: the sync queue owns those, as
@@ -468,7 +493,7 @@ abstract class EventRepository {
   Future<bool> cacheEventPolicy(EventPolicy policy);
 
   /// Removes the cached date [occurrenceId] of [eventId], which the server
-  /// removed (#506).
+  /// removed (#506), with its own rules (#1009).
   ///
   /// Returns false, changing nothing, when it wasn't cached, or the event is
   /// `isDirty` or `isLocalOnly`. Stamps the event's generation when it

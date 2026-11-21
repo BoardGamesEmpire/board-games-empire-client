@@ -131,6 +131,10 @@ void main() {
     'event_policies': {
       for (final r in await db.select(db.eventPoliciesTable).get()) r.eventId,
     },
+    'event_occurrence_policies': {
+      for (final r in await db.select(db.eventOccurrencePoliciesTable).get())
+        r.eventId,
+    },
     'event_access': {
       for (final r in await db.select(db.eventAccessTable).get()) r.eventId,
     },
@@ -464,6 +468,7 @@ void main() {
         'event_occurrences': {'ev-server'},
         'event_attendees': {'ev-server'},
         'event_policies': {'ev-server'},
+        'event_occurrence_policies': <String>{},
         'event_access': {'ev-server'},
       });
     });
@@ -521,7 +526,19 @@ void main() {
       final created = await repo.create(fixedDraft());
       await repo.cacheEvent(serverCopy(), source: EventAccessSource.attending);
       final b = repoFor(_kUserB);
-      await b.cacheEvent(serverCopy(), source: EventAccessSource.read);
+      // B's own detail read, which carries the dates' rules.
+      await b.cacheEvent(
+        serverCopy().copyWith(
+          occurrencePolicies: [testOccurrencePolicy('ev-server-o1')],
+        ),
+        source: EventAccessSource.read,
+      );
+      // So the empty inventory below is the delete's, not an unwritten
+      // fixture's.
+      expect(
+        (await childEventIds())['event_occurrence_policies'],
+        {'ev-server'},
+      );
 
       await repo.reconcileCreatedEvent(
         serverCopy(),
@@ -538,6 +555,7 @@ void main() {
         'event_occurrences': <String>{},
         'event_attendees': <String>{},
         'event_policies': <String>{},
+        'event_occurrence_policies': <String>{},
         'event_access': <String>{},
       });
       expect((await entry(created.syncQueueId)).status, SyncStatus.completed);
@@ -820,6 +838,7 @@ void main() {
         'event_occurrences': {kept.event.id},
         'event_attendees': {kept.event.id},
         'event_policies': <String>{},
+        'event_occurrence_policies': <String>{},
         'event_access': {kept.event.id},
       });
       expect((await queue.getAllEntries()).map((e) => e.id), [

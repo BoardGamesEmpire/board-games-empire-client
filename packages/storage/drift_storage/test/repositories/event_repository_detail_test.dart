@@ -1,4 +1,4 @@
-import 'package:drift/drift.dart' show Value;
+import 'package:drift/drift.dart' show OrderingTerm, Value;
 import 'package:drift_storage/drift_storage_native.dart'
     show inMemoryServerDatabase;
 import 'package:drift_storage/src/databases/server_database.dart';
@@ -222,6 +222,34 @@ void main() {
       expect(detail.snapshot.attendees, isEmpty);
     });
 
+    test("watchEvent emits when a date's rules change", () async {
+      await a.cacheEvent(
+        testSnapshot(
+          'e-1',
+          policy: testPolicy(),
+          occurrencePolicies: [testOccurrencePolicy('e-1-o1')],
+        ),
+        source: EventAccessSource.read,
+      );
+      final emissions = a.watchEvent('e-1').take(2).toList();
+      await pumpEventQueue();
+
+      // Every repository write also stamps the event's row, which the watch
+      // follows already, so the rules table is written alone here: the watch
+      // must follow it on its own.
+      await (db.update(
+        db.eventOccurrencePoliciesTable,
+      )..where((t) => t.occurrenceId.equals('e-1-o1'))).write(
+        const EventOccurrencePoliciesTableCompanion(maxAttendees: Value(3)),
+      );
+
+      final seen = await emissions.timeout(const Duration(seconds: 5));
+      expect(
+        seen.map((d) => d!.snapshot.occurrencePolicies!.single.maxAttendees),
+        [6, 3],
+      );
+    });
+
     test('closes on dispose', () async {
       final done = a.watchEvent('e-1').toList();
 
@@ -229,6 +257,223 @@ void main() {
 
       await expectLater(done, completes);
     });
+  });
+
+  group("each date's rules and the policy lists (#1009)", () {
+    final dates = [
+      testOccurrence('e-1-o1'),
+      testOccurrence('e-1-o2', sortOrder: 1),
+    ];
+    final rules = [
+      testOccurrencePolicy('e-1-o1'),
+      testOccurrencePolicy('e-1-o2').copyWith(maxAttendees: 4),
+    ];
+
+    /// `GET /events/:id` for A: the policy with its lists, and [dateRules].
+    Future<void> readDetail({
+      EventPolicy? policy,
+      List<EventOccurrencePolicy>? dateRules,
+    }) => a.cacheEvent(
+      testSnapshot(
+        'e-1',
+        occurrences: dates,
+        policy: policy ?? testPolicy(),
+        attendees: [testAttendee('att-a', userId: _kUserA)],
+        occurrencePolicies: dateRules ?? rules,
+      ),
+      source: EventAccessSource.read,
+    );
+
+    Future<EventPoliciesTableData> policyRow() =>
+        db.select(db.eventPoliciesTable).getSingle();
+
+    test(
+      "a detail read caches each date's rules and the policy lists",
+      () async {
+        await readDetail();
+
+        final cached = (await a.getEvent('e-1'))!;
+        expect(cached.policy, testPolicy());
+        expect(cached.occurrencePolicies, rules);
+
+        // Stored as the table says: JSON arrays, the platform types by their
+        // wire names, and the scope by its own.
+        final row = await policyRow();
+        expect(row.allowedPlatformTypesJson, '["PC","Tabletop"]');
+        expect(row.allowedPlatformIdsJson, '["platform-1","platform-2"]');
+        expect(row.allowedCategoryIdsJson, '["category-1"]');
+        expect(row.occurrenceOverrideScope, 'TightenOnly');
+        final ruleRows = await (db.select(
+          db.eventOccurrencePoliciesTable,
+        )..orderBy([(t) => OrderingTerm.asc(t.occurrenceId)])).get();
+        expect(ruleRows.map((r) => (r.occurrenceId, r.eventId)), [
+          ('e-1-o1', 'e-1'),
+          ('e-1-o2', 'e-1'),
+        ]);
+        expect(ruleRows.first.allowedPlatformTypesJson, '["Console"]');
+        expect(ruleRows.first.gameAdditionMode, 'RequiresVote');
+      },
+    );
+
+    test(
+      'a list read keeps the lists and date rules a detail read cached',
+      () async {
+        for (final source in [
+          EventAccessSource.attending,
+          EventAccessSource.household,
+        ]) {
+          await readDetail();
+
+          // The list rows, as `GET /events` and a household's list serve
+          // them: the policy row with none of its lists, and no date rules.
+          // Its own columns are newer news, and are written.
+          await a.cacheEvents([
+            testSnapshot(
+              'e-1',
+              occurrences: dates,
+              policy: listedPolicy(testPolicy()).copyWith(maxAttendees: 10),
+            ),
+          ], source: source);
+
+          final cached = (await a.getEvent('e-1'))!;
+          expect(
+            cached.policy,
+            testPolicy().copyWith(maxAttendees: 10),
+            reason: 'from $source',
+          );
+          expect(cached.occurrencePolicies, rules, reason: 'from $source');
+        }
+      },
+    );
+
+    test('a list read writes the override scope its row carries', () async {
+      // The scope is a column of the policy row, which the lists serve whole
+      // (backend `policy: true`), so a list row's scope is the server's own,
+      // not a default standing in for one it left out.
+      await readDetail();
+
+      await a.cacheEvent(
+        testSnapshot(
+          'e-1',
+          occurrences: dates,
+          policy: listedPolicy(
+            testPolicy(),
+          ).copyWith(occurrenceOverrideScope: OccurrenceOverrideScope.none),
+        ),
+        source: EventAccessSource.attending,
+      );
+
+      final policy = (await a.getEvent('e-1'))!.policy!;
+      expect(policy.occurrenceOverrideScope, OccurrenceOverrideScope.none);
+      expect(policy.allowedPlatformIds, testPolicy().allowedPlatformIds);
+    });
+
+    test(
+      "a detail read that drops a date's override removes its row",
+      () async {
+        await readDetail();
+
+        await readDetail(dateRules: [rules.first]);
+
+        expect((await a.getEvent('e-1'))!.occurrencePolicies, [rules.first]);
+        expect(
+          await db.select(db.eventOccurrencePoliciesTable).get(),
+          hasLength(1),
+        );
+      },
+    );
+
+    test('a detail read with no date rules leaves none', () async {
+      await readDetail();
+
+      await readDetail(dateRules: const []);
+
+      expect((await a.getEvent('e-1'))!.occurrencePolicies, isEmpty);
+      expect(await db.select(db.eventOccurrencePoliciesTable).get(), isEmpty);
+    });
+
+    test('a detail read refused the policy keeps it and the date '
+        'rules', () async {
+      // A caller who may not read the policy gets `policy: null` and
+      // `occurrencePolicies: []`. That empty list is the refusal, not news
+      // that no date has rules, so both stay as cached, as for any snapshot
+      // without a policy.
+      await readDetail();
+
+      await a.cacheEvent(
+        testSnapshot(
+          'e-1',
+          occurrences: dates,
+          attendees: [testAttendee('att-a', userId: _kUserA)],
+          occurrencePolicies: const [],
+        ),
+        source: EventAccessSource.read,
+      );
+
+      final cached = (await a.getEvent('e-1'))!;
+      expect(cached.policy, testPolicy());
+      expect(cached.occurrencePolicies, rules);
+      expect(
+        await db.select(db.eventOccurrencePoliciesTable).get(),
+        hasLength(2),
+      );
+    });
+
+    test('date rules read null until a read carries the lists', () async {
+      // Cached from the list alone: neither the lists nor the dates' rules
+      // have been read, which is not the same as none.
+      await a.cacheEvent(
+        testSnapshot(
+          'e-1',
+          occurrences: dates,
+          policy: listedPolicy(testPolicy()),
+        ),
+        source: EventAccessSource.attending,
+      );
+      var cached = (await a.getEvent('e-1'))!;
+      expect(cached.policy!.allowedPlatformIds, isNull);
+      expect(cached.occurrencePolicies, isNull);
+
+      // No policy cached at all.
+      await a.cacheEvent(testSnapshot('e-2'), source: EventAccessSource.read);
+      expect((await a.getEvent('e-2'))!.occurrencePolicies, isNull);
+
+      await readDetail(dateRules: const []);
+      cached = (await a.getEvent('e-1'))!;
+      expect(cached.occurrencePolicies, isNotNull);
+      expect(cached.occurrencePolicies, isEmpty);
+    });
+
+    test(
+      "a policy with its lists but no dates' rules leaves them null",
+      () async {
+        // As a create's answer carries it: the lists, and no dates' rules.
+        // Those are still not known, though the lists are.
+        await a.cacheEvent(
+          testSnapshot('e-1', occurrences: dates, policy: testPolicy()),
+          source: EventAccessSource.read,
+        );
+        var cached = (await a.getEvent('e-1'))!;
+        expect(cached.policy!.allowedPlatformIds, isNotNull);
+        expect(cached.occurrencePolicies, isNull);
+        expect((await policyRow()).occurrencePoliciesRead, isFalse);
+
+        // The detail read sets the flag, and a list read after it, which
+        // carries no rules, leaves them known.
+        await readDetail();
+        expect((await policyRow()).occurrencePoliciesRead, isTrue);
+        await a.cacheEvent(
+          testSnapshot(
+            'e-1',
+            occurrences: dates,
+            policy: listedPolicy(testPolicy()),
+          ),
+          source: EventAccessSource.attending,
+        );
+        cached = (await a.getEvent('e-1'))!;
+        expect(cached.occurrencePolicies, rules);
+      },
+    );
   });
 
   group('forgetEvent', () {
@@ -283,8 +528,14 @@ void main() {
           'e-1',
           policy: testPolicy(),
           attendees: [testAttendee('att-a', userId: _kUserA)],
+          occurrencePolicies: [testOccurrencePolicy('e-1-o1')],
         ),
         source: EventAccessSource.attending,
+      );
+      // So the emptiness below is the delete's, not an unwritten fixture's.
+      expect(
+        await db.select(db.eventOccurrencePoliciesTable).get(),
+        isNotEmpty,
       );
 
       expect(await forget(a, 'e-1'), isTrue);
@@ -293,6 +544,7 @@ void main() {
       expect(await db.select(db.eventOccurrencesTable).get(), isEmpty);
       expect(await db.select(db.eventAttendeesTable).get(), isEmpty);
       expect(await db.select(db.eventPoliciesTable).get(), isEmpty);
+      expect(await db.select(db.eventOccurrencePoliciesTable).get(), isEmpty);
       expect(await db.select(db.eventAccessTable).get(), isEmpty);
     });
 
@@ -408,8 +660,18 @@ void main() {
         source: EventAccessSource.attending,
       );
       await b.cacheEvent(
-        testSnapshot('e-1', policy: testPolicy(), attendees: roster),
+        testSnapshot(
+          'e-1',
+          policy: testPolicy(),
+          attendees: roster,
+          occurrencePolicies: [testOccurrencePolicy('e-1-o1')],
+        ),
         source: EventAccessSource.read,
+      );
+      // So the emptiness below is the delete's, not an unwritten fixture's.
+      expect(
+        await db.select(db.eventOccurrencePoliciesTable).get(),
+        isNotEmpty,
       );
 
       expect(await a.removeDeletedEvent('e-1'), isTrue);
@@ -420,6 +682,7 @@ void main() {
       expect(await db.select(db.eventAttendeesTable).get(), isEmpty);
       expect(await db.select(db.eventOccurrencesTable).get(), isEmpty);
       expect(await db.select(db.eventPoliciesTable).get(), isEmpty);
+      expect(await db.select(db.eventOccurrencePoliciesTable).get(), isEmpty);
       expect(await db.select(db.eventAccessTable).get(), isEmpty);
     });
 
