@@ -205,12 +205,20 @@ class _EditHouseholdFormState extends State<EditHouseholdForm> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   if (!_policyKnown)
-                    RadioListTile<MemberInvitePolicy?>(
-                      key: EditHouseholdForm.policyUnchangedKey,
-                      value: null,
-                      contentPadding: EdgeInsets.zero,
-                      title: Text(l10n.editHouseholdPolicyUnchanged),
-                      subtitle: Text(l10n.editHouseholdPolicyUnchangedDetail),
+                    BgeRowFocusRing(
+                      outsideSides: true,
+                      builder: (context, row) =>
+                          RadioListTile<MemberInvitePolicy?>(
+                            key: EditHouseholdForm.policyUnchangedKey,
+                            focusNode: row.focusNode,
+                            onFocusChange: row.onFocusChange,
+                            value: null,
+                            contentPadding: EdgeInsets.zero,
+                            title: Text(l10n.editHouseholdPolicyUnchanged),
+                            subtitle: Text(
+                              l10n.editHouseholdPolicyUnchangedDetail,
+                            ),
+                          ),
                     ),
                   for (final policy in EditHouseholdForm._offered)
                     _option(l10n, policy),
@@ -243,12 +251,17 @@ class _EditHouseholdFormState extends State<EditHouseholdForm> {
     MemberInvitePolicy policy,
   ) {
     final (title, detail) = _labels(l10n, policy);
-    return RadioListTile<MemberInvitePolicy?>(
-      key: EditHouseholdForm.policyOptionKey(policy),
-      value: policy,
-      contentPadding: EdgeInsets.zero,
-      title: Text(title),
-      subtitle: Text(detail),
+    return BgeRowFocusRing(
+      outsideSides: true,
+      builder: (context, row) => RadioListTile<MemberInvitePolicy?>(
+        key: EditHouseholdForm.policyOptionKey(policy),
+        focusNode: row.focusNode,
+        onFocusChange: row.onFocusChange,
+        value: policy,
+        contentPadding: EdgeInsets.zero,
+        title: Text(title),
+        subtitle: Text(detail),
+      ),
     );
   }
 

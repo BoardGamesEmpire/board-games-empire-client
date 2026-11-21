@@ -60,32 +60,37 @@ class CatalogGameRow extends StatelessWidget {
     final tokens = BgeTokens.of(context);
     final tile = BgeOutlinedRow(
       child: MergeSemantics(
-        child: ListTile(
-          titleAlignment: BgeThumbnail.titleAlignmentOf(context),
-          minTileHeight: BgeThumbnail.minTileHeightOf(context),
-          onTap: onTap,
-          leading: BgeThumbnail(
-            url: thumbnailUrl,
-            placeholderIcon: Icons.casino_outlined,
-            placeholderKey: thumbnailPlaceholderKey,
+        child: BgeRowFocusRing(
+          builder: (context, row) => ListTile(
+            titleAlignment: BgeThumbnail.titleAlignmentOf(context),
+            minTileHeight: BgeThumbnail.minTileHeightOf(context),
+            focusNode: row.focusNode,
+            onFocusChange: row.onFocusChange,
+            focusColor: row.focusColor,
+            onTap: row.onTap(onTap),
+            leading: BgeThumbnail(
+              url: thumbnailUrl,
+              placeholderIcon: Icons.casino_outlined,
+              placeholderKey: thumbnailPlaceholderKey,
+            ),
+            title: Text(title, semanticsLabel: spokenTitle),
+            subtitle: note == null && facts.isEmpty && summary == null
+                ? null
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (note != null) Text(note!),
+                      if (facts.isNotEmpty) CatalogFactsText(facts),
+                      if (summary != null)
+                        Text(
+                          summary!,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                    ],
+                  ),
           ),
-          title: Text(title, semanticsLabel: spokenTitle),
-          subtitle: note == null && facts.isEmpty && summary == null
-              ? null
-              : Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (note != null) Text(note!),
-                    if (facts.isNotEmpty) CatalogFactsText(facts),
-                    if (summary != null)
-                      Text(
-                        summary!,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                  ],
-                ),
         ),
       ),
     );

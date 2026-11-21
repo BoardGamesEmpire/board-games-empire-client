@@ -872,4 +872,20 @@ void main() {
           _app(access: FakeCallerAccessRepository(_reads()), theme: theme),
     );
   });
+
+  testWidgets('a focused dashboard entry is ringed (#758)', (tester) async {
+    await tester.pumpWidget(
+      _app(
+        access: FakeCallerAccessRepository(
+          _reads(gateways: AccessExtent.all, households: AccessExtent.all),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      await keyboardFocusShowsRing(tester, find.text(_householdsTitle)),
+      isTrue,
+    );
+  });
 }

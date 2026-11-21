@@ -3,6 +3,7 @@ import 'package:app_shell/src/settings/settings_entry.dart';
 import 'package:app_shell/src/settings/theme_mode_cubit.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
 /// The theme-mode settings entry (#120): a labelled radio group of
@@ -47,20 +48,20 @@ class ThemeModeSettingsEntry implements SettingsEntry {
               },
               child: Column(
                 children: [
-                  RadioListTile<ThemeMode>(
-                    key: const Key('settings_theme_system'),
-                    value: ThemeMode.system,
-                    title: Text(i18n.settingsThemeModeSystem),
+                  _option(
+                    const Key('settings_theme_system'),
+                    ThemeMode.system,
+                    i18n.settingsThemeModeSystem,
                   ),
-                  RadioListTile<ThemeMode>(
-                    key: const Key('settings_theme_light'),
-                    value: ThemeMode.light,
-                    title: Text(i18n.settingsThemeModeLight),
+                  _option(
+                    const Key('settings_theme_light'),
+                    ThemeMode.light,
+                    i18n.settingsThemeModeLight,
                   ),
-                  RadioListTile<ThemeMode>(
-                    key: const Key('settings_theme_dark'),
-                    value: ThemeMode.dark,
-                    title: Text(i18n.settingsThemeModeDark),
+                  _option(
+                    const Key('settings_theme_dark'),
+                    ThemeMode.dark,
+                    i18n.settingsThemeModeDark,
                   ),
                 ],
               ),
@@ -70,4 +71,16 @@ class ThemeModeSettingsEntry implements SettingsEntry {
       },
     );
   }
+
+  /// One option's row, ringed while it has keyboard focus (#758).
+  static Widget _option(Key key, ThemeMode value, String label) =>
+      BgeRowFocusRing(
+        builder: (context, row) => RadioListTile<ThemeMode>(
+          key: key,
+          focusNode: row.focusNode,
+          onFocusChange: row.onFocusChange,
+          value: value,
+          title: Text(label),
+        ),
+      );
 }

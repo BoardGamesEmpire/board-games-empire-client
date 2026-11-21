@@ -320,6 +320,16 @@ void main() {
       expect(find.byType(BgeOutlinedRow), findsNWidgets(3));
     });
 
+    testWidgets('a focused row is ringed (#758)', (tester) async {
+      remote.listing([ada, bea, gone]);
+      await pumpScreen(tester);
+
+      expect(
+        await keyboardFocusShowsRing(tester, find.text("Ada's table")),
+        isTrue,
+      );
+    });
+
     testWidgets('a row shows its name, members and owners', (tester) async {
       remote.listing([ada, bea, gone]);
       await pumpScreen(tester);

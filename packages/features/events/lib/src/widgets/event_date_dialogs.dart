@@ -203,17 +203,22 @@ class _ConfirmDialogState extends State<_ConfirmDialog> {
           Text(l10n.eventsDateConfirmBody),
           if (widget.offerDeclineOthers) ...[
             const BgeGap.sm(),
-            CheckboxListTile(
-              key: EventDateDialogKeys.declineOthers,
-              value: _declineOthers,
-              onChanged: (value) =>
-                  setState(() => _declineOthers = value ?? false),
-              title: Text(l10n.eventsDateConfirmDeclineOthers),
-              // Why it's off by default, as the single Decline's dialog
-              // says. The tile reads it as part of the one control.
-              subtitle: Text(l10n.eventsDateDeclineBody),
-              controlAffinity: ListTileControlAffinity.leading,
-              contentPadding: EdgeInsets.zero,
+            BgeRowFocusRing(
+              outsideSides: true,
+              builder: (context, tile) => CheckboxListTile(
+                key: EventDateDialogKeys.declineOthers,
+                focusNode: tile.focusNode,
+                onFocusChange: tile.onFocusChange,
+                value: _declineOthers,
+                onChanged: (value) =>
+                    setState(() => _declineOthers = value ?? false),
+                title: Text(l10n.eventsDateConfirmDeclineOthers),
+                // Why it's off by default, as the single Decline's dialog
+                // says. The tile reads it as part of the one control.
+                subtitle: Text(l10n.eventsDateDeclineBody),
+                controlAffinity: ListTileControlAffinity.leading,
+                contentPadding: EdgeInsets.zero,
+              ),
             ),
           ],
         ],

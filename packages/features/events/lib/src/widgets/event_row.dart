@@ -74,33 +74,40 @@ class EventRowTile extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          ListTile(
-            // Without an onTap the tile's InkWell has no handler, so it is
-            // disabled: no tap action, and not a focus stop under ordinary
-            // keyboard navigation.
-            onTap: open == null ? null : () => open(context, event.id),
-            title: Text(event.title),
-            subtitle: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(eventRowWhenLabel(context, l10n, row, now: now())),
-                if (details.isNotEmpty)
-                  // Joined differently for the eye and the ear: a screen
-                  // reader would read the visual separator's symbol out.
-                  Text(
-                    details.join(l10n.eventsDetailSeparator),
-                    semanticsLabel: details.join(
-                      l10n.eventsDetailSpokenSeparator,
+          BgeRowFocusRing(
+            builder: (context, tile) => ListTile(
+              focusNode: tile.focusNode,
+              onFocusChange: tile.onFocusChange,
+              focusColor: tile.focusColor,
+              // Without an onTap the tile's InkWell has no handler, so it is
+              // disabled: no tap action, and not a focus stop under ordinary
+              // keyboard navigation.
+              onTap: tile.onTap(
+                open == null ? null : () => open(context, event.id),
+              ),
+              title: Text(event.title),
+              subtitle: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(eventRowWhenLabel(context, l10n, row, now: now())),
+                  if (details.isNotEmpty)
+                    // Joined differently for the eye and the ear: a screen
+                    // reader would read the visual separator's symbol out.
+                    Text(
+                      details.join(l10n.eventsDetailSeparator),
+                      semanticsLabel: details.join(
+                        l10n.eventsDetailSpokenSeparator,
+                      ),
                     ),
-                  ),
-                // Under the details, in the merged node, so it is read with
-                // the row; `trailing` has no room for it at 200% text (#47).
-                if (syncState != null)
-                  BgeSyncBadge(
-                    state: syncState,
-                    label: eventSyncLabel(l10n, syncState),
-                  ),
-              ],
+                  // Under the details, in the merged node, so it is read with
+                  // the row; `trailing` has no room for it at 200% text (#47).
+                  if (syncState != null)
+                    BgeSyncBadge(
+                      state: syncState,
+                      label: eventSyncLabel(l10n, syncState),
+                    ),
+                ],
+              ),
             ),
           ),
           if (separated)

@@ -324,4 +324,24 @@ void main() {
       },
     );
   });
+
+  testWidgets('a focused row is ringed, select all and a game (#758)', (
+    tester,
+  ) async {
+    remote.onFetchExpansions = (_) async => _bgg(2);
+    final cubit = make();
+    addTearDown(cubit.close);
+    await tester.pumpWidget(harness(cubit));
+    await cubit.load();
+    await tester.pumpAndSettle();
+
+    expect(
+      await keyboardFocusShowsRing(tester, find.text('Select all')),
+      isTrue,
+    );
+    expect(
+      await keyboardFocusShowsRing(tester, find.text('Expansion 1')),
+      isTrue,
+    );
+  });
 }

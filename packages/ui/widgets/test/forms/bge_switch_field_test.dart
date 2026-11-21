@@ -1,5 +1,6 @@
 import 'dart:ui' show Tristate;
 
+import 'package:bge_test_support/widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -48,6 +49,15 @@ void main() {
 
       expect(
         tester.widget<SwitchListTile>(find.byKey(_switchKey)).value,
+        isTrue,
+      );
+    });
+
+    testWidgets('a focused switch row is ringed (#758)', (tester) async {
+      await tester.pumpWidget(_host(_form()));
+
+      expect(
+        await keyboardFocusShowsRing(tester, find.text('Let people reset')),
         isTrue,
       );
     });

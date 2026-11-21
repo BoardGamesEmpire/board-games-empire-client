@@ -442,4 +442,32 @@ void main() {
       ),
     );
   });
+
+  group('a focused settings row is ringed (#758)', () {
+    for (final (key, words) in const [
+      ('settings_theme_dark', 'Dark'),
+      ('settings_language_system', 'System default'),
+      ('settings_language_es', 'es'),
+    ]) {
+      testWidgets(key, (tester) async {
+        await pumpSettings(
+          tester,
+          sections: appSections(
+            supportedLocales: const [Locale('en'), Locale('es')],
+          ),
+        );
+
+        expect(
+          await keyboardFocusShowsRing(
+            tester,
+            find.descendant(
+              of: find.byKey(Key(key)),
+              matching: find.text(words),
+            ),
+          ),
+          isTrue,
+        );
+      });
+    }
+  });
 }

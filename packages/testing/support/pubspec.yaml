@@ -56,6 +56,12 @@ dependencies:
   models:
     path: ../../core/models
 
+  # `keyboardFocusShowsRing` (#758) finds the `BgeFocusRing` above a row. `ui`
+  # dev-depends on this package, so the cycle is dev-only, as with `ui_tokens`
+  # (#913).
+  ui:
+    path: ../../ui/widgets
+
   # `BgeTheme`, installed by the viewport helper so a measure assertion against
   # BgeTokens cannot silently fall back to `BgeTokens.standard` (#213).
   # `ui_tokens` depends only on `flutter`, so this cannot cycle back through

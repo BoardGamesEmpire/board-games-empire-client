@@ -324,13 +324,17 @@ void main() {
     await harness.pump(tester);
     final gate = harness.hold();
     final add = find.byKey(ServersScreen.addKey);
+    final button = find.descendant(
+      of: add,
+      matching: find.byType(FloatingActionButton),
+    );
 
     await tester.tap(_row('gamma'));
     await tester.pump();
 
-    expect(tester.widget<FloatingActionButton>(add).onPressed, isNull);
+    expect(tester.widget<FloatingActionButton>(button).onPressed, isNull);
     expect(
-      tester.getSemantics(add),
+      tester.getSemantics(button),
       isSemantics(
         label: 'Add server',
         isButton: true,
@@ -347,7 +351,7 @@ void main() {
     gate.completeError(StateError('boom'));
     await tester.pumpAndSettle();
 
-    expect(tester.widget<FloatingActionButton>(add).onPressed, isNotNull);
+    expect(tester.widget<FloatingActionButton>(button).onPressed, isNotNull);
     await tester.tap(add);
     await tester.pumpAndSettle();
     expect(find.text('Add route'), findsOneWidget);
@@ -463,6 +467,18 @@ void main() {
         await tester.pumpAndSettle();
       },
       arrange: (tester) => tester.tap(_row('beta')),
+    );
+  });
+
+  testWidgets('a focused server row is ringed (#758)', (tester) async {
+    await _Harness().pump(tester);
+
+    expect(
+      await keyboardFocusShowsRing(
+        tester,
+        find.descendant(of: _row('beta'), matching: find.text('Beta')),
+      ),
+      isTrue,
     );
   });
 }

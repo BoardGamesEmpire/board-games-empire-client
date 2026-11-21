@@ -3,6 +3,7 @@ import 'package:app_shell/src/settings/locale_cubit.dart';
 import 'package:app_shell/src/settings/settings_entry.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
 /// The language settings entry (#120 Q5): a labelled radio group of
@@ -57,18 +58,29 @@ class LanguageSettingsEntry implements SettingsEntry {
               onChanged: cubit.select,
               child: Column(
                 children: [
-                  RadioListTile<Locale?>(
-                    key: const Key('settings_language_system'),
-                    value: null,
-                    title: Text(i18n.settingsLanguageSystemDefault),
+                  BgeRowFocusRing(
+                    builder: (context, row) => RadioListTile<Locale?>(
+                      key: const Key('settings_language_system'),
+                      focusNode: row.focusNode,
+                      onFocusChange: row.onFocusChange,
+                      value: null,
+                      title: Text(i18n.settingsLanguageSystemDefault),
+                    ),
                   ),
                   for (final locale in supportedLocales)
-                    RadioListTile<Locale?>(
-                      key: Key('settings_language_${locale.toLanguageTag()}'),
-                      value: locale,
-                      title: Text(
-                        localeLabelBuilder?.call(context, locale) ??
-                            locale.toLanguageTag(),
+                    // Keyed as its tile is: the ring keeps the row's focus
+                    // node, so it must stay with its locale.
+                    BgeRowFocusRing(
+                      key: ValueKey('ring.${locale.toLanguageTag()}'),
+                      builder: (context, row) => RadioListTile<Locale?>(
+                        key: Key('settings_language_${locale.toLanguageTag()}'),
+                        focusNode: row.focusNode,
+                        onFocusChange: row.onFocusChange,
+                        value: locale,
+                        title: Text(
+                          localeLabelBuilder?.call(context, locale) ??
+                              locale.toLanguageTag(),
+                        ),
                       ),
                     ),
                 ],

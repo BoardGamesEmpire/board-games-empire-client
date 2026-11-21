@@ -1,3 +1,4 @@
+import 'package:bge_test_support/widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:game_filters/game_filters.dart';
@@ -158,6 +159,29 @@ void main() {
       top(_flip(CollectionFacet.missingBaseGame)),
       greaterThan(top(find.byKey(GameFilterKeys.missingBaseGame))),
     );
+  });
+
+  testWidgets('a focused switch row is ringed (#758)', (tester) async {
+    await openFilterSheet(
+      tester,
+      initial: const CollectionFilter(missingBaseGame: true),
+      options: everyOption,
+    );
+
+    for (final key in [
+      GameFilterKeys.missingBaseGame,
+      GameFilterKeys.includeUnknown(CollectionFacet.playTime),
+      GameFilterKeys.exclude(CollectionFacet.missingBaseGame),
+    ]) {
+      expect(
+        await keyboardFocusShowsRing(
+          tester,
+          find.descendant(of: find.byKey(key), matching: find.byType(Text)),
+        ),
+        isTrue,
+        reason: '$key',
+      );
+    }
   });
 
   group('the missing-base switch', () {

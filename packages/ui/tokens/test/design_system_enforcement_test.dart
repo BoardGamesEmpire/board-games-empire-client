@@ -127,6 +127,27 @@ void main() {
             'snackbar',
         'ScaffoldMessenger.of(\n  context,\n).showSnackBar(bar)': 'snackbar',
         'showSnackBar(bar)': 'snackbar',
+        // A tappable tile outside `packages/ui` passes the ring's
+        // `onFocusChange`, or its focus shows only as a 1.3:1 tint (#758).
+        'ListTile(title: Text(t), onTap: open)': 'tile-without-ring',
+        'ListTile(\n  onTap: () => open(context),\n  title: Text(t),\n)':
+            'tile-without-ring',
+        // A long press makes a tile a focus stop as surely as a tap.
+        'ListTile(title: Text(t), onLongPress: pick)': 'tile-without-ring',
+        // An `onFocusChange` nested in an argument is not the tile's own.
+        'ListTile(onTap: f, title: Focus(onFocusChange: g, child: x))':
+            'tile-without-ring',
+        'CheckboxListTile(value: v, onChanged: set)': 'tile-without-ring',
+        'SwitchListTile.adaptive(value: v, onChanged: set)':
+            'tile-without-ring',
+        'RadioListTile<String>(value: v, title: Text(t))': 'tile-without-ring',
+        // A bracket in a string is text: the tile's own arguments run past it.
+        "SwitchListTile(title: Text('Hi :)'), onChanged: s)":
+            'tile-without-ring',
+        '$_urlTileOpen$_urlTileClose': 'tile-without-ring',
+        // The shared extended FAB carries the ring (#760).
+        'FloatingActionButton.extended(onPressed: f, label: Text(l))':
+            'raw-extended-fab',
       };
 
       const shouldNotFire = <String>[
@@ -163,6 +184,23 @@ void main() {
         'messenger.replaceSnackBar(message)',
         'messenger.clearSnackBars()',
         '// showSnackBar(SnackBar(content: Text(m)))',
+        // A tile with no tap is no focus stop, so it needs no ring (#758).
+        'ListTile(title: Text(t), subtitle: Text(s))',
+        // The tiles as the ring's builder passes them.
+        'ListTile(focusNode: n, onFocusChange: row.onFocusChange, onTap: tap)',
+        'CheckboxListTile(\n  value: v,\n  onChanged: s,\n  onFocusChange: f)',
+        'RadioListTile<String>(value: v, onFocusChange: row.onFocusChange)',
+        // Names that only contain a tile's, and the theme around one.
+        'ListTileTheme.merge(shape: shape, child: child)',
+        'BgeExtendedFab(onPressed: f, label: l)',
+        'FloatingActionButton(onPressed: f, child: icon)',
+        // A bracket in a string neither closes the tile's call nor hides
+        // the arguments after it.
+        "SwitchListTile(title: Text('Hi :)'), onChanged: s, onFocusChange: f)",
+        "RadioListTile<String>(value: '(', onFocusChange: f)",
+        // A `//` in a string starts no comment, so the string's line keeps
+        // the bracket that closes `Text`.
+        '$_urlTileOpen      onFocusChange: row.onFocusChange,\n$_urlTileClose',
       ];
 
       shouldFire.forEach((source, ruleId) {
@@ -182,6 +220,24 @@ void main() {
             _scanSource(source).map((v) => v.rule.id),
             isEmpty,
             reason: '"$source" is the sanctioned form and must be legal',
+          );
+        });
+      }
+
+      // The shared row and the shared FAB are built from the raw controls,
+      // so the two rules end at `packages/ui`.
+      for (final source in [
+        'ListTile(onTap: f)',
+        'FloatingActionButton.extended(onPressed: f, label: l)',
+      ]) {
+        test('allows $source inside packages/ui', () {
+          expect(
+            _scanSource(
+              source,
+              path: 'packages/ui/widgets/lib/src/buttons/bge_extended_fab.dart',
+            ).map((v) => v.rule.id),
+            isEmpty,
+            reason: 'the shared widgets wrap "$source" themselves',
           );
         });
       }
@@ -205,7 +261,7 @@ void main() {
           stale.add('${entry.key} — file no longer exists');
           continue;
         }
-        final hits = _scanSource(file.readAsStringSync());
+        final hits = _scanSource(file.readAsStringSync(), path: entry.key);
         for (final ruleId in entry.value) {
           // Same scanner the real check uses — a staleness test with its own
           // matching logic would drift from the rules it claims to audit.
@@ -234,6 +290,15 @@ void main() {
 /// Files exempted from specific rules, each with the reason it is exempt.
 ///
 /// Keyed by workspace-relative path; the value lists the exempt rule ids.
+/// A tappable tile with a URL in its title, inside a call of its own: the
+/// fixtures put the tile's `onFocusChange`, or nothing, between these two.
+/// The enclosing call matters. With none, a tile whose `)` is lost runs to
+/// the source's end and is skipped, not flagged.
+const _urlTileOpen =
+    'Column(\n  children: [\n    ListTile(\n      onTap: open,\n'
+    "      title: Text('https://example.test'),\n";
+const _urlTileClose = '    ),\n  ],\n)';
+
 const Map<String, List<String>> _allowlist = {
   // The generated scheme table: these `Color(0x…)` values ARE the palette
   // every other file consumes through `colorScheme`, so they are definitions
@@ -244,6 +309,8 @@ const Map<String, List<String>> _allowlist = {
   // A test fixture, not UI: the banded image's two colours are pixels of a
   // picture a golden draws, and must not follow any theme.
   'packages/testing/support/lib/src/images/image_host.dart': ['color'],
+  // Decodes captured pixels into colours; none is a design colour.
+  'packages/testing/support/lib/src/widgets/pixels.dart': ['color'],
 };
 
 // This list started at seven entries covering most of the token package, and
@@ -343,7 +410,26 @@ final List<_Rule> _rules = [
     RegExp(r'\bshowSnackBar\b'),
     'raw showSnackBar, which queues (#343)',
   ),
+  // Reached only via `_scanTilesWithoutRing`, outside `packages/ui`: whether
+  // a tile is tappable, and whether it passes `onFocusChange`, are arguments
+  // anywhere in a call whose children nest calls of their own.
+  const _Rule(
+    'tile-without-ring',
+    null,
+    'tappable list tile outside BgeRowFocusRing (pass its onFocusChange, '
+        '#758)',
+  ),
+  // Outside `packages/ui` only. `BgeExtendedFab` wraps the raw one in a ring.
+  _Rule(
+    'raw-extended-fab',
+    RegExp(r'\bFloatingActionButton\.extended\s*\('),
+    'raw extended FAB, which has no focus ring (use BgeExtendedFab, #760)',
+  ),
 ];
+
+/// Rules that hold outside `packages/ui` only. The shared widgets there are
+/// built from the raw controls these rules flag.
+const Set<String> _outsideUiRules = {'tile-without-ring', 'raw-extended-fab'};
 
 class _Violation {
   _Violation(this.file, this.line, this.rule, this.text);
@@ -407,6 +493,7 @@ List<_Violation> _scan(String root) {
       _scanSource(
         entity.readAsStringSync(),
         exempt: exempt,
+        path: rel,
       ).map((v) => _Violation(path, v.line, v.rule, v.text)),
     );
   }
@@ -460,6 +547,11 @@ List<String> _topLevelArgs(String args) {
   var depth = 0;
   var start = 0;
   for (var i = 0; i < args.length; i++) {
+    final string = _stringEnd(args, i);
+    if (string != -1) {
+      i = string - 1;
+      continue;
+    }
     final c = args[i];
     if (c == '(' || c == '[' || c == '{') {
       depth++;
@@ -525,10 +617,16 @@ List<_Violation> _scanDimensionalConstructors(String source) {
 }
 
 /// The index of the `)` that closes the `(` at [open], or -1. Walking to it,
-/// rather than to the first `)`, means nested calls cannot truncate a scan.
+/// rather than to the first `)`, means nested calls cannot truncate a scan,
+/// and a bracket in a string literal, `Text('Smileys :)')`, is not counted.
 int _closingParen(String source, int open) {
   var depth = 0;
   for (var i = open; i < source.length; i++) {
+    final string = _stringEnd(source, i);
+    if (string != -1) {
+      i = string - 1;
+      continue;
+    }
     final c = source[i];
     if (c == '(') {
       depth++;
@@ -538,6 +636,39 @@ int _closingParen(String source, int open) {
     }
   }
   return -1;
+}
+
+/// The index just past the string literal that opens at [start], or -1 if
+/// none opens there: single or double quotes, tripled or not, raw or not.
+///
+/// A literal that is not tripled ends at its line's end at the latest. Dart
+/// allows no newline in one, so a quote left open by a mistake, or by a
+/// literal this scanner misreads, must not run on into the lines after it.
+///
+/// Not interpolation-aware: a quote of the same kind inside `${…}` ends the
+/// literal early, which splits it in two, both skipped.
+int _stringEnd(String source, int start) {
+  final q = source[start];
+  if (q != "'" && q != '"') return -1;
+  final raw =
+      start > 0 &&
+      source[start - 1] == 'r' &&
+      (start < 2 || !RegExp(r'[\w$]').hasMatch(source[start - 2]));
+  final quote = source.startsWith(q * 3, start) ? q * 3 : q;
+  var i = start + quote.length;
+  while (i < source.length) {
+    final c = source[i];
+    if (c == r'\' && !raw) {
+      i += 2;
+    } else if (source.startsWith(quote, i)) {
+      return i + quote.length;
+    } else if (c == '\n' && quote.length == 1) {
+      return i;
+    } else {
+      i++;
+    }
+  }
+  return source.length;
 }
 
 /// Finds bottom sheets opened off the root navigator (#414).
@@ -565,7 +696,46 @@ List<_Violation> _scanRootModals(String source) {
   return found;
 }
 
+/// Finds tappable list tiles that don't pass `onFocusChange` (#758).
+///
+/// A tile's only focus cue is its ink's tint, about 1.3:1 from the row at
+/// rest. `BgeRowFocusRing` rings it, and hands the tile the `onFocusChange`
+/// that shows the ring. The check is only that the tile passes an
+/// `onFocusChange`, whatever it is: in practice it comes only from the ring.
+/// A `ListTile` is tappable when it has an `onTap` or an `onLongPress`; one
+/// with neither is no focus stop. A `CheckboxListTile`, `SwitchListTile` or
+/// `RadioListTile` is always one.
+List<_Violation> _scanTilesWithoutRing(String source) {
+  final found = <_Violation>[];
+  final rule = _rules.firstWhere((r) => r.id == 'tile-without-ring');
+  final opener = RegExp(
+    r'\b(ListTile|CheckboxListTile|SwitchListTile|RadioListTile)'
+    r'(?:<[^(]*>)?(?:\.\w+)?\s*\(',
+  );
+  final named = RegExp(r'^\s*(\w+)\s*:');
+
+  for (final m in opener.allMatches(source)) {
+    final end = _closingParen(source, m.end - 1);
+    if (end == -1) continue;
+    final names = {
+      for (final arg in _topLevelArgs(source.substring(m.end, end)))
+        ?named.firstMatch(arg)?.group(1),
+    };
+    final tappable =
+        m.group(1) != 'ListTile' ||
+        names.contains('onTap') ||
+        names.contains('onLongPress');
+    if (!tappable || names.contains('onFocusChange')) continue;
+    final line = '\n'.allMatches(source.substring(0, m.start)).length + 1;
+    found.add(_Violation('', line, rule, m.group(0)!));
+  }
+  return found;
+}
+
 /// Scans one file's source. Exposed for the allowlist staleness check.
+///
+/// [path] is the file's workspace-relative path. A file in `packages/ui`
+/// skips [_outsideUiRules]; a fixture with no path is held to them.
 ///
 /// Matches against the WHOLE source, not line by line. `dart format` wraps
 /// constructors across lines as a matter of course, so a line-based scan never
@@ -581,31 +751,31 @@ List<_Violation> _scanRootModals(String source) {
 /// That is not a hypothetical — six of the seven original allowlist entries
 /// turned out to be exempting rules that could never have fired, because the
 /// code they guarded was formatted across lines.
-List<_Violation> _scanSource(String source, {List<String> exempt = const []}) {
+List<_Violation> _scanSource(
+  String source, {
+  List<String> exempt = const [],
+  String path = '',
+}) {
+  final skipped = {
+    ...exempt,
+    if (path.startsWith('packages/ui/')) ..._outsideUiRules,
+  };
   // Strip line comments before matching. Doc comments discuss these values
   // constantly ("no literal colors", "16dp gap"), and a scanner that flags its
   // own documentation gets switched off. Done by blanking the comment rather
   // than deleting the line, so line numbers survive.
-  final stripped = source
-      .split('\n')
-      .map((l) {
-        final i = l.indexOf('//');
-        // Not string-aware — a `//` inside a string literal blanks the rest of
-        // the line. Acceptable: the cost is a missed violation, never a false
-        // one, and URLs in strings are the common case.
-        return i == -1 ? l : l.substring(0, i);
-      })
-      .join('\n');
+  final stripped = _stripLineComments(source);
 
   final found = <_Violation>[
     for (final v in [
       ..._scanDimensionalConstructors(stripped),
       ..._scanRootModals(stripped),
+      ..._scanTilesWithoutRing(stripped),
     ])
-      if (!exempt.contains(v.rule.id)) v,
+      if (!skipped.contains(v.rule.id)) v,
   ];
   for (final rule in _rules) {
-    if (exempt.contains(rule.id)) continue;
+    if (skipped.contains(rule.id)) continue;
     final pattern = rule.pattern;
     if (pattern == null) continue;
     for (final match in pattern.allMatches(stripped)) {
@@ -615,6 +785,31 @@ List<_Violation> _scanSource(String source, {List<String> exempt = const []}) {
     }
   }
   return found;
+}
+
+/// [source] with each line comment cut from its `//` to the line's end.
+///
+/// A `//` in a string literal is text, `Text('https://…')`. Cutting there
+/// would take the string's closing quote and the brackets after it, and a
+/// tile's arguments would then run on past its own `)`, so the tile rule
+/// would flag a tile that does pass `onFocusChange`.
+String _stripLineComments(String source) {
+  final out = StringBuffer();
+  var i = 0;
+  while (i < source.length) {
+    final string = _stringEnd(source, i);
+    if (string != -1) {
+      out.write(source.substring(i, string));
+      i = string;
+    } else if (source.startsWith('//', i)) {
+      final eol = source.indexOf('\n', i);
+      i = eol == -1 ? source.length : eol;
+    } else {
+      out.write(source[i]);
+      i++;
+    }
+  }
+  return out.toString();
 }
 
 /// Walks up from the test's working directory to the pub workspace root.

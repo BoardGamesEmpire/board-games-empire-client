@@ -2,6 +2,7 @@ import 'package:events/l10n/events_localizations.dart';
 import 'package:events/src/detail/event_nominations.dart';
 import 'package:events/src/screens/event_detail_screen.dart';
 import 'package:flutter/material.dart';
+import 'package:ui/ui.dart';
 
 /// One choice the nominate dialog offers: what it nominates for, how it is
 /// named, and whether, and why, it can't be chosen.
@@ -77,20 +78,27 @@ class _NominateScopeDialogState extends State<_NominateScopeDialog> {
           mainAxisSize: MainAxisSize.min,
           children: [
             for (final choice in widget.choices)
-              RadioListTile<NominationScope>(
-                key: EventDetailScreen.nominateScopeKey(switch (choice.scope) {
-                  WholeEventScope() => null,
-                  DateScope(:final occurrenceId) => occurrenceId,
-                }),
-                value: choice.scope,
-                enabled: choice.taken == NominateTaken.no,
-                contentPadding: EdgeInsets.zero,
-                title: Text(choice.label),
-                subtitle: switch (choice.taken) {
-                  NominateTaken.no => null,
-                  NominateTaken.nominated => Text(l10n.eventsNominateAlready),
-                  NominateTaken.inLineup => Text(l10n.eventsNominateInLineup),
-                },
+              BgeRowFocusRing(
+                outsideSides: true,
+                builder: (context, tile) => RadioListTile<NominationScope>(
+                  key: EventDetailScreen.nominateScopeKey(
+                    switch (choice.scope) {
+                      WholeEventScope() => null,
+                      DateScope(:final occurrenceId) => occurrenceId,
+                    },
+                  ),
+                  focusNode: tile.focusNode,
+                  onFocusChange: tile.onFocusChange,
+                  value: choice.scope,
+                  enabled: choice.taken == NominateTaken.no,
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(choice.label),
+                  subtitle: switch (choice.taken) {
+                    NominateTaken.no => null,
+                    NominateTaken.nominated => Text(l10n.eventsNominateAlready),
+                    NominateTaken.inLineup => Text(l10n.eventsNominateInLineup),
+                  },
+                ),
               ),
           ],
         ),

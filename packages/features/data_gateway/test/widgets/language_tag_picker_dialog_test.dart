@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:bge_test_support/widgets.dart';
 import 'package:data_gateway/data_gateway.dart';
 import 'package:data_gateway/l10n/data_gateway_localizations.dart';
 import 'package:flutter/material.dart';
@@ -162,6 +163,20 @@ void main() {
   ];
 
   group('choosing', () {
+    testWidgets('a focused row is ringed (#758)', (tester) async {
+      listing([t1, t2]);
+      await open(tester);
+      await tester.pumpAndSettle();
+
+      expect(
+        await keyboardFocusShowsRing(
+          tester,
+          find.descendant(of: row(t1), matching: find.text(t1.name)),
+        ),
+        isTrue,
+      );
+    });
+
     testWidgets('choosing a row returns its tag', (tester) async {
       listing([t1, t2]);
       await open(tester);

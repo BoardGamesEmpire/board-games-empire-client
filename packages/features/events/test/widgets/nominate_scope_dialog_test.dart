@@ -107,6 +107,16 @@ void main() {
     expect(find.text('Already nominated'), findsNothing);
   });
 
+  testWidgets('a focused choice is ringed (#758)', (tester) async {
+    useViewSize(tester, const Size(400, 800));
+    await open(tester);
+
+    expect(
+      await keyboardFocusShowsRing(tester, find.text('For the whole event')),
+      isTrue,
+    );
+  });
+
   testWidgets('Nominate answers the choice made', (tester) async {
     useViewSize(tester, const Size(400, 800));
     await open(tester);

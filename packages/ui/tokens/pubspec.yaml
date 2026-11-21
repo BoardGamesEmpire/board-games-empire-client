@@ -18,6 +18,12 @@ dependencies:
 dev_dependencies:
   alchemist: ^0.14.0
 
+  # The pixel capture and contrast scan the focus checks share (#913). It
+  # depends on this package for `BgeTheme`, a cycle through a dev dependency
+  # only: this package's regular dependencies stay `flutter` alone.
+  bge_test_support:
+    path: ../../testing/support
+
   flutter_test:
     sdk: flutter
 

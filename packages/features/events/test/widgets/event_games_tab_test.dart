@@ -1800,6 +1800,25 @@ void main() {
       expect(rowsShown(tester), ['o-1', 'o-2', 'o-3', 'o-4']);
     });
 
+    testWidgets('a focused leave-out switch is ringed (#758)', (tester) async {
+      await showGames(tester);
+      await tester.tap(people());
+      await animate(tester);
+      await tester.tap(find.byKey(EventDetailScreen.poolPersonKey('att-ada')));
+      await tester.pump();
+
+      expect(
+        await keyboardFocusShowsRing(
+          tester,
+          find.descendant(
+            of: find.byKey(EventDetailScreen.poolLeaveOutKey),
+            matching: find.byType(Text),
+          ),
+        ),
+        isTrue,
+      );
+    });
+
     testWidgets('leaving a person out says "Not" on their chip', (
       tester,
     ) async {

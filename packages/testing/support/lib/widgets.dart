@@ -14,8 +14,10 @@ library;
 // One cell's body is for the package's own test, which watches a cell fail.
 export 'src/widgets/accessibility_audit.dart' hide runAuditCell;
 export 'src/widgets/audit_scroll.dart';
+export 'src/widgets/focus_ring.dart';
 export 'src/widgets/fonts.dart';
 export 'src/widgets/keyboard_traversal.dart';
+export 'src/widgets/pixels.dart';
 export 'src/widgets/scroll_geometry.dart';
 export 'src/widgets/selection_region.dart';
 export 'src/widgets/semantics.dart';

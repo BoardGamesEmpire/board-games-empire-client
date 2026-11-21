@@ -129,6 +129,7 @@ class _BgeCoverExpansionsBadgeState extends State<BgeCoverExpansionsBadge>
         child: BgeFocusRing(
           borderRadius: BorderRadius.circular(tokens.radiusMd + ringReach),
           suppressed: pointerFocus,
+          overPicture: true,
           builder: (context, onFocusChange) => Padding(
             padding: EdgeInsets.all(ringReach),
             // No shape on the Material, which would cut the target's corners

@@ -78,14 +78,19 @@ class _PeopleSheet extends StatelessWidget {
                 ],
               ),
               const BgeGap.md(),
-              SwitchListTile(
-                key: EventDetailScreen.poolLeaveOutKey,
-                contentPadding: EdgeInsets.zero,
-                title: Text(l10n.eventsGamesPeopleLeaveOut),
-                value: filter.leaveOut,
-                onChanged: filter.attendeeIds.isEmpty
-                    ? null
-                    : (on) => controller.setLeaveOut(leaveOut: on),
+              BgeRowFocusRing(
+                outsideSides: true,
+                builder: (context, tile) => SwitchListTile(
+                  key: EventDetailScreen.poolLeaveOutKey,
+                  focusNode: tile.focusNode,
+                  onFocusChange: tile.onFocusChange,
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(l10n.eventsGamesPeopleLeaveOut),
+                  value: filter.leaveOut,
+                  onChanged: filter.attendeeIds.isEmpty
+                      ? null
+                      : (on) => controller.setLeaveOut(leaveOut: on),
+                ),
               ),
             ],
           ),

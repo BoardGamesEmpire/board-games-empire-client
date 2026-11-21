@@ -301,6 +301,13 @@ void main() {
       }
     });
 
+    testWidgets('a focused Leave row is ringed (#758)', (tester) async {
+      await tester.pumpWidget(withLeave());
+      await settleWith(tester, roster: [_member('u-me'), _coOwner]);
+
+      expect(await keyboardFocusShowsRing(tester, inRow(_leaveCopy)), isTrue);
+    });
+
     testWidgets('the row comes last, after New event, in the error colour', (
       tester,
     ) async {

@@ -1,8 +1,7 @@
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show RenderAbstractViewport;
-import 'package:flutter/services.dart';
 
+import 'package:ui_tokens/src/accessibility/bge_pointer_pressed.dart';
 import 'package:ui_tokens/src/bge_tokens.dart';
 
 /// Where a button's focus ring sits against the button's shape (#644).
@@ -30,9 +29,12 @@ enum BgeButtonFocusRingPlacement {
 /// The keyboard focus ring `BgeTheme` gives the filled, tonal, icon, text,
 /// outlined and elevated buttons (#644).
 ///
-/// Not yet the other Material controls: `SegmentedButton` builds its segments'
-/// style without the theme's builder, and floating action buttons, list rows,
-/// chips and drawer entries aren't these buttons. `ACCESSIBILITY_AUDIT.md`
+/// The other Material controls aren't these buttons, and take their focus
+/// cue elsewhere. A list row is ringed by `ui`'s `BgeRowFocusRing` (#758), an
+/// extended floating action button by `BgeExtendedFab` (#760), and a ring
+/// over a cover by `BgeFocusRing` with two tones (#812). `SegmentedButton`
+/// builds its segments' style without the theme's builder, and chips and
+/// drawer entries still show focus by a faint fill; `ACCESSIBILITY_AUDIT.md`
 /// lists each in its findings.
 ///
 /// Material 3's only focus feedback on a button is a faint tint, which a
@@ -45,10 +47,11 @@ enum BgeButtonFocusRingPlacement {
 ///
 /// A mouse or a trackpad leaves the highlight mode as it was, which on a
 /// desktop is the keyboard's. So a press from one, anywhere in the app, hides
-/// every button's ring until the next key press, as a browser's
-/// `:focus-visible` does. Focus that then lands on a button the mouse never
-/// pressed stays unringed too: handed back as a dialog closes, given to a
-/// button that autofocuses, or moved there in code.
+/// every ring in the app, the buttons' among them, until the next key press,
+/// as a browser's `:focus-visible` does ([BgePointerPressed]). Focus that
+/// then lands on a button the mouse never pressed stays unringed too: handed
+/// back as a dialog closes, given to a button that autofocuses, or moved
+/// there in code.
 ///
 /// A button that sets its own shape passes it here, in its style's
 /// `backgroundBuilder`, or the theme's ring would follow the theme's shape
@@ -138,9 +141,8 @@ class _BgeButtonFocusRingState extends State<_BgeButtonFocusRing> {
   void initState() {
     super.initState();
     FocusManager.instance.addHighlightModeListener(_onHighlightModeChange);
-    _PointerLastPressed.instance
-      ..attach()
-      ..addListener(_onPointerLastPressedChange);
+    BgePointerPressed.attach();
+    BgePointerPressed.listenable.addListener(_onPointerPressedChange);
     if (widget.focused) _revealAfterLayout();
   }
 
@@ -153,9 +155,8 @@ class _BgeButtonFocusRingState extends State<_BgeButtonFocusRing> {
   @override
   void dispose() {
     FocusManager.instance.removeHighlightModeListener(_onHighlightModeChange);
-    _PointerLastPressed.instance
-      ..removeListener(_onPointerLastPressedChange)
-      ..detach();
+    BgePointerPressed.listenable.removeListener(_onPointerPressedChange);
+    BgePointerPressed.detach();
     super.dispose();
   }
 
@@ -165,14 +166,14 @@ class _BgeButtonFocusRingState extends State<_BgeButtonFocusRing> {
     if (widget.focused) setState(() {});
   }
 
-  void _onPointerLastPressedChange() {
+  void _onPointerPressedChange() {
     if (widget.focused) setState(() {});
   }
 
   bool get _shown =>
       widget.focused &&
       FocusManager.instance.highlightMode == FocusHighlightMode.traditional &&
-      !_PointerLastPressed.instance.value;
+      !BgePointerPressed.value;
 
   /// Once focus has arrived, scrolls an outside ring wholly into view (#50).
   ///
@@ -234,63 +235,6 @@ class _BgeButtonFocusRingState extends State<_BgeButtonFocusRing> {
       ),
       child: widget.child,
     );
-  }
-}
-
-/// Whether a mouse's or a trackpad's press came after the last key press,
-/// anywhere in the app, which hides every ring: one flag for the app, as a
-/// browser keeps one for the page to decide `:focus-visible` (#644).
-///
-/// Watches pointers and keys only while some ring is built, and forgets the
-/// press once none is, so an app with no button on screen holds no handlers.
-class _PointerLastPressed extends ValueNotifier<bool> {
-  _PointerLastPressed() : super(false);
-
-  static final instance = _PointerLastPressed();
-
-  /// How many rings are built.
-  int _rings = 0;
-
-  void attach() {
-    if (_rings++ > 0) return;
-    GestureBinding.instance.pointerRouter.addGlobalRoute(_onPointer);
-    HardwareKeyboard.instance.addHandler(_onKey);
-  }
-
-  void detach() {
-    if (--_rings > 0) return;
-    GestureBinding.instance.pointerRouter.removeGlobalRoute(_onPointer);
-    HardwareKeyboard.instance.removeHandler(_onKey);
-    value = false;
-  }
-
-  /// Only a mouse's or a trackpad's press. A touch or a stylus turns the
-  /// highlight mode to touch, which hides the ring already, and a mouse's
-  /// hover, wheel or trackpad scroll isn't a press.
-  void _onPointer(PointerEvent event) {
-    if (event is! PointerDownEvent) return;
-    if (event.kind
-        case PointerDeviceKind.touch ||
-            PointerDeviceKind.stylus ||
-            PointerDeviceKind.invertedStylus) {
-      return;
-    }
-    value = true;
-  }
-
-  /// The user is at the keyboard again. A shortcut held with Control, Alt or
-  /// Meta isn't navigation, as a browser's `:focus-visible` has it. A held
-  /// key's repeats count as presses, as a browser's repeated `keydown`s do:
-  /// Tab held down through a click goes on moving focus.
-  bool _onKey(KeyEvent event) {
-    final keyboard = HardwareKeyboard.instance;
-    if ((event is KeyDownEvent || event is KeyRepeatEvent) &&
-        !keyboard.isControlPressed &&
-        !keyboard.isAltPressed &&
-        !keyboard.isMetaPressed) {
-      value = false;
-    }
-    return false;
   }
 }
 

@@ -637,24 +637,32 @@ class _CapabilitiesSection extends StatelessWidget {
         _SavingBar(saving: busy == DataGatewayDetailBusy.capabilities),
         if (names.isEmpty) Text(l10n.dataGatewayCapabilitiesNone),
         for (final name in names)
-          SwitchListTile(
-            key: DataGatewayDetailScreen.capabilityKey(name),
-            contentPadding: EdgeInsets.zero,
-            // Offline the reason is a second line of the title, so the tile's
-            // one node carries it (#49).
-            // Only where being online is what is missing: a refusal or an
-            // interview in flight has its own reason.
-            title: mayAsk
-                ? BgeOnlineOnlyLabel(_capabilityLabel(l10n, name))
-                : Text(_capabilityLabel(l10n, name)),
-            // What the server last answered, not what was last pressed: the
-            // bar says a write is on its way.
-            value: !gateway.disabledCapabilities.contains(name),
-            onChanged: maySwitch
-                ? (on) => context.read<DataGatewayDetailBloc>().add(
-                    DataGatewayDetailCapabilitySwitched(name, on: on),
-                  )
-                : null,
+          BgeRowFocusRing(
+            outsideSides: true,
+            // The ring keeps the row's focus, so it follows the row when one
+            // above it leaves, as the tile's own key did.
+            key: ValueKey('ring.$name'),
+            builder: (context, tile) => SwitchListTile(
+              key: DataGatewayDetailScreen.capabilityKey(name),
+              focusNode: tile.focusNode,
+              onFocusChange: tile.onFocusChange,
+              contentPadding: EdgeInsets.zero,
+              // Offline the reason is a second line of the title, so the tile's
+              // one node carries it (#49).
+              // Only where being online is what is missing: a refusal or an
+              // interview in flight has its own reason.
+              title: mayAsk
+                  ? BgeOnlineOnlyLabel(_capabilityLabel(l10n, name))
+                  : Text(_capabilityLabel(l10n, name)),
+              // What the server last answered, not what was last pressed: the
+              // bar says a write is on its way.
+              value: !gateway.disabledCapabilities.contains(name),
+              onChanged: maySwitch
+                  ? (on) => context.read<DataGatewayDetailBloc>().add(
+                      DataGatewayDetailCapabilitySwitched(name, on: on),
+                    )
+                  : null,
+            ),
           ),
       ],
     );

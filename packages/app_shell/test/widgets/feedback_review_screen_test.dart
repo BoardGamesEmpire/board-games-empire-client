@@ -865,4 +865,10 @@ void main() {
       arrange: send,
     );
   });
+
+  testWidgets('a focused redaction row is ringed (#758)', (tester) async {
+    await pumpReview(tester);
+
+    expect(await keyboardFocusShowsRing(tester, find.text('macos')), isTrue);
+  });
 }

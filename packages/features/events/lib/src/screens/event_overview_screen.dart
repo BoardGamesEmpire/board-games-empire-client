@@ -196,11 +196,11 @@ class _EventOverviewPage extends StatelessWidget {
       semanticChildCount: rowCount,
       floatingActionButton: create == null
           ? null
-          : FloatingActionButton.extended(
+          : BgeExtendedFab(
               key: EventOverviewScreen.createKey,
               onPressed: () => create(context),
               icon: const Icon(Icons.add),
-              label: BgeFabLabel(l10n.eventsCreate),
+              label: l10n.eventsCreate,
             ),
       slivers: [
         EventOverviewSliver(

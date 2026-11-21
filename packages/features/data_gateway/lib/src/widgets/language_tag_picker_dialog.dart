@@ -208,10 +208,15 @@ class _TagRow extends StatelessWidget {
   final LanguageTagRef tag;
 
   @override
-  Widget build(BuildContext context) => ListTile(
-    onTap: () => Navigator.of(context).pop(tag),
-    title: Text(tag.name),
-    subtitle: Text(tag.tag),
+  Widget build(BuildContext context) => BgeRowFocusRing(
+    builder: (context, tile) => ListTile(
+      focusNode: tile.focusNode,
+      onFocusChange: tile.onFocusChange,
+      focusColor: tile.focusColor,
+      onTap: tile.onTap(() => Navigator.of(context).pop(tag)),
+      title: Text(tag.name),
+      subtitle: Text(tag.tag),
+    ),
   );
 }
 

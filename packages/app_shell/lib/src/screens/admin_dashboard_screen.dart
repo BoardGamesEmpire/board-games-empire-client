@@ -469,11 +469,16 @@ class _Entry extends StatelessWidget {
   final void Function(BuildContext context) onOpen;
 
   @override
-  Widget build(BuildContext context) => ListTile(
+  Widget build(BuildContext context) => BgeRowFocusRing(
     focusNode: focusNode,
-    leading: Icon(section.icon),
-    title: Text(section.title),
-    subtitle: Text(section.summary),
-    onTap: () => onOpen(context),
+    builder: (context, row) => ListTile(
+      focusNode: row.focusNode,
+      onFocusChange: row.onFocusChange,
+      focusColor: row.focusColor,
+      leading: Icon(section.icon),
+      title: Text(section.title),
+      subtitle: Text(section.summary),
+      onTap: row.onTap(() => onOpen(context)),
+    ),
   );
 }

@@ -926,25 +926,32 @@ class _HouseholdRow extends StatelessWidget {
                 label: deletedOn == null
                     ? facts
                     : l10n.adminHouseholdRowLabelDeleted(facts, deletedOn),
-                child: ListTile(
-                  // A deleted household has no detail to open.
-                  onTap: deletedAt == null ? onOpen : null,
-                  title: ExcludeSemantics(child: Text(row.name)),
-                  // Under the name rather than in `trailing`, which at 200%
-                  // text takes the whole row and fails to lay out.
-                  subtitle: ExcludeSemantics(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(members),
-                        if (owners.isNotEmpty)
-                          Text(l10n.adminHouseholdOwners(owners)),
-                        if (deletedOn != null) ...[
-                          const BgeGap.xs(),
-                          _DeletedLine(l10n.adminHouseholdDeletedOn(deletedOn)),
+                child: BgeRowFocusRing(
+                  builder: (context, tile) => ListTile(
+                    focusNode: tile.focusNode,
+                    onFocusChange: tile.onFocusChange,
+                    focusColor: tile.focusColor,
+                    // A deleted household has no detail to open.
+                    onTap: tile.onTap(deletedAt == null ? onOpen : null),
+                    title: ExcludeSemantics(child: Text(row.name)),
+                    // Under the name rather than in `trailing`, which at 200%
+                    // text takes the whole row and fails to lay out.
+                    subtitle: ExcludeSemantics(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(members),
+                          if (owners.isNotEmpty)
+                            Text(l10n.adminHouseholdOwners(owners)),
+                          if (deletedOn != null) ...[
+                            const BgeGap.xs(),
+                            _DeletedLine(
+                              l10n.adminHouseholdDeletedOn(deletedOn),
+                            ),
+                          ],
                         ],
-                      ],
+                      ),
                     ),
                   ),
                 ),

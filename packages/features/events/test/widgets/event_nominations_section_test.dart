@@ -2454,6 +2454,26 @@ void main() {
       },
     );
 
+    testWidgets('a focused filter row is ringed (#758)', (tester) async {
+      await showSpread(tester);
+      await press(tester, filters());
+      await animate(tester);
+
+      for (final key in [
+        EventDetailScreen.nominationsDateKey(null),
+        EventDetailScreen.nominationsMineKey,
+      ]) {
+        expect(
+          await keyboardFocusShowsRing(
+            tester,
+            find.descendant(of: find.byKey(key), matching: find.byType(Text)),
+          ),
+          isTrue,
+          reason: '$key',
+        );
+      }
+    });
+
     testWidgets("Mine keeps the viewer's own nominations", (tester) async {
       await showSpread(tester);
 

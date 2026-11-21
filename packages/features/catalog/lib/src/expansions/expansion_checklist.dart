@@ -167,29 +167,42 @@ class ExpansionChecklist extends StatelessWidget {
               style: Theme.of(context).textTheme.titleSmall,
             ),
           ),
-        CheckboxListTile(
-          key: selectAllKey(id),
-          controlAffinity: ListTileControlAffinity.leading,
-          tristate: true,
-          value: all ? true : (ticked.isEmpty ? false : null),
-          // With nothing to tick it stays, disabled (STYLE_GUIDE §5).
-          onChanged: tickable == 0
-              ? null
-              : (_) => cubit.setAll(id, ticked: !all),
-          title: Text(l10n.catalogExpansionsSelectAll),
+        // Ringed on keyboard focus (#758). Each ring is keyed as its tile is:
+        // it keeps the row's focus node, so it must stay with its source and
+        // its game as the groups and their games change.
+        BgeRowFocusRing(
+          key: ValueKey('ring.select-all.$id'),
+          builder: (context, row) => CheckboxListTile(
+            key: selectAllKey(id),
+            focusNode: row.focusNode,
+            onFocusChange: row.onFocusChange,
+            controlAffinity: ListTileControlAffinity.leading,
+            tristate: true,
+            value: all ? true : (ticked.isEmpty ? false : null),
+            // With nothing to tick it stays, disabled (STYLE_GUIDE §5).
+            onChanged: tickable == 0
+                ? null
+                : (_) => cubit.setAll(id, ticked: !all),
+            title: Text(l10n.catalogExpansionsSelectAll),
+          ),
         ),
         for (final hit in hits)
-          CheckboxListTile(
-            key: rowKey(id, hit.externalId),
-            controlAffinity: ListTileControlAffinity.leading,
-            value: ticked.contains(hit.externalId),
-            // A game the server holds is informational: it was never
-            // available to tick, so nothing is disabled mid-interaction.
-            onChanged: cubit.isTickable(hit)
-                ? (_) => cubit.toggle(id, hit.externalId)
-                : null,
-            title: Text(hit.title),
-            subtitle: _subtitle(l10n, filterL10n, hit),
+          BgeRowFocusRing(
+            key: ValueKey('ring.$id.${hit.externalId}'),
+            builder: (context, row) => CheckboxListTile(
+              key: rowKey(id, hit.externalId),
+              focusNode: row.focusNode,
+              onFocusChange: row.onFocusChange,
+              controlAffinity: ListTileControlAffinity.leading,
+              value: ticked.contains(hit.externalId),
+              // A game the server holds is informational: it was never
+              // available to tick, so nothing is disabled mid-interaction.
+              onChanged: cubit.isTickable(hit)
+                  ? (_) => cubit.toggle(id, hit.externalId)
+                  : null,
+              title: Text(hit.title),
+              subtitle: _subtitle(l10n, filterL10n, hit),
+            ),
           ),
       ],
     );

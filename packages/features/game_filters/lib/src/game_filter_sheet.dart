@@ -295,13 +295,18 @@ class _GameFilterSheetState extends State<_GameFilterSheet> {
         Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            SwitchListTile(
-              key: GameFilterKeys.missingBaseGame,
-              contentPadding: EdgeInsets.zero,
-              title: Text(l10n.gameFiltersMissingBaseGame),
-              value: _filter.missingBaseGame,
-              onChanged: (on) =>
-                  _edit((filter) => filter.copyWith(missingBaseGame: on)),
+            BgeRowFocusRing(
+              outsideSides: true,
+              builder: (context, tile) => SwitchListTile(
+                key: GameFilterKeys.missingBaseGame,
+                focusNode: tile.focusNode,
+                onFocusChange: tile.onFocusChange,
+                contentPadding: EdgeInsets.zero,
+                title: Text(l10n.gameFiltersMissingBaseGame),
+                value: _filter.missingBaseGame,
+                onChanged: (on) =>
+                    _edit((filter) => filter.copyWith(missingBaseGame: on)),
+              ),
             ),
             ?_exclude(
               CollectionFacet.missingBaseGame,
@@ -372,22 +377,27 @@ class _GameFilterSheetState extends State<_GameFilterSheet> {
     if (!widget.options.exclusion) return null;
     final l10n = GameFiltersLocalizations.of(context);
     final narrows = _filter.facetsInUse.contains(facet);
-    return SwitchListTile(
-      key: GameFilterKeys.exclude(facet),
-      contentPadding: EdgeInsets.zero,
-      title: Text(
-        l10n.gameFiltersExclude,
-        semanticsLabel: l10n.gameFiltersExcludeNamed(name),
+    return BgeRowFocusRing(
+      outsideSides: true,
+      builder: (context, tile) => SwitchListTile(
+        key: GameFilterKeys.exclude(facet),
+        focusNode: tile.focusNode,
+        onFocusChange: tile.onFocusChange,
+        contentPadding: EdgeInsets.zero,
+        title: Text(
+          l10n.gameFiltersExclude,
+          semanticsLabel: l10n.gameFiltersExcludeNamed(name),
+        ),
+        subtitle: narrows ? null : Text(l10n.gameFiltersExcludeNothingChosen),
+        value: _filter.excluded.contains(facet),
+        onChanged: narrows
+            ? (on) => _edit(
+                (filter) => filter.copyWith(
+                  excluded: _toggled(filter.excluded, facet, on),
+                ),
+              )
+            : null,
       ),
-      subtitle: narrows ? null : Text(l10n.gameFiltersExcludeNothingChosen),
-      value: _filter.excluded.contains(facet),
-      onChanged: narrows
-          ? (on) => _edit(
-              (filter) => filter.copyWith(
-                excluded: _toggled(filter.excluded, facet, on),
-              ),
-            )
-          : null,
     );
   }
 
@@ -437,16 +447,21 @@ class _GameFilterSheetState extends State<_GameFilterSheet> {
           );
         }),
       ),
-      includeUnknown: SwitchListTile(
-        key: GameFilterKeys.includeUnknown(range),
-        contentPadding: EdgeInsets.zero,
-        title: Text(flipped ? leaveOutUnknown : includeUnknown),
-        value: value.includeUnknown,
-        onChanged: (on) => _editGame(
-          (game) => _withRange(
-            game,
-            range,
-            _rangeOf(game, range).copyWith(includeUnknown: on),
+      includeUnknown: BgeRowFocusRing(
+        outsideSides: true,
+        builder: (context, tile) => SwitchListTile(
+          key: GameFilterKeys.includeUnknown(range),
+          focusNode: tile.focusNode,
+          onFocusChange: tile.onFocusChange,
+          contentPadding: EdgeInsets.zero,
+          title: Text(flipped ? leaveOutUnknown : includeUnknown),
+          value: value.includeUnknown,
+          onChanged: (on) => _editGame(
+            (game) => _withRange(
+              game,
+              range,
+              _rangeOf(game, range).copyWith(includeUnknown: on),
+            ),
           ),
         ),
       ),

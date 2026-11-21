@@ -73,13 +73,21 @@ class UserSearchResultList extends StatelessWidget {
     final picked = isPicked(user);
     final onPick = this.onPick;
 
-    return ListTile(
-      key: resultKey(user.id),
-      title: Text(user.label),
-      subtitle: user.displayName == null ? null : Text(user.username),
-      selected: picked,
-      trailing: picked ? const Icon(Icons.check_circle) : null,
-      onTap: onPick == null ? null : () => onPick(user),
+    return BgeRowFocusRing(
+      // The ring holds the row's focus node, so it is keyed by the user too:
+      // focus stays on this result when the results above it change.
+      key: ValueKey('ring.${user.id}'),
+      builder: (context, row) => ListTile(
+        key: resultKey(user.id),
+        focusNode: row.focusNode,
+        onFocusChange: row.onFocusChange,
+        focusColor: row.focusColor,
+        title: Text(user.label),
+        subtitle: user.displayName == null ? null : Text(user.username),
+        selected: picked,
+        trailing: picked ? const Icon(Icons.check_circle) : null,
+        onTap: row.onTap(onPick == null ? null : () => onPick(user)),
+      ),
     );
   }
 }

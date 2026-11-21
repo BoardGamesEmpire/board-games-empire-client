@@ -108,11 +108,11 @@ class _HouseholdInviteListView extends StatelessWidget {
               ? null
               : ready.invites.length,
           floatingActionButton: showInvite
-              ? FloatingActionButton.extended(
+              ? BgeExtendedFab(
                   key: HouseholdInviteListScreen.inviteKey,
                   onPressed: () => invite(context),
                   icon: const Icon(Icons.person_add_alt),
-                  label: BgeFabLabel(l10n.householdInvitesInvite),
+                  label: l10n.householdInvitesInvite,
                 )
               : null,
           slivers: [

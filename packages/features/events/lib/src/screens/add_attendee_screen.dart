@@ -196,15 +196,20 @@ class _AddAttendeeScreenState extends State<AddAttendeeScreen> {
                   children: [
                     for (final role in widget.args.roles)
                       if (eventRoleLabel(l10n, role) case final label?)
-                        RadioListTile<EventRole>(
-                          key: AddAttendeeScreen.roleKey(role),
-                          value: role,
-                          contentPadding: EdgeInsets.zero,
-                          title: Text(label),
-                          subtitle: switch (_roleDescription(l10n, role)) {
-                            final description? => Text(description),
-                            null => null,
-                          },
+                        BgeRowFocusRing(
+                          outsideSides: true,
+                          builder: (context, tile) => RadioListTile<EventRole>(
+                            key: AddAttendeeScreen.roleKey(role),
+                            focusNode: tile.focusNode,
+                            onFocusChange: tile.onFocusChange,
+                            value: role,
+                            contentPadding: EdgeInsets.zero,
+                            title: Text(label),
+                            subtitle: switch (_roleDescription(l10n, role)) {
+                              final description? => Text(description),
+                              null => null,
+                            },
+                          ),
                         ),
                   ],
                 ),
