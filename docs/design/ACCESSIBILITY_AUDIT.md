@@ -819,8 +819,8 @@ can express what the finding wants, that check is in the suite, skipped with
 | #762 | The filter sheet and every `AlertDialog` without `semanticLabel` have no accessible name on iOS and macOS | `packages/features/catalog/test/widgets/game_search_screen_test.dart`, for the sheet |
 | #763 | Drawer entries read "Tab n of m" though the drawer is a launcher | `packages/app_shell/test/screens/home_screen_test.dart` |
 | #764 | `TextButton()`, `OutlinedButton()` and `ElevatedButton()` clip their content to their shape once the ring's builder is set, so a label that wraps at 2.0 text loses glyph pixels at the curved ends | `packages/ui/tokens/test/accessibility/bge_button_focus_ring_test.dart` |
-| a follow-up to #758, no issue yet | `ExpansionTile` headers show focus only by their ink's tint, about 1.3:1: the event create form's "Advanced: rules" (`event_rules_section.dart`) and the feedback review's stack trace and breadcrumbs (`feedback_review_screen.dart`). The fix is a shared ringed expansion row in `ui` | none yet |
 | #765 | Shift+Tab from the top of a lazily built list wraps to the last child still built, not the list's end: focus can't reach a child the list hasn't built | `packages/ui/widgets/test/layout/bge_page_test.dart` |
+| #1052 | `ExpansionTile` headers show focus only by their ink's tint, about 1.3:1: the event create form's "Advanced: rules" (`event_rules_section.dart`) and the feedback review's stack trace and breadcrumbs (`feedback_review_screen.dart`). The fix is a shared ringed expansion row in `ui` | none yet |
 
 Fixed in this run, each with a regression test in the PR:
 
@@ -863,7 +863,7 @@ Fixed after the run, so no longer in the findings table:
 - #758, fixed 2026-11-20: every tappable `ListTile`, `CheckboxListTile`,
   `SwitchListTile` and `RadioListTile` outside `packages/ui`, plain or
   outlined, sits in `BgeRowFocusRing`, a `focusOutlineWidth` ring on keyboard
-  focus only. `ExpansionTile` headers don't yet: see the open findings above.
+  focus only. `ExpansionTile` headers don't yet (#1052, in the open findings above).
   The skipped check moved from `ui_tokens` to `packages/ui/widgets/test/focus/bge_row_focus_ring_test.dart`
   and passes.
 - #760, fixed 2026-11-20: the six extended floating buttons are `BgeExtendedFab`,
