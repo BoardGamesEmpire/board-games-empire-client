@@ -13,6 +13,7 @@ import 'package:events/src/bloc/event_lineup_state.dart';
 import 'package:events/src/bloc/event_nominations_bloc.dart';
 import 'package:events/src/bloc/event_nominations_state.dart';
 import 'package:events/src/detail/event_games_pool.dart';
+import 'package:events/src/detail/event_lineup.dart';
 import 'package:events/src/detail/event_nominations.dart';
 import 'package:events/src/screens/event_detail_screen.dart';
 import 'package:events/src/widgets/event_games_footer.dart';
@@ -20,6 +21,7 @@ import 'package:events/src/widgets/event_games_tab_scope.dart';
 import 'package:events/src/widgets/event_labels.dart';
 import 'package:events/src/widgets/event_lineup_section.dart';
 import 'package:events/src/widgets/game_name.dart';
+import 'package:events/src/widgets/lineup_row_controls.dart';
 import 'package:events/src/widgets/nomination_filters_sheet.dart';
 import 'package:events/src/widgets/nomination_row_controls.dart';
 import 'package:events/src/widgets/pool_row_controls.dart';
@@ -95,6 +97,7 @@ Future<void> showEventGameQuickLook(
   BuildContext context, {
   required EventGameEntry entry,
   required String title,
+  bool overNomination = false,
 }) async {
   final controller = EventGamesTabScope.of(context);
   final detail = context.read<EventDetailBloc>();
@@ -117,7 +120,11 @@ Future<void> showEventGameQuickLook(
         ],
         child: EventGamesTabScope.value(
           controller: controller,
-          child: EventGameQuickLook(entry: entry, title: title),
+          child: EventGameQuickLook(
+            entry: entry,
+            title: title,
+            overNomination: overNomination,
+          ),
         ),
       ),
     );
@@ -151,14 +158,20 @@ Future<void> showEventGameQuickLook(
 /// any the event no longer has. Or that it supplies none, where the
 /// nominations are known ([nominationsKnown]). What follows the clock,
 /// Nominate's choices and the dates' names, moves on as the page does.
-/// Then Nominate where the viewer is offered it and Take back where they
-/// may take it back, both, where the row has room for only one (#946),
-/// under the row's rules ([poolRowGates]): each disabled offline, saying
-/// why, with one [BgeOnlineOnlyNote] under them, held through its own press,
-/// and sent only once a running detail read has ended ([nominateGame],
-/// [takeBackGame]).
+/// Then Nominate where the viewer is offered it, Add to lineup wherever they
+/// are offered a direct add (#519), and Take back where they may take it
+/// back, each, where the row has room for only one (#946), under the row's
+/// rules ([poolRowGates]): under a host-only view Add to lineup is the row's
+/// own main action too, and under any other mode that takes a direct add it
+/// is here alone, beside the row's Nominate. Each is disabled offline,
+/// saying why, with one [BgeOnlineOnlyNote] under them, held through its own
+/// press, and sent only once a running detail read has ended
+/// ([nominateGame], [addToLineup], [takeBackGame]).
 /// Take back arms the tab's hand-off as the row's does
-/// ([EventGamesTabController.armTakeBack]).
+/// ([EventGamesTabController.armTakeBack]). Where a read says the copy
+/// still supplies a live nomination or a lineup game still ahead, Take back
+/// is disabled, and says why under the controls, as a row whose main action
+/// it is says it under it (#905).
 ///
 /// ## A nomination
 ///
@@ -176,7 +189,15 @@ Future<void> showEventGameQuickLook(
 /// where the vote's own doesn't say it, held through its own press, and sent
 /// only once a running detail read has ended ([withdrawNomination],
 /// [decideNomination], [sendVote]). *Who voted* opens its list over the
-/// quick look and takes focus back as it closes. What follows the clock, the
+/// quick look and takes focus back as it closes. Where the nomination put
+/// its game in the lineup (`elevatedTo`, a nomination that passed or was
+/// approved), *See in lineup* opens that lineup game's quick look over this
+/// one, as *Who voted* opens its list, and takes focus back as it closes
+/// (#519). It is offered only while the lineup, as read, holds the game, so
+/// the quick look over this one never says the game has gone for a lineup
+/// that wasn't read. That quick look offers no View game: this one has it
+/// for the same game, and a page opened from the upper pop-up would land
+/// beneath it. What follows the clock, the
 /// deadline's line and the dates' names, moves on as the page does.
 ///
 /// A write's answer takes the nomination's place, so the quick look stays,
@@ -200,24 +221,31 @@ Future<void> showEventGameQuickLook(
 /// ([lineupSupplierLine]), the date it is on, or "Every date" for the
 /// event's own, or that its date is no longer on the event, the note the
 /// host left on it, and that it came from a nomination, where it did (#519).
-/// Nothing on it can be changed here.
+/// Then, for those the server lets take a game out, Remove from lineup
+/// ([lineupRemoveButton], #520): it asks first, and is disabled with its
+/// reason where the lineup has started. Nothing else on it can be changed
+/// here.
 ///
 /// ## Outcomes
 ///
 /// The page's footer says how a write went, under the pop-up's barrier,
 /// which hides it from a screen reader. So under its controls the quick
 /// look shows the same banners ([EventPoolOutcomeBanner],
-/// [EventNominationsOutcomeBanner]) for the outcomes that land while it is
-/// open: the pool's, then the nominations'. Each kind of quick look shows
-/// both, since a write begun before it opened can end while it is open: a
-/// nomination's shows the pool's for a take-back or a run of offers begun
-/// on the pool. An outcome already showing as it opened isn't said again. The
+/// [EventNominationsOutcomeBanner], [EventLineupOutcomeBanner]) for the
+/// outcomes that land while it is open: the pool's, then the nominations',
+/// then the lineup's (#519). Each kind of quick look shows all three, since
+/// a write begun before it opened can end while it is open: a nomination's
+/// shows the pool's for a take-back or a run of offers begun on the pool. An
+/// outcome already showing as it opened isn't said again. The
 /// footer still shows each, under the barrier, but not as a live region
 /// ([EventGamesTabController.saidInQuickLook]): one coming back into the
 /// tree as the barrier lifts would be read out again, so a screen reader
 /// hears it once, here. Every outcome that lands is said, whichever write
 /// it ends, a run of offers begun before the quick look opened included:
-/// this is the one place a screen reader can hear it while it is open.
+/// this is the one place a screen reader can hear it while it is open. One
+/// that landed while a lineup game's quick look was open over this one
+/// (*See in lineup*) was said there, so it shows here still but isn't said
+/// again as that one closes.
 ///
 /// ## Its entry leaves
 ///
@@ -235,10 +263,18 @@ class EventGameQuickLook extends StatefulWidget {
   const EventGameQuickLook({
     required this.entry,
     required this.title,
+    this.overNomination = false,
     super.key,
   });
 
   final EventGameEntry entry;
+
+  /// Whether this is a lineup game's quick look opened by *See in lineup*
+  /// over a nomination's, which already offers View game for the same game,
+  /// so this one offers none. Its pop-up takes its cover observer from the
+  /// root navigator, which has none, so a page View game opened from here
+  /// would land under the pop-up above the nomination's.
+  final bool overNomination;
 
   /// The game's name as the row gave it: the heading until the entry is
   /// found.
@@ -254,6 +290,15 @@ class _EventGameQuickLookState extends State<EventGameQuickLook> {
 
   /// The nominations' outcome showing as it opened, not said again.
   EventNominationsOutcome? _nominationsOpenedWith;
+
+  /// The lineup's outcome showing as it opened, not said again (#519).
+  EventLineupOutcome? _lineupOpenedWith;
+
+  /// The outcomes that landed while a quick look opened from this one was
+  /// open over it (#519), which that one said: shown here, not said again.
+  EventGamesOutcome? _poolSaidAbove;
+  EventNominationsOutcome? _nominationsSaidAbove;
+  EventLineupOutcome? _lineupSaidAbove;
 
   /// The copy as the pool last held it, for the heading once it has gone.
   OfferedGame? _copy;
@@ -274,6 +319,7 @@ class _EventGameQuickLookState extends State<EventGameQuickLook> {
     super.initState();
     _poolOpenedWith = context.read<EventGamesBloc>().state.outcome;
     _nominationsOpenedWith = context.read<EventNominationsBloc>().state.outcome;
+    _lineupOpenedWith = context.read<EventLineupBloc>().state.outcome;
   }
 
   @override
@@ -318,6 +364,7 @@ class _EventGameQuickLookState extends State<EventGameQuickLook> {
                             detail: detail,
                             games: games,
                             nominations: nominations,
+                            lineup: lineup,
                             acting: eventScreenActing(actions),
                           ),
                           LineupEntry(:final lineupGameId) => _lineupOf(
@@ -327,6 +374,7 @@ class _EventGameQuickLookState extends State<EventGameQuickLook> {
                             games: games,
                             nominations: nominations,
                             lineup: lineup,
+                            acting: eventScreenActing(actions),
                           ),
                         },
                       ),
@@ -340,6 +388,8 @@ class _EventGameQuickLookState extends State<EventGameQuickLook> {
   Widget? _poolOutcome({
     required EventGamesState games,
     required EventNominationsState nominations,
+    required EventLineupState lineup,
+    required EventDetailState detail,
     required String? viewerId,
     required Map<String, String?> names,
   }) {
@@ -351,7 +401,19 @@ class _EventGameQuickLookState extends State<EventGameQuickLook> {
     }
     return EventPoolOutcomeBanner(
       outcome: pool,
+      announce: !identical(pool, _poolSaidAbove),
       nominations: nominations.nominations,
+      // A take-back's 409 names the step that frees the game, as Take back
+      // says up front (#520, #905).
+      supplies: detail is EventDetailReady
+          ? takeBackSuppliesById(
+              detail.detail,
+              pool: games.games,
+              nominations: nominations.nominations,
+              lineup: knownLineup(lineup),
+              now: EventGamesTabScope.of(context).clock(),
+            )
+          : null,
       viewerId: viewerId,
       names: names,
     );
@@ -364,7 +426,54 @@ class _EventGameQuickLookState extends State<EventGameQuickLook> {
     if (nominated == null || identical(nominated, _nominationsOpenedWith)) {
       return null;
     }
-    return EventNominationsOutcomeBanner(outcome: nominated);
+    return EventNominationsOutcomeBanner(
+      outcome: nominated,
+      announce: !identical(nominated, _nominationsSaidAbove),
+    );
+  }
+
+  /// The lineup's banner (#519), for an outcome that landed since the quick
+  /// look opened, else null.
+  Widget? _lineupOutcome(EventLineupState lineup) {
+    final outcome = lineup.outcome;
+    if (outcome == null || identical(outcome, _lineupOpenedWith)) return null;
+    return EventLineupOutcomeBanner(
+      outcome: outcome,
+      announce: !identical(outcome, _lineupSaidAbove),
+    );
+  }
+
+  /// Opens the quick look of the lineup game [lineupGameId], named [title],
+  /// over this one (#519), and completes once it has closed. The outcomes
+  /// that landed meanwhile were said there, and aren't said again here as
+  /// the barrier over this one lifts.
+  Future<void> _openLineupGame(String lineupGameId, String title) async {
+    final pool = context.read<EventGamesBloc>();
+    final nominations = context.read<EventNominationsBloc>();
+    final lineup = context.read<EventLineupBloc>();
+    final before = (
+      pool: pool.state.outcome,
+      nominations: nominations.state.outcome,
+      lineup: lineup.state.outcome,
+    );
+    await showEventGameQuickLook(
+      context,
+      entry: LineupEntry(lineupGameId),
+      title: title,
+      overNomination: true,
+    );
+    if (!mounted) return;
+    setState(() {
+      if (!identical(pool.state.outcome, before.pool)) {
+        _poolSaidAbove = pool.state.outcome;
+      }
+      if (!identical(nominations.state.outcome, before.nominations)) {
+        _nominationsSaidAbove = nominations.state.outcome;
+      }
+      if (!identical(lineup.state.outcome, before.lineup)) {
+        _lineupSaidAbove = lineup.state.outcome;
+      }
+    });
   }
 
   /// View game's press, for [gameId], or null where there is no way to the
@@ -408,15 +517,19 @@ class _EventGameQuickLookState extends State<EventGameQuickLook> {
         ? const <String, String?>{}
         : poolNames(ready.detail);
     final viewerId = ready?.detail.attendance?.id;
-    // The pool's, for Take back, then the nominations', for Nominate.
+    // The pool's, for Take back, then the nominations', for Nominate, then
+    // the lineup's, for Add to lineup (#519).
     final outcomes = [
       ?_poolOutcome(
         games: games,
         nominations: nominations,
+        lineup: lineup,
+        detail: detail,
         viewerId: viewerId,
         names: names,
       ),
       ?_nominationsOutcome(nominations),
+      ?_lineupOutcome(lineup),
     ];
     if (shown == null || detail is! EventDetailReady) {
       return _QuickLookFrame(
@@ -442,6 +555,8 @@ class _EventGameQuickLookState extends State<EventGameQuickLook> {
         view: controller.dateView,
         now: now,
       ),
+      addScopes: lineupAddChoicesIn(detail, view: controller.dateView),
+      now: now,
       lineup: lineup,
     );
     final medium = switch (shown.medium) {
@@ -485,9 +600,11 @@ class _EventGameQuickLookState extends State<EventGameQuickLook> {
       names: names,
       clock: controller.clock,
       nominateKey: EventDetailScreen.quickLookNominateKey,
+      addToLineupKey: EventDetailScreen.quickLookAddToLineupKey,
       takeBackKey: EventDetailScreen.quickLookTakeBackKey,
     );
     final nominate = buttons.nominate;
+    final add = buttons.addToLineup;
     final takeBack = buttons.takeBack;
 
     return _QuickLookFrame(
@@ -508,12 +625,22 @@ class _EventGameQuickLookState extends State<EventGameQuickLook> {
         Text(gates.who, style: quiet),
         if (supplies != null) Text(supplies, style: quiet),
       ],
-      // Nominate and Take back, each where the row's rules offer it: both,
-      // where the row has room for one (#946).
-      controls: [?nominate, ?takeBack],
-      note: gates.nominate?.notGoing,
-      // Both are writes.
-      offlineNote: nominate != null || takeBack != null,
+      // Nominate, Add to lineup and Take back, each where the row's rules
+      // offer it: each, where the row has room for one (#946, #519).
+      controls: [?nominate, ?add, ?takeBack],
+      // Each control's one reason, as its hint says it, in their order, and
+      // each once: whoever brings it not going stops Nominate and Add to
+      // lineup alike.
+      notes: [
+        ...{
+          ?gates.nominate?.drawnReason,
+          ?gates.addToLineup?.reason,
+          // What it still supplies stops Take back (#905).
+          ?gates.takeBack?.blockedReason,
+        },
+      ],
+      // Each is a write.
+      offlineNote: nominate != null || add != null || takeBack != null,
       outcomes: outcomes,
       onOpenGame: _viewGame(controller, shown.gameId),
     );
@@ -526,6 +653,7 @@ class _EventGameQuickLookState extends State<EventGameQuickLook> {
     required EventDetailState detail,
     required EventGamesState games,
     required EventNominationsState nominations,
+    required EventLineupState lineup,
     required bool acting,
   }) {
     final l10n = EventsLocalizations.of(context);
@@ -542,12 +670,15 @@ class _EventGameQuickLookState extends State<EventGameQuickLook> {
       ?_poolOutcome(
         games: games,
         nominations: nominations,
+        lineup: lineup,
+        detail: detail,
         viewerId: ready?.detail.attendance?.id,
         names: ready == null
             ? const <String, String?>{}
             : poolNames(ready.detail),
       ),
       ?_nominationsOutcome(nominations),
+      ?_lineupOutcome(lineup),
     ];
     if (shown == null || detail is! EventDetailReady) {
       return _QuickLookFrame(
@@ -575,6 +706,15 @@ class _EventGameQuickLookState extends State<EventGameQuickLook> {
       now: controller.clock(),
       outcomes: outcomes,
       onOpenGame: _viewGame(controller, shown.gameId),
+      onOpenLineupGame: switch (shown.elevatedTo) {
+        (:final id, occurrenceId: _)
+            when knownLineup(lineup)?.any((each) => each.id == id) ?? false =>
+          () => _openLineupGame(
+            id,
+            gameName(l10n, shown.title, shown.subtitle),
+          ),
+        _ => null,
+      },
     );
   }
 
@@ -587,6 +727,7 @@ class _EventGameQuickLookState extends State<EventGameQuickLook> {
     required EventGamesState games,
     required EventNominationsState nominations,
     required EventLineupState lineup,
+    required bool acting,
   }) {
     final l10n = EventsLocalizations.of(context);
     final theme = Theme.of(context);
@@ -612,10 +753,13 @@ class _EventGameQuickLookState extends State<EventGameQuickLook> {
       ?_poolOutcome(
         games: games,
         nominations: nominations,
+        lineup: lineup,
+        detail: detail,
         viewerId: viewerId,
         names: names,
       ),
       ?_nominationsOutcome(nominations),
+      ?_lineupOutcome(lineup),
     ];
     if (shown == null || detail is! EventDetailReady) {
       return _QuickLookFrame(
@@ -644,6 +788,18 @@ class _EventGameQuickLookState extends State<EventGameQuickLook> {
             null => l10n.eventsLineupDateGone,
           };
 
+    // Remove from lineup, for those offered it (#520).
+    final remove = lineupRemoveButton(
+      context,
+      game: shown,
+      detail: detail,
+      state: lineup,
+      acting: acting,
+      now: controller.clock(),
+      clock: controller.clock,
+      buttonKey: EventDetailScreen.quickLookLineupRemoveKey,
+    );
+
     return _QuickLookFrame(
       thumbnail: shown.thumbnail,
       name: name,
@@ -660,8 +816,17 @@ class _EventGameQuickLookState extends State<EventGameQuickLook> {
         if (shown.nominationId != null)
           Text(l10n.eventsLineupFromNomination, style: quiet),
       ],
+      controls: [?remove],
+      // Its hint already says why it can't be pressed.
+      notes: [
+        if (remove != null && remove.started) l10n.eventsLineupStartedHint,
+      ],
+      // A write.
+      offlineNote: remove != null,
       outcomes: outcomes,
-      onOpenGame: _viewGame(controller, shown.gameId),
+      onOpenGame: widget.overNomination
+          ? null
+          : _viewGame(controller, shown.gameId),
     );
   }
 }
@@ -679,6 +844,7 @@ class _NominationLook extends StatefulWidget {
     required this.now,
     required this.outcomes,
     required this.onOpenGame,
+    this.onOpenLineupGame,
   });
 
   final EventNomination nomination;
@@ -698,6 +864,11 @@ class _NominationLook extends StatefulWidget {
 
   /// Opens the game's page.
   final VoidCallback? onOpenGame;
+
+  /// Opens the quick look of the lineup game the nomination became, over
+  /// this one, and completes once it has closed (#519); null where it is in
+  /// no lineup.
+  final Future<void> Function()? onOpenLineupGame;
 
   /// Whether it carries the button that sends [write]: Withdraw, or one of
   /// a host's decisions.
@@ -868,6 +1039,10 @@ class _NominationLookState extends State<_NominationLook>
             rosterShown: inputs.rosterShown,
             viewerId: viewerId,
           );
+    final onOpenLineupGame = widget.onOpenLineupGame;
+    final inLineup = onOpenLineupGame == null
+        ? null
+        : _OpenLineupButton(title: title, onPressed: onOpenLineupGame);
 
     return _QuickLookFrame(
       thumbnail: nomination.thumbnail,
@@ -901,7 +1076,7 @@ class _NominationLookState extends State<_NominationLook>
         ),
       ),
       vote: control,
-      controls: [?whoVoted, ...buttons],
+      controls: [?whoVoted, ?inLineup, ...buttons],
       // Once for its writes: the vote's says it where it is built.
       offlineNote: buttons.isNotEmpty && control == null,
       outcomes: widget.outcomes,
@@ -910,10 +1085,59 @@ class _NominationLookState extends State<_NominationLook>
   }
 }
 
+/// *See in lineup* in a nomination's quick look (#519): opens, over it, the
+/// quick look of the lineup game the nomination became ([onPressed]), and
+/// takes focus back once that has closed, as *Who voted* does, however it
+/// was pressed: a screen reader's activation moves no focus by itself.
+/// Named for its game to a screen reader, starting with its visible text.
+/// Not a write, so not online-only.
+class _OpenLineupButton extends StatefulWidget {
+  const _OpenLineupButton({required this.title, required this.onPressed});
+
+  /// The game's name, as the quick look's heading gives it.
+  final String title;
+
+  /// Opens the lineup game's quick look, and completes once it has closed.
+  final Future<void> Function() onPressed;
+
+  @override
+  State<_OpenLineupButton> createState() => _OpenLineupButtonState();
+}
+
+class _OpenLineupButtonState extends State<_OpenLineupButton> {
+  final FocusNode _focus = FocusNode(debugLabel: 'See in lineup');
+
+  @override
+  void dispose() {
+    _focus.dispose();
+    super.dispose();
+  }
+
+  Future<void> _open() async {
+    await widget.onPressed();
+    if (mounted && _focus.context != null) _focus.requestFocus();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = EventsLocalizations.of(context);
+    return TextButton.icon(
+      key: EventDetailScreen.quickLookOpenLineupKey,
+      focusNode: _focus,
+      onPressed: () => unawaited(_open()),
+      icon: const Icon(Icons.format_list_numbered),
+      label: Text(
+        l10n.eventsQuickLookOpenLineupGame,
+        semanticsLabel: l10n.eventsQuickLookOpenLineupGameNamed(widget.title),
+      ),
+    );
+  }
+}
+
 /// The frame every form of the quick look shares (#957): the cover beside
 /// the name, as its heading; then, while the entry is there, [lines] as one
 /// node, [vote] under them at full width, [controls] in a row that wraps,
-/// [note] under them, drawn only, as their hints say it, and one online-only
+/// [notes] under them, drawn only, as their hints say it, and one online-only
 /// note while offline where [offlineNote] asks for it, then [outcomes], then
 /// View game where [onOpenGame] is given. Where the entry has gone, [gone]
 /// in a live region in place of all but [outcomes], so nothing is left to
@@ -927,7 +1151,7 @@ class _QuickLookFrame extends StatelessWidget {
     this.wrapLines,
     this.vote,
     this.controls = const [],
-    this.note,
+    this.notes = const [],
     this.offlineNote = false,
     this.outcomes = const [],
     this.onOpenGame,
@@ -951,8 +1175,9 @@ class _QuickLookFrame extends StatelessWidget {
   /// The entry's other controls, each a node of its own.
   final List<Widget> controls;
 
-  /// Why one of [controls] can't be pressed, which its hint already says.
-  final String? note;
+  /// Why each of [controls] that can't be pressed can't, in their order,
+  /// which their hints already say.
+  final List<String> notes;
 
   /// Whether one online-only note goes under [controls] while offline: they
   /// hold a write whose reason nothing else under them says.
@@ -971,7 +1196,6 @@ class _QuickLookFrame extends StatelessWidget {
     final theme = Theme.of(context);
     final tokens = BgeTokens.of(context);
     final gone = this.gone;
-    final note = this.note;
     final vote = this.vote;
     final onOpenGame = this.onOpenGame;
     final offline = BgeConnectivityScope.offlineOf(context);
@@ -1024,7 +1248,7 @@ class _QuickLookFrame extends StatelessWidget {
                 crossAxisAlignment: WrapCrossAlignment.center,
                 children: controls,
               ),
-            if (note != null)
+            for (final note in notes)
               ExcludeSemantics(
                 child: Text(
                   note,

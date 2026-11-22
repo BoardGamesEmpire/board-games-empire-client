@@ -1228,6 +1228,26 @@ void main() {
       );
     });
 
+    test('an override scope this client does not know reads as '
+        'unknown', () async {
+      final remote = answering(
+        _detailBody(
+          _eventRow(attendees: [])
+            ..['policy'] = _policyRow({
+              ..._policyLists(),
+              'occurrenceOverrideScope': 'LoosenOnly',
+            }),
+        ),
+      );
+
+      final snapshot = await remote.fetchEvent('ev_1');
+
+      expect(
+        snapshot.policy!.occurrenceOverrideScope,
+        OccurrenceOverrideScope.unknown,
+      );
+    });
+
     test('a detail read whose caller may not read the policy carries the '
         'date rules as known and empty', () async {
       final remote = answering(
@@ -5495,6 +5515,234 @@ void main() {
         expect(rows[2].elevatedTo, isNull);
       },
     );
+
+    group('direct add and removal', () {
+      String coded(int status, String error, String code) => jsonEncode({
+        'statusCode': status,
+        'message': 'Refused',
+        'error': error,
+        'code': code,
+      });
+
+      Future<LineupGame> directAdd(
+        EventRemoteDataSource remote, {
+        String? occurrenceId,
+        ScheduledGameRole role = ScheduledGameRole.primary,
+        String? notes,
+        int? maxPlayTime,
+      }) => remote.directAddGame(
+        'e1',
+        platformGameId: 'pg_1',
+        suppliedById: 'og_1',
+        occurrenceId: occurrenceId,
+        role: role,
+        notes: notes,
+        maxPlayTime: maxPlayTime,
+      );
+
+      test('directAddGame posts the body and reads the lineup game', () async {
+        final remote = answering(
+          jsonEncode({
+            'message': 'Added',
+            'eventGame': _lineupRow(
+              id: 'lg_9',
+              occurrenceId: 'occ_1',
+              role: 'Filler',
+            ),
+          }),
+          status: 201,
+        );
+
+        final game = await directAdd(
+          remote,
+          occurrenceId: 'occ_1',
+          role: ScheduledGameRole.filler,
+          notes: 'Quick one',
+          maxPlayTime: 30,
+        );
+
+        expect(adapter.sent.single.method, 'POST');
+        expect(
+          adapter.sent.single.path,
+          '/api/events/e1/nominations/direct-add',
+        );
+        expect(adapter.sent.single.body, {
+          'platformGameId': 'pg_1',
+          'suppliedById': 'og_1',
+          'occurrenceId': 'occ_1',
+          'role': 'Filler',
+          'notes': 'Quick one',
+          'maxPlayTime': 30,
+        });
+        expect(game.id, 'lg_9');
+        expect(game.role, ScheduledGameRole.filler);
+      });
+
+      test('directAddGame leaves out a null date, notes and time', () async {
+        final remote = answering(
+          jsonEncode({'message': 'Added', 'eventGame': _lineupRow()}),
+          status: 201,
+        );
+
+        await directAdd(remote);
+
+        expect(adapter.sent.single.body, {
+          'platformGameId': 'pg_1',
+          'suppliedById': 'og_1',
+          'role': 'Primary',
+        });
+      });
+
+      test('directAddGame sends a time only for a Filler', () async {
+        final remote = answering(
+          jsonEncode({'message': 'Added', 'eventGame': _lineupRow()}),
+          status: 201,
+        );
+
+        await directAdd(remote, maxPlayTime: 30);
+
+        expect(adapter.sent.single.body, {
+          'platformGameId': 'pg_1',
+          'suppliedById': 'og_1',
+          'role': 'Primary',
+        });
+      });
+
+      test('directAddGame refuses an unknown role, a Filler time under 1 '
+          'and an empty id, before sending', () async {
+        final remote = answering('{}');
+
+        await expectLater(
+          directAdd(remote, role: ScheduledGameRole.unknown),
+          throwsArgumentError,
+        );
+        await expectLater(
+          directAdd(remote, role: ScheduledGameRole.filler, maxPlayTime: 0),
+          throwsArgumentError,
+        );
+        await expectLater(
+          remote.directAddGame(
+            '',
+            platformGameId: 'pg_1',
+            suppliedById: 'og_1',
+          ),
+          throwsArgumentError,
+        );
+        expect(adapter.sent, isEmpty);
+      });
+
+      test('removeLineupGame deletes and reads the removed game', () async {
+        final remote = answering(
+          jsonEncode({
+            'message': 'Removed',
+            'lineupGame': _lineupRow(id: 'lg 1'),
+          }),
+        );
+
+        final game = await remote.removeLineupGame('e1', 'lg 1');
+
+        expect(adapter.sent.single.method, 'DELETE');
+        expect(adapter.sent.single.path, '/api/events/e1/lineup/lg%201');
+        expect(game.id, 'lg 1');
+      });
+
+      test('a started lineup is a conflict coded LINEUP_STARTED', () async {
+        final remote = answering(
+          coded(409, 'Conflict', 'LINEUP_STARTED'),
+          status: 409,
+        );
+
+        await expectLater(
+          remote.removeLineupGame('e1', 'lg_1'),
+          throwsA(
+            isA<EventWriteConflictException>()
+                .having((e) => e.statusCode, 'statusCode', 409)
+                .having((e) => e.code, 'code', 'LINEUP_STARTED'),
+          ),
+        );
+      });
+
+      test("a coded 409 outside the error envelope is not the API's, so it "
+          'is no conflict', () async {
+        // The API's refusals arrive in its envelope (backend#1260): a bare
+        // body came from something in between, and its code says nothing.
+        for (final call in <Future<Object?> Function(EventRemoteDataSource)>[
+          directAdd,
+          (remote) => remote.removeLineupGame('e1', 'lg_1'),
+        ]) {
+          await expectLater(
+            call(
+              answering(
+                jsonEncode({'code': 'LINEUP_STARTED', 'message': 'Started'}),
+                status: 409,
+              ),
+            ),
+            throwsA(
+              isA<EventRemotePermanentException>().having(
+                (e) => e.statusCode,
+                'statusCode',
+                409,
+              ),
+            ),
+          );
+        }
+      });
+
+      test('404 is not found; 403 is refused', () async {
+        for (final call in <Future<Object?> Function(EventRemoteDataSource)>[
+          directAdd,
+          (remote) => remote.removeLineupGame('e1', 'lg_1'),
+        ]) {
+          await expectLater(
+            call(answering(_envelope(404, 'Not Found', 'Gone'), status: 404)),
+            throwsA(isA<EventRemoteNotFoundException>()),
+          );
+          await expectLater(
+            call(answering(_envelope(403, 'Forbidden', 'No'), status: 403)),
+            throwsA(
+              isA<EventWriteRefusedException>().having(
+                (e) => e.statusCode,
+                'statusCode',
+                403,
+              ),
+            ),
+          );
+        }
+      });
+
+      test('a supplier not attending is a conflict', () async {
+        final remote = answering(
+          _envelope(409, 'Conflict', 'Supplier not attending'),
+          status: 409,
+        );
+
+        await expectLater(
+          directAdd(remote),
+          throwsA(
+            isA<EventWriteConflictException>()
+                .having((e) => e.statusCode, 'statusCode', 409)
+                .having((e) => e.code, 'code', isNull)
+                .having(
+                  (e) => e.apiMessage,
+                  'apiMessage',
+                  'Supplier not attending',
+                ),
+          ),
+        );
+      });
+
+      test('400 is permanent, whether or not it carries one message', () async {
+        final remote = answering(
+          _envelope(400, 'Bad Request', 'Row does not match'),
+          status: 400,
+        );
+
+        await expectLater(
+          directAdd(remote),
+          throwsA(isA<EventRemotePermanentException>()),
+        );
+      });
+    });
   });
 
   group('classification', () {

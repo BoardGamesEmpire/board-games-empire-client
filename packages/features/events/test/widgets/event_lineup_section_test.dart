@@ -4,6 +4,7 @@ import 'package:bge_test_support/session.dart';
 import 'package:bge_test_support/widgets.dart';
 import 'package:events/events.dart';
 import 'package:events/l10n/events_localizations.dart';
+import 'package:events/src/widgets/held_spinner.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -23,20 +24,43 @@ import '../support/fake_event_remote.dart';
 class _MockEventRepository extends Mock implements EventRepository {}
 
 const _offline = EventRemoteTransientException('offline');
+const _notFound = EventRemoteNotFoundException('gone', statusCode: 404);
+const _started = EventWriteConflictException(
+  'started',
+  statusCode: 409,
+  code: 'LINEUP_STARTED',
+);
 const _longTitle =
     'Twilight Imperium: Fourth Edition, Prophecy of Kings and the Codex '
     'Volumes';
 
-/// A row of `e-1`'s roster, answered Going.
-EventAttendee _row(String id, {String? name}) => EventAttendee(
+/// A row of `e-1`'s roster, a participant answered Going unless a test says
+/// otherwise.
+EventAttendee _row(
+  String id, {
+  String? name,
+  EventRole role = EventRole.participant,
+  EventParticipationStatus status = EventParticipationStatus.attending,
+}) => EventAttendee(
   id: id,
   eventId: 'e-1',
   userId: 'user-$id',
   displayName: name,
-  role: EventRole.participant,
-  status: EventParticipationStatus.attending,
+  role: role,
+  status: status,
   createdAt: kItemInstant,
   updatedAt: kItemInstant,
+);
+
+/// A game [attendeeId] offers to `e-1`'s pool, from their collection.
+OfferedGame _offered(String id, String attendeeId, String title) => OfferedGame(
+  id: id,
+  attendeeId: attendeeId,
+  collectionId: 'col-$id',
+  platformGameId: 'pg-$id',
+  gameId: 'g-$id',
+  title: title,
+  platformName: 'Tabletop',
 );
 
 /// A game on `e-1`'s lineup, Primary and brought by Ada, on the event itself
@@ -85,6 +109,30 @@ void main() {
   /// What each lineup read answers.
   late FutureOr<List<LineupGame>> Function(String eventId) lineupAnswer;
 
+  /// What each read of the games pool answers: none, unless a test says
+  /// otherwise.
+  late List<OfferedGame> pool;
+
+  /// How each read of the games pool answers: with [pool], unless a test
+  /// holds it or has it fail.
+  late FutureOr<List<OfferedGame>> Function() poolAnswer;
+
+  /// What each read of the event throws, while set: none, unless a test has
+  /// the server stop showing it.
+  Object? detailFailure;
+
+  /// Holds each lineup removal's answer while set (#520).
+  Completer<void>? removeHold;
+
+  /// Holds each direct add's answer while set (#519).
+  Completer<void>? addHold;
+
+  /// What each direct add throws, while set (#519).
+  Object? addFailure;
+
+  /// What each lineup removal throws, while set (#520).
+  Object? removeFailure;
+
   /// Each game page a quick look's View game asked for, by the game's id.
   final openedGames = <String>[];
 
@@ -106,15 +154,23 @@ void main() {
   const fridayName = 'Fri, Nov 6 · 7:00 PM';
 
   /// Event `e-1` as the viewer sees it, on [dates] (Friday alone by
-  /// default), with the viewer, Ada and someone unnamed on its roster.
-  EventDetail detailOf({List<EventOccurrence>? dates}) => EventDetail(
-    snapshot: EventSnapshot(
-      event: item('e-1', title: 'Catan night').event,
-      occurrences: dates ?? [friday],
-      attendees: [me, ada, unnamed],
-    ),
-    attendance: me,
-  );
+  /// default), with the viewer, Ada and someone unnamed on its roster, or
+  /// [roster]. The viewer is [viewer], a participant by default.
+  EventDetail detailOf({
+    List<EventOccurrence>? dates,
+    EventAttendee? viewer,
+    List<EventAttendee>? roster,
+  }) {
+    final self = viewer ?? me;
+    return EventDetail(
+      snapshot: EventSnapshot(
+        event: item('e-1', title: 'Catan night').event,
+        occurrences: dates ?? [friday],
+        attendees: roster ?? [self, ada, unnamed],
+      ),
+      attendance: self,
+    );
+  }
 
   setUpAll(() {
     registerFallbackValue(detailOf().snapshot);
@@ -129,7 +185,17 @@ void main() {
       () => repository.cacheEvent(any(), source: any(named: 'source')),
     ).thenAnswer((_) async {});
     when(() => repository.lastWrite(any())).thenAnswer((_) async => 7);
+    when(
+      () => repository.forgetEvent(any(), lastWrite: any(named: 'lastWrite')),
+    ).thenAnswer((_) async => true);
+    detailFailure = null;
+    removeHold = null;
+    addHold = null;
+    addFailure = null;
+    removeFailure = null;
     lineupAnswer = (_) => const [];
+    pool = const [];
+    poolAnswer = () => pool;
     openedGames.clear();
   });
 
@@ -145,10 +211,33 @@ void main() {
     location = ValueNotifier(null);
     addTearDown(location.dispose);
     remote = FakeEventRemote.detail(
-      (_) => detail.snapshot,
-      pool: (_) => const [],
+      (_) {
+        // The fake throws what a test hands it.
+        // ignore: only_throw_errors
+        if (detailFailure case final failure?) throw failure;
+        return detail.snapshot;
+      },
+      pool: (_) => poolAnswer(),
       nominations: (_) => const [],
       lineup: (eventId) => lineupAnswer(eventId),
+      directAdded: (request) async {
+        await addHold?.future;
+        // The fake throws what a test hands it.
+        // ignore: only_throw_errors
+        if (addFailure case final failure?) throw failure;
+        return _lineupGame(
+          'l-${request.suppliedById}',
+          occurrenceId: request.occurrenceId,
+          role: request.role,
+        );
+      },
+      lineupRemoved: (request) async {
+        await removeHold?.future;
+        // The fake throws what a test hands it.
+        // ignore: only_throw_errors
+        if (removeFailure case final failure?) throw failure;
+        return _lineupGame(request.lineupGameId);
+      },
     );
     return MaterialApp(
       theme: theme ?? BgeTheme.light(),
@@ -830,6 +919,951 @@ void main() {
     });
   });
 
+  group('Add a game (#519)', () {
+    final host = _row('att-me', name: 'Me', role: EventRole.host);
+    final azul = _offered('o-2', 'att-ada', 'Azul');
+    final catan = _offered('o-1', 'att-me', 'Catan');
+    final root = _offered('o-3', 'att-nn', 'Root');
+    final addGame = find.byKey(EventDetailScreen.lineupAddKey);
+    final picker = find.byKey(EventDetailScreen.lineupPickerKey);
+    Finder pick(String id) => find.byKey(EventDetailScreen.lineupPickKey(id));
+    Finder inPick(String id, String text) =>
+        find.descendant(of: pick(id), matching: find.text(text));
+    final confirm = find.byKey(EventDetailScreen.addToLineupConfirmKey);
+    Finder scopeChoice(String? occurrenceId) =>
+        find.byKey(EventDetailScreen.addToLineupScopeKey(occurrenceId));
+
+    /// Add a game's focus.
+    FocusNode addFocus(WidgetTester tester) =>
+        tester.widget<ButtonStyleButton>(addGame).focusNode!;
+
+    /// Presses Add a game and picks [id] from the pool.
+    Future<void> pickGame(WidgetTester tester, String id) async {
+      await tester.tap(addGame);
+      await animate(tester);
+      expect(picker, findsOneWidget);
+      await tester.ensureVisible(pick(id));
+      await tester.pump();
+      await tester.tap(pick(id));
+      await animate(tester);
+      expect(picker, findsNothing);
+    }
+
+    testWidgets('a participant has no Add a game', (tester) async {
+      pool = [azul];
+      await showLineup(tester);
+
+      expect(find.text('Nothing in the lineup yet'), findsOneWidget);
+      expect(addGame, findsNothing);
+    });
+
+    testWidgets('Add a game picks from the pool and adds for the chosen date', (
+      tester,
+    ) async {
+      pool = [catan, azul, root];
+      await showLineup(tester, detail: detailOf(viewer: host));
+
+      expect(addGame, findsOneWidget);
+      // Above the lineup, empty as it is.
+      expect(find.text('Nothing in the lineup yet'), findsOneWidget);
+      await tester.tap(addGame);
+      await animate(tester);
+
+      // Every copy in the pool, named with who brings it.
+      expect(picker, findsOneWidget);
+      expect(inPick('o-1', 'Catan'), findsOneWidget);
+      expect(inPick('o-1', "You're bringing this"), findsOneWidget);
+      expect(inPick('o-2', 'Azul'), findsOneWidget);
+      expect(inPick('o-2', 'Ada is bringing this'), findsOneWidget);
+      expect(inPick('o-3', 'This person is bringing this'), findsOneWidget);
+
+      await tester.tap(pick('o-2'));
+      await animate(tester);
+      expect(picker, findsNothing);
+
+      // One date and no row of dates: the whole event, or Friday.
+      expect(scopeChoice(null), findsOneWidget);
+      await tester.tap(scopeChoice('d-1'));
+      await animate(tester);
+      await tester.ensureVisible(confirm);
+      await tester.pump();
+      // The server's lineup once the add has gone in: the add's own answer
+      // is dropped, and the read after it fills the rows.
+      lineupAnswer = (_) => [
+        _lineupGame('l-o-2', title: 'Azul', occurrenceId: 'd-1'),
+      ];
+      await tester.tap(confirm);
+      await animate(tester);
+
+      expect(remote.directAdds, [
+        (
+          eventId: 'e-1',
+          platformGameId: 'pg-o-2',
+          suppliedById: 'o-2',
+          occurrenceId: 'd-1',
+          role: ScheduledGameRole.primary,
+          notes: null,
+          maxPlayTime: null,
+        ),
+      ]);
+      // The lineup is read again, and shows it.
+      expect(remote.lineupRequests, hasLength(2));
+      expect(row('l-o-2'), findsOneWidget);
+      expect(
+        find.byKey(EventDetailScreen.lineupOutcomeKey),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets("a copy whose supplier isn't going can't be picked, and says "
+        'why', (tester) async {
+      final handle = tester.ensureSemantics();
+      pool = [catan, azul];
+      await showLineup(
+        tester,
+        detail: detailOf(
+          viewer: host,
+          roster: [
+            host,
+            _row(
+              'att-ada',
+              name: 'Ada',
+              status: EventParticipationStatus.notAttending,
+            ),
+          ],
+        ),
+      );
+      await tester.tap(addGame);
+      await animate(tester);
+
+      expect(tester.widget<ListTile>(pick('o-2')).enabled, isFalse);
+      expect(inPick('o-2', "Whoever brings it isn't going"), findsOneWidget);
+      // Its name to a screen reader says why, as the row draws it.
+      final spoken = tester.getSemantics(pick('o-2'));
+      expect(spoken, isSemantics(isEnabled: false));
+      expect(spoken.label, contains('Azul'));
+      expect(spoken.label, contains('Ada is bringing this'));
+      expect(spoken.label, contains("Whoever brings it isn't going"));
+      expect(tester.widget<ListTile>(pick('o-1')).enabled, isTrue);
+
+      // A press on it picks nothing.
+      await tester.tap(pick('o-2'), warnIfMissed: false);
+      await animate(tester);
+      expect(picker, findsOneWidget);
+      expect(find.byType(AlertDialog), findsNothing);
+      handle.dispose();
+    });
+
+    testWidgets('adding under a date view adds to that date without asking', (
+      tester,
+    ) async {
+      pool = [catan, azul];
+      await showLineup(
+        tester,
+        detail: detailOf(viewer: host, dates: [friday, saturday]),
+      );
+
+      // Friday, the next date still to come, opens.
+      await pickGame(tester, 'o-2');
+      expect(find.byType(AlertDialog), findsOneWidget);
+      expect(scopeChoice(null), findsNothing);
+      expect(scopeChoice('d-1'), findsNothing);
+      await tester.tap(confirm);
+      await animate(tester);
+
+      expect(remote.directAdds.single.occurrenceId, 'd-1');
+
+      // Under Every date, the event's own lineup.
+      await chooseDate(tester, null);
+      await pickGame(tester, 'o-1');
+      expect(scopeChoice(null), findsNothing);
+      await tester.tap(confirm);
+      await animate(tester);
+
+      expect(remote.directAdds, hasLength(2));
+      expect(remote.directAdds.last.occurrenceId, isNull);
+      expect(remote.directAdds.last.suppliedById, 'o-1');
+    });
+
+    testWidgets('a pick whose date a read took away meanwhile is dropped, '
+        'not added to the date the view moved to', (tester) async {
+      pool = [azul];
+      await showLineup(
+        tester,
+        detail: detailOf(viewer: host, dates: [friday, saturday]),
+      );
+
+      // Opened under Friday.
+      await tester.tap(addGame);
+      await animate(tester);
+      expect(picker, findsOneWidget);
+
+      // Friday is gone, so the view under the picker moves to Saturday.
+      final sunday = confirmed(
+        'd-3',
+        DateTime(2026, 11, 8, 19),
+        sortOrder: 2,
+      ).copyWith(eventId: 'e-1');
+      cache.add(detailOf(viewer: host, dates: [saturday, sunday]));
+      await settle(tester);
+      await animate(tester);
+
+      await tester.ensureVisible(pick('o-2'));
+      await tester.pump();
+      await tester.tap(pick('o-2'));
+      await animate(tester);
+
+      // No dialog for Saturday: the add is dropped, and the footer says so.
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(remote.directAdds, isEmpty);
+      expect(
+        find.text("Azul wasn't added: something changed on this event first."),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('under a date called off, Add a game is disabled and says '
+        'why', (tester) async {
+      final handle = tester.ensureSemantics();
+      pool = [azul];
+      await showLineup(
+        tester,
+        detail: detailOf(
+          viewer: host,
+          dates: [
+            friday,
+            saturday.copyWith(status: OccurrenceStatus.cancelled),
+          ],
+        ),
+      );
+      await chooseDate(tester, 'd-2');
+
+      const reason = "This date isn't happening, so games can't be added to it";
+      const unread = "Games can't be added to this date";
+      expect(tester.widget<ButtonStyleButton>(addGame).onPressed, isNull);
+      expect(
+        tester.getSemantics(addGame),
+        isSemantics(label: 'Add a game', hint: reason, isEnabled: false),
+      );
+      expect(find.text(reason), findsOneWidget);
+      // A date called off says so: not only that nothing can be added.
+      expect(find.text(unread), findsNothing);
+
+      await chooseDate(tester, 'd-1');
+      expect(tester.widget<ButtonStyleButton>(addGame).onPressed, isNotNull);
+      expect(find.text(reason), findsNothing);
+      handle.dispose();
+    });
+
+    testWidgets('a date that has started still takes an add, from its own '
+        'view', (tester) async {
+      pool = [azul];
+      // Earlier this month: the night itself, or the morning after.
+      final started = confirmed(
+        'd-0',
+        DateTime(2026, 10, 2, 19),
+      ).copyWith(eventId: 'e-1');
+      await showLineup(
+        tester,
+        detail: detailOf(viewer: host, dates: [started, friday]),
+      );
+      await chooseDate(tester, 'd-0');
+
+      expect(tester.widget<ButtonStyleButton>(addGame).onPressed, isNotNull);
+      expect(
+        find.text("This date isn't happening, so games can't be added to it"),
+        findsNothing,
+      );
+      await pickGame(tester, 'o-2');
+      expect(scopeChoice('d-0'), findsNothing);
+      // It says up front that the game can't then be taken out (#520).
+      expect(
+        find.text(
+          "This date has started, so a game added now can't be taken out of "
+          'the lineup.',
+        ),
+        findsOneWidget,
+      );
+      await tester.tap(confirm);
+      await animate(tester);
+
+      expect(remote.directAdds.single.occurrenceId, 'd-0');
+    });
+
+    group('a date that starts while the add dialog is open', () {
+      const startedTitle = 'Still add Azul to the lineup?';
+      const startedBody =
+          "This date has started, so a game added now can't be taken out of "
+          'the lineup.';
+      final keep = find.byKey(EventDetailScreen.addToLineupStartedKeepKey);
+      final addAnyway = find.byKey(
+        EventDetailScreen.addToLineupStartedConfirmKey,
+      );
+
+      /// Picks Azul for Friday, which hasn't started as the dialog opens,
+      /// then has a read move Friday's start to an hour ago, and presses
+      /// Add to lineup.
+      Future<void> addAsItStarts(WidgetTester tester) async {
+        pool = [azul];
+        await showLineup(
+          tester,
+          detail: detailOf(viewer: host, dates: [friday, saturday]),
+        );
+        await chooseDate(tester, 'd-1');
+        await pickGame(tester, 'o-2');
+        expect(find.text(startedBody), findsNothing);
+
+        final begun = confirmed(
+          'd-1',
+          now.subtract(const Duration(hours: 1)),
+        ).copyWith(eventId: 'e-1');
+        cache.add(detailOf(viewer: host, dates: [begun, saturday]));
+        await settle(tester);
+        await tester.tap(confirm);
+        await animate(tester);
+      }
+
+      testWidgets("asks again, and Don't add adds nothing", (tester) async {
+        await addAsItStarts(tester);
+
+        expect(find.text(startedTitle), findsOneWidget);
+        expect(find.text(startedBody), findsOneWidget);
+        expect(remote.directAdds, isEmpty);
+
+        await tester.tap(keep);
+        await animate(tester);
+
+        expect(find.byType(AlertDialog), findsNothing);
+        expect(remote.directAdds, isEmpty);
+        // The viewer chose not to: nothing says it was dropped.
+        expect(find.textContaining("wasn't added"), findsNothing);
+      });
+
+      testWidgets('asks again, and Add to lineup adds it', (tester) async {
+        await addAsItStarts(tester);
+        expect(find.text(startedTitle), findsOneWidget);
+
+        await tester.tap(addAnyway);
+        await animate(tester);
+
+        expect(find.byType(AlertDialog), findsNothing);
+        expect(remote.directAdds.single.occurrenceId, 'd-1');
+      });
+    });
+
+    testWidgets("Add a game's list shows the pool's read as it goes: a "
+        'spinner, then the games', (tester) async {
+      final held = Completer<List<OfferedGame>>();
+      poolAnswer = () => held.future;
+      await showLineup(tester, detail: detailOf(viewer: host));
+      await tester.tap(addGame);
+      await animate(tester);
+
+      expect(
+        find.descendant(
+          of: picker,
+          matching: find.bySemanticsLabel('Loading the games'),
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('No games offered yet'), findsNothing);
+
+      held.complete([azul]);
+      await animate(tester);
+
+      expect(pick('o-2'), findsOneWidget);
+      expect(find.bySemanticsLabel('Loading the games'), findsNothing);
+    });
+
+    testWidgets("Add a game's list says when the pool couldn't be read, and "
+        'Try again reads it', (tester) async {
+      poolAnswer = () => throw _offline;
+      await showLineup(tester, detail: detailOf(viewer: host));
+      await tester.tap(addGame);
+      await animate(tester);
+
+      expect(
+        find.descendant(
+          of: picker,
+          matching: find.text("Couldn't load the games"),
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('No games offered yet'), findsNothing);
+
+      poolAnswer = () => [azul];
+      final reads = remote.poolRequests.length;
+      await tester.tap(find.byKey(EventDetailScreen.lineupPickerRetryKey));
+      await animate(tester);
+
+      expect(remote.poolRequests, hasLength(reads + 1));
+      expect(pick('o-2'), findsOneWidget);
+    });
+
+    testWidgets("Add a game's list says when the games aren't shown, and when "
+        'none are offered', (tester) async {
+      poolAnswer = () => throw const EventRemoteForbiddenException('no');
+      await showLineup(tester, detail: detailOf(viewer: host));
+      await tester.tap(addGame);
+      await animate(tester);
+
+      expect(
+        find.descendant(
+          of: picker,
+          matching: find.text("The games aren't shown to you"),
+        ),
+        findsOneWidget,
+      );
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await animate(tester);
+
+      // None offered, as the pool's read answers.
+      await tester.pumpWidget(const SizedBox());
+      poolAnswer = () => const [];
+      await showLineup(tester, detail: detailOf(viewer: host));
+      await tester.tap(addGame);
+      await animate(tester);
+
+      expect(
+        find.descendant(
+          of: picker,
+          matching: find.text('No games offered yet'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.text(
+          'Once someone offers to bring a game, it can be added to the lineup '
+          'from here.',
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets("under a date whose status this client can't read, Add a "
+        'game is disabled, saying only that no game can be added', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      pool = [azul];
+      await showLineup(
+        tester,
+        detail: detailOf(
+          viewer: host,
+          dates: [
+            friday,
+            saturday.copyWith(status: OccurrenceStatus.unknown),
+          ],
+        ),
+      );
+      await chooseDate(tester, 'd-2');
+
+      const neutral = "Games can't be added to this date";
+      expect(tester.widget<ButtonStyleButton>(addGame).onPressed, isNull);
+      expect(
+        tester.getSemantics(addGame),
+        isSemantics(label: 'Add a game', hint: neutral, isEnabled: false),
+      );
+      expect(find.text(neutral), findsOneWidget);
+      expect(
+        find.text("This date isn't happening, so games can't be added to it"),
+        findsNothing,
+      );
+      handle.dispose();
+    });
+
+    testWidgets("Add a game's list says the event can't be found, where it "
+        'goes while the list is open', (tester) async {
+      pool = [azul];
+      await showLineup(tester, detail: detailOf(viewer: host));
+      await tester.tap(addGame);
+      await animate(tester);
+      expect(pick('o-2'), findsOneWidget);
+
+      // The server no longer shows the event: its forget empties the cache.
+      detailFailure = const EventRemoteNotFoundException(
+        'gone',
+        statusCode: 404,
+      );
+      await readEvent(tester);
+      cache.add(null);
+      await settle(tester);
+      await animate(tester);
+
+      expect(
+        blocOf<EventDetailBloc>(tester).state,
+        isA<EventDetailNotFound>(),
+      );
+      expect(
+        find.descendant(
+          of: picker,
+          matching: find.text("We couldn't find this event"),
+        ),
+        findsOneWidget,
+      );
+      expect(pick('o-2'), findsNothing);
+      expect(
+        find.descendant(
+          of: picker,
+          matching: find.bySemanticsLabel('Loading the games'),
+        ),
+        findsNothing,
+      );
+    });
+
+    testWidgets("focus is back on Add a game after the dialog's Cancel, and "
+        'after an add is sent', (tester) async {
+      pool = [azul];
+      await showLineup(tester, detail: detailOf(viewer: host));
+      addFocus(tester).requestFocus();
+      await tester.pump();
+
+      // Cancel: nothing sent.
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await animate(tester);
+      await tester.tap(pick('o-2'));
+      await animate(tester);
+      await tester.tap(find.text('Cancel'));
+      await animate(tester);
+
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(remote.directAdds, isEmpty);
+      expect(addFocus(tester).hasPrimaryFocus, isTrue);
+
+      // Sent: held through the add, focus kept.
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await animate(tester);
+      await tester.tap(pick('o-2'));
+      await animate(tester);
+      await tester.tap(confirm);
+      await animate(tester);
+
+      expect(remote.directAdds, hasLength(1));
+      expect(addFocus(tester).hasPrimaryFocus, isTrue);
+    });
+
+    testWidgets('closed with nothing picked, focus is back on Add a game, and '
+        'nothing is sent', (tester) async {
+      pool = [azul];
+      await showLineup(tester, detail: detailOf(viewer: host));
+      addFocus(tester).requestFocus();
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await animate(tester);
+      expect(picker, findsOneWidget);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await animate(tester);
+
+      expect(picker, findsNothing);
+      expect(remote.directAdds, isEmpty);
+      expect(addFocus(tester).hasPrimaryFocus, isTrue);
+    });
+
+    testWidgets('the last row to leave while it holds focus hands it to Add a '
+        'game', (tester) async {
+      pool = [azul];
+      lineupAnswer = (_) => [_lineupGame('l-1')];
+      await showLineup(tester, detail: detailOf(viewer: host));
+      headFocus(tester, 'l-1').requestFocus();
+      await tester.pump();
+
+      // Someone else took it out: a read finds it gone.
+      lineupAnswer = (_) => const [];
+      await readEvent(tester);
+
+      expect(row('l-1'), findsNothing);
+      expect(addFocus(tester).hasPrimaryFocus, isTrue);
+    });
+  });
+
+  group('a write that finds the cached event out of date', () {
+    final host = _row('att-me', name: 'Me', role: EventRole.host);
+    final azul = _offered('o-2', 'att-ada', 'Azul');
+    final outcome = find.byKey(EventDetailScreen.lineupOutcomeKey);
+
+    /// Adds Azul for the whole event, from Add a game.
+    Future<void> addAzul(WidgetTester tester) async {
+      await tester.tap(find.byKey(EventDetailScreen.lineupAddKey));
+      await animate(tester);
+      await tester.tap(find.byKey(EventDetailScreen.lineupPickKey('o-2')));
+      await animate(tester);
+      await tester.tap(
+        find.byKey(EventDetailScreen.addToLineupScopeKey(null)),
+      );
+      await animate(tester);
+      final confirm = find.byKey(EventDetailScreen.addToLineupConfirmKey);
+      await tester.ensureVisible(confirm);
+      await tester.pump();
+      await tester.tap(confirm);
+      await animate(tester);
+    }
+
+    testWidgets('an add that finds something gone says what may be, and '
+        'reads the event and the pool again', (tester) async {
+      pool = [azul];
+      await showLineup(tester, detail: detailOf(viewer: host));
+      final detailReads = remote.detailRequests.length;
+      final poolReads = remote.poolRequests.length;
+      addFailure = _notFound;
+
+      await addAzul(tester);
+      await settle(tester);
+      await animate(tester);
+
+      expect(remote.directAdds, hasLength(1));
+      expect(
+        find.descendant(
+          of: outcome,
+          matching: find.text(
+            "Azul wasn't added: it has left the games pool, or its date or "
+            'the event is gone.',
+          ),
+        ),
+        findsOneWidget,
+      );
+      // The server's 404 doesn't say which went, so the event is read, and
+      // the pool with it.
+      expect(remote.detailRequests, hasLength(detailReads + 1));
+      expect(remote.poolRequests.length, greaterThan(poolReads));
+    });
+
+    testWidgets('a removal refused as started reads the event again', (
+      tester,
+    ) async {
+      lineupAnswer = (_) => [_lineupGame('l-1', occurrenceId: 'd-1')];
+      await showLineup(tester, detail: detailOf(viewer: host));
+      final detailReads = remote.detailRequests.length;
+      removeFailure = _started;
+
+      final remove = find.byKey(
+        EventDetailScreen.lineupRemoveKey('l-1'),
+        skipOffstage: false,
+      );
+      await tester.ensureVisible(remove);
+      await tester.pump();
+      await tester.tap(remove);
+      await animate(tester);
+      await tester.tap(find.byKey(EventDetailScreen.lineupRemoveConfirmKey));
+      await animate(tester);
+      await settle(tester);
+      await animate(tester);
+
+      expect(remote.lineupRemovals, hasLength(1));
+      expect(
+        find.descendant(
+          of: outcome,
+          matching: find.textContaining("can't come out of the lineup"),
+        ),
+        findsOneWidget,
+      );
+      // The cached dates said it could come out, so they are read again,
+      // for Remove's gate.
+      expect(remote.detailRequests, hasLength(detailReads + 1));
+    });
+
+    testWidgets('an add confirmed while a removal is out waits for it, then '
+        'goes', (tester) async {
+      pool = [azul];
+      lineupAnswer = (_) => [_lineupGame('l-1')];
+      await showLineup(tester, detail: detailOf(viewer: host));
+      final hold = removeHold = Completer<void>();
+
+      await tester.tap(find.byKey(EventDetailScreen.lineupAddKey));
+      await animate(tester);
+      await tester.tap(find.byKey(EventDetailScreen.lineupPickKey('o-2')));
+      await animate(tester);
+      // A removal starts while the dialog is open.
+      blocOf<EventLineupBloc>(
+        tester,
+      ).add(LineupGameRemoved('e-1', _lineupGame('l-1')));
+      await tester.pump();
+      expect(blocOf<EventLineupBloc>(tester).state.busy, isTrue);
+
+      await tester.tap(
+        find.byKey(EventDetailScreen.addToLineupScopeKey(null)),
+      );
+      await animate(tester);
+      final confirm = find.byKey(EventDetailScreen.addToLineupConfirmKey);
+      await tester.ensureVisible(confirm);
+      await tester.pump();
+      await tester.tap(confirm);
+      await animate(tester);
+      expect(remote.directAdds, isEmpty);
+
+      lineupAnswer = (_) => const [];
+      hold.complete();
+      await animate(tester);
+
+      expect(remote.lineupRemovals, hasLength(1));
+      expect(remote.directAdds, hasLength(1));
+      expect(
+        find.descendant(
+          of: outcome,
+          matching: find.textContaining('Azul'),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a removal confirmed while an add is out waits for it, then '
+        'goes', (tester) async {
+      pool = [azul];
+      lineupAnswer = (_) => [_lineupGame('l-1')];
+      await showLineup(tester, detail: detailOf(viewer: host));
+      final hold = addHold = Completer<void>();
+
+      final remove = find.byKey(
+        EventDetailScreen.lineupRemoveKey('l-1'),
+        skipOffstage: false,
+      );
+      await tester.ensureVisible(remove);
+      await tester.pump();
+      await tester.tap(remove);
+      await animate(tester);
+      // An add starts while the dialog is open.
+      blocOf<EventLineupBloc>(tester).add(LineupGameAdded('e-1', azul));
+      await tester.pump();
+      expect(blocOf<EventLineupBloc>(tester).state.busy, isTrue);
+
+      await tester.tap(find.byKey(EventDetailScreen.lineupRemoveConfirmKey));
+      await animate(tester);
+      expect(remote.lineupRemovals, isEmpty);
+
+      hold.complete();
+      await animate(tester);
+
+      expect(remote.directAdds, hasLength(1));
+      expect(remote.lineupRemovals, [(eventId: 'e-1', lineupGameId: 'l-1')]);
+    });
+  });
+
+  group('Remove from lineup (#520)', () {
+    final host = _row('att-me', name: 'Me', role: EventRole.host);
+    Finder remove(String id) => find.byKey(
+      EventDetailScreen.lineupRemoveKey(id),
+      skipOffstage: false,
+    );
+    final removeInQuickLook = find.byKey(
+      EventDetailScreen.quickLookLineupRemoveKey,
+    );
+    final confirm = find.byKey(EventDetailScreen.lineupRemoveConfirmKey);
+    final keep = find.byKey(EventDetailScreen.lineupRemoveKeepKey);
+    final outcome = find.byKey(EventDetailScreen.lineupOutcomeKey);
+    const startedHint =
+        "This game's date has started or was called off, so it can't be taken "
+        'out of the lineup.';
+
+    bool enabled(WidgetTester tester, Finder button) =>
+        tester.widget<ButtonStyleButton>(button).onPressed != null;
+
+    testWidgets('a host sees Remove on each lineup row', (tester) async {
+      lineupAnswer = (_) => [_lineupGame('l-1'), _lineupGame('l-2')];
+      await showLineup(tester, detail: detailOf(viewer: host));
+
+      for (final id in ['l-1', 'l-2']) {
+        expect(remove(id), findsOneWidget, reason: id);
+        expect(
+          find.descendant(
+            of: remove(id),
+            matching: find.text('Remove from lineup', skipOffstage: false),
+            skipOffstage: false,
+          ),
+          findsOneWidget,
+        );
+        expect(enabled(tester, remove(id)), isTrue);
+      }
+    });
+
+    testWidgets("a started date's game shows Remove disabled with its reason", (
+      tester,
+    ) async {
+      final begun = confirmed(
+        'd-0',
+        DateTime(2026, 10, 22, 19),
+      ).copyWith(eventId: 'e-1');
+      // Under the date that has begun, with the event's own game, which has
+      // Friday still ahead.
+      lineupAnswer = (_) => [
+        _lineupGame('l-1', occurrenceId: 'd-0'),
+        _lineupGame('l-2'),
+      ];
+      await showLineup(
+        tester,
+        detail: detailOf(viewer: host, dates: [begun, friday]),
+      );
+      await chooseDate(tester, 'd-0');
+
+      expect(remove('l-1'), findsOneWidget);
+      expect(enabled(tester, remove('l-1')), isFalse);
+      expect(inRow('l-1', startedHint), findsOneWidget);
+      // The date still to come is open.
+      expect(enabled(tester, remove('l-2')), isTrue);
+      expect(inRow('l-2', startedHint), findsNothing);
+    });
+
+    FocusNode removeFocus(WidgetTester tester, String id) =>
+        tester.widget<ButtonStyleButton>(remove(id)).focusNode!;
+
+    testWidgets('Remove asks first, naming the subtitle', (tester) async {
+      lineupAnswer = (_) => [_lineupGame('l-1', subtitle: 'Seafarers')];
+      await showLineup(tester, detail: detailOf(viewer: host));
+      removeFocus(tester, 'l-1').requestFocus();
+      await tester.pump();
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await animate(tester);
+      expect(
+        find.text('Take Catan: Seafarers out of the lineup?'),
+        findsOneWidget,
+      );
+
+      // Keep it sends nothing, and focus is back on Remove.
+      await tester.tap(keep);
+      await animate(tester);
+      expect(remote.lineupRemovals, isEmpty);
+      expect(row('l-1'), findsOneWidget);
+      expect(removeFocus(tester, 'l-1').hasPrimaryFocus, isTrue);
+
+      lineupAnswer = (_) => const [];
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await animate(tester);
+      await tester.tap(confirm);
+      await animate(tester);
+
+      expect(remote.lineupRemovals, [(eventId: 'e-1', lineupGameId: 'l-1')]);
+      expect(row('l-1'), findsNothing);
+      expect(
+        find.descendant(
+          of: outcome,
+          matching: find.text('Catan: Seafarers is out of the lineup.'),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets("a row removed hands focus to the next row's Remove", (
+      tester,
+    ) async {
+      lineupAnswer = (_) => [_lineupGame('l-1'), _lineupGame('l-2')];
+      await showLineup(tester, detail: detailOf(viewer: host));
+      removeFocus(tester, 'l-1').requestFocus();
+      await tester.pump();
+
+      lineupAnswer = (_) => [_lineupGame('l-2')];
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await animate(tester);
+      await tester.tap(confirm);
+      await animate(tester);
+
+      expect(row('l-1'), findsNothing);
+      expect(removeFocus(tester, 'l-2').hasPrimaryFocus, isTrue);
+    });
+
+    testWidgets("a screen reader's Remove hands focus to the next row", (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      lineupAnswer = (_) => [_lineupGame('l-1'), _lineupGame('l-2')];
+      await showLineup(tester, detail: detailOf(viewer: host));
+      await tester.ensureVisible(remove('l-1'));
+      await tester.pump();
+      // Activated as a screen reader does: no input focus moves.
+      expect(removeFocus(tester, 'l-1').hasFocus, isFalse);
+
+      lineupAnswer = (_) => [_lineupGame('l-2')];
+      tester.semantics.tap(
+        find.semantics.byLabel('Remove Catan from the lineup').first,
+      );
+      await animate(tester);
+      await tester.tap(confirm);
+      await animate(tester);
+
+      expect(row('l-1'), findsNothing);
+      expect(removeFocus(tester, 'l-2').hasPrimaryFocus, isTrue);
+      handle.dispose();
+    });
+
+    testWidgets('Remove keeps focus, inert, while its removal is out', (
+      tester,
+    ) async {
+      final hold = removeHold = Completer<void>();
+      lineupAnswer = (_) => [_lineupGame('l-1')];
+      await showLineup(tester, detail: detailOf(viewer: host));
+      removeFocus(tester, 'l-1').requestFocus();
+      await tester.pump();
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await animate(tester);
+      await tester.tap(confirm);
+      await animate(tester);
+
+      expect(remote.lineupRemovals, hasLength(1));
+      expect(removeFocus(tester, 'l-1').hasPrimaryFocus, isTrue);
+      expect(enabled(tester, remove('l-1')), isTrue);
+      expect(
+        find.descendant(of: remove('l-1'), matching: find.byType(HeldSpinner)),
+        findsOneWidget,
+      );
+      // A press meanwhile sends nothing more.
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await animate(tester);
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(remote.lineupRemovals, hasLength(1));
+
+      lineupAnswer = (_) => const [];
+      hold.complete();
+      await animate(tester);
+      expect(row('l-1'), findsNothing);
+    });
+
+    testWidgets('a participant sees no Remove', (tester) async {
+      lineupAnswer = (_) => [_lineupGame('l-1')];
+      await showLineup(tester);
+
+      expect(row('l-1'), findsOneWidget);
+      expect(remove('l-1'), findsNothing);
+    });
+
+    testWidgets('the quick look carries Remove, and a removal sent from it '
+        'is said there', (tester) async {
+      lineupAnswer = (_) => [_lineupGame('l-1'), _lineupGame('l-2')];
+      await showLineup(tester, detail: detailOf(viewer: host));
+      await openQuickLook(tester, 'l-1');
+      expect(removeInQuickLook, findsOneWidget);
+
+      lineupAnswer = (_) => [_lineupGame('l-2')];
+      await tester.tap(removeInQuickLook);
+      await animate(tester);
+      await tester.tap(confirm);
+      await animate(tester);
+
+      expect(remote.lineupRemovals, [(eventId: 'e-1', lineupGameId: 'l-1')]);
+      // Gone from the quick look, which says so and holds the outcome.
+      expect(find.byKey(EventDetailScreen.quickLookGoneKey), findsOneWidget);
+      expect(textIn('Catan is out of the lineup.'), findsOneWidget);
+    });
+
+    testWidgets('a started game in the quick look is disabled with its '
+        'reason', (tester) async {
+      final begun = confirmed(
+        'd-0',
+        DateTime(2026, 10, 22, 19),
+      ).copyWith(eventId: 'e-1');
+      lineupAnswer = (_) => [_lineupGame('l-1', occurrenceId: 'd-0')];
+      await showLineup(
+        tester,
+        detail: detailOf(viewer: host, dates: [begun, friday]),
+      );
+      await chooseDate(tester, 'd-0');
+      await openQuickLook(tester, 'l-1');
+
+      expect(removeInQuickLook, findsOneWidget);
+      expect(enabled(tester, removeInQuickLook), isFalse);
+      expect(textIn(startedHint), findsOneWidget);
+    });
+  });
+
   group('the quick look', () {
     testWidgets('a row opens the lineup quick look, and focus returns to the '
         'row after', (tester) async {
@@ -1004,6 +2038,125 @@ void main() {
       },
       arrange: (tester) async {
         await openQuickLook(tester, 'l-1');
+      },
+    );
+
+    auditScreen(
+      "EventDetailScreen, a host's Lineup sub-tab with Add a game (#519)",
+      pump: (tester, theme) async {
+        lineupAnswer = (_) => [_lineupGame('l-1')];
+        final detail = detailOf(
+          viewer: _row('att-me', name: 'Me', role: EventRole.host),
+        );
+        await tester.pumpWidget(harness(detail, theme: theme));
+        await arrangeGames(tester, detail);
+      },
+      arrange: (tester) async {
+        await tester.ensureVisible(find.byKey(EventDetailScreen.lineupAddKey));
+        await tester.pumpAndSettle();
+      },
+    );
+
+    auditScreen(
+      "EventDetailScreen, a host's Lineup sub-tab with Remove from lineup, "
+      'one game started (#520)',
+      pump: (tester, theme) async {
+        final begun = confirmed(
+          'd-0',
+          DateTime(2026, 10, 22, 19),
+        ).copyWith(eventId: 'e-1');
+        lineupAnswer = (_) => [
+          _lineupGame('l-1', title: _longTitle),
+          _lineupGame('l-2', occurrenceId: 'd-0'),
+        ];
+        final detail = detailOf(
+          viewer: _row('att-me', name: 'Me', role: EventRole.host),
+          dates: [begun, friday],
+        );
+        await tester.pumpWidget(harness(detail, theme: theme));
+        await arrangeGames(tester, detail);
+      },
+      arrange: (tester) async {
+        await tester.ensureVisible(
+          find.byKey(EventDetailScreen.lineupRemoveKey('l-1')),
+        );
+        await tester.pumpAndSettle();
+      },
+    );
+
+    auditScreen(
+      'EventDetailScreen, the dialog Remove from lineup asks in (#520)',
+      pump: (tester, theme) async {
+        lineupAnswer = (_) => [_lineupGame('l-1', title: _longTitle)];
+        final detail = detailOf(
+          viewer: _row('att-me', name: 'Me', role: EventRole.host),
+        );
+        await tester.pumpWidget(harness(detail, theme: theme));
+        await arrangeGames(tester, detail);
+      },
+      arrange: (tester) async {
+        final remove = find.byKey(EventDetailScreen.lineupRemoveKey('l-1'));
+        await tester.ensureVisible(remove);
+        await tester.pumpAndSettle();
+        await tester.tap(remove);
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(EventDetailScreen.lineupRemoveConfirmKey),
+          findsOneWidget,
+        );
+      },
+    );
+
+    auditScreen(
+      "EventDetailScreen, a lineup game's quick look with Remove from "
+      'lineup (#520)',
+      pump: (tester, theme) async {
+        lineupAnswer = (_) => [_lineupGame('l-1', title: _longTitle)];
+        final detail = detailOf(
+          viewer: _row('att-me', name: 'Me', role: EventRole.host),
+        );
+        await tester.pumpWidget(harness(detail, theme: theme));
+        await arrangeGames(tester, detail);
+      },
+      arrange: (tester) async {
+        await openQuickLook(tester, 'l-1');
+        expect(
+          find.byKey(EventDetailScreen.quickLookLineupRemoveKey),
+          findsOneWidget,
+        );
+      },
+    );
+
+    auditScreen(
+      'EventDetailScreen, the games Add a game picks from, one whose '
+      "supplier isn't going (#519)",
+      pump: (tester, theme) async {
+        pool = [
+          _offered('o-1', 'att-me', 'Catan'),
+          _offered('o-2', 'att-ada', _longTitle),
+        ];
+        final host = _row('att-me', name: 'Me', role: EventRole.host);
+        final detail = detailOf(
+          viewer: host,
+          roster: [
+            host,
+            _row(
+              'att-ada',
+              name: 'Ada',
+              status: EventParticipationStatus.notAttending,
+            ),
+          ],
+        );
+        await tester.pumpWidget(harness(detail, theme: theme));
+        await arrangeGames(tester, detail);
+      },
+      arrange: (tester) async {
+        final add = find.byKey(EventDetailScreen.lineupAddKey);
+        await tester.ensureVisible(add);
+        await tester.pumpAndSettle();
+        await tester.tap(add);
+        await tester.pumpAndSettle();
+        expect(find.byKey(EventDetailScreen.lineupPickerKey), findsOneWidget);
       },
     );
 

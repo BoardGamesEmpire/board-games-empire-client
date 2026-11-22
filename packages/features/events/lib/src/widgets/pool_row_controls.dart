@@ -14,15 +14,18 @@ import 'package:events/src/bloc/event_nominations_state.dart';
 import 'package:events/src/detail/event_detail_write.dart';
 import 'package:events/src/detail/event_game_offers.dart';
 import 'package:events/src/detail/event_games_pool.dart';
+import 'package:events/src/detail/event_lineup.dart';
 import 'package:events/src/detail/event_nominations.dart';
 import 'package:events/src/detail/games_date_view.dart';
 import 'package:events/src/screens/event_detail_screen.dart';
 import 'package:events/src/widgets/confirm_dialog.dart';
+import 'package:events/src/widgets/event_games_footer.dart';
 import 'package:events/src/widgets/event_games_tab_scope.dart';
 import 'package:events/src/widgets/event_labels.dart';
 import 'package:events/src/widgets/game_name.dart';
 import 'package:events/src/widgets/held_press.dart';
 import 'package:events/src/widgets/held_spinner.dart';
+import 'package:events/src/widgets/lineup_row_controls.dart';
 import 'package:events/src/widgets/nominate_scope_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -233,47 +236,102 @@ typedef NominateGates = ({
   bool runOver,
 });
 
+/// Why Nominate on a pool row can't be pressed, where anything says so, in
+/// the one order its hint says it and its row and its quick look draw it
+/// (STYLE_GUIDE §4): the date view's date takes no nomination now
+/// ([closed], #1042), else the nominations aren't known ([unread]), else
+/// whoever brings the game isn't going ([notGoing]), else it is nominated
+/// already, or in the lineup, for every choice ([already]). Null where none
+/// holds.
+String? nominateReason({
+  required String? closed,
+  required String? unread,
+  required String? notGoing,
+  required String? already,
+}) => closed ?? unread ?? notGoing ?? already;
+
+/// Nominate's one reason, from its gates ([nominateReason]).
+extension NominateGatesReason on NominateGates {
+  /// What its hint says.
+  String? get reason => nominateReason(
+    closed: closed,
+    unread: unread,
+    notGoing: notGoing,
+    already: already,
+  );
+
+  /// What the row and the quick look draw under Nominate: [reason], but for
+  /// nominated already or in the lineup, which the button's own label,
+  /// Nominated, draws (#947).
+  String? get drawnReason {
+    final reason = this.reason;
+    return reason == already ? null : reason;
+  }
+}
+
 /// What Take back on a pool row is built with (#516): [TakeBackButton]'s
-/// [TakeBackButton.inert], [TakeBackButton.enabled] and
-/// [TakeBackButton.runOver].
-typedef TakeBackGates = ({bool inert, bool enabled, bool runOver});
+/// [TakeBackButton.blockedReason] (#905), [TakeBackButton.inert],
+/// [TakeBackButton.enabled] and [TakeBackButton.runOver].
+typedef TakeBackGates = ({
+  String? blockedReason,
+  bool inert,
+  bool enabled,
+  bool runOver,
+});
 
 /// What a pool row says of its copy and builds its controls with (#957):
 /// who brings it, as its status line says it; whether that line says
-/// Nominated (#947, #946); and Nominate's and Take back's arguments where
-/// each is offered, null where it isn't. The row builds one of the two
-/// (#946), its quick look both.
+/// Nominated (#947, #946); and Nominate's, Add to lineup's (#519) and Take
+/// back's arguments where each is offered, null where it isn't. The row
+/// builds one of them (#946), its quick look each.
 typedef PoolRowGates = ({
   String who,
   bool nominatedLine,
   NominateGates? nominate,
+  AddToLineupGates? addToLineup,
   TakeBackGates? takeBack,
 });
 
 /// What the row of [game] says and builds (#957), from the detail, the
-/// pool's and the nominations' states, the tab's [controller], the
-/// roster's [names], whether the screen is [acting]
-/// (`eventScreenActing`), and Nominate's [scopes] as of the clock in the
-/// date view ([nominateChoicesIn], #1042), the same for every row, so a
-/// list makes them once: one place, so the row and its quick look build the
-/// same controls under the same rules.
+/// pool's, the nominations' and the lineup's states, the tab's
+/// [controller], the roster's [names], whether the screen is [acting]
+/// (`eventScreenActing`), and Nominate's [scopes] and Add to lineup's
+/// [addScopes] as of the clock in the date view ([nominateChoicesIn],
+/// [lineupAddChoicesIn], #1042), the same for every row, so a list makes
+/// them once, by the clock's [now]: one place, so the row and its quick
+/// look build the same controls under the same rules.
 ///
 /// Nominate, where the viewer is offered it under the mode of the date view
 /// ([scopes] not null, #519), on an event with a nominations' state.
 /// Disabled, saying why, where the date view's date can no longer be
 /// nominated for, started or cancelled, so [scopes] is empty (#1042); where
-/// the nominations
-/// couldn't be read or aren't shown to the viewer, where a nominate's lost
-/// answer couldn't be checked, where whoever brings the game isn't going, or
-/// where the row is nominated already, or its game in the lineup, for every
-/// choice; and with nothing to say while a detail read runs, the screen is
-/// acting, a nominations write is out, or the nominations aren't known
+/// the nominations couldn't be read or aren't shown to the viewer, where a
+/// nominate's lost answer couldn't be checked, where whoever brings the game
+/// isn't going, or where the row is nominated already, or its game in the
+/// lineup, for every choice: one reason, in that order ([nominateReason]).
+/// And with nothing to say while a detail read runs, the screen is acting, a
+/// nominations write is out, or the nominations aren't known
 /// ([nominationsKnown]). Its game is in the lineup by [lineup] where that is
 /// known ([knownLineup], #519), else by the nominations.
 ///
+/// Add to lineup on every row, anyone's copy, where the viewer is offered a
+/// direct add under the mode of the date view ([addScopes] not null, #519),
+/// on an event with a lineup's state. The row's main action under a
+/// host-only view, in Nominate's place, and otherwise its quick look's alone
+/// ([AddToLineupGates]' `onRow`). Disabled, saying why, where the date view's
+/// date takes no add, so [addScopes] is empty: called off, or in a status
+/// this client can't read ([lineupAddClosedReason]); and where whoever
+/// brings the game isn't going: one reason, in that order
+/// ([lineupAddReason]). And with nothing to say while a detail read runs,
+/// the screen is acting, or a lineup write is out.
+///
 /// Take back on the viewer's own row where they may offer games or take
 /// them back ([offerGamesGate]), and on anyone else's where they may take
-/// back anyone's game ([canTakeBackAnyGame], #518). Disabled, as the
+/// back anyone's game ([canTakeBackAnyGame], #518). Disabled, saying why,
+/// where any read says the row still supplies a live nomination or a
+/// lineup game still ahead ([takeBackSupplies], #905), in the words a
+/// take-back's 409 would say ([stillSuppliesMessage]): where none can tell,
+/// it stays enabled, and the 409 answers. And with nothing to say, as the
 /// roster's controls are (#589), while a detail read runs, the screen is
 /// acting, or another of the pool's writes is out.
 PoolRowGates poolRowGates(
@@ -286,10 +344,12 @@ PoolRowGates poolRowGates(
   required Map<String, String?> names,
   required bool acting,
   required List<NominateScope>? scopes,
+  required List<NominateScope>? addScopes,
+  required DateTime now,
   EventLineupState? lineup,
 }) {
   final viewerId = detail.detail.attendance?.id;
-  final lined = knownLineup(lineup);
+  final lineupGames = knownLineup(lineup);
   final own = viewerId != null && game.attendeeId == viewerId;
   final nominated = nominations?.nominations ?? const <EventNomination>[];
   // Nominate's choices where it is built: offered, on an event with a
@@ -299,11 +359,40 @@ PoolRowGates poolRowGates(
       ? null
       : alreadyTaken(l10n, [
           for (final each in choices)
-            nominateTaken(game, nominated, scope: each.scope, lineup: lined),
+            nominateTaken(
+              game,
+              nominated,
+              scope: each.scope,
+              lineup: lineupGames,
+            ),
         ]);
   final takesBack = own
       ? offerGamesGate(detail) != OfferGamesGate.hidden
       : canTakeBackAnyGame(detail);
+  // What keeps it from being taken back, where a read can tell (#905), in
+  // the 409's words, which name whose games it is off where it isn't the
+  // viewer's own (#518).
+  String? blockedReason() => stillSuppliesMessage(
+    l10n,
+    title: gameName(l10n, game.title, game.subtitle),
+    supplies: takeBackSupplies(
+      detail.detail,
+      game,
+      nominations: nominations?.nominations,
+      lineup: lineupGames,
+      now: now,
+    ),
+    by: stillSuppliedBy(game.id, nominated, viewerId: viewerId),
+    offeredBy: own
+        ? null
+        : names[game.attendeeId] ?? l10n.eventsAttendeeSomeone,
+  );
+  // In the second person on the viewer's own rows, as the row's line is.
+  final notGoing = !supplierNotGoing(detail.detail, game)
+      ? null
+      : own
+      ? l10n.eventsNominateYouNotGoingHint
+      : l10n.eventsNominateSupplierNotGoingHint;
 
   return (
     who: own
@@ -321,13 +410,7 @@ PoolRowGates poolRowGates(
             // A date view whose date takes no nomination now (#1042).
             closed: choices.isEmpty ? l10n.eventsNominateDateClosed : null,
             unread: _nominateUnread(l10n, nominations, controller),
-            // In the second person on the viewer's own rows, as the row's
-            // line is.
-            notGoing: !supplierNotGoing(detail.detail, game)
-                ? null
-                : own
-                ? l10n.eventsNominateYouNotGoingHint
-                : l10n.eventsNominateSupplierNotGoingHint,
+            notGoing: notGoing,
             already: already,
             // As the tab's other writes are, and not while another
             // nominations write is out. Nor before the nominations are
@@ -341,9 +424,34 @@ PoolRowGates poolRowGates(
                 nominationsKnown(nominations, controller),
             runOver: !nominations.busy,
           ),
+    addToLineup: lineup == null || addScopes == null
+        ? null
+        : (
+            // A date view whose date takes no add (#1042): called off, or in
+            // a status this client can't read. One that has started still
+            // takes a game (#519).
+            closed: addScopes.isEmpty
+                ? lineupAddClosedReason(
+                    l10n,
+                    detail.detail,
+                    controller.dateView,
+                  )
+                : null,
+            notGoing: notGoing,
+            // As the tab's other writes are, and not while another lineup
+            // write is out.
+            enabled: !detail.reading && !acting && !lineup.busy,
+            runOver: !lineup.busy,
+            // Under a host-only view, where nothing can be nominated, it is
+            // the row's main action, in Nominate's place (#519).
+            onRow:
+                viewMode(detail.detail.snapshot, controller.dateView) ==
+                GameAdditionMode.hostOnly,
+          ),
     takeBack: !takesBack
         ? null
         : (
+            blockedReason: blockedReason(),
             inert: games.takingBack == game.id,
             // As the roster's controls are (#589): not while a detail read
             // runs, the screen is acting, nor while another of the pool's
@@ -354,15 +462,21 @@ PoolRowGates poolRowGates(
   );
 }
 
-/// Nominate and Take back on [game], for its row and its quick look (#957),
-/// each built from its gates in [gates] ([poolRowGates]) where it is
-/// offered, and null where it isn't. Nominate nominates by [clock]
-/// ([nominateGame]). Take back's press, however it came, arms [controller]'s
+/// Nominate, Add to lineup (#519) and Take back on [game], for its row and
+/// its quick look (#957), each built from its gates in [gates]
+/// ([poolRowGates]) where it is offered, and null where it isn't. Nominate
+/// nominates by [clock] ([nominateGame]), and Add to lineup adds by it
+/// ([addToLineup]). Take back's press, however it came, arms [controller]'s
 /// hand-off, then takes the game back ([takeBackGame]), naming whoever
 /// offered it from [names], by the viewer's roster row [viewerId]. Each
-/// button carries the row's key unless [nominateKey] or [takeBackKey] gives
-/// it another.
-({NominateButton? nominate, TakeBackButton? takeBack}) poolRowButtons(
+/// button carries the row's key unless [nominateKey], [addToLineupKey] or
+/// [takeBackKey] gives it another.
+({
+  NominateButton? nominate,
+  AddToLineupButton? addToLineup,
+  TakeBackButton? takeBack,
+})
+poolRowButtons(
   BuildContext context, {
   required OfferedGame game,
   required PoolRowGates gates,
@@ -371,9 +485,11 @@ PoolRowGates poolRowGates(
   required Map<String, String?> names,
   required DateTime Function() clock,
   Key? nominateKey,
+  Key? addToLineupKey,
   Key? takeBackKey,
 }) {
   final nominate = gates.nominate;
+  final add = gates.addToLineup;
   final takeBack = gates.takeBack;
   return (
     nominate: nominate == null
@@ -389,11 +505,23 @@ PoolRowGates poolRowGates(
             runOver: nominate.runOver,
             onPressed: () => nominateGame(context, game, clock: clock),
           ),
+    addToLineup: add == null
+        ? null
+        : AddToLineupButton(
+            buttonKey: addToLineupKey,
+            game: game,
+            closed: add.closed,
+            notGoing: add.notGoing,
+            enabled: add.enabled,
+            runOver: add.runOver,
+            onPressed: () => addToLineup(context, game, clock: clock),
+          ),
     takeBack: takeBack == null
         ? null
         : TakeBackButton(
             buttonKey: takeBackKey,
             game: game,
+            blockedReason: takeBack.blockedReason,
             inert: takeBack.inert,
             enabled: takeBack.enabled,
             runOver: takeBack.runOver,
@@ -706,7 +834,14 @@ class NominateButtonState extends State<NominateButton>
         notGoing == null;
     final inert = held || kept;
     // One reason: offline [BgeOnlineOnly] gives its own.
-    final reason = offline ? null : closed ?? unread ?? notGoing ?? already;
+    final reason = offline
+        ? null
+        : nominateReason(
+            closed: closed,
+            unread: unread,
+            notGoing: notGoing,
+            already: already,
+          );
 
     return Focus(
       canRequestFocus: false,
@@ -750,33 +885,39 @@ class NominateButtonState extends State<NominateButton>
       ),
     );
   }
+}
 
-  /// Drawn as a disabled button is, and with no answer to a press or a
-  /// hover. The focus overlay stays, since it is how a keyboard user sees
-  /// where they are.
-  ButtonStyle _unavailableStyle(BuildContext context) {
-    final color = Theme.of(context).disabledColor;
-    return ButtonStyle(
-      foregroundColor: WidgetStatePropertyAll(color),
-      iconColor: WidgetStatePropertyAll(color),
-      overlayColor: WidgetStateProperty.resolveWith(
-        (states) => states.contains(WidgetState.focused)
-            ? null
-            : color.withValues(alpha: 0),
-      ),
-      mouseCursor: const WidgetStatePropertyAll(SystemMouseCursors.basic),
-      splashFactory: NoSplash.splashFactory,
-      enableFeedback: false,
-    );
-  }
+/// Drawn as a disabled button is, and with no answer to a press or a hover:
+/// for a pool row's button kept inert while it holds focus, though it can't
+/// be pressed (#607). The focus overlay stays, since it is how a keyboard
+/// user sees where they are.
+ButtonStyle _unavailableStyle(BuildContext context) {
+  final color = Theme.of(context).disabledColor;
+  return ButtonStyle(
+    foregroundColor: WidgetStatePropertyAll(color),
+    iconColor: WidgetStatePropertyAll(color),
+    overlayColor: WidgetStateProperty.resolveWith(
+      (states) => states.contains(WidgetState.focused)
+          ? null
+          : color.withValues(alpha: 0),
+    ),
+    mouseCursor: const WidgetStatePropertyAll(SystemMouseCursors.basic),
+    splashFactory: NoSplash.splashFactory,
+    enableFeedback: false,
+  );
 }
 
 /// Take back on one of the viewer's rows (#516), or, for whoever may take
 /// back anyone's game, on someone else's (#518): a direct write, so
 /// disabled offline through [BgeOnlineOnly], saying why as its hint.
-/// Disabled while another write is out or a detail read runs ([enabled]).
 /// Named for its game to a screen reader, as its row names it ([gameName],
 /// #851).
+///
+/// Online it is disabled, with the reason as its hint, where a read says
+/// the row still supplies a live nomination or a lineup game still ahead
+/// ([blockedReason], #905): STYLE_GUIDE §5, disable, don't hide. Its row,
+/// or its quick look, draws the same words under it. It is disabled with no
+/// hint while another write is out or a detail read runs ([enabled]).
 ///
 /// It keeps focus through its own take-back (#607). On someone else's row
 /// its press opens a dialog first, which hands focus back to it as it
@@ -785,10 +926,16 @@ class NominateButtonState extends State<NominateButton>
 /// press until its take-back is over ([runOver]): enabled, ignoring presses
 /// and showing a spinner, wherever it would otherwise be unavailable. It is
 /// inert, too, while its row's take-back is out ([inert]), however that
-/// began.
+/// began. A take-back of its own that the server refuses is followed by a
+/// read of the pool, which can say why, and would then disable it under the
+/// keyboard user who pressed it. So once its own take-back went out, a
+/// reason keeps it inert, drawn as a disabled button is and saying why, for
+/// as long as it holds focus, as Nominate is kept, and it is disabled once
+/// focus moves on.
 class TakeBackButton extends StatefulWidget {
   const TakeBackButton({
     required this.game,
+    required this.blockedReason,
     required this.inert,
     required this.enabled,
     required this.runOver,
@@ -803,10 +950,16 @@ class TakeBackButton extends StatefulWidget {
   /// where null, or the quick look's (#957).
   final Key? buttonKey;
 
+  /// Why it can't be pressed, where a read says the row still supplies a
+  /// live nomination or a lineup game still ahead: the step that frees it,
+  /// in a take-back's 409's words ([stillSuppliesMessage], #905). Null where
+  /// none says so, or none can tell, when the 409 is still the answer.
+  final String? blockedReason;
+
   /// Whether this row's take-back is out.
   final bool inert;
 
-  /// Whether it may be pressed now, connection aside.
+  /// Whether it may be pressed now, connection and [blockedReason] aside.
   final bool enabled;
 
   /// Whether none of the pool's writes is out: once its own take-back went
@@ -823,38 +976,84 @@ class TakeBackButton extends StatefulWidget {
 
 class TakeBackButtonState extends State<TakeBackButton>
     with HeldPress<TakeBackButton> {
+  /// Whether its own take-back went out, with focus not moved on from it
+  /// since.
+  bool _tookBack = false;
+
+  /// Whether it holds focus.
+  bool _focused = false;
+
   @override
   bool get heldActionOver => widget.runOver;
+
+  Future<bool> _press() async {
+    final sent = await widget.onPressed();
+    if (sent) _tookBack = true;
+    return sent;
+  }
+
+  void _focusChanged(bool focused) {
+    if (!mounted) return;
+    setState(() {
+      _focused = focused;
+      if (!focused) _tookBack = false;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     final l10n = EventsLocalizations.of(context);
     final offline = BgeConnectivityScope.offlineOf(context);
     final game = widget.game;
-    final available = widget.enabled && !offline;
+    final blocked = widget.blockedReason;
+    final available = widget.enabled && !offline && blocked == null;
     // Offline it is disabled, pressed or not: no press made it so (#49).
-    final inert =
+    final held =
         heldInert(available: available, disabled: offline) ||
         (widget.inert && !offline);
+    // Its own take-back gone out, a reason since, which is all that keeps
+    // it from being pressed, and holding focus: inert, not disabled, or
+    // focus would go (#607).
+    final kept =
+        !held &&
+        _tookBack &&
+        _focused &&
+        blocked != null &&
+        widget.enabled &&
+        !offline;
+    final inert = held || kept;
 
-    return BgeOnlineOnly(
-      showNote: false,
-      child: BgeInertButton(
-        inert: inert,
-        label: l10n.eventsGamesTakeBackNamed(
-          gameName(l10n, game.title, game.subtitle),
-        ),
-        onPressed: available || inert
-            ? () => unawaited(holdPress(widget.onPressed))
-            : null,
-        builder: (context, focusNode, onPressed) => TextButton.icon(
-          key: widget.buttonKey ?? EventDetailScreen.poolTakeBackKey(game.id),
-          focusNode: focusNode,
-          onPressed: onPressed,
-          icon: inert
-              ? const HeldSpinner()
-              : const Icon(Icons.remove_circle_outline),
-          label: Text(l10n.eventsGamesTakeBack),
+    return Focus(
+      canRequestFocus: false,
+      skipTraversal: true,
+      includeSemantics: false,
+      onFocusChange: _focusChanged,
+      child: BgeOnlineOnly(
+        showNote: false,
+        child: Semantics(
+          // One reason: offline [BgeOnlineOnly] gives its own.
+          hint: offline ? null : blocked,
+          child: BgeInertButton(
+            inert: inert,
+            label: l10n.eventsGamesTakeBackNamed(
+              gameName(l10n, game.title, game.subtitle),
+            ),
+            onPressed: available || inert
+                ? () => unawaited(holdPress(_press))
+                : null,
+            builder: (context, focusNode, onPressed) => TextButton.icon(
+              key:
+                  widget.buttonKey ??
+                  EventDetailScreen.poolTakeBackKey(game.id),
+              focusNode: focusNode,
+              onPressed: onPressed,
+              style: kept ? _unavailableStyle(context) : null,
+              icon: held
+                  ? const HeldSpinner()
+                  : const Icon(Icons.remove_circle_outline),
+              label: Text(l10n.eventsGamesTakeBack),
+            ),
+          ),
         ),
       ),
     );

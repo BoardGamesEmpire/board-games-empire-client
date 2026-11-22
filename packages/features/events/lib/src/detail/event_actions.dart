@@ -17,8 +17,12 @@
 /// to one grant. Which of the pair a status offers is the detail's (#502), not
 /// this table's, which knows roles and not statuses. `offerGame` covers
 /// offering a game from a collection and taking it back (#516), because every
-/// role that may add to an offered-games list may remove from it. Adding a
-/// game directly has no action, because the event's policy decides it (#518).
+/// role that may add to an offered-games list may remove from it. `addToLineup`
+/// is adding a game directly, held by the host, co-host and a household owner
+/// or admin: the role is half of it, and the event's rules the other, which
+/// `lineupAddGate` reads from the mode its caller works out (#518, #519).
+/// `removeFromLineup` takes a game out, which the moderator may too, and
+/// `lineupRemoveGate` says when the lineup has started (#520).
 /// `nominateGame` covers nominating a game and withdrawing your own
 /// nomination, as `offerGame` covers offering and taking back, and `voteGame`
 /// covers voting on one (#517).
@@ -123,6 +127,19 @@ enum EventAction {
   /// household event: the roles whose grant is `manage:attendee_game_list`
   /// rather than the create and delete slugs [offerGame] stands for.
   manageOfferedGames,
+
+  /// Add a game straight to the lineup, with no nomination (#519). Held by
+  /// the host, co-host and a household owner or admin on a household event
+  /// (`create:event_game` and `create:event_game:household`), not by a
+  /// participant even where the event's rules let attendees add. Whether the
+  /// rules allow it is `lineupAddGate`'s.
+  addToLineup,
+
+  /// Take a game out of the lineup (#520). Held by the host, co-host,
+  /// moderator and a household owner or admin on a household event
+  /// (`delete:event_game` and `delete:event_game:household`). Whether the
+  /// lineup has started is `lineupRemoveGate`'s.
+  removeFromLineup,
 }
 
 /// The actions [event] offers a viewer holding [eventRole] on it and, on a
@@ -340,6 +357,10 @@ const _host = <EventAction>{
   EventAction.nominateGame,
   // `create:event_game_vote`
   EventAction.voteGame,
+  // `create:event_game`
+  EventAction.addToLineup,
+  // `delete:event_game`
+  EventAction.removeFromLineup,
 };
 
 /// `EventCoHost`: every action except `delete`, which the catalog gives the
@@ -370,6 +391,9 @@ const _coHost = <EventAction>{
   EventAction.nominateGame,
   // `create:event_game_vote`
   EventAction.voteGame,
+  // `create:event_game` and `delete:event_game`
+  EventAction.addToLineup,
+  EventAction.removeFromLineup,
 };
 
 /// `EventOrganizer`.
@@ -405,6 +429,9 @@ const _moderator = <EventAction>{
   // any list, so it gives both actions.
   EventAction.offerGame,
   EventAction.manageOfferedGames,
+  // `delete:event_game`. Not `create:event_game`, which the moderator's list
+  // leaves out.
+  EventAction.removeFromLineup,
 };
 
 /// `EventParticipant`: the guest's set, and nominates and votes on games.
@@ -469,4 +496,7 @@ const _householdOwnerOrAdmin = <EventAction>{
   // from any list on the household's event, so it gives both actions.
   EventAction.offerGame,
   EventAction.manageOfferedGames,
+  // `create:event_game:household` and `delete:event_game:household`
+  EventAction.addToLineup,
+  EventAction.removeFromLineup,
 };
