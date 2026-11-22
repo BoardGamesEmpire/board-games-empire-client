@@ -146,13 +146,30 @@ String? _occurrenceOf(NominationScope scope) => switch (scope) {
 /// hear nothing happen. So too where the view offers no choice as it is
 /// pressed. A date that has started still takes it (#519), and the dialog
 /// says up front that a game added to it can't then be taken out
-/// ([lineupStartedFor], #520). The view is the one it was pressed under,
+/// ([lineupStartedFor], #520). Where the choice made has started by the
+/// time the add would go, and the dialog didn't say so as it closed, as
+/// where the date started while it was open, it asks again first, with the
+/// same words: Don't add sends nothing, and the checks above are made again
+/// once it is answered. The view is the one it was pressed under,
 /// whatever is chosen meanwhile, and [clock] names the dates the dialog
 /// offers. Whoever brings it not going is the server's to refuse, which the
 /// outcome says.
 Future<bool> addToLineup(
   BuildContext context,
   OfferedGame game, {
+  required DateTime Function() clock,
+}) => _addToLineup(
+  context,
+  game,
+  view: EventGamesTabScope.of(context).dateView,
+  clock: clock,
+);
+
+/// [addToLineup] under [view], the date view it was pressed under.
+Future<bool> _addToLineup(
+  BuildContext context,
+  OfferedGame game, {
+  required GamesDateView? view,
   required DateTime Function() clock,
 }) async {
   // Read before anything is awaited: the dialog covers the row, and a
@@ -161,7 +178,8 @@ Future<bool> addToLineup(
   final detail = context.read<EventDetailBloc>();
   final pool = context.read<EventGamesBloc>();
   final lineup = context.read<EventLineupBloc>();
-  final view = EventGamesTabScope.of(context).dateView;
+  // To ask again from, should the row have gone by then.
+  final tab = EventGamesTabScope.contextOf(context);
   final shown = detail.state;
   if (shown is! EventDetailReady) return false;
 
@@ -179,45 +197,81 @@ Future<bool> addToLineup(
     return false;
   }
   final snapshot = shown.detail.snapshot;
+  final title = gameName(l10n, game.title, game.subtitle);
+  // Whether the dialog, as last drawn, said of each choice, by its date or
+  // null for the whole event, that it has started.
+  final warned = <String?, bool>{};
   final chosen = await showAddToLineupDialog(
     context,
-    title: gameName(l10n, game.title, game.subtitle),
+    title: title,
     scopes: choices,
     now: clock(),
     fillerMaxPlayTimeOf: (scope) =>
         fillerMaxPlayTimeFor(snapshot, _occurrenceOf(scope)),
-    startedOf: (scope) =>
-        lineupStartedFor(shown.detail, _occurrenceOf(scope), now: clock()),
+    startedOf: (scope) {
+      final occurrenceId = _occurrenceOf(scope);
+      return warned[occurrenceId] = lineupStartedFor(
+        shown.detail,
+        occurrenceId,
+        now: clock(),
+      );
+    },
   );
   if (chosen == null || lineup.isClosed) return false;
+  final occurrenceId = chosen.occurrenceId;
+  var told = warned[occurrenceId] ?? false;
 
-  final state = await _writable(detail, lineup);
-  if (state is! EventDetailReady) return false;
-  final inPool = pool.state.games.any((each) => each.id == game.id);
-  // Offered still, under the view's mode, and for the choice made.
-  final offered =
-      lineupAddChoicesIn(
-        state,
-        view: view,
-      )?.any((each) => _occurrenceOf(each.scope) == chosen.occurrenceId) ??
-      false;
-  if (!inPool || !offered) {
-    dropped();
-    return false;
+  while (true) {
+    final state = await _writable(detail, lineup);
+    if (state is! EventDetailReady) return false;
+    final inPool = pool.state.games.any((each) => each.id == game.id);
+    // Offered still, under the view's mode, and for the choice made.
+    final offered =
+        lineupAddChoicesIn(
+          state,
+          view: view,
+        )?.any((each) => _occurrenceOf(each.scope) == occurrenceId) ??
+        false;
+    if (!inPool || !offered) {
+      dropped();
+      return false;
+    }
+    if (!told && lineupStartedFor(state.detail, occurrenceId, now: clock())) {
+      final from = context.mounted ? context : tab;
+      if (!from.mounted) {
+        dropped();
+        return false;
+      }
+      final confirmed = await showConfirmDialog(
+        from,
+        title: l10n.eventsLineupAddStartedTitle(title),
+        body: occurrenceId == null
+            ? l10n.eventsLineupAddEventStarted
+            : l10n.eventsLineupAddDateStarted,
+        keepLabel: l10n.eventsLineupAddStartedKeep,
+        confirmLabel: l10n.eventsLineupAddToLineup,
+        keepKey: EventDetailScreen.addToLineupStartedKeepKey,
+        confirmKey: EventDetailScreen.addToLineupStartedConfirmKey,
+      );
+      if (!confirmed || lineup.isClosed) return false;
+      told = true;
+      // The page can have moved on while it asked.
+      continue;
+    }
+    lineup.add(
+      LineupGameAdded(
+        state.detail.snapshot.event.id,
+        game,
+        occurrenceId: occurrenceId,
+        role: chosen.role,
+        notes: chosen.notes,
+        maxPlayTime: chosen.role == ScheduledGameRole.filler
+            ? chosen.maxPlayTime
+            : null,
+      ),
+    );
+    return true;
   }
-  lineup.add(
-    LineupGameAdded(
-      state.detail.snapshot.event.id,
-      game,
-      occurrenceId: chosen.occurrenceId,
-      role: chosen.role,
-      notes: chosen.notes,
-      maxPlayTime: chosen.role == ScheduledGameRole.filler
-          ? chosen.maxPlayTime
-          : null,
-    ),
-  );
-  return true;
 }
 
 /// The Lineup sub-tab's Add a game (#519): opens the pool's games as the
@@ -228,15 +282,19 @@ Future<bool> addToLineup(
 ///
 /// The add goes from the tab's scope ([EventGamesTabScope.contextOf]), which
 /// outlives the sub-tab's header, so a pick isn't lost as a read rebuilds
-/// the page under the picker.
+/// the page under the picker. It goes under the date view Add a game was
+/// pressed under: a read that takes that date away moves the view to
+/// another, and with one choice the add dialog names no date, so the add is
+/// dropped rather than made, unseen, for the other.
 Future<bool> pickAndAddToLineup(
   BuildContext context, {
   required DateTime Function() clock,
 }) async {
   final scope = EventGamesTabScope.contextOf(context);
+  final view = EventGamesTabScope.of(context).dateView;
   final picked = await showLineupGamePicker(context);
   if (picked == null || !scope.mounted) return false;
-  return addToLineup(scope, picked, clock: clock);
+  return _addToLineup(scope, picked, view: view, clock: clock);
 }
 
 /// The detail once no detail read runs ([readEnded]) and no lineup write is

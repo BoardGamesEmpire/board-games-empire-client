@@ -485,6 +485,10 @@ void main() {
       final held = _Held<DirectAddRequest, LineupGame>();
       final bloc = build(writing(added: held.call));
       addTearDown(bloc.close);
+      // A last outcome for the add to clear.
+      bloc.add(const LineupWriteDropped(LineupWrite.add, title: 'Game 1'));
+      await pumpEventQueue();
+      expect(bloc.state.outcome, isNotNull);
       final states = record(bloc);
 
       bloc.add(LineupGameAdded('e-1', pool(2)));
@@ -492,6 +496,7 @@ void main() {
 
       expect(states.first.writing, (write: LineupWrite.add, id: 'g-2'));
       expect(states.first.busy, isTrue);
+      expect(states.first.outcome, isNull);
 
       held.answer(0, _game(2));
       await pumpEventQueue();

@@ -368,7 +368,7 @@ The same flows as the keyboard tests, plus the screens they don't reach:
    awaiting approval has Approve and Reject, an open one Close vote, and a
    paused one neither, each naming its game ("Approve Catan", "Close the
    vote on Azul"). Each asks first. Check the Approve dialog reads "Approve
-   Catan?" and "It goes into the lineup. Nothing can take it out yet.", the
+   Catan?" and "It goes into the lineup.", the
    Reject dialog "Reject Catan?" and "This can't be undone." with Reject
    drawn as a destructive action, and the Close vote dialog "Close the vote
    on Azul?" with the row's tally, and the row's Interested line where it

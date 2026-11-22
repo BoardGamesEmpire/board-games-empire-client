@@ -2650,23 +2650,44 @@ void main() {
       FutureOr<LineupGame> Function(LineupRemoveRequest request)? lineupRemoved,
       NominationStatus nominatedAs = NominationStatus.open,
       NominationStatus resolvedAs = NominationStatus.passed,
-    }) => FakeEventRemote.detail(
-      read ?? (_) => detail.snapshot,
-      pool: (_) => const [],
-      nominations: (_) => [catan],
-      lineup: lineup ?? (_) => const [catanLined],
-      lineupRemoved: lineupRemoved ?? (_) => catanLined,
-      nomination: (_) => catan,
-      nominated: (_) => catan.copyWith(status: nominatedAs),
-      voteCast: (_) {},
-      withdrawn: (_) => catan.copyWith(status: NominationStatus.withdrawn),
-      approved: (_) => catan.copyWith(status: NominationStatus.approved),
-      rejected: (_) => catan.copyWith(status: NominationStatus.rejected),
-      resolved: (_) => (
-        nomination: catan.copyWith(status: resolvedAs),
-        resolution: resolution(resolvedAs),
-      ),
-    );
+      bool decisionsFail = false,
+    }) {
+      /// Throws [_offline] where [decisionsFail]: a withdrawal, host
+      /// decision or close of a vote whose answer was lost.
+      void lost() {
+        if (decisionsFail) throw _offline;
+      }
+
+      return FakeEventRemote.detail(
+        read ?? (_) => detail.snapshot,
+        pool: (_) => const [],
+        nominations: (_) => [catan],
+        lineup: lineup ?? (_) => const [catanLined],
+        lineupRemoved: lineupRemoved ?? (_) => catanLined,
+        nomination: (_) => catan,
+        nominated: (_) => catan.copyWith(status: nominatedAs),
+        voteCast: (_) {},
+        withdrawn: (_) {
+          lost();
+          return catan.copyWith(status: NominationStatus.withdrawn);
+        },
+        approved: (_) {
+          lost();
+          return catan.copyWith(status: NominationStatus.approved);
+        },
+        rejected: (_) {
+          lost();
+          return catan.copyWith(status: NominationStatus.rejected);
+        },
+        resolved: (_) {
+          lost();
+          return (
+            nomination: catan.copyWith(status: resolvedAs),
+            resolution: resolution(resolvedAs),
+          );
+        },
+      );
+    }
 
     /// Shows [detail] from [remote] with a way back, as the app opens it,
     /// and lets the read it starts end.
@@ -2898,6 +2919,44 @@ void main() {
       await animate(tester);
       expect(remote.votes, hasLength(1));
       expect(remote.poolRequests, hasLength(pools + 2));
+    });
+
+    testWidgets('a withdrawal, a host decision and a close of a vote that '
+        'failed once sent re-read the pool', (tester) async {
+      // Each may have ended the nomination before its answer was lost: the
+      // nominations' read can then show none live, and a pool row still
+      // counting one would keep Take back's reason (#905).
+      final remote = serving(decisionsFail: true);
+      await showTabbed(tester, remote);
+      await choose(tester, games);
+      final pools = remote.poolRequests.length;
+
+      final writes = <EventNominationsEvent>[
+        NominationWithdrawn('e-1', catan),
+        NominationRejected('e-1', catan),
+        NominationApproved('e-1', catan),
+        NominationResolved('e-1', catan),
+      ];
+      for (final (index, write) in writes.indexed) {
+        nominationsOf(tester).add(write);
+        await animate(tester);
+        expect(
+          switch (nominationsOf(tester).state.outcome) {
+            WithdrawOutcome(:final result) => result == WithdrawResult.failed,
+            HostDecisionOutcome(:final result) =>
+              result == HostDecisionResult.failed,
+            ResolveOutcome(:final result) => result == ResolveResult.failed,
+            _ => false,
+          },
+          isTrue,
+          reason: '$write',
+        );
+        expect(
+          remote.poolRequests,
+          hasLength(pools + index + 1),
+          reason: '$write',
+        );
+      }
     });
 
     for (final (status, reads) in [

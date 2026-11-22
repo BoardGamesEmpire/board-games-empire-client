@@ -758,6 +758,18 @@ class EventDetailScreen extends StatelessWidget {
     'event_detail.add_to_lineup_confirm',
   );
 
+  /// Key on Don't add, in the dialog that asks again before an add whose
+  /// date started while the add dialog was open (#519).
+  static const Key addToLineupStartedKeepKey = Key(
+    'event_detail.add_to_lineup_started_keep',
+  );
+
+  /// Key on Add to lineup, in the dialog that asks again before an add whose
+  /// date started while the add dialog was open (#519).
+  static const Key addToLineupStartedConfirmKey = Key(
+    'event_detail.add_to_lineup_started_confirm',
+  );
+
   /// Key on the count of the games the filter keeps.
   static const Key poolCountKey = Key('event_detail.pool_count');
 
@@ -2082,8 +2094,12 @@ void _readLineupAfterNominationWrite(
 /// counts: it ends a live nomination. So does a removal that failed: the
 /// server may have taken the game out before its answer was lost, and the
 /// lineup's read after it can show the game gone while the pool row still
-/// counts it, which keeps Take back's reason ([stillSupplies]). A failed add
-/// needs no such read: the lineup's read alone says the row supplies it.
+/// counts it, which keeps Take back's reason ([stillSupplies]). So, for the
+/// same reason, does a failed withdrawal, host decision or close of a vote:
+/// each can have ended the nomination before its answer was lost, and the
+/// nominations' read after it then shows none live while the row still
+/// counts one. A failed add or nominate needs no such read: the lineup's or
+/// the nominations' read alone says the row supplies it.
 bool _changesPoolRow(Object? outcome) => switch (outcome) {
   NominateOutcome(:final result) => switch (result) {
     NominateResult.open ||
@@ -2092,9 +2108,12 @@ bool _changesPoolRow(Object? outcome) => switch (outcome) {
     NominateResult.settled => true,
     _ => false,
   },
-  WithdrawOutcome(result: WithdrawResult.done) => true,
-  HostDecisionOutcome(result: HostDecisionResult.done) => true,
-  ResolveOutcome(result: ResolveResult.decided) => true,
+  WithdrawOutcome(result: WithdrawResult.done || WithdrawResult.failed) => true,
+  HostDecisionOutcome(
+    result: HostDecisionResult.done || HostDecisionResult.failed,
+  ) =>
+    true,
+  ResolveOutcome(result: ResolveResult.decided || ResolveResult.failed) => true,
   LineupAddOutcome(result: LineupAddResult.done || LineupAddResult.gone) =>
     true,
   LineupRemoveOutcome(

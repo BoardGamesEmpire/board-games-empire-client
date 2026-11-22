@@ -157,11 +157,13 @@ void main() {
     expect(scope('d-1'), findsOneWidget);
     expect(inDialog(find.text('For the whole event')), findsOneWidget);
     expect(inDialog(find.text('For Fri, Nov 6 · 7:00 PM')), findsOneWidget);
-    // The whole event is chosen as it opens.
-    expect(
-      tester.widget<RadioListTile<NominationScope>>(scope(null)).value,
-      const WholeEventScope(),
-    );
+    // The whole event is chosen as it opens: confirmed as it is, it is for
+    // the whole event.
+    await choose(tester, confirm);
+    expect(value, isNotNull);
+    expect(value!.occurrenceId, isNull);
+
+    await open(tester, scopes: [wholeEvent, onFriday]);
     await choose(tester, scope('d-1'));
     await choose(tester, confirm);
     expect(value?.occurrenceId, 'd-1');
@@ -315,7 +317,8 @@ void main() {
     await enter(tester, notes, '   ');
     await choose(tester, confirm);
 
-    expect(value?.notes, isNull);
+    expect(value, isNotNull);
+    expect(value!.notes, isNull);
 
     await open(tester);
     await enter(tester, notes, '  Bring the sleeves  ');

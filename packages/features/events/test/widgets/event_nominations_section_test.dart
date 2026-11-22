@@ -1615,7 +1615,7 @@ void main() {
       expect(remote.approvals, isEmpty);
       expect(find.text('Approve Catan?'), findsOneWidget);
       expect(
-        find.text('It goes into the lineup. Nothing can take it out yet.'),
+        find.text('It goes into the lineup.'),
         findsOneWidget,
       );
       expect(

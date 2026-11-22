@@ -987,6 +987,11 @@ void main() {
       await animate(tester);
       await tester.ensureVisible(confirm);
       await tester.pump();
+      // The server's lineup once the add has gone in: the add's own answer
+      // is dropped, and the read after it fills the rows.
+      lineupAnswer = (_) => [
+        _lineupGame('l-o-2', title: 'Azul', occurrenceId: 'd-1'),
+      ];
       await tester.tap(confirm);
       await animate(tester);
 
@@ -1003,6 +1008,7 @@ void main() {
       ]);
       // The lineup is read again, and shows it.
       expect(remote.lineupRequests, hasLength(2));
+      expect(row('l-o-2'), findsOneWidget);
       expect(
         find.byKey(EventDetailScreen.lineupOutcomeKey),
         findsOneWidget,
@@ -1079,6 +1085,43 @@ void main() {
       expect(remote.directAdds.last.suppliedById, 'o-1');
     });
 
+    testWidgets('a pick whose date a read took away meanwhile is dropped, '
+        'not added to the date the view moved to', (tester) async {
+      pool = [azul];
+      await showLineup(
+        tester,
+        detail: detailOf(viewer: host, dates: [friday, saturday]),
+      );
+
+      // Opened under Friday.
+      await tester.tap(addGame);
+      await animate(tester);
+      expect(picker, findsOneWidget);
+
+      // Friday is gone, so the view under the picker moves to Saturday.
+      final sunday = confirmed(
+        'd-3',
+        DateTime(2026, 11, 8, 19),
+        sortOrder: 2,
+      ).copyWith(eventId: 'e-1');
+      cache.add(detailOf(viewer: host, dates: [saturday, sunday]));
+      await settle(tester);
+      await animate(tester);
+
+      await tester.ensureVisible(pick('o-2'));
+      await tester.pump();
+      await tester.tap(pick('o-2'));
+      await animate(tester);
+
+      // No dialog for Saturday: the add is dropped, and the footer says so.
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(remote.directAdds, isEmpty);
+      expect(
+        find.text("Azul wasn't added: something changed on this event first."),
+        findsOneWidget,
+      );
+    });
+
     testWidgets('under a date called off, Add a game is disabled and says '
         'why', (tester) async {
       final handle = tester.ensureSemantics();
@@ -1145,6 +1188,67 @@ void main() {
       await animate(tester);
 
       expect(remote.directAdds.single.occurrenceId, 'd-0');
+    });
+
+    group('a date that starts while the add dialog is open', () {
+      const startedTitle = 'Still add Azul to the lineup?';
+      const startedBody =
+          "This date has started, so a game added now can't be taken out of "
+          'the lineup.';
+      final keep = find.byKey(EventDetailScreen.addToLineupStartedKeepKey);
+      final addAnyway = find.byKey(
+        EventDetailScreen.addToLineupStartedConfirmKey,
+      );
+
+      /// Picks Azul for Friday, which hasn't started as the dialog opens,
+      /// then has a read move Friday's start to an hour ago, and presses
+      /// Add to lineup.
+      Future<void> addAsItStarts(WidgetTester tester) async {
+        pool = [azul];
+        await showLineup(
+          tester,
+          detail: detailOf(viewer: host, dates: [friday, saturday]),
+        );
+        await chooseDate(tester, 'd-1');
+        await pickGame(tester, 'o-2');
+        expect(find.text(startedBody), findsNothing);
+
+        final begun = confirmed(
+          'd-1',
+          now.subtract(const Duration(hours: 1)),
+        ).copyWith(eventId: 'e-1');
+        cache.add(detailOf(viewer: host, dates: [begun, saturday]));
+        await settle(tester);
+        await tester.tap(confirm);
+        await animate(tester);
+      }
+
+      testWidgets("asks again, and Don't add adds nothing", (tester) async {
+        await addAsItStarts(tester);
+
+        expect(find.text(startedTitle), findsOneWidget);
+        expect(find.text(startedBody), findsOneWidget);
+        expect(remote.directAdds, isEmpty);
+
+        await tester.tap(keep);
+        await animate(tester);
+
+        expect(find.byType(AlertDialog), findsNothing);
+        expect(remote.directAdds, isEmpty);
+        // The viewer chose not to: nothing says it was dropped.
+        expect(find.textContaining("wasn't added"), findsNothing);
+      });
+
+      testWidgets('asks again, and Add to lineup adds it', (tester) async {
+        await addAsItStarts(tester);
+        expect(find.text(startedTitle), findsOneWidget);
+
+        await tester.tap(addAnyway);
+        await animate(tester);
+
+        expect(find.byType(AlertDialog), findsNothing);
+        expect(remote.directAdds.single.occurrenceId, 'd-1');
+      });
     });
 
     testWidgets("Add a game's list shows the pool's read as it goes: a "

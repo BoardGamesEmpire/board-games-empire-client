@@ -586,17 +586,17 @@ void main() {
     test('it asks for no right to take the game out', () {
       // A participant can't remove it, which says nothing of its date.
       final state = ready(
-        dates: [past],
+        dates: [ahead],
         actions: actionsOf(eventRole: EventRole.participant),
       );
 
       expect(
         lineupGameAhead(
           state.detail,
-          game('l', occurrenceId: 'd-past'),
+          game('l', occurrenceId: 'd-ahead'),
           now: now,
         ),
-        isFalse,
+        isTrue,
       );
     });
   });

@@ -936,6 +936,20 @@
   "@eventsLineupAddEventStarted": {
     "description": "eventsLineupAddDateStarted for an add to the lineup of the event as a whole (eventsNominationWholeEvent), where every one of its dates has started or was called off: the server refuses to take such a game out again (eventsLineupStartedHint) (#519, #520)."
   },
+  "eventsLineupAddStartedTitle": "Still add {title} to the lineup?",
+  "@eventsLineupAddStartedTitle": {
+    "description": "Title of the dialog that asks again before a game is added straight to an event's lineup, where the date chosen in the add dialog (eventsLineupAddTitle) started, or the event's last date to come did, after that dialog opened, so it never said that the game then can't be taken out of the lineup. Its body says so (eventsLineupAddDateStarted, or eventsLineupAddEventStarted for the whole event); Add to lineup (eventsLineupAddToLineup) adds the game, and eventsLineupAddStartedKeep adds nothing (#519, #520). {title} is the game's title, with its subtitle where it has one (#920).",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsLineupAddStartedKeep": "Don't add",
+  "@eventsLineupAddStartedKeep": {
+    "description": "Button in the dialog that asks again before adding a game to the lineup once its date has started (eventsLineupAddStartedTitle) that closes it and adds nothing (#519)."
+  },
   "eventsLineupRoleLabel": "Play it as",
   "@eventsLineupRoleLabel": {
     "description": "Label over the two choices in the add dialog (eventsLineupAddTitle) of what a game added to an event's lineup is played as: one of the main games (eventsLineupRolePrimaryChoice) or a short one between them (eventsLineupRoleFillerChoice) (#519)."
@@ -1660,9 +1674,9 @@
       }
     }
   },
-  "eventsApproveConfirmBody": "It goes into the lineup. Nothing can take it out yet.",
+  "eventsApproveConfirmBody": "It goes into the lineup.",
   "@eventsApproveConfirmBody": {
-    "description": "Body of the approve dialog (eventsApproveConfirmTitle): once approved, the game is in the lineup, the games to be played, and the app has no way yet to take a game back out of it."
+    "description": "Body of the approve dialog (eventsApproveConfirmTitle): once approved, the game is in the lineup, the games to be played. A host can take it out again (eventsLineupRemove) until its date starts (#520)."
   },
   "eventsApproveConfirm": "Approve",
   "@eventsApproveConfirm": {
