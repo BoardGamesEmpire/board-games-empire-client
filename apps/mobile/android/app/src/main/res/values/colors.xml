@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Sits under the opaque foreground; matches the icon's dark corners. -->
+    <color name="ic_launcher_background">#483E37</color>
+</resources>
