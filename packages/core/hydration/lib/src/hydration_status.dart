@@ -47,12 +47,14 @@ final class Hydration extends Equatable {
     this.state = HydrationState.idle,
     this.everRefreshed = false,
     this.lastPassFailed = false,
+    this.everConfirmed = false,
   });
 
   /// What the hydrate is doing now.
   final HydrationState state;
 
-  /// Whether any pass has ever landed rows.
+  /// Whether any pass in this session has landed rows. [everConfirmed]
+  /// also counts earlier sessions.
   ///
   /// Never goes back to false: a later failure does not un-know an answer
   /// a successful pass already gave us.
@@ -69,8 +71,25 @@ final class Hydration extends Equatable {
   /// left.
   final bool lastPassFailed;
 
+  /// Whether a pass on this device, in this session or an earlier one, has
+  /// landed rows for this user. Never goes back to false.
+  ///
+  /// Seeded by the feature from what it persisted when a pass completed
+  /// (#771), and set with [everRefreshed]. A feature that persists no such
+  /// marker (households and events do not) seeds nothing, so for it this
+  /// always equals [everRefreshed]. A reader that only needs to know
+  /// the cache has been confirmed once reads this. One that needs a pass
+  /// this session, because an earlier session's cache may not hold what it
+  /// is waiting for, reads [everRefreshed].
+  final bool everConfirmed;
+
   @override
-  List<Object?> get props => [state, everRefreshed, lastPassFailed];
+  List<Object?> get props => [
+    state,
+    everRefreshed,
+    lastPassFailed,
+    everConfirmed,
+  ];
 }
 
 /// The observable half of a feature's hydrate (#269, #407).
@@ -131,8 +150,17 @@ class HydrationStatus<O extends Object> {
   /// `landed` says whether an outcome put rows in the cache. [now] defaults
   /// to the device clock. Injected so a five-minute window is testable
   /// without waiting five real minutes.
-  HydrationStatus({required this._landed, DateTime Function()? now})
-    : _now = now ?? DateTime.now;
+  ///
+  /// `confirmedBefore` seeds [Hydration.everConfirmed]: whether a pass in an
+  /// earlier session landed rows for this user, as the feature persisted it
+  /// (#771). It sets nothing else. No pass has run in this session, and the
+  /// staleness clock has nothing of this session's to date.
+  HydrationStatus({
+    required this._landed,
+    DateTime Function()? now,
+    bool confirmedBefore = false,
+  }) : _now = now ?? DateTime.now,
+       _current = Hydration(everConfirmed: confirmedBefore);
 
   final bool Function(O outcome) _landed;
 
@@ -141,7 +169,7 @@ class HydrationStatus<O extends Object> {
 
   final DateTime Function() _now;
 
-  Hydration _current = const Hydration();
+  Hydration _current;
 
   /// When the last pass that landed rows landed them, or null when none
   /// has — including after [markStale].
@@ -246,11 +274,15 @@ class HydrationStatus<O extends Object> {
         state: HydrationState.running,
         everRefreshed: _current.everRefreshed,
         lastPassFailed: _current.lastPassFailed,
+        everConfirmed: _current.everConfirmed,
       ),
     );
   }
 
   /// Records how a drain ended, in the terms a screen reads.
+  ///
+  /// A pass that landed rows sets both [Hydration.everRefreshed] and
+  /// [Hydration.everConfirmed]. A failed one keeps both where they were.
   ///
   /// A pass that landed rows also stamps the staleness clock (#300). The
   /// stamp happens **here rather than in [_emit]**, which drops a reading
@@ -281,7 +313,11 @@ class HydrationStatus<O extends Object> {
     if (_landed(outcome)) {
       if (!_invalidated) _refreshedAt = _now();
       _emit(
-        const Hydration(state: HydrationState.refreshed, everRefreshed: true),
+        const Hydration(
+          state: HydrationState.refreshed,
+          everRefreshed: true,
+          everConfirmed: true,
+        ),
       );
     } else {
       _emit(
@@ -289,6 +325,7 @@ class HydrationStatus<O extends Object> {
           state: HydrationState.failed,
           everRefreshed: _current.everRefreshed,
           lastPassFailed: true,
+          everConfirmed: _current.everConfirmed,
         ),
       );
     }

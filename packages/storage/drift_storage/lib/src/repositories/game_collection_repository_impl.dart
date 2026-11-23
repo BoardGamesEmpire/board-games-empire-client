@@ -1491,6 +1491,32 @@ class GameCollectionRepositoryImpl
   @override
   String? reconciledCollectionEntryId(String localId) => _moves[localId];
 
+  // ── Refresh marker (#771) ──────────────────────────────────────────────────
+
+  @override
+  Future<bool> isRefreshConfirmed() async {
+    checkNotDisposed();
+    final row = await (_db.select(
+      _db.collectionRefreshMarkersTable,
+    )..where((t) => t.userId.equals(_userId))).getSingleOrNull();
+    return row != null;
+  }
+
+  /// Stamped from [_clock], as this repository's other writes are. Nothing
+  /// reads the time yet; it is there to say when the cache was confirmed.
+  @override
+  Future<void> recordRefreshConfirmed() async {
+    checkNotDisposed();
+    await _db
+        .into(_db.collectionRefreshMarkersTable)
+        .insertOnConflictUpdate(
+          CollectionRefreshMarkersTableCompanion.insert(
+            userId: _userId,
+            confirmedAt: _clock.nowUtc(),
+          ),
+        );
+  }
+
   /// Refreshes [_moves] from `collection_moves`, between a list or list-item
   /// read and the delivery of its rows (#693). Both, because the list and
   /// an entry's screen each hold entries by id.

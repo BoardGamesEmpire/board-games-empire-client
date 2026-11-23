@@ -629,6 +629,22 @@ abstract class GameCollectionRepository {
   Stream<List<GameCollection>> watchEntriesForPlatformGames(
     Set<String> platformGameIds,
   );
+
+  /// Whether a collection pass has completed for this user on this device,
+  /// in this session or an earlier one (#771).
+  ///
+  /// Read when the user session's hydration starts, so a cold start can
+  /// trust a cache an earlier session confirmed. It outlives a sign-out, as
+  /// the cache does, and goes only when the cache's storage is wiped.
+  /// Another user, or storage that has never synced, reads false.
+  Future<bool> isRefreshConfirmed();
+
+  /// Records that a collection pass has completed for this user (#771), at
+  /// this repository's clock. A later record moves the time; there is one
+  /// record per user.
+  ///
+  /// Written only after a pass that completed. A failed pass writes nothing.
+  Future<void> recordRefreshConfirmed();
 }
 
 /// An add or edit would take an entry past

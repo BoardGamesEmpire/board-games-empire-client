@@ -303,7 +303,11 @@ void main() {
         await pumpEventQueue();
         expect(
           readings.last,
-          const Hydration(state: HydrationState.refreshed, everRefreshed: true),
+          const Hydration(
+            state: HydrationState.refreshed,
+            everRefreshed: true,
+            everConfirmed: true,
+          ),
         );
       });
     }
