@@ -34,17 +34,17 @@ typedef CollectionRow = ({
 /// expansion owned as a tabletop copy.
 ///
 /// The cache is read whole, but not always finished: a pass writes it a page
-/// at a time, so while the session's first pass runs and none has completed
-/// in this session, a base game may not have landed (#810). [complete] false
-/// says so, and `placeExpansions` then holds an expansion whose base game is
-/// not in [all] rather than show it marked, to move it under the base game
-/// when that lands. A base game in [all] holds nothing, filtered out or not.
-/// [complete] is true at any other time: while no pass runs, and once one
-/// has completed in this session.
+/// at a time, so while the device's first sync runs, a base game may not
+/// have landed (#810). [complete] false says so, and `placeExpansions` then
+/// holds an expansion whose base game is not in [all] rather than show it
+/// marked, to move it under the base game when that lands. A base game in
+/// [all] holds nothing, filtered out or not. [complete] is true at any other
+/// time: while no pass runs, once a pass has completed on this device, and
+/// once one has failed in this session.
 ///
-/// The hold is the session's, not the device's: on a device that synced
-/// before, an expansion whose base game isn't owned is held while that
-/// session's first pass runs, then shown marked.
+/// The hold is the device's, not the session's (#1011): on a cold start over
+/// a cache an earlier session's pass completed, an expansion whose base game
+/// isn't owned is shown marked throughout the pass.
 ///
 /// Placed once per list: the screen counts the rows for the page and draws
 /// them in its sliver, from the same state's [items], [all] and [complete].

@@ -358,8 +358,8 @@ class _GameCollectionListPageState extends State<_GameCollectionListPage> {
     // more than once is one stack (#709). The list draws a row for each
     // nested expansion too (#711), so it counts the rows; the grid draws the
     // top-level covers, as a strip's are a row of their own, so it counts
-    // those. Under a filter, the rows it shows (#715). While the session's
-    // first pass runs, an expansion whose base game has not landed is held,
+    // those. Under a filter, the rows it shows (#715). While the device's
+    // first sync runs, an expansion whose base game has not landed is held,
     // and not counted (#810). With every game held, no row is drawn and the
     // loading state stands in, as for an empty list.
     final list = thumbnails == false;
@@ -527,7 +527,8 @@ class GameCollectionListSliver extends StatelessWidget {
             GameCollectionListReady(:final items) when items.isEmpty =>
               _NoMatchesSliver(onCleared: onFiltersCleared),
             // Every game that fits is an expansion held for its base game
-            // while the first sync runs (#810): the list is still filling.
+            // while the device's first sync runs (#810): the list is still
+            // filling.
             GameCollectionListReady(:final items, :final all, complete: false)
                 when placeCollection(
                   items,

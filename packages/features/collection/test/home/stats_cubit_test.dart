@@ -13,8 +13,15 @@ import '../support/list_items.dart';
 /// A pass running, with none yet landed.
 const _running = Hydration(state: HydrationState.running);
 
-/// A pass landed rows.
-const _landed = Hydration(state: HydrationState.refreshed, everRefreshed: true);
+/// A pass landed rows, as a status reports it: this session's, and so this
+/// device's. The collection's status and the households' both read so: the
+/// households persist no marker, so their `everConfirmed` is set with
+/// `everRefreshed` and never differs from it.
+const _landed = Hydration(
+  state: HydrationState.refreshed,
+  everRefreshed: true,
+  everConfirmed: true,
+);
 
 /// A first pass that failed, so that nothing is confirmed.
 const _failedFirst = Hydration(
@@ -134,6 +141,21 @@ void main() {
       expect(cubit.state.collectionGames, 0);
     });
 
+    test('a confirmed empty collection reads 0 on a cold start while the pass '
+        'runs', () async {
+      // A pass in an earlier session on this device landed rows for this
+      // user, and confirmed the empty collection (#771).
+      final cubit = build(collectionHydrate: true);
+
+      collectionHydration.add(
+        const Hydration(state: HydrationState.running, everConfirmed: true),
+      );
+      own.emit(const []);
+      await _settle();
+
+      expect(cubit.state.collectionGames, 0);
+    });
+
     test(
       'an empty collection is 0 where there is no hydrate to wait for',
       () async {
@@ -168,6 +190,7 @@ void main() {
           state: HydrationState.failed,
           everRefreshed: true,
           lastPassFailed: true,
+          everConfirmed: true,
         ),
       );
       await _settle();

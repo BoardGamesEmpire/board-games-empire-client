@@ -59,7 +59,10 @@ import 'package:observability/observability.dart';
 /// - the status is [GameCollectionHydrationStatus], registered in the
 ///   session scope;
 /// - the hydrator is deliberately not registered. Nothing resolves one by
-///   type; the pass closes over it.
+///   type; the pass closes over it;
+/// - a pass that completes records the user's refresh marker before it
+///   reports, and the status starts from the marker an earlier session
+///   left (#771). Neither the read nor the write can throw out of here.
 ///
 /// Where a collaborator is missing, neither the status nor the refresher is
 /// registered. The list reads an absent status as idle and an absent
@@ -109,8 +112,9 @@ class GameCollectionHydrateInstaller implements UserScopeInstaller {
       return;
     }
 
+    final collection = container.get<GameCollectionRepository>();
     final hydrator = GameCollectionHydrator(
-      collection: container.get<GameCollectionRepository>(),
+      collection: collection,
       games: container.get<GameRepository>(),
       remote: container.get<GameCollectionRemoteDataSource>(),
       userId: userId,
@@ -120,7 +124,10 @@ class GameCollectionHydrateInstaller implements UserScopeInstaller {
         ? container.get<SessionIdentityGuard>()
         : null;
 
-    final status = GameCollectionHydrationStatus(now: now);
+    final status = GameCollectionHydrationStatus(
+      now: now,
+      confirmedBefore: await _confirmedBefore(collection, server),
+    );
     container.registerSingleton<GameCollectionHydrationStatus>(
       status,
       // A pass still in flight when the scope tears down then reports into
@@ -130,7 +137,7 @@ class GameCollectionHydrateInstaller implements UserScopeInstaller {
 
     final pass = HydratePass<CollectionHydrateOutcome>(
       feature: 'Collection',
-      drain: hydrator.hydrate,
+      drain: () => _recordingTheMarker(hydrator.hydrate, collection, server),
       status: status,
       failed: CollectionHydrateOutcome.failed,
       userId: userId,
@@ -146,5 +153,58 @@ class GameCollectionHydrateInstaller implements UserScopeInstaller {
     // Unawaited, and the status is running before this returns: a list built
     // in that window must not read idle.
     unawaited(pass.run());
+  }
+
+  /// Whether an earlier session's pass completed for this user, from the
+  /// refresh marker (#771).
+  ///
+  /// A read that throws is logged and reads as false: a throw here would
+  /// abort activation, and an unconfirmed cache only costs what every first
+  /// sync costs.
+  static Future<bool> _confirmedBefore(
+    GameCollectionRepository collection,
+    ScopedServer server,
+  ) async {
+    try {
+      return await collection.isRefreshConfirmed();
+    } on Object catch (error, stackTrace) {
+      _log.warn(
+        "Couldn't read the collection's refresh marker; starting unconfirmed",
+        error: error,
+        stackTrace: stackTrace,
+        context: {'serverId': server.serverId},
+      );
+      return false;
+    }
+  }
+
+  /// Runs [drain], and for a pass that landed rows, as
+  /// [GameCollectionHydrationStatus.landsRows] defines it, records the
+  /// refresh marker before returning the outcome (#771). So by the time the
+  /// status reads the pass as landed, the next session will read it as
+  /// confirmed too.
+  ///
+  /// A write that throws is logged and swallowed, and the outcome still
+  /// returns. The rows landed whatever the marker says, and a missed marker
+  /// only costs one held pass in a later session.
+  static Future<CollectionHydrateOutcome> _recordingTheMarker(
+    Future<CollectionHydrateOutcome> Function() drain,
+    GameCollectionRepository collection,
+    ScopedServer server,
+  ) async {
+    final outcome = await drain();
+    if (GameCollectionHydrationStatus.landsRows(outcome)) {
+      try {
+        await collection.recordRefreshConfirmed();
+      } on Object catch (error, stackTrace) {
+        _log.warn(
+          "Couldn't record the collection's refresh marker",
+          error: error,
+          stackTrace: stackTrace,
+          context: {'serverId': server.serverId},
+        );
+      }
+    }
+    return outcome;
   }
 }

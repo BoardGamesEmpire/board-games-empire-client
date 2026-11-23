@@ -832,6 +832,44 @@ void main() {
       );
     });
 
+    test('an empty cache on a confirmed device still spins '
+        "while this session's first pass runs (#300)", () async {
+      // Pinned on this session's passes (#771). The reading is one a status
+      // seeded from an earlier session would replay, were the households
+      // given one.
+      final hydration = StreamController<Hydration>()
+        ..add(
+          const Hydration(state: HydrationState.running, everConfirmed: true),
+        );
+      addTearDown(hydration.close);
+      final bloc = HouseholdListBloc(
+        repository: repository,
+        hydration: hydration.stream,
+      );
+      addTearDown(bloc.close);
+
+      households.add(const []);
+      await Future<void>.delayed(Duration.zero);
+      expect(bloc.state, isA<HouseholdListLoading>());
+
+      hydration.add(
+        const Hydration(
+          state: HydrationState.refreshed,
+          everRefreshed: true,
+          everConfirmed: true,
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(
+        bloc.state,
+        isA<HouseholdListReady>().having(
+          (s) => s.households,
+          'households',
+          isEmpty,
+        ),
+      );
+    });
+
     test('knows the last pass to finish failed', () async {
       status
         ..started()

@@ -182,7 +182,11 @@ void main() {
 
       expect(
         await sync.watch('h-1').first,
-        const Hydration(state: HydrationState.refreshed, everRefreshed: true),
+        const Hydration(
+          state: HydrationState.refreshed,
+          everRefreshed: true,
+          everConfirmed: true,
+        ),
       );
     },
   );
@@ -239,7 +243,11 @@ void main() {
       await sync.close();
 
       expect(await done[0], [
-        const Hydration(state: HydrationState.refreshed, everRefreshed: true),
+        const Hydration(
+          state: HydrationState.refreshed,
+          everRefreshed: true,
+          everConfirmed: true,
+        ),
       ]);
       expect(await done[1], [const Hydration()]);
     });
@@ -260,7 +268,13 @@ void main() {
 
       expect(
         await sync.watch('h-1').toList().timeout(const Duration(seconds: 5)),
-        [const Hydration(state: HydrationState.refreshed, everRefreshed: true)],
+        [
+          const Hydration(
+            state: HydrationState.refreshed,
+            everRefreshed: true,
+            everConfirmed: true,
+          ),
+        ],
       );
       expect(
         await sync.watch('h-2').toList().timeout(const Duration(seconds: 5)),

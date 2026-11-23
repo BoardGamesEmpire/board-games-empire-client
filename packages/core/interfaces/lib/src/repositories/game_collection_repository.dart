@@ -144,6 +144,12 @@ abstract class GameCollectionRepository {
   /// wants the edit sent at once passes them to `SendQueuedOpNow.sendNow`
   /// (#46), as it does for an add; otherwise the drain sends it.
   ///
+  /// An [id] whose entry has moved ([reconciledCollectionEntryId], #693)
+  /// updates the entry where it went, as the move is stored when this runs,
+  /// so an edit sent on an add's local id just before its reconcile commits
+  /// lands on the server's row. The result's entry and operation carry the
+  /// id it went to. An id with no entry and no move throws [StateError].
+  ///
   /// Play history (`playCount`, `lastPlayed`) is not editable here. The
   /// server owns it and rejects both fields on this update (#258), so
   /// it reaches the cache only from server data.
@@ -217,10 +223,18 @@ abstract class GameCollectionRepository {
   /// play history — see [addToCollection]'s "Re-adding a previously
   /// removed entry" section for the per-field rules.
   ///
+  /// ### An entry that moved
+  ///
+  /// An [id] whose entry has moved ([reconciledCollectionEntryId], #693)
+  /// removes the entry where it went, as the move is stored when this runs,
+  /// so a removal sent on an add's local id just before its reconcile
+  /// commits removes the server's row. The operation carries the id it went
+  /// to.
+  ///
   /// ### Throws
   ///
   /// [StateError] if the id is not found for the current user (i.e.
-  /// belongs to another user or was never cached).
+  /// belongs to another user or was never cached), and has not moved.
   Future<({String syncQueueId, RemoveFromCollectionOperation operation})?>
   removeFromCollection(String id);
 
@@ -583,6 +597,34 @@ abstract class GameCollectionRepository {
   /// Closes, rather than errors, when the repository is disposed.
   Stream<GameCollectionListItem?> watchCollectionListItem(String id);
 
+  /// The server id a triplet's entry moved to from [localId], or null if
+  /// it has not moved — including when the server kept the local id, and
+  /// when a reconcile rolled back.
+  ///
+  /// An entry moves when a live server copy of its triplet replaces the
+  /// local row under a different id: usually the reconcile of an add made
+  /// on this device, but also a merge or rebuild from the server, or a
+  /// reconcile over a removed local row, whose id differs.
+  ///
+  /// For a screen that holds an entry by id when the id changes under it
+  /// (#693): one open when the move commits, or one rebuilt on the old id
+  /// afterwards. The local row is gone by then, so
+  /// [watchCollectionListItem] on the local id emits null, as for an entry
+  /// that was removed.
+  ///
+  /// The move is stored with the write that makes it, so it is found whichever
+  /// repository made it, another tab's over the same storage included, and
+  /// after a reload. This answers from the moves this repository last
+  /// recorded or read: its own server writes, and, before
+  /// [watchCollectionListItem] delivers a null for an id, that id's move.
+  /// A subscriber to that stream that checks this on each null therefore
+  /// sees a move on the emission that drops the local id. Asked before
+  /// then, it may answer null for a move another repository made.
+  /// [watchCollectionListItems] reads no moves.
+  ///
+  /// Never throws, including after disposal.
+  String? reconciledCollectionEntryId(String localId);
+
   /// Watches a single entry. Emits null when removed.
   Stream<GameCollection?> watchEntry(String id);
 
@@ -601,6 +643,22 @@ abstract class GameCollectionRepository {
   Stream<List<GameCollection>> watchEntriesForPlatformGames(
     Set<String> platformGameIds,
   );
+
+  /// Whether a collection pass has completed for this user on this device,
+  /// in this session or an earlier one (#771).
+  ///
+  /// Read when the user session's hydration starts, so a cold start can
+  /// trust a cache an earlier session confirmed. It outlives a sign-out, as
+  /// the cache does, and goes only when the cache's storage is wiped.
+  /// Another user, or storage that has never synced, reads false.
+  Future<bool> isRefreshConfirmed();
+
+  /// Records that a collection pass has completed for this user (#771), at
+  /// this repository's clock. A later record moves the time; there is one
+  /// record per user.
+  ///
+  /// Written only after a pass that completed. A failed pass writes nothing.
+  Future<void> recordRefreshConfirmed();
 }
 
 /// An add or edit would take an entry past

@@ -539,6 +539,38 @@ void main() {
 
       expect(bloc.state, readyWith(refreshFailed: isTrue));
     });
+
+    test('an empty cache on a confirmed device still spins while this '
+        "session's first pass runs", () async {
+      // Pinned on this session's passes (#771). The reading is one a status
+      // seeded from an earlier session would replay, were the events given
+      // one.
+      final hydration = StreamController<Hydration>()
+        ..add(
+          const Hydration(state: HydrationState.running, everConfirmed: true),
+        );
+      addTearDown(hydration.close);
+      final bloc = EventOverviewBloc(
+        repository: repository,
+        hydration: hydration.stream,
+        now: () => kNow,
+      );
+      addTearDown(bloc.close);
+
+      items.add(const []);
+      await settle();
+      expect(bloc.state, isA<EventOverviewLoading>());
+
+      hydration.add(
+        const Hydration(
+          state: HydrationState.refreshed,
+          everRefreshed: true,
+          everConfirmed: true,
+        ),
+      );
+      await settle();
+      expect(bloc.state, readyWith(isEmpty: isTrue));
+    });
   });
 
   group('a retry the user asked for', () {

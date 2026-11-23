@@ -65,20 +65,29 @@ final class CollectionEntryActionCleared extends CollectionEntryEvent {
 /// The row watch answered. The bloc's own event, so its emits stay inside a
 /// handler; not exported.
 final class CollectionEntryRowChanged extends CollectionEntryEvent {
-  const CollectionEntryRowChanged(this.item);
+  const CollectionEntryRowChanged(this.item, {required this.entryId});
 
   /// The live entry, or null when it is absent, removed or another user's.
   final GameCollectionListItem? item;
+
+  /// The id the watch was reading, which a move can leave behind (#693).
+  final String entryId;
 }
 
 /// The row watch failed. The bloc's own event; not exported.
 final class CollectionEntryWatchFailed extends CollectionEntryEvent {
-  const CollectionEntryWatchFailed();
+  const CollectionEntryWatchFailed({required this.entryId});
+
+  /// The id the watch was reading, which a move can leave behind (#693).
+  final String entryId;
 }
 
 /// The row watch closed. The bloc's own event; not exported.
 final class CollectionEntryWatchEnded extends CollectionEntryEvent {
-  const CollectionEntryWatchEnded();
+  const CollectionEntryWatchEnded({required this.entryId});
+
+  /// The id the watch was reading, which a move can leave behind (#693).
+  final String entryId;
 }
 
 /// The collection's hydrate said what it is doing. The bloc's own event; not

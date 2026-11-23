@@ -121,7 +121,11 @@ void main() {
 
         expect(
           await current(),
-          const Hydration(state: HydrationState.running, everRefreshed: true),
+          const Hydration(
+            state: HydrationState.running,
+            everRefreshed: true,
+            everConfirmed: true,
+          ),
         );
       },
     );
@@ -152,6 +156,7 @@ void main() {
         const Hydration(
           state: HydrationState.failed,
           everRefreshed: true,
+          everConfirmed: true,
           lastPassFailed: true,
         ),
       );
@@ -170,7 +175,11 @@ void main() {
 
         expect(
           await current(),
-          const Hydration(state: HydrationState.refreshed, everRefreshed: true),
+          const Hydration(
+            state: HydrationState.refreshed,
+            everRefreshed: true,
+            everConfirmed: true,
+          ),
         );
       },
     );
@@ -192,11 +201,70 @@ void main() {
           const Hydration(
             state: HydrationState.refreshed,
             everRefreshed: true,
+            everConfirmed: true,
           ),
         );
         expect(status.isStaleAfter(const Duration(minutes: 5)), isTrue);
       },
     );
+
+    group('everConfirmed (#771)', () {
+      // What a pass on this device established before this session, seeded
+      // from the feature's persisted marker, beside what this session's
+      // passes established.
+      late HydrationStatus<_Outcome> seeded;
+
+      setUp(
+        () => seeded = HydrationStatus<_Outcome>(
+          landed: _landed,
+          confirmedBefore: true,
+        ),
+      );
+      tearDown(() async => seeded.close());
+
+      test(
+        'a status seeded as confirmedBefore reads everConfirmed with '
+        'everRefreshed false',
+        () async {
+          expect(
+            await seeded.watch().first,
+            const Hydration(everConfirmed: true),
+          );
+        },
+      );
+
+      test('a successful pass sets everConfirmed', () async {
+        status
+          ..started()
+          ..finished(_Outcome.complete);
+
+        expect(
+          await current(),
+          const Hydration(
+            state: HydrationState.refreshed,
+            everRefreshed: true,
+            everConfirmed: true,
+          ),
+        );
+      });
+
+      test('a failed pass keeps everConfirmed', () async {
+        // A failure confirms nothing this session, and un-knows nothing an
+        // earlier one confirmed.
+        seeded
+          ..started()
+          ..finished(_Outcome.failed);
+
+        expect(
+          await seeded.watch().first,
+          const Hydration(
+            state: HydrationState.failed,
+            lastPassFailed: true,
+            everConfirmed: true,
+          ),
+        );
+      });
+    });
 
     test('started resets markStale, so a drain started after it stamps', () {
       status

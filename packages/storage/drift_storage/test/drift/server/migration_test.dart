@@ -16,6 +16,7 @@ import 'generated/schema_v17.dart' as v17;
 import 'generated/schema_v18.dart' as v18;
 import 'generated/schema_v19.dart' as v19;
 import 'generated/schema_v2.dart' as v2;
+import 'generated/schema_v20.dart' as v20;
 import 'generated/schema_v3.dart' as v3;
 import 'generated/schema_v4.dart' as v4;
 import 'generated/schema_v5.dart' as v5;
@@ -1704,4 +1705,97 @@ void main() {
       );
     },
   );
+
+  // Data-integrity coverage for v19 → v20 (#693, #771): the step only creates
+  // `collection_moves` and `collection_refresh_markers`. A collection row
+  // cached before it, seeded on its game and platform game, must come through
+  // unchanged, and both new tables start empty because no earlier version
+  // recorded a move or a refresh.
+  test('v19 to v20 creates collection_moves and collection_refresh_markers '
+      'empty and keeps game_collections rows', () async {
+    const at = '2024-01-15T10:30:00.000Z';
+
+    await verifier.testWithDataIntegrity(
+      oldVersion: 19,
+      newVersion: 20,
+      createOld: v19.DatabaseAtV19.new,
+      createNew: v20.DatabaseAtV20.new,
+      openTestedDatabase: ServerDatabase.new,
+      createItems: (batch, oldDb) {
+        batch
+          ..insert(
+            oldDb.games,
+            const v19.GamesData(
+              id: 'g_v19_1',
+              title: 'Brass: Birmingham',
+              contentType: 'BaseGame',
+              totalPlayCount: 0,
+              ownedByCount: 1,
+              categoriesJson: '[]',
+              mechanicsJson: '[]',
+              designersJson: '[]',
+              publishersJson: '[]',
+              tagsJson: '[]',
+              baseGamesJson: '[]',
+              reach: 'Public',
+              createdAt: at,
+              updatedAt: at,
+            ),
+          )
+          ..insert(
+            oldDb.platformGames,
+            const v19.PlatformGamesData(
+              id: 'pg_v19_1',
+              gameId: 'g_v19_1',
+              platformId: 'plat_tabletop',
+              platformName: 'Tabletop',
+              supportsSolo: 1,
+              supportsLocal: 1,
+              supportsOnline: 0,
+              hasAsyncPlay: 0,
+              hasRealtime: 0,
+              hasTutorial: 0,
+              createdAt: at,
+              updatedAt: at,
+            ),
+          )
+          ..insert(
+            oldDb.gameCollections,
+            const v19.GameCollectionsData(
+              id: 'gc_v19_1',
+              userId: 'user_v19_1',
+              platformGameId: 'pg_v19_1',
+              medium: 'Physical',
+              quantity: 2,
+              isDirty: 1,
+              isLocalOnly: 1,
+              createdAt: at,
+              updatedAt: at,
+            ),
+          );
+      },
+      validateItems: (newDb) async {
+        expect(await newDb.select(newDb.gameCollections).get(), const [
+          v20.GameCollectionsData(
+            id: 'gc_v19_1',
+            userId: 'user_v19_1',
+            platformGameId: 'pg_v19_1',
+            medium: 'Physical',
+            quantity: 2,
+            isDirty: 1,
+            isLocalOnly: 1,
+            createdAt: at,
+            updatedAt: at,
+          ),
+        ]);
+        expect(await newDb.select(newDb.collectionMoves).get(), isEmpty);
+        // With a user's rows cached, so a step that backfilled a marker for
+        // each of them would show here.
+        expect(
+          await newDb.select(newDb.collectionRefreshMarkers).get(),
+          isEmpty,
+        );
+      },
+    );
+  });
 }

@@ -70,12 +70,14 @@ final class StatsState extends Equatable {
 /// a game owned both boxed and digital is one game.
 ///
 /// A list with rows always counts. An empty one is 0 where there is no
-/// `collectionHydration` to wait for, or once a pass has landed rows, and
-/// unknown before that: a failure confirms nothing, so a cache that only a
-/// failed pass has seen is not yet known to be empty
-/// ([Hydration.everRefreshed]). An unknown number draws no line. A stream that
-/// fails is unknown until its next rows, and one that closes before answering
-/// never is: the repository closes its streams when it is disposed.
+/// `collectionHydration` to wait for, or once a pass on this device, in this
+/// session or an earlier one, has landed rows ([Hydration.everConfirmed],
+/// #771), and unknown before that: a failure confirms nothing, so a cache
+/// that only a failed pass has seen is not yet known to be empty. So a cold
+/// start over a confirmed empty collection reads 0 while its pass runs. An
+/// unknown number draws no line. A stream that fails is unknown until its
+/// next rows, and one that closes before answering never is: the repository
+/// closes its streams when it is disposed.
 ///
 /// ## The households half
 ///
@@ -314,7 +316,7 @@ class StatsCubit extends Cubit<StatsState> {
     // Rows always count.
     if (games > 0) return games;
     final unconfirmed =
-        _collectionHydrationGiven && !_collectionHydration.everRefreshed;
+        _collectionHydrationGiven && !_collectionHydration.everConfirmed;
     return unconfirmed ? null : 0;
   }
 

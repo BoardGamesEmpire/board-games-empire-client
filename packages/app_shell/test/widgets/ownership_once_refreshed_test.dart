@@ -82,7 +82,11 @@ void main() {
     expect(events, isEmpty);
 
     hydration.add(
-      const Hydration(state: HydrationState.refreshed, everRefreshed: true),
+      const Hydration(
+        state: HydrationState.refreshed,
+        everRefreshed: true,
+        everConfirmed: true,
+      ),
     );
     await pumpEventQueue();
     expect(events, [
@@ -110,6 +114,56 @@ void main() {
     status.finished(CollectionHydrateOutcome.complete);
     await pumpEventQueue();
     expect(events.last, [copy]);
+  });
+
+  test('an offline cold start over a confirmed cache releases the cached '
+      'entries', () async {
+    // A pass in an earlier session landed rows for this user (#771), and
+    // this session's pass, offline, fails.
+    final confirmed = GameCollectionHydrationStatus(confirmedBefore: true);
+    addTearDown(confirmed.close);
+    confirmed.started();
+    listen(confirmed.watch());
+    entries.add([copy]);
+    await pumpEventQueue();
+    expect(events, [
+      [copy],
+    ]);
+
+    confirmed.finished(CollectionHydrateOutcome.failed);
+    await pumpEventQueue();
+    expect(events, [
+      [copy],
+    ]);
+  });
+
+  test('an offline cold start over a confirmed cache whose pass has already '
+      'failed when the page listens releases the cached entries', () async {
+    final confirmed = GameCollectionHydrationStatus(confirmedBefore: true);
+    addTearDown(confirmed.close);
+    confirmed
+      ..started()
+      ..finished(CollectionHydrateOutcome.failed);
+    listen(confirmed.watch());
+    entries.add([copy]);
+    await pumpEventQueue();
+    expect(events, [
+      [copy],
+    ]);
+  });
+
+  test('a first pass that fails on an unconfirmed device still '
+      'errors', () async {
+    // No marker: the device has never landed this user's rows.
+    status.started();
+    listen();
+    entries.add([copy]);
+    await pumpEventQueue();
+    expect(events, isEmpty);
+
+    status.finished(CollectionHydrateOutcome.failed);
+    await pumpEventQueue();
+    expect(events.single, isA<CollectionNotRefreshedException>());
   });
 
   test('a failed first pass already over when the page listens is unknown at '

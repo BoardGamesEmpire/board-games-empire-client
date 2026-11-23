@@ -289,20 +289,10 @@ void main() {
       final serverId = _uniqueServerId();
       final first = await open(serverId);
       await first.customSelect('SELECT 1').get();
-      // Back to v18: undo what the v19 step adds.
-      for (final column in const [
-        'occurrence_override_scope',
-        'allowed_platform_types_json',
-        'allowed_platform_ids_json',
-        'allowed_category_ids_json',
-        'occurrence_policies_read',
-      ]) {
-        await first.customStatement(
-          'ALTER TABLE event_policies DROP COLUMN $column',
-        );
-      }
-      await first.customStatement('DROP TABLE event_occurrence_policies');
-      await first.customStatement('PRAGMA user_version = 18');
+      // Back to v19: undo what the v20 step adds.
+      await first.customStatement('DROP TABLE collection_moves');
+      await first.customStatement('DROP TABLE collection_refresh_markers');
+      await first.customStatement('PRAGMA user_version = 19');
       await first.close();
 
       final second = await open(serverId);
@@ -312,7 +302,7 @@ void main() {
         WebWasmExecutorFactory.databaseName(serverId),
       );
       expect(header?.userVersion, second.schemaVersion);
-      expect(second.schemaVersion, 19);
+      expect(second.schemaVersion, 20);
     });
   });
 

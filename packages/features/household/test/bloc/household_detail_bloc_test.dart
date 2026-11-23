@@ -1195,6 +1195,32 @@ void main() {
       );
     });
 
+    test('an absent household on a confirmed device still waits for this '
+        "session's first pass", () async {
+      // Pinned on this session's passes (#771): a household opened by link
+      // on a cold start may be one an earlier session's cache doesn't hold.
+      hydration.add(
+        const Hydration(state: HydrationState.running, everConfirmed: true),
+      );
+      final bloc = buildOnRawStream();
+      addTearDown(bloc.close);
+
+      households.add([_household('other')]);
+      members.add(const []);
+      await settle();
+      expect(bloc.state, isA<HouseholdDetailLoading>());
+
+      hydration.add(
+        const Hydration(
+          state: HydrationState.refreshed,
+          everRefreshed: true,
+          everConfirmed: true,
+        ),
+      );
+      await settle();
+      expect(bloc.state, isA<HouseholdDetailNotFound>());
+    });
+
     test('shows the stale banner when the last pass failed', () async {
       status
         ..started()

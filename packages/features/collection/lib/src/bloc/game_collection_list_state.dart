@@ -77,17 +77,16 @@ final class GameCollectionListReady extends GameCollectionListState {
   final CollectionSort sort;
   final bool refreshFailed;
 
-  /// False while the session's first pass runs, before any pass has ended
-  /// in this session (#810). The pass writes the cache a page at a time, so
-  /// a base game may not have landed, and the screen holds an expansion
-  /// that is missing its base game rather than show it marked. A pass that
-  /// fails or ends makes it true, and a retry after a failed pass leaves it
-  /// true.
+  /// False while the device's first sync runs: a pass is running, no pass
+  /// has completed on this device, and none has failed in this session
+  /// (#810). The pass writes the cache a page at a time, so a base game may
+  /// not have landed, and the screen holds an expansion that is missing its
+  /// base game rather than show it marked. A pass that fails or completes
+  /// makes it true, and a retry after a failed pass leaves it true.
   ///
-  /// It is the session's, not the device's: the hydrate's status is kept in
-  /// memory. So on a device that synced before, an expansion whose base
-  /// game isn't owned is held while that session's first pass runs, then
-  /// shown marked.
+  /// It is the device's, not the session's (#1011): a cold start over a
+  /// cache an earlier session's pass completed is true throughout its pass,
+  /// so an expansion whose base game isn't owned stays shown, marked.
   final bool complete;
 
   @override

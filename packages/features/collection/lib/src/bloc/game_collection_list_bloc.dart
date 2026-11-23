@@ -18,9 +18,9 @@ import 'package:observability/observability.dart';
 /// | cache | hydrate | state |
 /// |---|---|---|
 /// | nothing yet | any | loading |
-/// | empty | running, and no pass has ever completed | loading |
+/// | empty | running, and no pass has completed this session | loading |
 /// | empty | anything else | ready, no rows |
-/// | rows | running, and no pass has ever ended | ready, not `complete` |
+/// | rows | the device's first sync runs (below) | ready, not `complete` |
 /// | rows | anything else | ready: a populated cache is never hidden |
 /// | error | any | error, until the cache emits rows again |
 /// | ended, nothing read | any | error: nothing answered, and nothing will |
@@ -37,10 +37,14 @@ import 'package:observability/observability.dart';
 ///
 /// Entering the list runs a stale re-hydrate (#44), so a pass over an
 /// answer the list already has is routine. "Empty and running" is loading
-/// only until a pass has completed once; after that the emptiness is
-/// confirmed, and re-checking it must not put the spinner back on every
-/// entry. A failed pass confirms nothing. This is the household's #300
-/// rule.
+/// only until a pass has completed once this session; after that the
+/// emptiness is confirmed, and re-checking it must not put the spinner back
+/// on every entry. A failed pass confirms nothing. This is the household's
+/// #300 rule.
+///
+/// It reads this session's passes ([Hydration.everRefreshed]), not this
+/// device's: an empty cache an earlier session confirmed may be one this
+/// session's first pass is about to fill, so a cold start over it spins.
 ///
 /// The status remembers which passes completed, not this bloc
 /// ([Hydration]). The list is often opened while a pass is
@@ -49,21 +53,23 @@ import 'package:observability/observability.dart';
 ///
 /// ## Rows not yet `complete`
 ///
-/// Rows are not `complete` while the session's first pass runs, before any
-/// pass has ended in this session (#810). A pass writes the cache a page at
-/// a time, so a base game may not have landed yet, and the screen holds
-/// back an expansion that is missing its base game rather than show it
-/// marked. A pass that fails or ends makes the rows `complete`, which
-/// releases what was held.
+/// Rows are not `complete` while the device's first sync runs: a pass is
+/// running, no pass has completed on this device, and none has failed in
+/// this session (#810). A pass writes the cache a page at a time, so a base
+/// game may not have landed yet, and the screen holds back an expansion
+/// that is missing its base game rather than show it marked. A pass that
+/// fails or completes makes the rows `complete`, which releases what was
+/// held.
 ///
 /// Unlike the spinner's, this test counts a failed pass: the rows it left
 /// are shown, marked, and a retry over them holds nothing again, as that
 /// would take the marked rows away under the user until the retry ends.
 ///
-/// "Ever" in the table above is the session's: [Hydration] is kept in
-/// memory and starts each session with no pass ended. So on a device that
-/// synced before, an expansion whose base game isn't owned is held while
-/// that session's first pass runs, then shown marked.
+/// It reads this device's passes ([Hydration.everConfirmed]), not this
+/// session's (#1011). A cache an earlier session's pass completed holds the
+/// base games that pass landed, so on a cold start over it an expansion
+/// whose base game isn't owned stays at top level, marked, throughout the
+/// pass, rather than leaving the list and coming back.
 ///
 /// ## The warning outlasts the next pass
 ///
@@ -319,16 +325,21 @@ class GameCollectionListBloc
       return emit(GameCollectionListLoading(refreshing: _retrying));
     }
 
+    final running = _hydration.state == HydrationState.running;
     // Outranks [_retrying]: a retry over an unconfirmed empty list returns
     // to the spinner rather than annotating an emptiness no pass confirmed.
-    final firstFill =
-        _hydration.state == HydrationState.running && !_hydration.everRefreshed;
+    // This session's passes: an earlier session's empty cache may be one
+    // this pass is about to fill.
+    final firstFill = running && !_hydration.everRefreshed;
     if (items.isEmpty && firstFill) {
       return emit(GameCollectionListLoading(refreshing: _retrying));
     }
-    // Every pass that ends either lands rows or fails, so this is "no pass
-    // has ended in this session".
-    final firstPass = firstFill && !_hydration.lastPassFailed;
+    // This device's passes (#1011): a cache an earlier session's pass
+    // completed holds the base games it landed. Every pass that ends either
+    // lands rows or fails, so this is "no pass has landed rows on this
+    // device, and none has failed in this session".
+    final firstPass =
+        running && !_hydration.everConfirmed && !_hydration.lastPassFailed;
 
     emit(
       GameCollectionListReady(
@@ -341,8 +352,9 @@ class GameCollectionListBloc
         sort: _sort,
         refreshFailed: _hydration.lastPassFailed,
         refreshing: _retrying,
-        // A pass writes a page at a time: until one ends in this session, a
-        // base game may yet land (#810).
+        // A pass writes a page at a time: until one has landed rows on this
+        // device, or one fails in this session, a base game may yet land
+        // (#810).
         complete: !firstPass,
       ),
     );

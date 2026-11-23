@@ -70,6 +70,10 @@ void main() {
   late DependencyContainerImpl container;
   late FakeCollectionRemote remote;
 
+  /// The registered collection repository, for a test to stub the marker on
+  /// (#771). Set by [register] unless it leaves the repository out.
+  late _MockGameCollectionRepository collectionRepository;
+
   setUp(() {
     container = DependencyContainerImpl();
     remote = FakeCollectionRemote((_) => _empty());
@@ -86,15 +90,22 @@ void main() {
     // A pass reads the removal mark first, and every page is written, empty
     // ones too, so the read and both writes must answer.
     if (collection) {
-      final repository = _MockGameCollectionRepository();
-      when(repository.removalMark).thenAnswer((_) async => 0);
+      collectionRepository = _MockGameCollectionRepository();
+      when(collectionRepository.removalMark).thenAnswer((_) async => 0);
       when(
-        () => repository.mergeFromServer(
+        () => collectionRepository.mergeFromServer(
           any(),
           removalsSince: any(named: 'removalsSince'),
         ),
       ).thenAnswer((_) async {});
-      container.registerSingleton<GameCollectionRepository>(repository);
+      // No earlier session confirmed this user's cache, unless a test says.
+      when(collectionRepository.isRefreshConfirmed)
+          .thenAnswer((_) async => false);
+      when(collectionRepository.recordRefreshConfirmed)
+          .thenAnswer((_) async {});
+      container.registerSingleton<GameCollectionRepository>(
+        collectionRepository,
+      );
     }
     if (games) {
       final repository = _MockGameRepository();
@@ -217,6 +228,148 @@ void main() {
       // Closed by the teardown, so the late outcome is dropped.
       expect(status.state, HydrationState.running);
     });
+  });
+
+  group('the refresh marker (#771)', () {
+    Future<Hydration> current() =>
+        container.get<GameCollectionHydrationStatus>().watch().first;
+
+    test(
+      'a marker written in an earlier session seeds everConfirmed',
+      () async {
+        register();
+        when(
+          collectionRepository.isRefreshConfirmed,
+        ).thenAnswer((_) async => true);
+        final blocked = Completer<PaginatedResult<GameCollectionWithSummary>>();
+        remote.respond = (_) => blocked.future;
+
+        await install();
+
+        // Confirmed before, not refreshed this session: the pass is still
+        // running.
+        expect(
+          await current(),
+          const Hydration(state: HydrationState.running, everConfirmed: true),
+        );
+        blocked.complete(_empty());
+      },
+    );
+
+    test('the status reads running before install returns', () async {
+      // The marker read is awaited before the status exists, and the pass is
+      // started after it, so the guarantee above still holds with a read
+      // that takes a turn.
+      register();
+      when(collectionRepository.isRefreshConfirmed).thenAnswer(
+        (_) => Future<void>.delayed(Duration.zero).then((_) => true),
+      );
+      final blocked = Completer<PaginatedResult<GameCollectionWithSummary>>();
+      remote.respond = (_) => blocked.future;
+
+      await install();
+
+      expect(
+        container.get<GameCollectionHydrationStatus>().state,
+        HydrationState.running,
+      );
+      blocked.complete(_empty());
+    });
+
+    test('a complete pass records the marker', () async {
+      register();
+
+      await install();
+      await Future<void>.delayed(Duration.zero);
+
+      verify(collectionRepository.recordRefreshConfirmed).called(1);
+      expect(
+        container.get<GameCollectionHydrationStatus>().state,
+        HydrationState.refreshed,
+      );
+    });
+
+    test(
+      'a complete pass reads refreshed only once the marker is written',
+      () async {
+        // The outcome waits for the write, so a reader that sees the pass
+        // land can count on the next session seeing it too.
+        register();
+        final writing = Completer<void>();
+        when(
+          collectionRepository.recordRefreshConfirmed,
+        ).thenAnswer((_) => writing.future);
+
+        await install();
+        await Future<void>.delayed(Duration.zero);
+        final status = container.get<GameCollectionHydrationStatus>();
+
+        expect(status.state, HydrationState.running);
+
+        writing.complete();
+        await Future<void>.delayed(Duration.zero);
+
+        expect(status.state, HydrationState.refreshed);
+      },
+    );
+
+    test('a failed pass records nothing', () async {
+      register();
+      remote.respond = (_) => _offline();
+
+      await install();
+      await Future<void>.delayed(Duration.zero);
+
+      expect(
+        container.get<GameCollectionHydrationStatus>().state,
+        HydrationState.failed,
+      );
+      verifyNever(collectionRepository.recordRefreshConfirmed);
+    });
+
+    test(
+      'a marker write that throws still reads the pass as refreshed',
+      () async {
+        // A missed marker costs one held pass in a later session; failing the
+        // pass would cost this one.
+        register();
+        when(
+          collectionRepository.recordRefreshConfirmed,
+        ).thenAnswer((_) async => throw StateError('disk full'));
+
+        await install();
+        await Future<void>.delayed(Duration.zero);
+
+        expect(
+          await current(),
+          const Hydration(
+            state: HydrationState.refreshed,
+            everRefreshed: true,
+            everConfirmed: true,
+          ),
+        );
+      },
+    );
+
+    test(
+      'a marker read that throws reads as unconfirmed, not a sign-out',
+      () async {
+        register();
+        when(
+          collectionRepository.isRefreshConfirmed,
+        ).thenAnswer((_) async => throw StateError('disk full'));
+        final blocked = Completer<PaginatedResult<GameCollectionWithSummary>>();
+        remote.respond = (_) => blocked.future;
+
+        await install();
+
+        expect(
+          await current(),
+          const Hydration(state: HydrationState.running),
+        );
+        blocked.complete(_empty());
+      },
+    );
   });
 
   group('the retry the list calls (#44)', () {
@@ -430,6 +583,8 @@ void main() {
         container.get<GameCollectionHydrationStatus>().state,
         HydrationState.failed,
       );
+      // Nothing landed, so nothing tells a later session it did (#771).
+      verifyNever(collectionRepository.recordRefreshConfirmed);
     });
 
     test('a pass it refuses leaves the delta mark alone (#450)', () async {

@@ -1,5 +1,7 @@
 import 'package:drift/drift.dart';
 import 'package:drift_storage/src/databases/migration_policy.dart';
+import 'package:drift_storage/src/tables/collection_moves_table.dart';
+import 'package:drift_storage/src/tables/collection_refresh_markers_table.dart';
 import 'package:drift_storage/src/tables/event_access_table.dart';
 import 'package:drift_storage/src/tables/event_attendees_table.dart';
 import 'package:drift_storage/src/tables/event_generation_table.dart';
@@ -46,7 +48,8 @@ part 'server_database.g.dart';
 /// household_members, household_moves, sync_queue, unsent_changes_users,
 /// game_access, platform_game_access, events, event_occurrences,
 /// event_attendees, event_policies, event_access, event_generation,
-/// event_moves, list_layouts, event_occurrence_policies.
+/// event_moves, list_layouts, event_occurrence_policies, collection_moves,
+/// collection_refresh_markers.
 ///
 /// `game_collections` enforces uniqueness on
 /// `(user_id, platform_game_id, medium) WHERE deleted_at IS NULL` via
@@ -56,7 +59,7 @@ part 'server_database.g.dart';
 ///
 /// ## Migrations
 ///
-/// `schemaVersion` is **19**.
+/// `schemaVersion` is **20**.
 ///
 /// - **v1 → v2 (#39):** adds `households.is_dirty` and
 ///   `households.is_local_only`, the optimistic-write flags the household
@@ -176,6 +179,13 @@ part 'server_database.g.dart';
 ///   a detail read writes them. The new table references
 ///   `events` and not `event_occurrences`, because every read deletes and
 ///   reinserts an event's occurrence rows.
+/// - **v19 → v20 (#693, #771):** adds `collection_moves`, where a collection
+///   entry created on this device went when the server reconciled it, and
+///   `collection_refresh_markers`, when each user's collection last finished
+///   a successful hydration pass. Two new tables with no foreign keys, each
+///   created empty by one `createTable`, so no table is rebuilt. Nothing
+///   earlier recorded either, so nothing is backfilled: a cold start reads
+///   no marker as a collection not yet confirmed.
 ///
 /// The [migration] strategy is built by `bgeMigrationStrategy()` (see
 /// `migration_policy.dart`), which refuses schema *downgrades* by throwing a
@@ -192,7 +202,7 @@ part 'server_database.g.dart';
 /// closure below for the generated `stepByStep(...)` dispatcher. Either
 /// way, the committed schema snapshot must be refreshed:
 /// `melos run schema:dump` writes
-/// `drift_schemas/server/drift_schema_v19.json`, and
+/// `drift_schemas/server/drift_schema_v20.json`, and
 /// `melos run schema:migrations` regenerates `server_database.steps.dart`
 /// plus the `test/drift/` scaffold; the CI schema freshness job
 /// byte-compares the snapshot against a fresh dump.
@@ -217,6 +227,8 @@ part 'server_database.g.dart';
     EventMovesTable,
     ListLayoutsTable,
     EventOccurrencePoliciesTable,
+    CollectionMovesTable,
+    CollectionRefreshMarkersTable,
   ],
 )
 class ServerDatabase extends _$ServerDatabase {
@@ -240,7 +252,7 @@ class ServerDatabase extends _$ServerDatabase {
   // `web_storage` (#288).
 
   @override
-  int get schemaVersion => 19;
+  int get schemaVersion => 20;
 
   @override
   MigrationStrategy get migration => bgeMigrationStrategy(
@@ -504,6 +516,16 @@ class ServerDatabase extends _$ServerDatabase {
         await m.createTable(eventOccurrencePoliciesTable);
         // createTable does not create a table's indexes.
         await m.createIndex(eventOccurrencePoliciesEventIdIdx);
+      }
+      if (from < 20 && to >= 20) {
+        // v19 → v20 (#693, #771): the record of where a reconciled
+        // collection entry went, and each user's collection refresh marker.
+        // Both are new, empty tables with no foreign keys and no indexes, and
+        // nothing earlier recorded either, so there is nothing to backfill, no
+        // table is rebuilt and no FK-off wrapper is needed (#54 stays
+        // deferred).
+        await m.createTable(collectionMovesTable);
+        await m.createTable(collectionRefreshMarkersTable);
       }
     },
   );

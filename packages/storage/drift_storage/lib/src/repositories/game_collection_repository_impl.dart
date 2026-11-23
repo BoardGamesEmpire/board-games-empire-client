@@ -239,6 +239,18 @@ class GameCollectionRepositoryImpl
   /// transactions on one database one at a time, so two never share it.
   Set<String>? _released;
 
+  /// Local id → server id, for every entry move this repository has
+  /// recorded or read from `collection_moves`
+  /// ([reconciledCollectionEntryId], #693). Never shrinks: a move is never
+  /// undone.
+  final Map<String, String> _moves = {};
+
+  /// The moves the open transaction has written, for [_purgingTransaction]
+  /// to add to [_moves] once it commits (#693). Open and closed with
+  /// [_released], and a field for the same reason: so the callers of
+  /// [_writeServerEntry] need not carry it.
+  Map<String, String>? _moving;
+
   /// Server-corrected time source (#12). Every consensus-relevant
   /// timestamp this repository produces — tombstone `deletedAt`,
   /// `updatedAt` (including resurrection), fresh-insert `createdAt` —
@@ -551,14 +563,16 @@ class GameCollectionRepositoryImpl
       // AND be live (not tombstoned). A tombstoned row is treated as
       // "not found" — mutating a removed entry would leave the local
       // state inconsistent with what the user can see in the UI.
-      final existing =
-          await (_db.select(_db.gameCollectionsTable)..where(
+      Future<GameCollectionsTableData?> liveRow(String id) =>
+          (_db.select(_db.gameCollectionsTable)..where(
                 (t) =>
                     t.id.equals(id) &
                     t.userId.equals(_userId) &
                     t.deletedAt.isNull(),
               ))
               .getSingleOrNull();
+      // An id whose entry moved is edited where it went (#693).
+      final (id: target, row: existing) = await _followingMoves(id, liveRow);
       if (existing == null) {
         throw StateError(
           'GameCollection entry $id not found for current user '
@@ -568,7 +582,7 @@ class GameCollectionRepositoryImpl
 
       await (_db.update(
         _db.gameCollectionsTable,
-      )..where((t) => t.id.equals(id) & t.userId.equals(_userId))).write(
+      )..where((t) => t.id.equals(target) & t.userId.equals(_userId))).write(
         GameCollectionsTableCompanion(
           quantity: quantity != null ? Value(quantity) : const Value.absent(),
           rating: rating != null ? Value(rating) : const Value.absent(),
@@ -583,7 +597,7 @@ class GameCollectionRepositoryImpl
       );
 
       final operation = UpdateCollectionOperation(
-        collectionId: id,
+        collectionId: target,
         quantity: quantity,
         rating: rating,
         playAgain: playAgain,
@@ -592,9 +606,11 @@ class GameCollectionRepositoryImpl
       );
       final queued = await _syncQueue.enqueue(operation);
 
-      final row = await (_db.select(
-        _db.gameCollectionsTable,
-      )..where((t) => t.id.equals(id) & t.userId.equals(_userId))).getSingle();
+      final row =
+          await (_db.select(
+                _db.gameCollectionsTable,
+              )..where((t) => t.id.equals(target) & t.userId.equals(_userId)))
+              .getSingle();
       return (
         entry: _mapRow(row),
         syncQueueId: queued.id,
@@ -610,10 +626,14 @@ class GameCollectionRepositoryImpl
     return _db.transaction(() async {
       final now = _clock.nowUtc();
 
-      final existing =
-          await (_db.select(_db.gameCollectionsTable)
-                ..where((t) => t.id.equals(id) & t.userId.equals(_userId)))
-              .getSingleOrNull();
+      // An id whose entry moved is removed where it went (#693).
+      final (id: target, row: existing) = await _followingMoves(
+        id,
+        (id) =>
+            (_db.select(_db.gameCollectionsTable)
+                  ..where((t) => t.id.equals(id) & t.userId.equals(_userId)))
+                .getSingleOrNull(),
+      );
       if (existing == null) {
         // Genuinely missing or cross-user: throw to keep the existing
         // contract for callers that pass an id they shouldn't.
@@ -635,7 +655,7 @@ class GameCollectionRepositoryImpl
       // confirmRemoved.
       await (_db.update(
         _db.gameCollectionsTable,
-      )..where((t) => t.id.equals(id) & t.userId.equals(_userId))).write(
+      )..where((t) => t.id.equals(target) & t.userId.equals(_userId))).write(
         GameCollectionsTableCompanion(
           deletedAt: Value(now),
           isDirty: const Value(true),
@@ -643,7 +663,7 @@ class GameCollectionRepositoryImpl
         ),
       );
 
-      final operation = RemoveFromCollectionOperation(collectionId: id);
+      final operation = RemoveFromCollectionOperation(collectionId: target);
       final queued = await _syncQueue.enqueue(operation);
       return (syncQueueId: queued.id, operation: operation);
     });
@@ -691,7 +711,8 @@ class GameCollectionRepositoryImpl
   /// When `serverEntry.deletedAt` is null, the local row is
   /// upserted with `isDirty: false, isLocalOnly: false`. If the
   /// local row had a different id, that stale row is dropped
-  /// before the upsert (after the remap). Then the ops still queued
+  /// before the upsert (after the remap), and the move is recorded for
+  /// [reconciledCollectionEntryId] (#693). Then the ops still queued
   /// for the entry are replayed over it, and the row stays dirty while
   /// any remain (#429) — see [_replayOutstanding].
   ///
@@ -1275,6 +1296,36 @@ class GameCollectionRepositoryImpl
     );
   }
 
+  /// [find]'s row for [id], or, when it has none, for the id [id]'s entry
+  /// moved to, with the id it was found under (#693). The id is [id] when
+  /// there is no row and no move.
+  ///
+  /// For an edit or a removal sent on an add's local id just before its
+  /// reconcile commits: drift runs the transactions one at a time, so the
+  /// write finds the local row gone. The move is read from
+  /// `collection_moves` inside the caller's transaction, not from
+  /// [_moves], so it is exact whichever repository or tab recorded it. A
+  /// move is looked up only when [find] has no row for the id, and is
+  /// followed on through any later move of the id it reached.
+  Future<({String id, GameCollectionsTableData? row})> _followingMoves(
+    String id,
+    Future<GameCollectionsTableData?> Function(String id) find,
+  ) async {
+    var current = id;
+    final seen = {id};
+    while (true) {
+      final row = await find(current);
+      if (row != null) return (id: current, row: row);
+      final move = await (_db.select(
+        _db.collectionMovesTable,
+      )..where((t) => t.localId.equals(current))).getSingleOrNull();
+      if (move == null || !seen.add(move.serverId)) {
+        return (id: id, row: null);
+      }
+      current = move.serverId;
+    }
+  }
+
   /// The write both server paths share: remap on id reassignment, then
   /// purge on a tombstone or upsert a live entry clean. Runs inside the
   /// caller's transaction.
@@ -1316,6 +1367,19 @@ class GameCollectionRepositoryImpl
         await (_db.delete(
           _db.gameCollectionsTable,
         )..where((t) => t.id.equals(local.id))).go();
+
+        // Where it went, committed with the deletion so no reader finds
+        // one without the other, in this tab or another (#693). A rollback
+        // takes it too. A second reconcile of the same local id replaces it.
+        await _db
+            .into(_db.collectionMovesTable)
+            .insertOnConflictUpdate(
+              CollectionMovesTableCompanion.insert(
+                localId: local.id,
+                serverId: serverEntry.id,
+              ),
+            );
+        _moving![local.id] = serverEntry.id;
       }
       await _db
           .into(_db.gameCollectionsTable)
@@ -1355,19 +1419,29 @@ class GameCollectionRepositoryImpl
   /// games it purges, and null again however [body] ends (#469). [body]
   /// releases them itself, with [_releasePurged], once its other writes are
   /// done.
-  Future<void> _purgingTransaction(Future<void> Function() body) =>
-      _db.transaction(() async {
-        _released = {};
-        try {
-          await body();
-          assert(
-            _released == null,
-            'A purging transaction ended without releasing what it purged',
-          );
-        } finally {
-          _released = null;
-        }
-      });
+  ///
+  /// [_moving] is open for the same span. The moves it collects reach
+  /// [_moves] only once the transaction commits (#693).
+  Future<void> _purgingTransaction(Future<void> Function() body) async {
+    final moved = <String, String>{};
+    await _db.transaction(() async {
+      _released = {};
+      _moving = moved;
+      try {
+        await body();
+        assert(
+          _released == null,
+          'A purging transaction ended without releasing what it purged',
+        );
+      } finally {
+        _released = null;
+        _moving = null;
+      }
+    });
+    // So a caller here can ask at once, without waiting on an emission to
+    // read the move back.
+    _moves.addAll(moved);
+  }
 
   /// Releases the platform games the open transaction purged (#469), and
   /// closes [_released]. Runs inside the caller's transaction, after its
@@ -1445,10 +1519,63 @@ class GameCollectionRepositoryImpl
         final query = _listItemQuery()
           ..where(_db.gameCollectionsTable.id.equals(id));
 
-        return query.watchSingleOrNull().map(
-          (row) => row == null ? null : _mapListItemRow(row),
-        );
+        return query.watchSingleOrNull().asyncMap((row) async {
+          if (row != null) return _mapListItemRow(row);
+          await _readMoveOf(id);
+          return null;
+        });
       });
+
+  @override
+  String? reconciledCollectionEntryId(String localId) => _moves[localId];
+
+  // ── Refresh marker (#771) ──────────────────────────────────────────────────
+
+  @override
+  Future<bool> isRefreshConfirmed() async {
+    checkNotDisposed();
+    final row = await (_db.select(
+      _db.collectionRefreshMarkersTable,
+    )..where((t) => t.userId.equals(_userId))).getSingleOrNull();
+    return row != null;
+  }
+
+  /// Stamped from [_clock], as this repository's other writes are. Nothing
+  /// reads the time yet; it is there to say when the cache was confirmed.
+  @override
+  Future<void> recordRefreshConfirmed() async {
+    checkNotDisposed();
+    await _db
+        .into(_db.collectionRefreshMarkersTable)
+        .insertOnConflictUpdate(
+          CollectionRefreshMarkersTableCompanion.insert(
+            userId: _userId,
+            confirmedAt: _clock.nowUtc(),
+          ),
+        );
+  }
+
+  /// Reads where [id]'s entry moved, if it has, into [_moves] (#693): after
+  /// [watchCollectionListItem] finds no row for [id], and before it delivers
+  /// that null.
+  ///
+  /// A subscriber that asks [reconciledCollectionEntryId] on the null then
+  /// finds the move, whichever repository or tab made it: a move commits
+  /// with the deletion of its local row, is never removed, and this read
+  /// comes after the row's, so it sees at least what that read saw.
+  ///
+  /// One row, by its key, and only on a null: the table is never pruned, and
+  /// only an entry's screen follows a move. The list holds no entry across
+  /// one; its next emission simply has the server's row in place of the
+  /// local one.
+  Future<void> _readMoveOf(String id) async {
+    final move = await awaitedOnDispose(
+      (_db.select(
+        _db.collectionMovesTable,
+      )..where((t) => t.localId.equals(id))).getSingleOrNull(),
+    );
+    if (move != null) _moves[move.localId] = move.serverId;
+  }
 
   /// The join [watchCollectionListItems] and [watchCollectionListItem]
   /// share (#46): the user's live entries with their platform game and

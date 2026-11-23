@@ -1130,6 +1130,38 @@ void main() {
       expect(ownedCheck, findsOneWidget);
     });
 
+    testWidgets('after an earlier session refreshed the collection, an '
+        'offline cold start shows the owned chip from the cache (#771)', (
+      tester,
+    ) async {
+      final owned = StreamController<List<GameCollection>>()
+        ..add([_copy('gc_1', GameMedium.physical)]);
+      addTearDown(owned.close);
+      // The marker an earlier session left, and no refresh this session.
+      final status = GameCollectionHydrationStatus(confirmedBefore: true)
+        ..started();
+      addTearDown(status.close);
+      await pumpHome(
+        tester,
+        collection: _collection(owned: owned),
+        collectionHydration: status,
+        sender: _deliveringSender(),
+      );
+      await openCatan(tester);
+
+      // While this session's pass runs.
+      expect(find.bySemanticsLabel(tabletopOwned), findsOneWidget);
+      expect(ownedCheck, findsOneWidget);
+
+      // Offline: the pass fails, and nothing has refreshed this session.
+      status.finished(CollectionHydrateOutcome.failed);
+      await tester.pumpAndSettle();
+
+      expect(status.state, HydrationState.failed);
+      expect(find.bySemanticsLabel(tabletopOwned), findsOneWidget);
+      expect(ownedCheck, findsOneWidget);
+    });
+
     testWidgets('after a failed first refresh, ownership is unknown: plain '
         'chips, and the add still opens', (tester) async {
       final owned = StreamController<List<GameCollection>>()..add(const []);
