@@ -540,73 +540,90 @@ class GameCollectionListSliver extends StatelessWidget {
     );
 
     return BlocBuilder<GameCollectionListBloc, GameCollectionListState>(
-      builder: (context, state) => SliverMainAxisGroup(
-        slivers: [
-          // Not while the choice is read, when the loading state alone
-          // stands in for the list.
-          if (state
-              case GameCollectionListReady(
-                :final refreshFailed,
-                :final refreshing,
-              )
-              when thumbnails != null && (refreshFailed || refreshing))
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: EdgeInsets.only(bottom: BgeTokens.of(context).spaceMd),
-                child: BgeRefreshBanner(
-                  key: GameCollectionListScreen.refreshBannerKey,
-                  retryKey: GameCollectionListScreen.refreshRetryKey,
-                  failedMessage: l10n.collectionListRefreshFailed,
-                  inProgressLabel: l10n.collectionRefreshInProgress,
-                  retryLabel: l10n.collectionRefreshRetry,
-                  refreshing: refreshing,
-                  onRetry: canRetry
-                      ? () => context.read<GameCollectionListBloc>().add(
-                          const GameCollectionListRetryRequested(),
-                        )
-                      : null,
-                ),
-              ),
-            ),
-          switch (state) {
-            GameCollectionListLoading() => loading,
-            GameCollectionListError() => _ErrorSliver(
-              message: l10n.collectionListError,
-            ),
-            // Kept apart (#715): no games at all, and games of which nothing
-            // fits the search and the filters. Either is the same in both
-            // layouts, so it shows before the choice is read.
-            GameCollectionListReady(:final all) when all.isEmpty =>
-              _EmptySliver(onBrowse: onBrowse),
-            GameCollectionListReady(:final items) when items.isEmpty =>
-              _NoMatchesSliver(onCleared: onFiltersCleared),
-            // Every game that fits is an expansion held for its base game
-            // while the device's first sync runs (#810): the list is still
-            // filling.
-            GameCollectionListReady(:final items, :final all, complete: false)
-                when placeCollection(
-                  items,
-                  all: all,
-                  complete: false,
-                ).isEmpty =>
-              loading,
-            _ when thumbnails == null => loading,
-            GameCollectionListReady(
+      builder: (context, state) {
+        // Nothing fits the search and the filters, so no game is placed to
+        // keep the set by, but the whole collection is read, and says which
+        // base games still nest games: one that lost its last expansion
+        // meanwhile comes back folded as the search clears.
+        if (state
+            case GameCollectionListReady(
               :final items,
               :final all,
               :final complete,
-            ) =>
-              _PlacedCollection(
-                thumbnails: thumbnails,
-                items: items,
-                all: all,
-                complete: complete,
-                open: open,
-                onOpen: onOpen,
+            )
+            when thumbnails == false && items.isEmpty && all.isNotEmpty) {
+          open.retain(collectionNestingGameIds(all, complete: complete));
+        }
+        return SliverMainAxisGroup(
+          slivers: [
+            // Not while the choice is read, when the loading state alone
+            // stands in for the list.
+            if (state
+                case GameCollectionListReady(
+                  :final refreshFailed,
+                  :final refreshing,
+                )
+                when thumbnails != null && (refreshFailed || refreshing))
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: EdgeInsets.only(
+                    bottom: BgeTokens.of(context).spaceMd,
+                  ),
+                  child: BgeRefreshBanner(
+                    key: GameCollectionListScreen.refreshBannerKey,
+                    retryKey: GameCollectionListScreen.refreshRetryKey,
+                    failedMessage: l10n.collectionListRefreshFailed,
+                    inProgressLabel: l10n.collectionRefreshInProgress,
+                    retryLabel: l10n.collectionRefreshRetry,
+                    refreshing: refreshing,
+                    onRetry: canRetry
+                        ? () => context.read<GameCollectionListBloc>().add(
+                            const GameCollectionListRetryRequested(),
+                          )
+                        : null,
+                  ),
+                ),
               ),
-          },
-        ],
-      ),
+            switch (state) {
+              GameCollectionListLoading() => loading,
+              GameCollectionListError() => _ErrorSliver(
+                message: l10n.collectionListError,
+              ),
+              // Kept apart (#715): no games at all, and games of which nothing
+              // fits the search and the filters. Either is the same in both
+              // layouts, so it shows before the choice is read.
+              GameCollectionListReady(:final all) when all.isEmpty =>
+                _EmptySliver(onBrowse: onBrowse),
+              GameCollectionListReady(:final items) when items.isEmpty =>
+                _NoMatchesSliver(onCleared: onFiltersCleared),
+              // Every game that fits is an expansion held for its base game
+              // while the device's first sync runs (#810): the list is still
+              // filling.
+              GameCollectionListReady(:final items, :final all, complete: false)
+                  when placeCollection(
+                    items,
+                    all: all,
+                    complete: false,
+                  ).isEmpty =>
+                loading,
+              _ when thumbnails == null => loading,
+              GameCollectionListReady(
+                :final items,
+                :final all,
+                :final complete,
+              ) =>
+                _PlacedCollection(
+                  thumbnails: thumbnails,
+                  items: items,
+                  all: all,
+                  complete: complete,
+                  open: open,
+                  onOpen: onOpen,
+                ),
+            },
+          ],
+        );
+      },
     );
   }
 }
@@ -626,11 +643,13 @@ class GameCollectionListSliver extends StatelessWidget {
 /// builds its set then.
 ///
 /// In the list, [open] keeps only the base games that the whole collection
-/// still nests games under, so one that goes, or loses its last expansion,
-/// comes back folded, and a filter that hides one folds nothing (#1048).
-/// This is built only for a placement with something in it, so a list that
-/// is empty for a moment, loading, failed, matching nothing, or held whole
-/// by a first sync (#810), keeps the set as it was.
+/// still nests games under, or that the filter's placement does
+/// (`collectionNestingGameIds`), so one that goes, or loses its last
+/// expansion, comes back folded, and a filter that hides one folds nothing
+/// (#1048). This is built only for a placement with something in it, so a
+/// list that is empty for a moment, loading, failed, or held whole by a
+/// first sync (#810), keeps the set as it was. One that matches nothing
+/// keeps it against the whole collection, in the sliver.
 class _PlacedCollection extends StatelessWidget {
   const _PlacedCollection({
     required this.thumbnails,
@@ -666,7 +685,9 @@ class _PlacedCollection extends StatelessWidget {
       );
       sliver = CollectionCovers(placed: placed, onOpen: onOpen);
     } else {
-      open.retain(collectionNestingGameIds(all, complete: complete));
+      open.retain(
+        collectionNestingGameIds(all, items: items, complete: complete),
+      );
       final rows = collectionRows(
         items,
         all: all,

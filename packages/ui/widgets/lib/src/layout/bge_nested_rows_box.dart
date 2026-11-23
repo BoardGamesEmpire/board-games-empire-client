@@ -136,8 +136,10 @@ class BgeNestedRowsBox extends StatefulWidget {
   /// Home and End to the ends. They move at once, as a Tab's reveal does.
   /// With nothing left to show that way, a new press is the framework's
   /// again, as a wheel's event is the page's: Page Down scrolls the page. A
-  /// held page key, or Space, carries on into the page, as it does from a
-  /// scrolling box on a web page. A held arrow stops there, or the focus
+  /// held page key carries on into the page, as it does from a scrolling
+  /// box on a web page, and so does Space on the web. Elsewhere the
+  /// framework's Space is Activate, which the box has no action for: at the
+  /// end of the rows it does nothing. A held arrow stops there, or the focus
   /// would run down the page after the rows, and so does a held Home or
   /// End, whose one jump is all it asks for.
   ///
@@ -253,34 +255,19 @@ class _BgeNestedRowsBoxState extends State<BgeNestedRowsBox> {
     return _firstAsRead(inFirstRow);
   }
 
-  /// The first of [stops], all in one row, as the framework reads a line:
-  /// the highest stop and whatever stands level with it, and of those the
-  /// one nearest the start. Not simply the highest: of two side by side, the
-  /// taller one's top is the higher, wherever it stands.
-  FocusNode? _firstAsRead(List<FocusNode> stops) {
-    if (stops.isEmpty) return null;
-    // Read without depending on it: this runs at the end of a frame, where
-    // nothing can be built again for a change in it.
-    final fromRight =
-        context
-            .getInheritedWidgetOfExactType<Directionality>()
-            ?.textDirection ==
-        TextDirection.rtl;
-    final highest = stops.reduce(
-      (a, b) => b.rect.top < a.rect.top ? b : a,
-    );
-    final line = highest.rect;
-    var first = highest;
-    for (final stop in stops) {
-      final rect = stop.rect;
-      final level = rect.top < line.bottom && rect.bottom > line.top;
-      final nearerTheStart = fromRight
-          ? rect.right > first.rect.right
-          : rect.left < first.rect.left;
-      if (level && nearerTheStart) first = stop;
-    }
-    return first;
-  }
+  /// The first of [stops], all in one row, as the framework's reading order
+  /// has it: the highest stop and whatever stands level with it, and of
+  /// those the one nearest the start, in the direction each stands in, so a
+  /// part of the row set the other way reads as Tab reads it. Not simply the
+  /// highest: of two side by side, the taller one's top is the higher,
+  /// wherever it stands.
+  ///
+  /// The policy reads each stop's direction without depending on it, as
+  /// this has to: it runs at the end of a frame, where nothing can be built
+  /// again for a change in it.
+  FocusNode? _firstAsRead(List<FocusNode> stops) => stops.isEmpty
+      ? null
+      : ReadingOrderTraversalPolicy().sortDescendants(stops, stops.first).first;
 
   @override
   void didChangeDependencies() {
@@ -440,8 +427,11 @@ class _BgeNestedRowsBoxState extends State<BgeNestedRowsBox> {
       rows.maxScrollExtent,
     );
     if (target == rows.pixels) {
-      // Nothing left to show that way. A new press goes on to the framework,
-      // which scrolls the page or moves the focus. A held arrow's repeats
+      // Nothing left to show that way. A new press goes on to the framework:
+      // an arrow moves the focus, and a page key scrolls the page. Space
+      // scrolls it on the web only: elsewhere the framework's Space is
+      // Activate, which the box has no action for, so it does nothing
+      // there and the page stays. A held arrow's repeats
       // stop here, or holding Arrow Down through the rows would send the
       // focus running down the page after them, and so do Home's and End's,
       // whose one jump is all a held key asks for. A held page key's go on,

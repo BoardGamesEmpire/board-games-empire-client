@@ -241,26 +241,43 @@ class _BgeCoverExpansionsBadgeState extends State<BgeCoverExpansionsBadge>
 /// Focus that has left the badge by the end of the frame stays where it
 /// is. A request made elsewhere in the same frame that has not landed yet
 /// can't be told apart, so this one, made after it, takes its place.
-void handFocusOnFromBadge(FocusNode leaving, {required VoidCallback then}) {
+///
+/// [owner] is the stop of the badge's owner, its cover or its row's tile,
+/// which takes the focus instead where it can by the frame's end. It is
+/// asked then, not as the badge goes: an owner given something to open in
+/// the same update its badge goes in is built again after that, and its
+/// node takes focus only from that build on.
+void handFocusOnFromBadge(
+  FocusNode leaving, {
+  required FocusNode owner,
+  required VoidCallback then,
+}) {
   SchedulerBinding.instance.addPostFrameCallback((_) {
     // A node keeps its context once it leaves the tree, so whether its
     // element is still mounted is what tells.
-    if (leaving.context?.mounted == true &&
-        leaving.hasPrimaryFocus &&
-        _scopeIsLaidOut(leaving)) {
-      final next = _stopBeside(leaving, forward: true);
-      final stop = next ?? _stopBeside(leaving, forward: false);
-      if (stop != null) {
-        FocusTraversalPolicy.defaultTraversalRequestFocusCallback(
-          stop,
-          alignmentPolicy: next != null
-              ? ScrollPositionAlignmentPolicy.keepVisibleAtEnd
-              : ScrollPositionAlignmentPolicy.keepVisibleAtStart,
-        );
+    if (leaving.context?.mounted == true && leaving.hasPrimaryFocus) {
+      if (owner.context?.mounted == true && owner.canRequestFocus) {
+        owner.requestFocus();
+      } else if (_scopeIsLaidOut(leaving)) {
+        _handOnAsTab(leaving);
       }
     }
     then();
   });
+}
+
+/// Moves the focus from [leaving] to the stop Tab would take it to, else to
+/// the one Shift+Tab would, brought into view as theirs are.
+void _handOnAsTab(FocusNode leaving) {
+  final next = _stopBeside(leaving, forward: true);
+  final stop = next ?? _stopBeside(leaving, forward: false);
+  if (stop == null) return;
+  FocusTraversalPolicy.defaultTraversalRequestFocusCallback(
+    stop,
+    alignmentPolicy: next != null
+        ? ScrollPositionAlignmentPolicy.keepVisibleAtEnd
+        : ScrollPositionAlignmentPolicy.keepVisibleAtStart,
+  );
 }
 
 /// Whether every node in [node]'s scope has been laid out, which sorting

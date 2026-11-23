@@ -41,7 +41,8 @@ import 'package:ui_tokens/ui_tokens.dart';
 ///
 /// A tile that takes no focus, as an inert row's, can't take it. A control
 /// that goes while it holds focus then stays for the rest of the frame,
-/// and once the page is laid out, hands it on as Tab would: to the next
+/// and once the page is laid out, hands it on: to the tile, if the same
+/// update gave the row something to open, else as Tab would, to the next
 /// stop after the row, else to the one before it, brought into view, never
 /// to the page. It goes in the next frame. Under a covering route
 /// the pop gives focus to the item's first control, if it has one left,
@@ -92,10 +93,13 @@ class _BgeExpansionsRowState extends State<BgeExpansionsRow> {
         _tileFocusNode.requestFocus();
       } else {
         // An inert row's tile takes no focus: past the row, not to the page
-        // (#1048). The control stays until the focus has moved on.
+        // (#1048). The control stays until the focus has moved on. The
+        // node is the one the tile had before this update, so one given
+        // something to open in it takes the focus after all.
         _leaving = oldWidget.expansions;
         handFocusOnFromBadge(
           _controlFocusNode,
+          owner: _tileFocusNode,
           then: () {
             if (mounted) setState(() => _leaving = null);
           },

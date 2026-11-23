@@ -1682,6 +1682,14 @@ void main() {
         await tester.pumpAndSettle();
         expect(inner.pixels, inner.maxScrollExtent);
         expect(_outer(tester).pixels, greaterThan(page));
+        expect(_boxFocus(tester).hasPrimaryFocus, isTrue);
+
+        // So is a new Arrow Down, unlike the held one's repeats: the focus
+        // moves on down the page, and the rows stay at their end.
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pumpAndSettle();
+        expect(inner.pixels, inner.maxScrollExtent);
+        expect(_boxFocus(tester).hasFocus, isFalse);
       });
 
       testWidgets('a held Home or End stops at its end of the rows: the jump '
@@ -1723,6 +1731,14 @@ void main() {
         expect(inner.pixels, inner.maxScrollExtent);
         expect(_outer(tester).pixels, page);
 
+        // The page a little down, so a repeat let through to Home's page
+        // scroll would have room to show.
+        final outer = _outer(tester)..jumpTo(page + 20);
+        await tester.pump();
+        expect(outer.pixels, greaterThan(outer.minScrollExtent));
+        expect(_boxFocus(tester).hasPrimaryFocus, isTrue);
+        final down = outer.pixels;
+
         await tester.sendKeyDownEvent(LogicalKeyboardKey.home);
         for (var i = 0; i < 6; i++) {
           await tester.sendKeyRepeatEvent(LogicalKeyboardKey.home);
@@ -1730,7 +1746,7 @@ void main() {
         await tester.sendKeyUpEvent(LogicalKeyboardKey.home);
         await tester.pumpAndSettle();
         expect(inner.pixels, 0);
-        expect(_outer(tester).pixels, page);
+        expect(outer.pixels, down);
         expect(_boxFocus(tester).hasPrimaryFocus, isTrue);
       });
 
@@ -2136,6 +2152,56 @@ void main() {
 
           expect(_focusOf(tester, 'Start 0').hasPrimaryFocus, isTrue);
         });
+
+        testWidgets('of two stops in a part of the first row set the other '
+            'way, the one that part reads first has it, as Tab would — '
+            '${direction.name}', (tester) async {
+          final other = direction == TextDirection.ltr
+              ? TextDirection.rtl
+              : TextDirection.ltr;
+          // Read in [other], First stands at the end of the page's line.
+          List<Widget> rows() => [
+            for (var i = 0; i < 6; i++)
+              Directionality(
+                key: _expansionKey(i),
+                textDirection: other,
+                child: Row(
+                  children: [
+                    TextButton(onPressed: () {}, child: Text('First $i')),
+                    TextButton(onPressed: () {}, child: Text('Second $i')),
+                  ],
+                ),
+              ),
+          ];
+          useViewSize(tester, _phone);
+          Widget app({required bool stop}) => _app(
+            _page(
+              box: _box(rows: rows(), focusable: stop),
+              boxAfter: 1,
+            ),
+            direction: direction,
+          );
+          await tester.pumpWidget(app(stop: true));
+          await tester.pumpAndSettle();
+          final first = _focusOf(tester, 'First 0').rect;
+          final second = _focusOf(tester, 'Second 0').rect;
+          expect(
+            direction == TextDirection.ltr
+                ? first.left > second.left
+                : first.left < second.left,
+            isTrue,
+            reason: "First stands at the end of the page's line",
+          );
+          await _tab(tester);
+          await _tab(tester);
+          await _tab(tester);
+          expect(_boxFocus(tester).hasPrimaryFocus, isTrue);
+
+          await tester.pumpWidget(app(stop: false));
+          await tester.pump();
+
+          expect(_focusOf(tester, 'First 0').hasPrimaryFocus, isTrue);
+        });
       }
 
       testWidgets('of two stops one under the other in the first row, the '
@@ -2387,13 +2453,23 @@ void main() {
         );
         await tester.pumpAndSettle();
         _inner(tester).jumpTo(200);
+        // The page scrolled until the box's top is out of its view, so the
+        // ask has to reach the page to show the box whole.
+        final outer = _outer(tester);
+        outer.jumpTo(
+          outer.pixels + _rowsRect(tester).top - _pageRect(tester).top + 40,
+        );
         await tester.pumpAndSettle();
+        expect(_within(_rowsRect(tester), _pageRect(tester)), isFalse);
+        final page = outer.pixels;
         final row = tester.getSemantics(find.text('Expansion 0'));
 
         row.owner!.performAction(row.id, SemanticsAction.showOnScreen);
         await tester.pumpAndSettle();
 
         expect(_inner(tester).pixels, 200);
+        expect(outer.pixels, lessThan(page));
+        expect(_within(_rowsRect(tester), _pageRect(tester)), isTrue);
         semantics.dispose();
       });
     });

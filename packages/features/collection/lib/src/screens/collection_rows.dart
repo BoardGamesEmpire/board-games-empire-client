@@ -140,18 +140,27 @@ List<BgeFoldedRow<CollectionRow>> collectionRows(
   idOf: (row) => row.group.first.gameId,
 );
 
-/// The games of the whole collection, [all], with games nested under them,
-/// placed as [complete] says (#1048): the base games a list may hold open.
+/// The base games a list may hold open (#1048): the games with games nested
+/// under them in the whole collection, [all], or in what a filter left of
+/// it, [items], placed against it, each placed as [complete] says.
 ///
-/// Read from the whole collection, not from what a filter left, so that a
-/// search or a filter that hides an open base game, or its expansions,
-/// folds nothing: cleared, it shows the game open as it was.
+/// Read from the whole collection, so that a search or a filter that hides
+/// an open base game, or its expansions, folds nothing: cleared, it shows
+/// the game open as it was. And from what the filter left, as a filter that
+/// hides a base game lifts its expansion to top level, with the games
+/// nested under that expansion under it: the control the list draws for it
+/// opens them, and keeps them open while the filter holds.
 List<String> collectionNestingGameIds(
   List<GameCollectionListItem> all, {
+  List<GameCollectionListItem>? items,
   bool complete = true,
-}) => [
-  for (final top in placeCollection(all, complete: complete))
-    if (top.expansions.isNotEmpty) top.item.first.gameId,
-];
+}) => {
+  for (final placed in [
+    placeCollection(all, complete: complete),
+    if (items != null) placeCollection(items, all: all, complete: complete),
+  ])
+    for (final top in placed)
+      if (top.expansions.isNotEmpty) top.item.first.gameId,
+}.toList();
 
 String _plainTitle(GameCollectionListItem item) => item.title;

@@ -207,9 +207,12 @@ class _BgeCoverTileState extends State<BgeCoverTile>
       } else {
         // A cover that opens nothing takes no focus: past the tile, not to
         // the page (#1048). The badge stays until the focus has moved on.
+        // The node is the one the cover had before this update, so one
+        // given something to open in it takes the focus after all.
         _leaving = oldWidget.expansions;
         handFocusOnFromBadge(
           _badgeFocusNode,
+          owner: _focusNode,
           then: () {
             if (mounted) setState(() => _leaving = null);
           },

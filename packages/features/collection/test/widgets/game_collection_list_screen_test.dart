@@ -4198,6 +4198,74 @@ void main() {
       }
     });
 
+    testWidgets('a base game whose last expansion goes while a search matches '
+        'nothing comes back folded as the search clears', (tester) async {
+      await show(tester, [
+        wingspan,
+        ...expansionsOf('g-wingspan', 'x', 1),
+      ], onOpen: (_, _) {});
+      await unfold(tester, wingspanRow);
+      bloc(tester).add(
+        const GameCollectionListFilterChanged(
+          CollectionFilter(query: 'nothing fits this'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(row('w-1'), findsNothing);
+
+      // Under the search, the expansion goes, then comes back.
+      await sync(tester, [wingspan]);
+      await sync(tester, [wingspan, ...expansionsOf('g-wingspan', 'x', 1)]);
+      bloc(tester).add(
+        const GameCollectionListFilterChanged(CollectionFilter()),
+      );
+      await tester.pumpAndSettle();
+
+      expect(controlOf(wingspanRow), findsOneWidget);
+      expect(nested('g-wingspan', 'x0'), findsNothing);
+    });
+
+    testWidgets('an expansion a filter lifts to top level, its base game '
+        'hidden, opens the games nested under it', (tester) async {
+      final european = listItem(
+        'e-1',
+        gameId: 'g-european',
+        title: 'European Expansion',
+        contentType: ContentType.expansion,
+        baseGames: const [
+          ExpansionLink(gameId: 'g-wingspan', isStandalone: false),
+        ],
+      );
+      final promo = listItem(
+        'p-1',
+        gameId: 'g-promo',
+        title: 'European Promo Pack',
+        contentType: ContentType.expansion,
+        baseGames: const [
+          ExpansionLink(gameId: 'g-european', isStandalone: false),
+        ],
+      );
+      await show(tester, [wingspan, european, promo], onOpen: (_, _) {});
+      bloc(tester).add(
+        const GameCollectionListFilterChanged(
+          CollectionFilter(query: 'european'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final europeanRow = row('e-1');
+      expect(controlOf(europeanRow), findsOneWidget);
+
+      await unfold(tester, europeanRow);
+
+      expect(nested('g-european', 'p-1'), findsOneWidget);
+      // The page counts the rows the list draws.
+      expect(semanticChildCount(tester), 2);
+
+      // And it stays open while the filter holds.
+      await sync(tester, [wingspan, european, promo, azul]);
+      expect(nested('g-european', 'p-1'), findsOneWidget);
+    });
+
     testWidgets('an open base game stays open through a refresh, a failed '
         'read and a search that matches nothing', (tester) async {
       await tester.pumpWidget(

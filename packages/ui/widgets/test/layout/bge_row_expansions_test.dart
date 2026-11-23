@@ -709,6 +709,11 @@ void main() {
 
           _rowFocus(tester, 'Expansion 1').requestFocus();
           await tester.pump();
+          expect(
+            _rowFocus(tester, 'Expansion 1').hasPrimaryFocus,
+            isTrue,
+            reason: 'on the nested row, not still on the control',
+          );
 
           // A screen reader on the base row folds it, as its custom action.
           _performCustomAction(_rowNode(tester, 'Game a'), 'Hide expansions');
@@ -859,6 +864,36 @@ void main() {
         expect(
           FocusManager.instance.primaryFocus,
           same(_controlFocus(tester, 'Game c')),
+        );
+      });
+
+      testWidgets('gives it to the tile when the same update gives the row '
+          'something to open', (tester) async {
+        final groups = _groups([
+          (_game('a'), _expansionsOf('a', 2)),
+          (_game('c'), _expansionsOf('c', 1)),
+        ]);
+        await tester.pumpWidget(
+          _app(_FoldingList(groups: groups, inert: true)),
+        );
+        _controlFocus(tester, 'Game a').requestFocus();
+        await tester.pump();
+
+        // One update takes the game's expansions and makes its rows open
+        // something: the tile takes focus from then on, which its node,
+        // asked as the control goes, doesn't say yet.
+        groups.value = [
+          (_game('a'), []),
+          (_game('c'), _expansionsOf('c', 1)),
+        ];
+        await tester.pumpWidget(_app(_FoldingList(groups: groups)));
+        await tester.pump();
+
+        expect(_controlOf('Game a'), findsNothing);
+        expect(
+          FocusManager.instance.primaryFocus,
+          same(_rowFocus(tester, 'Game a')),
+          reason: "the row's own tile, not the next stop",
         );
       });
 

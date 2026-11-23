@@ -337,6 +337,26 @@ void main() {
       expect(collectionNestingGameIds([base, expansion, other]), ['g-base']);
     });
 
+    test('an expansion a filter lifts to top level, with games nested under '
+        'it, is one too', () {
+      // Base owns expansion, which owns promo. Hidden, base leaves expansion
+      // at top level, with promo under it.
+      final promo = listItem(
+        'p-1',
+        gameId: 'g-promo',
+        contentType: ContentType.expansion,
+        baseGames: const [ExpansionLink(gameId: 'g-exp', isStandalone: false)],
+      );
+      final all = [base, expansion, promo];
+
+      expect(collectionNestingGameIds(all), ['g-base']);
+      expect(
+        collectionNestingGameIds(all, items: [expansion, promo]),
+        ['g-base', 'g-exp'],
+      );
+      expect(collectionNestingGameIds(all, items: [promo]), ['g-base']);
+    });
+
     test('hold none an incomplete list holds the expansion of', () {
       final pending = listItem(
         'p-1',

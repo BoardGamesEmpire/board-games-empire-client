@@ -661,6 +661,55 @@ void main() {
         );
       });
 
+      testWidgets('of a cover given something to open as its badge goes, the '
+          'cover takes it', (tester) async {
+        Future<void> show(
+          BgeCoverExpansions? expansions, {
+          VoidCallback? onTap,
+        }) async {
+          await tester.pumpWidget(
+            hostAtSize(
+              tester,
+              Scaffold(
+                body: Align(
+                  alignment: Alignment.topLeft,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      BgeCoverTile(
+                        label: 'Azul',
+                        onTap: onTap,
+                        expansions: expansions,
+                      ),
+                      TextButton(onPressed: () {}, child: const Text('After')),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          );
+          await tester.pump();
+        }
+
+        await show(_expansions());
+        await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+        await tester.pump();
+        expect(focusedIn(_badge), findsOneWidget);
+
+        // One update: the badge goes, and the cover opens something, which
+        // its node, asked as the badge goes, doesn't say yet.
+        await show(null, onTap: () {});
+        await tester.pump();
+
+        expect(_badge, findsNothing);
+        expect(focusedIn(find.byType(BgeCoverTile)), findsOneWidget);
+        expect(
+          focusedIn(find.widgetWithText(TextButton, 'After')),
+          findsNothing,
+        );
+      });
+
       testWidgets('the cover takes it, unringed after a click', (tester) async {
         FocusManager.instance.highlightStrategy =
             FocusHighlightStrategy.automatic;
