@@ -1,13 +1,16 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:bge_test_support/domain.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/repositories.dart';
+import 'package:logging/logging.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:models/dto.dart';
 import 'package:native_network/src/auth/auth_repository_impl.dart';
 import 'package:native_network/src/auth/token_storage_service.dart';
+import 'package:observability/observability.dart' show LogRecordFormatter;
 
 class MockDio extends Mock implements Dio {}
 
@@ -581,6 +584,92 @@ void main() {
         );
 
         addTearDown(noStrategyRepo.onDispose);
+      });
+
+      group('logs the missing strategy', () {
+        late List<LogRecord> records;
+        late StreamSubscription<LogRecord> sub;
+        late Level previousLevel;
+        late AuthRepositoryImpl noStrategyRepo;
+
+        setUp(() {
+          records = [];
+          previousLevel = Logger.root.level;
+          Logger.root.level = Level.ALL;
+          sub = Logger.root.onRecord.listen(records.add);
+          noStrategyRepo = AuthRepositoryImpl(
+            identity: testServerIdentity().copyWith(strategies: []),
+            serverUrl: testServerUrl,
+            tokenStorage: mockStorage,
+            dio: mockDio,
+          );
+        });
+
+        tearDown(() async {
+          await sub.cancel();
+          Logger.root.level = previousLevel;
+          await noStrategyRepo.onDispose();
+        });
+
+        Future<void> expectLoggedOnceThenThrown(
+          Future<Object?> Function() call,
+        ) async {
+          await expectLater(
+            call,
+            throwsA(
+              isA<AuthServerException>().having(
+                (e) => e.message,
+                'message',
+                'This server does not support email/password authentication.',
+              ),
+            ),
+          );
+
+          final logged = records
+              .where(
+                (r) =>
+                    r.loggerName == 'bge.auth.repository' &&
+                    r.level == Level.SEVERE &&
+                    r.message ==
+                        'Email/password strategy missing on cached identity',
+              )
+              .toList();
+          expect(logged, hasLength(1));
+          expect(LogRecordFormatter.contextOf(logged.single), {
+            'base_url': 'https://bge.example.com',
+            'has_strategies': false,
+            'strategy_count': 0,
+          });
+          verifyNever(
+            () => mockDio.post<String>(
+              any(),
+              data: any(named: 'data'),
+              options: any(named: 'options'),
+            ),
+          );
+        }
+
+        test(
+          'signIn logs the missing strategy once, redacted, then throws',
+          () async {
+            await expectLoggedOnceThenThrown(
+              () => noStrategyRepo.signIn(email: 'a@b.com', password: 'p'),
+            );
+          },
+        );
+
+        test(
+          'signUp logs the missing strategy once, redacted, then throws',
+          () async {
+            await expectLoggedOnceThenThrown(
+              () => noStrategyRepo.signUp(
+                email: 'a@b.com',
+                password: 'p',
+                username: 'u',
+              ),
+            );
+          },
+        );
       });
     });
   });

@@ -13,21 +13,24 @@ import 'package:observability/observability.dart';
 /// The email/password strategy [identity] advertises.
 ///
 /// Throws [AuthServerException] when it advertises none. Given a [log], it
-/// first logs that as an error naming [baseUrl], redacted. Native passes its
-/// repository's logger and its Dio's base URL; the web repository passes
-/// neither and logs nothing.
+/// first logs that as an error naming [dio]'s base URL, redacted. Both
+/// repositories pass their logger and their Dio (#995).
 ///
-/// [log] and [baseUrl] come together or not at all. A logger alone would log
-/// an empty `base_url`, which [redactUri]'s doc reads as a base URL that
-/// never resolved, and a base URL alone would go nowhere.
+/// [dio]'s options are read only when the strategy is missing: the base URL
+/// is there to name the server in that log line, and a sign-in that has its
+/// strategy needs nothing from them.
+///
+/// [log] and [dio] come together or not at all. A logger alone would log an
+/// empty `base_url`, which [redactUri]'s doc reads as a base URL that never
+/// resolved, and a Dio alone would go nowhere.
 EmailAndPasswordStrategy requireEmailPasswordStrategy(
   ServerIdentity identity, {
   BgeLogger? log,
-  String? baseUrl,
+  Dio? dio,
 }) {
   assert(
-    (log == null) == (baseUrl == null),
-    'Pass log and baseUrl together, or neither.',
+    (log == null) == (dio == null),
+    'Pass log and dio together, or neither.',
   );
   final strategy = identity.emailAndPasswordStrategy;
   if (strategy == null) {
@@ -40,7 +43,9 @@ EmailAndPasswordStrategy requireEmailPasswordStrategy(
       context: {
         // Redacted (userInfo/query/fragment stripped) — the auth
         // diagnostics never log raw URLs (PR #103 review).
-        'base_url': redactUri(Uri.tryParse(baseUrl ?? '') ?? Uri()),
+        'base_url': redactUri(
+          Uri.tryParse(dio?.options.baseUrl ?? '') ?? Uri(),
+        ),
         'has_strategies': identity.strategies.isNotEmpty,
         'strategy_count': identity.strategies.length,
       },

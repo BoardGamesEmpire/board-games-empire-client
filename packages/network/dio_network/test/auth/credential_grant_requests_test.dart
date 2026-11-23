@@ -12,9 +12,12 @@ import 'package:dio_network/dio_network.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:logging/logging.dart';
+import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
 import 'package:observability/observability.dart'
     show BgeLogger, LogRecordFormatter;
+
+class _MockDio extends Mock implements Dio {}
 
 const _signIn = '$testAuthBasePath/sign-in/email';
 const _signUp = '$testAuthBasePath/sign-up/email';
@@ -202,15 +205,19 @@ void main() {
       ),
     );
 
-    test("returns the identity's strategy and logs nothing", () {
+    test("returns the identity's strategy, logs nothing and leaves the Dio's "
+        'options unread', () {
+      final dio = _MockDio();
+
       final strategy = requireEmailPasswordStrategy(
         testServerIdentity(),
         log: BgeLogger('bge.auth.repository'),
-        baseUrl: testServerUrl,
+        dio: dio,
       );
 
       expect(strategy, testEmailAndPasswordStrategy());
       expect(records, isEmpty);
+      verifyNever(() => dio.options);
     });
 
     test('with no strategy and a logger, logs one redacted error, then '
@@ -219,7 +226,11 @@ void main() {
         () => requireEmailPasswordStrategy(
           missing,
           log: BgeLogger('bge.auth.repository'),
-          baseUrl: 'https://user:pw@bge.example.com/api?token=x#frag',
+          dio: Dio(
+            BaseOptions(
+              baseUrl: 'https://user:pw@bge.example.com/api?token=x#frag',
+            ),
+          ),
         ),
         unsupported(),
       );
@@ -243,7 +254,7 @@ void main() {
       expect(records, isEmpty);
     });
 
-    test('a logger without a base URL, or the reverse, is refused', () {
+    test('a logger without a Dio, or the reverse, is refused', () {
       expect(
         () => requireEmailPasswordStrategy(
           testServerIdentity(),
@@ -254,7 +265,7 @@ void main() {
       expect(
         () => requireEmailPasswordStrategy(
           testServerIdentity(),
-          baseUrl: testServerUrl,
+          dio: Dio(BaseOptions(baseUrl: testServerUrl)),
         ),
         throwsA(isA<AssertionError>()),
       );

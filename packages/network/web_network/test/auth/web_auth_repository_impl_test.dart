@@ -9,6 +9,7 @@ import 'package:logging/logging.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
 import 'package:models/dto.dart' show AuthResponse;
+import 'package:observability/observability.dart' show LogRecordFormatter;
 import 'package:web_network/src/auth/web_auth_repository_impl.dart';
 
 class MockDio extends Mock implements Dio {}
@@ -2228,6 +2229,13 @@ void main() {
     });
 
     group('no email strategy', () {
+      // The missing strategy is logged with the Dio's base URL, redacted.
+      setUp(() {
+        when(() => mockDio.options).thenReturn(
+          BaseOptions(baseUrl: 'https://user:pw@bge.example.com/api?token=x'),
+        );
+      });
+
       test('signIn throws AuthServerException', () async {
         final noStrategyRepo = WebAuthRepositoryImpl(
           identity: _identity().copyWith(strategies: []),
@@ -2240,6 +2248,90 @@ void main() {
         );
 
         await noStrategyRepo.onDispose();
+      });
+
+      group('logs the missing strategy', () {
+        late List<LogRecord> records;
+        late StreamSubscription<LogRecord> sub;
+        late Level previousLevel;
+        late WebAuthRepositoryImpl noStrategyRepo;
+
+        setUp(() {
+          records = [];
+          previousLevel = Logger.root.level;
+          Logger.root.level = Level.ALL;
+          sub = Logger.root.onRecord.listen(records.add);
+          noStrategyRepo = WebAuthRepositoryImpl(
+            identity: _identity().copyWith(strategies: []),
+            dio: mockDio,
+          );
+        });
+
+        tearDown(() async {
+          await sub.cancel();
+          Logger.root.level = previousLevel;
+          await noStrategyRepo.onDispose();
+        });
+
+        Future<void> expectLoggedOnceThenThrown(
+          Future<Object?> Function() call,
+        ) async {
+          await expectLater(
+            call,
+            throwsA(
+              isA<AuthServerException>().having(
+                (e) => e.message,
+                'message',
+                'This server does not support email/password authentication.',
+              ),
+            ),
+          );
+
+          final logged = records
+              .where(
+                (r) =>
+                    r.loggerName == 'bge.web.auth.repository' &&
+                    r.level == Level.SEVERE &&
+                    r.message ==
+                        'Email/password strategy missing on cached identity',
+              )
+              .toList();
+          expect(logged, hasLength(1));
+          expect(LogRecordFormatter.contextOf(logged.single), {
+            'base_url': 'https://bge.example.com/api',
+            'has_strategies': false,
+            'strategy_count': 0,
+          });
+          verifyNever(
+            () => mockDio.post<String>(
+              any(),
+              data: any(named: 'data'),
+              options: any(named: 'options'),
+            ),
+          );
+        }
+
+        test(
+          'signIn logs the missing strategy once, redacted, then throws',
+          () async {
+            await expectLoggedOnceThenThrown(
+              () => noStrategyRepo.signIn(email: 'a@b.com', password: 'p'),
+            );
+          },
+        );
+
+        test(
+          'signUp logs the missing strategy once, redacted, then throws',
+          () async {
+            await expectLoggedOnceThenThrown(
+              () => noStrategyRepo.signUp(
+                email: 'a@b.com',
+                password: 'p',
+                username: 'u',
+              ),
+            );
+          },
+        );
       });
     });
   });

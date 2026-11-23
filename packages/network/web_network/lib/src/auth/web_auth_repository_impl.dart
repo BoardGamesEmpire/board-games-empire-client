@@ -7,7 +7,11 @@ import 'package:dio/dio.dart';
 // email/password requests each live in one place (#352, #278, #877).
 import 'package:dio_network/dio_network.dart'
     show
+        SessionReadCheckpoint,
+        SessionReadFound,
+        SessionReadNoSession,
         SessionReadStatus,
+        SessionReadSuperseded,
         assertAuthSuccess,
         authRejectionCode,
         decodeAuthBody,
@@ -19,6 +23,7 @@ import 'package:dio_network/dio_network.dart'
         postSignIn,
         postSignUp,
         rateLimitedFrom,
+        readSessionResponse,
         readSessionStatus,
         readSignInMethods,
         requireEmailPasswordStrategy,
@@ -346,7 +351,7 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
   }) async {
     final response = await postSignIn(
       _dio,
-      requireEmailPasswordStrategy(_identity),
+      requireEmailPasswordStrategy(_identity, log: _log, dio: _dio),
       email: email,
       password: password,
     );
@@ -372,7 +377,7 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
   }) async {
     final response = await postSignUp(
       _dio,
-      requireEmailPasswordStrategy(_identity),
+      requireEmailPasswordStrategy(_identity, log: _log, dio: _dio),
       email: email,
       password: password,
       username: username,
@@ -539,103 +544,45 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
       throw mapAuthDioException(e, credentialGrant: false);
     }
 
-    // The user signed out — or signed back in — while this request was in
-    // flight. Either way, what happened since is newer than this response:
-    // discard it without touching state, so sign-out stays final (see
-    // [_sessionEpoch]) and a newer grant is not clobbered (see
-    // [grantsAtEntry]).
-    if (superseded()) {
-      _log.warn(
-        'Discarding a session response that was superseded while in flight',
-        context: {'status': response.statusCode},
-      );
-      return null;
-    }
-
-    final status = response.statusCode;
-
-    // The status decides first, by the rules `readSessionStatus` holds with
-    // their reasons. What is local is the reaction: a definitive "no
-    // session" means the browser's cookie is dead, and there is no stored
-    // material here to clear, so this settles on unauthenticated.
-    // BetterAuth's 200-with-null-body settles the same way, after the decode
-    // below.
-    switch (readSessionStatus(status)) {
-      case SessionReadStatus.noSession:
+    // The status, the body and both supersession checks are read by
+    // `readSessionResponse`, which holds their order and reasons (#878).
+    // What is local is the reaction to each answer.
+    final BgeSessionResponse sessionResponse;
+    switch (await readSessionResponse(
+      response,
+      decode: _decodeJson,
+      superseded: superseded,
+    )) {
+      case SessionReadSuperseded(checkpoint: SessionReadCheckpoint.response):
+        // The user signed out — or signed back in — while this request was
+        // in flight. Either way, what happened since is newer than this
+        // response: discard it without touching state, so sign-out stays
+        // final (see [_sessionEpoch]) and a newer grant is not clobbered
+        // (see [grantsAtEntry]).
+        _log.warn(
+          'Discarding a session response that was superseded while in flight',
+          context: {'status': response.statusCode},
+        );
+        return null;
+      case SessionReadSuperseded(checkpoint: SessionReadCheckpoint.decode):
+        // Something newer landed during the decode. The state emission below
+        // would re-assert a session the user has already ended, which is
+        // the whole failure #146 exists to prevent.
+        _log.warn(
+          'Discarding a session response decoded after it was superseded',
+          context: {'status': response.statusCode},
+        );
+        return null;
+      case SessionReadNoSession():
+        // A definitive "no session" means the browser's cookie is dead, and
+        // there is no stored material here to clear, so this settles on
+        // unauthenticated.
         _setState(const AuthStateUnauthenticated());
         return null;
-      case SessionReadStatus.undecided:
-        throw AuthServerException(
-          message: 'Unexpected $status from the session endpoint.',
-          statusCode: status,
-        );
-      case SessionReadStatus.readBody:
-        break;
+      case SessionReadFound(response: final found):
+        sessionResponse = found;
     }
 
-    final decoded = await decodeAuthBody(
-      response.data,
-      decode: _decodeJson,
-      context: 'the session check',
-      status: status,
-    );
-
-    // A 2xx the transport answered but this client cannot read. Definitive
-    // when the body is not JSON, INDETERMINATE when the decode itself could
-    // not be performed — and only the first is a statement about the server
-    // (#352).
-    // Second checkpoint. The decode above is a suspension point, so a
-    // sign-out can land between the guard at the top of this method and the
-    // state emission below — and that emission would re-assert a session the
-    // user has already ended, which is the whole failure #146 exists to
-    // prevent. Ahead of the throw as well as the emission: a superseded
-    // response is discarded, not reported.
-    if (superseded()) {
-      _log.warn(
-        'Discarding a session response decoded after it was superseded',
-        context: {'status': status},
-      );
-      return null;
-    }
-
-    final failure = decoded.failure;
-    if (failure != null) throw failure;
-
-    // The "no session" answer the status could not give, which
-    // `SessionReadStatus.readBody` left to the body: BetterAuth answers 200
-    // with no session payload. An empty body and a literal JSON `null` both
-    // land here as null, which is exactly what
-    // `Response<Map<String, dynamic>>` used to hand over as `data == null`.
-    final body = decoded.value;
-    if (body == null) {
-      _setState(const AuthStateUnauthenticated());
-      return null;
-    }
-
-    // A 200 whose body is not the documented shape is a server fault, and it
-    // has to leave here as one: `AuthRepository` admits only AuthException
-    // subtypes out of getSession, and AuthBloc's sign-in / register handlers
-    // catch nothing wider — a bare parse error would slip past every clause
-    // and strand the form on AuthLoading with no way back. Native upholds the
-    // same rule now (#181).
-    if (body is! Map<String, dynamic>) {
-      throw AuthServerException(
-        message:
-            'The session endpoint returned a body that is not a JSON object.',
-        statusCode: status,
-      );
-    }
-
-    final BgeSessionResponse sessionResponse;
-    try {
-      sessionResponse = BgeSessionResponse.fromJson(body);
-    } on Object catch (error) {
-      throw AuthServerException(
-        message: 'The session endpoint returned an unreadable response.',
-        statusCode: status,
-        cause: error,
-      );
-    }
     final auth = AuthResponse(
       // Dropped, deliberately (#291). `sessionResponse.session.token` IS
       // the real bearer credential — the same opaque string BetterAuth
