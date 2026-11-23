@@ -361,20 +361,114 @@ void main() {
     expect(seed.game, isNull);
   });
 
+  // see #794: the quick look captures its opener's themes, as every
+  // `showBgePopup` pop-up does, and the cell check holds only a Scaffold to
+  // the cell's text scale and theme, needing just one drawn piece anywhere
+  // at it. The page under the pop-up is that piece, so these cells can't
+  // catch a quick look drawn at its own scale or in its own theme.
   group('accessibility audit', () {
-    auditScreen(
-      'a hit',
-      build: (theme) => catalogApp(
-        Scaffold(
-          body: Center(child: opener(hit, sourceName: 'BoardGameGeek')),
+    const gateway = 'bgg';
+    final importButton = find.byKey(GameImportPanel.importKey);
+
+    /// Opens [hit]'s quick look in [theme], as a sheet, or as a dialog in an
+    /// 840 dp window with [dialog]. With [import], it has search's import:
+    /// the panel as the host, its checklist of two expansions among the
+    /// sections and its button pinned.
+    Future<void> openIn(
+      WidgetTester tester,
+      ThemeData theme, {
+      required bool dialog,
+      bool import = false,
+    }) async {
+      // 840 × 900 here: a cell keeps only its label's text scale and theme.
+      if (dialog) useViewSize(tester, const Size(840, 900));
+      final remote = FakeGamesRemote()
+        ..onFetchExpansions = (_) async => GameSearchResults(
+          byDataGateway: {
+            gateway: [
+              for (var n = 1; n <= 2; n++)
+                GameSearchHit(
+                  externalId: 'bgg-${266192 + n}',
+                  title: 'Wingspan expansion $n',
+                  contentType: ContentType.expansion,
+                ),
+            ],
+          },
+        );
+      await tester.pumpWidget(
+        catalogApp(
+          Scaffold(
+            body: Center(
+              child: opener(
+                hit,
+                sourceName: 'BoardGameGeek',
+                host: import
+                    ? (context, layout) => GameImportPanel(
+                        remote: remote,
+                        gatewayId: gateway,
+                        hit: hit,
+                        mayChooseExpansions: true,
+                        sourceNames: const {gateway: 'BoardGameGeek'},
+                        onImported: (_, _) {},
+                        child: layout,
+                      )
+                    : null,
+                sections: import ? const [GameImportSection()] : const [],
+                footer: import ? const GameImportButton() : null,
+              ),
+            ),
+          ),
+          theme: theme,
         ),
-        theme: theme,
-      ),
-      arrange: (tester) async {
-        await tester.tap(find.text('open'));
-        await tester.pumpAndSettle();
-        expect(find.byType(SearchHitQuickLook), findsOneWidget);
-      },
-    );
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+      expect(find.byType(SearchHitQuickLook), findsOneWidget);
+      expect(
+        find.byType(dialog ? Dialog : BottomSheet),
+        findsOneWidget,
+        reason: dialog ? 'a dialog at 840 dp' : 'a sheet on a phone',
+      );
+    }
+
+    for (final dialog in [false, true]) {
+      final form = dialog ? ' (dialog, 840 dp)' : '';
+
+      auditScreen(
+        'a hit$form',
+        pump: (tester, theme) => openIn(tester, theme, dialog: dialog),
+      );
+
+      auditScreen(
+        'a hit with the import pinned$form',
+        pump: (tester, theme) =>
+            openIn(tester, theme, dialog: dialog, import: true),
+        arrange: (tester) async {
+          expect(
+            find.descendant(
+              of: find.byKey(SearchHitQuickLook.footerKey),
+              matching: importButton,
+            ),
+            findsOneWidget,
+          );
+          expect(find.text('Wingspan expansion 1'), findsOneWidget);
+        },
+      );
+
+      // The guidelines measure only what is on screen, and at 320dp × 2.0
+      // the checklist runs below the fold: the long summary and all that
+      // follows it, in a view tall enough to hold them.
+      auditScreen(
+        'a hit with the import pinned, whole$form',
+        pump: (tester, theme) =>
+            openIn(tester, theme, dialog: dialog, import: true),
+        arrange: (tester) async {
+          await useWholePage(tester);
+          expectWholePage(tester, within: find.byType(SearchHitQuickLook));
+          expect(find.text('Wingspan expansion 2'), findsOneWidget);
+          expect(importButton, findsOneWidget);
+        },
+      );
+    }
   });
 }

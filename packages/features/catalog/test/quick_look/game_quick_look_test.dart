@@ -1867,6 +1867,313 @@ void main() {
     }
   });
 
+  // see #794: the quick look captures its opener's themes, as every
+  // `showBgePopup` pop-up does, and the cell check holds only a Scaffold to
+  // the cell's text scale and theme, needing just one drawn piece anywhere
+  // at it. The page under the pop-up is that piece, so these cells can't
+  // catch a quick look drawn at its own scale or in its own theme.
+  group('accessibility audit', () {
+    const gateway = 'bgg';
+
+    /// The read's answer: Wingspan on Tabletop and Steam.
+    GameWithPlatformGames ready() =>
+        (game: wingspan, platformGames: [tabletop, steam]);
+
+    /// What the user owns: Wingspan on Tabletop, not on Steam.
+    Stream<List<GameCollection>> ownsTabletop(Set<String> ids) => Stream.value([
+      GameCollection(
+        id: 'e_pg_1',
+        userId: 'u_1',
+        platformGameId: tabletop.id,
+        medium: GameMedium.physical,
+        createdAt: DateTime.utc(2026),
+        updatedAt: DateTime.utc(2026),
+      ),
+    ]);
+
+    /// Wingspan as a DataGateway result this server holds, as search opens
+    /// its quick look with the import.
+    const held = GameSearchHit(
+      externalId: '20',
+      title: 'Wingspan',
+      contentType: ContentType.baseGame,
+      gameId: 'g_wingspan',
+    );
+
+    /// Search's import around the quick look: [GameImportPanel] as the
+    /// host, with two expansions at BoardGameGeek to choose from.
+    QuickLookHost importHost() {
+      remote.onFetchExpansions = (_) async => GameSearchResults(
+        byDataGateway: {
+          gateway: [
+            for (var n = 1; n <= 2; n++)
+              GameSearchHit(
+                externalId: '${20 + n}',
+                title: 'Wingspan expansion $n',
+                contentType: ContentType.expansion,
+              ),
+          ],
+        },
+      );
+      return (context, layout) => GameImportPanel(
+        remote: remote,
+        gatewayId: gateway,
+        hit: held,
+        mayChooseExpansions: true,
+        sourceNames: const {gateway: 'BoardGameGeek'},
+        onImported: (_, _) {},
+        child: layout,
+      );
+    }
+
+    final importButton = find.byKey(GameImportPanel.importKey);
+
+    /// Opens Wingspan's quick look in [theme], as a sheet, or as a dialog in
+    /// an 840 dp window with [dialog]. It pumps past the opening and leaves
+    /// settling to the cell, which a state that spins can't do.
+    Future<void> openIn(
+      WidgetTester tester,
+      ThemeData theme, {
+      required bool dialog,
+      GameQuickLookSeed? seed,
+      GameRepository? cache,
+      List<Widget> sections = const [],
+      Widget? footer,
+      QuickLookHost? host,
+      WatchOwnedEntries? watchOwned,
+    }) async {
+      // 840 × 900 here: a cell keeps only its label's text scale and theme.
+      if (dialog) useViewSize(tester, const Size(840, 900));
+      await tester.pumpWidget(
+        catalogApp(
+          theme: theme,
+          Scaffold(
+            body: Center(
+              child: opener(
+                seed ?? GameQuickLookSeed.fromSummary(summary),
+                cache: cache,
+                onViewDetails: (_, id) => viewed.add(id),
+                sections: sections,
+                footer: footer,
+                host: host,
+                watchOwned: watchOwned,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('open'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(find.byType(GameQuickLook), findsOneWidget);
+      expect(
+        find.byType(dialog ? Dialog : BottomSheet),
+        findsOneWidget,
+        reason: dialog ? 'a dialog at 840 dp' : 'a sheet on a phone',
+      );
+    }
+
+    for (final dialog in [false, true]) {
+      final form = dialog ? ' (dialog, 840 dp)' : '';
+
+      // The read is held: the seed shows, and nothing has answered.
+      auditScreen(
+        'loading$form',
+        pump: (tester, theme) => openIn(tester, theme, dialog: dialog),
+        arrange: (tester) async {
+          expect(remote.calls, ['fetchGame(g_wingspan)']);
+          expect(find.byKey(GameQuickLook.factsKey), findsNothing);
+        },
+        settle: false,
+      );
+
+      auditScreen(
+        'ready, with an owned and an unowned chip$form',
+        pump: (tester, theme) {
+          remote.onFetchGame = (_) async => ready();
+          return openIn(
+            tester,
+            theme,
+            dialog: dialog,
+            watchOwned: ownsTabletop,
+          );
+        },
+        arrange: (tester) async {
+          await tester.pumpAndSettle();
+          expect(
+            find.bySemanticsLabel('Tabletop, in your collection'),
+            findsOneWidget,
+          );
+          expect(
+            find.bySemanticsLabel('Steam, not in your collection'),
+            findsOneWidget,
+          );
+        },
+      );
+
+      auditScreen(
+        'partial, the read failed$form',
+        pump: (tester, theme) {
+          remote.onFetchGame = (_) async => throw unreachable();
+          return openIn(tester, theme, dialog: dialog);
+        },
+        arrange: (tester) async {
+          await tester.pumpAndSettle();
+          expect(find.byKey(GameQuickLook.partialKey), findsOneWidget);
+          expect(find.byKey(GameQuickLook.factsKey), findsNothing);
+        },
+      );
+
+      auditScreen(
+        'partial, answered from the cache$form',
+        pump: (tester, theme) {
+          remote.onFetchGame = (_) async => throw unreachable();
+          return openIn(
+            tester,
+            theme,
+            dialog: dialog,
+            cache: FakeGamesCache([wingspan]),
+          );
+        },
+        arrange: (tester) async {
+          await tester.pumpAndSettle();
+          expect(find.byKey(GameQuickLook.partialKey), findsOneWidget);
+          expect(factsShown(tester), wingspanFacts);
+        },
+      );
+
+      auditScreen(
+        'unavailable$form',
+        pump: (tester, theme) {
+          remote.onFetchGame = (_) async =>
+              throw const GamesForbiddenException('403');
+          return openIn(tester, theme, dialog: dialog);
+        },
+        arrange: (tester) async {
+          await tester.pumpAndSettle();
+          expect(find.byKey(GameQuickLook.unavailableKey), findsOneWidget);
+        },
+      );
+
+      auditScreen(
+        "ready, with search's import section and pinned footer$form",
+        pump: (tester, theme) {
+          remote.onFetchGame = (_) async => ready();
+          return openIn(
+            tester,
+            theme,
+            dialog: dialog,
+            seed: GameQuickLookSeed.fromHit(held),
+            host: importHost(),
+            sections: const [GameImportSection()],
+            footer: const GameImportButton(),
+          );
+        },
+        arrange: (tester) async {
+          await tester.pumpAndSettle();
+          expect(
+            find.descendant(
+              of: find.byKey(GameQuickLook.footerKey),
+              matching: importButton,
+            ),
+            findsOneWidget,
+          );
+          expect(find.text('Wingspan expansion 1'), findsOneWidget);
+        },
+      );
+
+      // Import pressed and queued; the first poll never answers, so the
+      // status spins. This audits the state before the first poll lands; the
+      // batch's rows and its outcomes are audited in
+      // test/widgets/game_import_progress_test.dart, in its "partly
+      // completed, three jobs" and "failed, two jobs, try again" cells.
+      auditScreen(
+        'the import progress$form',
+        pump: (tester, theme) async {
+          remote
+            ..onFetchGame = ((_) async => ready())
+            ..onStartImport = ((_, _, correlationId) async => GameImportReceipt(
+              batchId: 'b1',
+              baseJobId: 'j1',
+              correlationId: correlationId,
+            ))
+            ..onFetchImport = ((_) => Completer<ImportBatch>().future);
+          await openIn(
+            tester,
+            theme,
+            dialog: dialog,
+            seed: GameQuickLookSeed.fromHit(held),
+            host: importHost(),
+            sections: const [GameImportSection()],
+            footer: const GameImportButton(),
+          );
+          await tester.pumpAndSettle();
+          await tester.tap(importButton);
+          await tester.pump();
+          // Past the wait before the first poll, which is then held.
+          await tester.pump(const Duration(seconds: 3));
+        },
+        arrange: (tester) async {
+          expect(find.byType(GameImportProgress), findsOneWidget);
+          expect(importButton, findsNothing);
+          expect(
+            remote.calls.where((call) => call.startsWith('fetchImport')),
+            hasLength(1),
+          );
+        },
+        settle: false,
+      );
+
+      // The guidelines measure only what is on screen, and at 320dp × 2.0
+      // the chips and the checklist run below the fold. These two hold the
+      // long description, and all that follows it, in a view tall enough.
+      auditScreen(
+        'ready, the long description whole$form',
+        pump: (tester, theme) {
+          remote.onFetchGame = (_) async => ready();
+          return openIn(
+            tester,
+            theme,
+            dialog: dialog,
+            watchOwned: ownsTabletop,
+          );
+        },
+        arrange: (tester) async {
+          await tester.pumpAndSettle();
+          await useWholePage(tester);
+          expectWholePage(tester, within: find.byType(GameQuickLook));
+          expect(
+            find.bySemanticsLabel('Steam, not in your collection'),
+            findsOneWidget,
+          );
+        },
+      );
+
+      auditScreen(
+        "ready, with search's import section, whole$form",
+        pump: (tester, theme) {
+          remote.onFetchGame = (_) async => ready();
+          return openIn(
+            tester,
+            theme,
+            dialog: dialog,
+            seed: GameQuickLookSeed.fromHit(held),
+            host: importHost(),
+            sections: const [GameImportSection()],
+            footer: const GameImportButton(),
+          );
+        },
+        arrange: (tester) async {
+          await tester.pumpAndSettle();
+          await useWholePage(tester);
+          expectWholePage(tester, within: find.byType(GameQuickLook));
+          expect(find.text('Wingspan expansion 2'), findsOneWidget);
+          expect(importButton, findsOneWidget);
+        },
+      );
+    }
+  });
+
   group('GameQuickLookSeed', () {
     test('from a game, carries the game', () {
       final seed = GameQuickLookSeed.fromGame(wingspan);

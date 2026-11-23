@@ -57,6 +57,16 @@ household doesn't depend on, so household detail's audit hosts a stand-in, and
 the section is audited in
 `packages/features/events/test/household/household_events_section_test.dart`.
 
+The game quick look is no screen either: a cover on home's rows, the browse
+screen and game search's results open it (#803). Its own tests audit it in
+every state it draws, as a sheet and as a dialog at 840dp: loading, ready
+with owned and unowned platform chips, partial (the read failed, or answered
+from the cache), unavailable, ready with search's import section and its
+pinned Import, and the import's progress. Its long description, with search's
+checklist below it, is audited again as a whole page. A search result the
+server doesn't hold opens `SearchHitQuickLook`, audited alone and with the
+import pinned, in both forms.
+
 ### The coverage check
 
 `tool/check_a11y_audit.dart` (`melos run check:a11y-audit`, also in CI's
@@ -164,13 +174,16 @@ Know these limits before trusting a green run.
   (its Show and Sort menus and Restore's confirm dialog), the three
   DataGateway screens, event detail, game detail and the two collection
   screens audit every dialog, sheet and menu they open. Elsewhere only
-  home's drawer, game search's filter sheet, sent invites' filter menu and
-  stuck changes' discard dialog are audited. The rest are not: the confirm
-  dialogs of the invite inbox, the household's invite list and the
-  bootstrap error screen, and create event's date and time pickers, among
-  others. Nor is the game quick look, which a cover on home's rows or the
-  browse screen opens: it is no screen of its own, so the coverage check
-  doesn't ask for it (#803).
+  home's drawer, game search's filter sheet, sent invites' filter menu,
+  stuck changes' discard dialog and the game quick look are audited. The
+  rest are not: the confirm dialogs of the invite inbox, the household's
+  invite list and the bootstrap error screen, and create event's date and
+  time pickers, among others.
+- **A pop-up drawn at its own text scale or theme (#794).** The cell check
+  holds every `Scaffold` to the cell, and then needs only one piece of drawn
+  text anywhere at it. A pop-up has no `Scaffold`, and the page under it
+  draws at the cell, so a pop-up that set its own scale or theme would pass.
+  None is known to. The quick look's audit says so where it is declared.
 - **The offline notice** the shell draws isn't in the screen audits.
 - **The drawer entries** read "Tab n of m" (#763).
 - **Wrapped button labels at 200%.** The ring's builder makes Flutter clip
@@ -833,9 +846,10 @@ no false finding.
 
 `dart run tool/check_a11y_audit.dart` checks every `*_screen.dart`, prints
 how many it checked, and fails on any that is neither audited nor exempt.
-A screen with more than one test file lists each file. Home's four sections
-and household detail's events section aren't `*_screen.dart`, so the check
-doesn't count them; they are listed after the audited screens.
+A screen with more than one test file lists each file. Home's four sections,
+household detail's events section and the two quick looks aren't
+`*_screen.dart`, so the check doesn't count them; they are listed after the
+audited screens.
 
 | Screen | Test file | Status |
 |---|---|---|
@@ -878,6 +892,8 @@ doesn't count them; they are listed after the audited screens.
 | `StatsCard` (home) | `packages/features/collection/test/home/stats_card_test.dart` | audited |
 | `NewestGamesSection` (home) | `packages/features/catalog/test/home/newest_games_section_test.dart` | audited |
 | `SomethingToPlaySection` (home) | `packages/features/catalog/test/home/something_to_play_section_test.dart` | audited |
+| `GameQuickLook` (pop-up, from home's rows, browse and search) | `packages/features/catalog/test/quick_look/game_quick_look_test.dart` | audited, sheet and dialog (#803; see #794) |
+| `SearchHitQuickLook` (pop-up, from search) | `packages/features/catalog/test/quick_look/search_hit_quick_look_test.dart` | audited, sheet and dialog (#803; see #794) |
 | `HouseholdEventsSection` (household detail) | `packages/features/events/test/household/household_events_section_test.dart` | audited |
 
 `_deferred` in `tool/check_a11y_audit.dart` is empty, so the run prints no
