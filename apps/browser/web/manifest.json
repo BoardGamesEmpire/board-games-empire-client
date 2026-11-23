@@ -1,11 +1,11 @@
 {
-    "name": "browser",
-    "short_name": "browser",
+    "name": "Board Games Empire",
+    "short_name": "BG Empire",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#FBF6F1",
+    "theme_color": "#FBF6F1",
+    "description": "A self-hosted board game collection and household play tracker.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

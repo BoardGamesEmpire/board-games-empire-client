@@ -75,6 +75,8 @@ dev_dependencies:
   # runtime file against a committed digest before placing it (#418), and
   # for the APK checksum tool/build_android.dart writes (#51).
   crypto: ^3.0.7
+  # PNG and ICO encoding for tool/generate_app_icons.dart (#422).
+  image: ^4.13.1
   melos: ^8.5.0
   mocktail: ^1.0.5
   # tool/test runs check_sdk_constraints.dart over fixture workspaces and
