@@ -187,17 +187,34 @@ class _BgeCoverTileState extends State<BgeCoverTile>
   /// history remembers it under a covering route (#813).
   final _badgeFocusNode = FocusNode(debugLabel: 'BgeCoverExpansionsBadge');
 
+  /// The expansions the badge of a cover that opens nothing still shows
+  /// after they go while it holds focus, until the focus has been handed on
+  /// (#1048).
+  BgeCoverExpansions? _leaving;
+
   @override
   void didUpdateWidget(BgeCoverTile oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.expansions == null || widget.expansions != null) return;
     if (_badgeFocusNode.hasFocus) {
-      // A badge that goes while it holds focus gives it to the cover, so the
-      // user keeps their place on the game, rather than focus going wherever
-      // it was before the badge (#711). Requested before the badge's own
-      // node is detached in this frame, which then hands its focus on to
-      // this request.
-      _focusNode.requestFocus();
+      if (_focusNode.canRequestFocus) {
+        // A badge that goes while it holds focus gives it to the cover, so
+        // the user keeps their place on the game, rather than focus going
+        // wherever it was before the badge (#711). Requested before the
+        // badge's own node is detached in this frame, which then hands its
+        // focus on to this request.
+        _focusNode.requestFocus();
+      } else {
+        // A cover that opens nothing takes no focus: past the tile, not to
+        // the page (#1048). The badge stays until the focus has moved on.
+        _leaving = oldWidget.expansions;
+        handFocusOnFromBadge(
+          _badgeFocusNode,
+          then: () {
+            if (mounted) setState(() => _leaving = null);
+          },
+        );
+      }
     } else {
       // Under a covering route the page's focus history can remember the
       // badge, and the pop would give focus to the control before it. The
@@ -317,7 +334,10 @@ class _BgeCoverTileState extends State<BgeCoverTile>
         ),
       ),
     );
-    if (expansions == null) {
+    // A badge whose expansions went keeps its place until its focus has
+    // been handed on, with the cover's custom action already gone.
+    final badge = expansions ?? _leaving;
+    if (badge == null) {
       return cover;
     }
 
@@ -334,7 +354,7 @@ class _BgeCoverTileState extends State<BgeCoverTile>
           child: sharePointerFocus(
             BgeCoverExpansionsBadge(
               key: BgeCoverTile.expansionsBadgeKey,
-              expansions: expansions,
+              expansions: badge,
               focusNode: _badgeFocusNode,
             ),
           ),

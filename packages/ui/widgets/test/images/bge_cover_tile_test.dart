@@ -619,6 +619,48 @@ void main() {
         );
       });
 
+      testWidgets('of a cover that takes no focus, the next stop takes it, '
+          'not the page (#1048)', (tester) async {
+        Future<void> show(BgeCoverExpansions? expansions) async {
+          await tester.pumpWidget(
+            hostAtSize(
+              tester,
+              Scaffold(
+                body: Align(
+                  alignment: Alignment.topLeft,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      TextButton(onPressed: () {}, child: const Text('Before')),
+                      BgeCoverTile(label: 'Azul', expansions: expansions),
+                      TextButton(onPressed: () {}, child: const Text('After')),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          );
+          await tester.pump();
+        }
+
+        await show(_expansions());
+        // From the button before, so the framework would give the focus back
+        // to it.
+        await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+        await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+        await tester.pump();
+        expect(focusedIn(_badge), findsOneWidget);
+
+        await show(null);
+
+        expect(_badge, findsNothing);
+        expect(
+          focusedIn(find.widgetWithText(TextButton, 'After')),
+          findsOneWidget,
+        );
+      });
+
       testWidgets('the cover takes it, unringed after a click', (tester) async {
         FocusManager.instance.highlightStrategy =
             FocusHighlightStrategy.automatic;
