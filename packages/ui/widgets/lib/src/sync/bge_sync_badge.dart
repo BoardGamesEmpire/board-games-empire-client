@@ -23,25 +23,41 @@ enum BgeSyncState {
 /// the project's standing answer to colour-vision deficiency.
 ///
 /// The words take the status colour too, which clears 7:1 in high contrast
-/// only on `surface`, the ground of every row that uses this today. On a
-/// `surfaceContainer*` ground it falls short: put neutral words there, as
-/// the drawer's sync status line does.
+/// only on `surface`, the ground of a list row. On a `surfaceContainer*`
+/// ground, such as a pop-up's, it falls short: set [onContainer] there.
 ///
 /// [label] is drawn text with no semantics node of its own, so a row that
 /// merges its semantics reads it with the row's title. Put it under the
 /// row's details rather than in a `ListTile.trailing`, which has no room
 /// for it at 200% text.
 class BgeSyncBadge extends StatelessWidget {
-  const BgeSyncBadge({required this.state, required this.label, super.key});
+  const BgeSyncBadge({
+    required this.state,
+    required this.label,
+    this.onContainer = false,
+    super.key,
+  });
 
   final BgeSyncState state;
 
   /// Localized words for [state], such as "Not yet synced".
   final String label;
 
+  /// Whether the badge sits on a `surfaceContainer*` ground rather than on
+  /// `surface`.
+  ///
+  /// The words are then in `onSurfaceVariant`, as the drawer's sync status
+  /// line puts its words on its container: they clear the text floor on
+  /// every container in every theme, 7:1 in high contrast, which the status
+  /// colours don't. The icon keeps the status colour and shape, which as a
+  /// mark beside words that say the same needs 3:1. The words carry the
+  /// meaning, the icon the colour and the shape.
+  final bool onContainer;
+
   @override
   Widget build(BuildContext context) {
-    final style = Theme.of(context).textTheme.labelMedium;
+    final theme = Theme.of(context);
+    final style = theme.textTheme.labelMedium;
 
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -55,7 +71,11 @@ class BgeSyncBadge extends StatelessWidget {
         Flexible(
           child: Text(
             label,
-            style: style?.copyWith(color: _colorOf(context, state)),
+            style: style?.copyWith(
+              color: onContainer
+                  ? theme.colorScheme.onSurfaceVariant
+                  : _colorOf(context, state),
+            ),
           ),
         ),
       ],

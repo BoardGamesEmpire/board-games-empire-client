@@ -1,11 +1,15 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:game_collection/l10n/game_collection_localizations.dart';
+import 'package:game_collection/src/bloc/game_collection_list_bloc.dart';
+import 'package:game_collection/src/bloc/game_collection_list_state.dart';
 import 'package:game_collection/src/medium_label.dart';
 import 'package:game_collection/src/picker/collection_entry_picker.dart';
 import 'package:game_collection/src/screens/collection_rows.dart';
 import 'package:game_collection/src/screens/game_collection_list_screen.dart';
+import 'package:game_collection/src/sync_label.dart';
 import 'package:models/domain.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
@@ -222,7 +226,7 @@ BgeSyncState? _syncStateOf(
       BgeSyncStatusScope.stateOf(
         context,
         recordId: item.entry.id,
-        unsynced: item.entry.isLocalOnly || item.entry.isDirty,
+        unsynced: hasUnsyncedChange(item.entry),
       ),
   };
   if (states.contains(BgeSyncState.stuck)) return BgeSyncState.stuck;
@@ -230,14 +234,35 @@ BgeSyncState? _syncStateOf(
   return null;
 }
 
-/// The words for [state], drawn in a row's badge and spoken in a cover's
-/// label in the same place, after the details and before the favourite
-/// (#47).
-String _syncLabel(GameCollectionLocalizations l10n, BgeSyncState state) =>
-    switch (state) {
-      BgeSyncState.waiting => l10n.collectionNotSynced,
-      BgeSyncState.stuck => l10n.collectionCouldNotSync,
-    };
+/// The collection's entries as the list's bloc holds them, for a picker to
+/// follow its copies by (#960): each state's entries, so a copy's sync flags
+/// change under an open picker. A state that holds none, as a failed read
+/// does, leaves every tile as it was. Read from [context], the list's, as the
+/// pop-up is above it.
+///
+/// It starts with the bloc's state when the picker listens, then follows its
+/// stream, which replays nothing: the picker listens a frame after the tap
+/// that opened it, and a state the bloc took in between, or the items the
+/// tap read a frame before it, would otherwise stand until the next one.
+Stream<List<GameCollection>> _entriesOf(BuildContext context) {
+  final bloc = context.read<GameCollectionListBloc>();
+  List<GameCollection> entriesOf(GameCollectionListState state) =>
+      state is GameCollectionListReady
+      ? [for (final item in state.all) item.entry]
+      : const <GameCollection>[];
+  return Stream.multi((controller) {
+    // Delivered after the picker's initState, as every later state is.
+    controller.add(entriesOf(bloc.state));
+    final forwarded = bloc.stream
+        .map(entriesOf)
+        .listen(
+          controller.add,
+          onError: controller.addError,
+          onDone: controller.close,
+        );
+    controller.onCancel = forwarded.cancel;
+  });
+}
 
 /// A row's detail line, with a [BgeSyncBadge] under it while [items], the
 /// row's entry or a stack's copies, have a change the server hasn't had
@@ -270,7 +295,7 @@ class _RowDetails extends StatelessWidget {
         details,
         if (syncState != null) ...[
           const BgeGap.xs(),
-          BgeSyncBadge(state: syncState, label: _syncLabel(l10n, syncState)),
+          BgeSyncBadge(state: syncState, label: syncLabel(l10n, syncState)),
         ],
       ],
     );
@@ -465,7 +490,7 @@ class _CollectionTile extends StatelessWidget {
         _spokenTitle(l10n, title, expansionOf) ?? title,
         if (missingBase) l10n.collectionListBaseGameMissing,
         ..._details(l10n, item).map((d) => d.spoken),
-        if (syncState != null) _syncLabel(l10n, syncState),
+        if (syncState != null) syncLabel(l10n, syncState),
         if (entry.hasFavorited) l10n.collectionListFavorite,
       ].join(l10n.collectionListDetailSpokenSeparator),
       imageUrl: item.thumbnail,
@@ -560,6 +585,7 @@ class _StackRow extends StatelessWidget {
                           context,
                           items: items,
                           onOpen: open,
+                          updates: _entriesOf(context),
                         ),
                       ),
               ),
@@ -658,7 +684,7 @@ class _StackTile extends StatelessWidget {
         _spokenTitle(l10n, title, expansionOf) ?? title,
         if (missingBase) l10n.collectionListBaseGameMissing,
         _copies(l10n, items).spoken,
-        if (syncState != null) _syncLabel(l10n, syncState),
+        if (syncState != null) syncLabel(l10n, syncState),
         if (items.any((item) => item.entry.hasFavorited))
           l10n.collectionListFavorite,
       ].join(l10n.collectionListDetailSpokenSeparator),
@@ -671,7 +697,12 @@ class _StackTile extends StatelessWidget {
       onTap: open == null
           ? null
           : () => unawaited(
-              openCollectionEntries(context, items: items, onOpen: open),
+              openCollectionEntries(
+                context,
+                items: items,
+                onOpen: open,
+                updates: _entriesOf(context),
+              ),
             ),
     );
   }

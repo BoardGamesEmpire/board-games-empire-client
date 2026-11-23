@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:sync_queue/src/status/session_sync_status.dart';
@@ -22,6 +23,16 @@ import 'package:ui/ui.dart';
 /// The scope is built whether or not there is a queue, holding nothing
 /// without one, so the tree keeps its shape, and [child] its state, when a
 /// session's queue arrives or goes.
+///
+/// The scope also carries the same state as a relay
+/// (`BgeSyncStatusScope.relay`), one listenable for the host's life, for a
+/// pop-up on the root navigator, above this host, to put back over its
+/// content (#960). It holds each status as it arrives, goes back to nothing
+/// read when [queue] goes or changes, as that frame ends and before the new
+/// queue's first status, never mid-build, and is disposed with the host.
+/// Disposing doesn't clear it, as the tree is locked then, so a pop-up that
+/// outlives its host keeps the last state; the app closes its pop-ups when
+/// a session ends and when another replaces it in place.
 class SyncStatusScopeHost extends StatefulWidget {
   const SyncStatusScopeHost({
     required this.queue,
@@ -68,6 +79,13 @@ class SyncStatusScopeHost extends StatefulWidget {
 class _SyncStatusScopeHostState extends State<SyncStatusScopeHost> {
   SyncStatusCubit? _cubit;
   StreamSubscription<SessionSyncStatus>? _changes;
+  final ValueNotifier<BgeSyncStatusData> _relay = ValueNotifier(
+    const BgeSyncStatusData(),
+  );
+
+  // Whether the relay still holds a dropped queue's status, to clear once
+  // the frame that dropped it has built.
+  bool _clearRelay = false;
 
   @override
   void initState() {
@@ -86,6 +104,7 @@ class _SyncStatusScopeHostState extends State<SyncStatusScopeHost> {
     // them, which may not be the one the new widget names, and before the
     // new queue is followed. The new one's arrive from its stream.
     if (hadQueue) oldWidget.onStatus?.call(this, null);
+    _clearRelayAfterBuild();
     _follow(widget.queue);
   }
 
@@ -96,8 +115,31 @@ class _SyncStatusScopeHostState extends State<SyncStatusScopeHost> {
     // a holder notify as it is told.
     _changes = cubit.stream.listen((status) {
       setState(() {});
+      _clearRelay = false;
+      _relay.value = BgeSyncStatusData(
+        waiting: status.waiting,
+        stuck: status.stuck,
+        stuckRecordIds: status.stuckRecordIds,
+      );
       widget.onStatus?.call(this, status);
     });
+  }
+
+  // Not at once: this runs mid-build, and the relay's listeners are pop-ups
+  // outside this host, which can't be marked dirty then. At the end of the
+  // frame instead, which comes before any stream event, so before the new
+  // queue's first status; one that somehow came first stands.
+  void _clearRelayAfterBuild() {
+    if (_relay.value == const BgeSyncStatusData()) return;
+    _clearRelay = true;
+    SchedulerBinding.instance
+      ..addPostFrameCallback((_) {
+        if (!mounted || !_clearRelay) return;
+        _clearRelay = false;
+        _relay.value = const BgeSyncStatusData();
+      }, debugLabel: 'SyncStatusScopeHost.clearRelay')
+      // A rebuild outside a frame waits for the next one; ask for it.
+      ..ensureVisualUpdate();
   }
 
   void _stop() {
@@ -113,6 +155,7 @@ class _SyncStatusScopeHostState extends State<SyncStatusScopeHost> {
     final hadQueue = _cubit != null;
     _stop();
     if (hadQueue) widget.onStatus?.call(this, null);
+    _relay.dispose();
     super.dispose();
   }
 
@@ -125,6 +168,7 @@ class _SyncStatusScopeHostState extends State<SyncStatusScopeHost> {
       waiting: status?.waiting,
       stuck: status?.stuck,
       stuckRecordIds: status?.stuckRecordIds ?? const {},
+      relay: _relay,
       child: widget.child,
     );
   }

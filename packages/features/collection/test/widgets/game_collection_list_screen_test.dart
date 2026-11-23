@@ -2675,6 +2675,76 @@ void main() {
         expect(opened, ['e-2']);
       });
 
+      testWidgets("a copy's badge goes when the cache says it synced, with "
+          'the picker open, in $view', (tester) async {
+        await show(
+          tester,
+          [
+            listItem(
+              'e-1',
+              gameId: 'g-wingspan',
+              title: 'Wingspan',
+              platformName: 'Tabletop',
+              isDirty: true,
+            ),
+            wingspan('e-2', 'Steam'),
+          ],
+          layouts: layouts,
+          onOpen: (_, _) {},
+        );
+        await tester.tap(stack);
+        await tester.pumpAndSettle();
+        final badge = find.descendant(
+          of: pickerTile('e-1'),
+          matching: find.byType(BgeSyncBadge),
+        );
+        expect(badge, findsOneWidget);
+
+        // The push landed: the cache emits the entry clean.
+        items.add(twice);
+        await tester.pumpAndSettle();
+
+        expect(pickerTile('e-1'), findsOneWidget);
+        expect(badge, findsNothing);
+      });
+
+      testWidgets('a copy synced between the tap and the picker mounting '
+          'opens with no badge, in $view', (tester) async {
+        await show(
+          tester,
+          [
+            listItem(
+              'e-1',
+              gameId: 'g-wingspan',
+              title: 'Wingspan',
+              platformName: 'Tabletop',
+              isDirty: true,
+            ),
+            wingspan('e-2', 'Steam'),
+          ],
+          layouts: layouts,
+          onOpen: (_, _) {},
+        );
+        await tester.tap(stack);
+        // The cache emits the entry clean, and the list's bloc takes it,
+        // before the frame that builds the picker: the picker is not yet
+        // listening when the emission goes by.
+        items.add(twice);
+        await tester.idle();
+        expect(pickerTile('e-1'), findsNothing);
+
+        await tester.pumpAndSettle();
+
+        expect(pickerTile('e-1'), findsOneWidget);
+        expect(
+          find.descendant(
+            of: pickerTile('e-1'),
+            matching: find.byType(BgeSyncBadge),
+          ),
+          findsNothing,
+        );
+      });
+
       testWidgets('closing the picker returns focus to the stack, in $view', (
         tester,
       ) async {

@@ -2,6 +2,7 @@ import 'package:app_shell/app_shell.dart';
 import 'package:bge_test_support/domain.dart';
 import 'package:bge_test_support/session.dart';
 import 'package:bloc_test/bloc_test.dart';
+import 'package:flutter/material.dart' show BottomSheet, Dialog;
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:game_catalog/game_catalog.dart';
@@ -14,6 +15,7 @@ import 'package:interfaces/sync.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
+import 'package:sync_queue/sync_queue.dart' show SyncQueueDrain;
 
 import '../support/active_server_fakes.dart';
 import '../support/fake_platform_bootstrap.dart';
@@ -80,6 +82,63 @@ class _RecordingRehydrator implements SessionRehydrator {
 
   @override
   Future<void> rehydrateStale() async => passes++;
+}
+
+/// A user session's sync queue: the stuck changes it holds are [stuck], read
+/// when a watch starts, and its watches stay open, as Drift's do.
+class _Queue implements SyncQueueRepository {
+  List<SyncQueueEntry> stuck = const [];
+
+  @override
+  Stream<int> watchPendingCount() => Stream.multi((stream) => stream.add(0));
+
+  @override
+  Stream<List<SyncQueueEntry>> watchStuckEntries() =>
+      Stream.multi((stream) => stream.add(stuck));
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError('${invocation.memberName}');
+}
+
+/// What a retry of a stuck change goes through. Nothing here retries.
+class _Drain implements SyncQueueDrain {
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError('${invocation.memberName}');
+}
+
+/// An event cache holding nothing, which is all home reads of it.
+class _Events implements EventRepository {
+  @override
+  Stream<List<EventListItem>> watchAttendingEventListItems() =>
+      Stream.multi((stream) => stream.add(const []));
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError('${invocation.memberName}');
+}
+
+class _MockHouseholdRepository extends Mock implements HouseholdRepository {}
+
+/// A user scope that runs [onActivate] as it activates a user, where a real
+/// scope's installers would register that user's services.
+class _UserSessionScope implements UserSessionScope {
+  _UserSessionScope({required this.onActivate});
+
+  final void Function(String userId) onActivate;
+
+  @override
+  String? activeUserId;
+
+  @override
+  Future<void> activate(String userId) async {
+    onActivate(userId);
+    activeUserId = userId;
+  }
+
+  @override
+  Future<void> deactivate() async => activeUserId = null;
 }
 
 /// The entry [id], of its own game unless [gameId] names one.
@@ -617,6 +676,122 @@ void main() {
           findsNothing,
         );
       }
+    });
+
+    // Another user's session on the same server replaces this one without
+    // the app ever being signed out (#432), going home through
+    // `_endSessionInPlace`. What a missed close would leave is the first
+    // user's copies over the second user's home, with the sync state the
+    // first user's queue held. This test is the picker's case of that (#778).
+    //
+    // The picker has more than one thing taking it down: `_closePopUps`,
+    // which closes the root navigator's pop-ups as a session ends (#707),
+    // `ShellModalGuard` as the page it opened over leaves (#414), and the
+    // navigator as its page changes. This pins the outcome, so it fails when
+    // all of them stop, not when one does.
+    //
+    // The closing "Couldn't sync" check shows that nothing stale is visible
+    // once that path has run. It doesn't show that the relay clears when its
+    // host is replaced: the host's own test pins that.
+    testWidgets("picker open, a different user's session replaces this one "
+        "in place: the picker is gone and nothing of the first user's shows", (
+      tester,
+    ) async {
+      const couldNotSync = "Couldn't sync";
+      final repository = _MockGameCollectionRepository();
+      when(repository.watchCollectionListItems).thenAnswer(
+        (_) => Stream.value([
+          _item('e-1'),
+          _item('e-2', gameId: 'g-e-1', medium: GameMedium.digital),
+        ]),
+      );
+      final households = _MockHouseholdRepository();
+      when(households.watchHouseholds)
+          .thenAnswer((_) => Stream.value(const []));
+      // The first user's copy e-1 is stuck, in the first user's queue. The
+      // second user's scope starts with none, as a real one's queue is its
+      // own.
+      final queue = _Queue()
+        ..stuck = [
+          SyncQueueEntry(
+            id: 'q-1',
+            payload: const AddToCollectionOperation(
+              localId: 'e-1',
+              platformGameId: 'pg-e-1',
+              medium: 'physical',
+              quantity: 1,
+            ).serialized,
+            createdAt: DateTime.utc(2026),
+          ),
+        ];
+      final repo = FakeAuthRepository(initialSession: testAuthResponse());
+      final app = AppBootstrapCubit(
+        platformBootstrap: FakePlatformBootstrap(
+          activeServerScope: FakeActiveServerScope(
+            buildActiveServer(
+              repo,
+              gameCollectionRepository: repository,
+              // Without one a stack is inert.
+              syncOperationSender: _MockSyncOperationSender(),
+              // What puts a sync scope around the shell.
+              syncQueueRepository: queue,
+              syncQueueDrain: _Drain(),
+              householdRepository: households,
+              eventRepository: _Events(),
+              userSessionScope: _UserSessionScope(
+                onActivate: (userId) {
+                  if (userId == 'u2') queue.stuck = const [];
+                },
+              ),
+            ),
+          ),
+        ),
+        hydratedStorageInitializer: (_) async {},
+      );
+      addTearDown(app.close);
+      await tester.pumpWidget(BgeApp(bootstrapCubit: app));
+      await app.initialize();
+      await tester.pumpAndSettle();
+      await openTheList(tester);
+
+      await tester.tap(find.byKey(GameCollectionListScreen.stackKey('g-e-1')));
+      await tester.pumpAndSettle();
+      Finder tile(String id) =>
+          find.byKey(CollectionEntryPicker.tileKey(id), skipOffstage: false);
+      expect(tile('e-1'), findsOneWidget);
+      expect(tile('e-2'), findsOneWidget);
+      // A dialog at the test window's width.
+      expect(find.byType(Dialog, skipOffstage: false), findsOneWidget);
+      // The relay carries the first user's queue to the pop-up.
+      expect(
+        find.descendant(
+          of: tile('e-1'),
+          matching: find.text(couldNotSync),
+        ),
+        findsOneWidget,
+      );
+
+      repo.emitAuthState(
+        AuthStateAuthenticated(
+          session: testAuthResponse()
+              .copyWith(token: null)
+              .copyWith
+              .user(id: 'u2', username: 'other', email: 'u2@example.com'),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // The picker first, so a path that leaves it reports that it survived
+      // rather than only that home isn't showing.
+      expect(tile('e-1'), findsNothing);
+      expect(tile('e-2'), findsNothing);
+      // Neither form of the pop-up is open. (`CollectionEntryPicker` holds
+      // the picker's keys and is no widget, so a finder of it finds nothing
+      // either way.)
+      expect(find.byType(Dialog, skipOffstage: false), findsNothing);
+      expect(find.byType(BottomSheet, skipOffstage: false), findsNothing);
+      expect(find.text(couldNotSync, skipOffstage: false), findsNothing);
+      expect(find.byType(HomeScreen), findsOneWidget);
     });
   });
 }

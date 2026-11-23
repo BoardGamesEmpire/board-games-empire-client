@@ -116,12 +116,18 @@ final _steam = PlatformGame(
   updatedAt: DateTime.utc(2026),
 );
 
-/// The user's copy [id] of Catan on Tabletop, in [medium].
-GameCollection _copy(String id, GameMedium medium) => GameCollection(
+/// The user's copy [id] of Catan on Tabletop, in [medium], with the server
+/// having had it unless [isDirty].
+GameCollection _copy(
+  String id,
+  GameMedium medium, {
+  bool isDirty = false,
+}) => GameCollection(
   id: id,
   userId: 'u1',
   platformGameId: 'pg_1',
   medium: medium,
+  isDirty: isDirty,
   createdAt: DateTime.utc(2026),
   updatedAt: DateTime.utc(2026),
 );
@@ -129,14 +135,35 @@ GameCollection _copy(String id, GameMedium medium) => GameCollection(
 /// A collection repository whose adds succeed. What the user owns of a game
 /// is what [owned] reports, and nothing without it: an add lands on
 /// [owned], as a write to the cache reaches its watches.
+///
+/// A watch of a game's entries is told apart by the platform games it
+/// names, never by when it comes, so a detail page that watches again can't
+/// be handed the picker's stream. The detail watches every platform game of
+/// its game, and an open picker (#960) the one platform its copies are on.
+/// With [pickerUpdates], a watch of [_tabletop] alone is the picker's, and
+/// the test shows the game on more platforms, so the detail's watch names
+/// more. Every other watch shares [owned], as the cache's watches share its
+/// table: one that comes later hears what [owned] says from then on.
 _MockGameCollectionRepository _collection({
   StreamController<List<GameCollection>>? owned,
+  StreamController<List<GameCollection>>? pickerUpdates,
 }) {
   final repository = _MockGameCollectionRepository();
   when(repository.watchCollectionListItems)
       .thenAnswer((_) => Stream.value(const []));
-  when(() => repository.watchEntriesForPlatformGames(any()))
-      .thenAnswer((_) => owned?.stream ?? Stream.value(const []));
+  final shared = owned?.stream.asBroadcastStream();
+  when(() => repository.watchEntriesForPlatformGames(any())).thenAnswer((
+    invocation,
+  ) {
+    final platformGameIds =
+        invocation.positionalArguments.single as Set<String>;
+    final byPicker =
+        pickerUpdates != null &&
+        platformGameIds.length == 1 &&
+        platformGameIds.single == _tabletop.id;
+    if (byPicker) return pickerUpdates.stream;
+    return shared ?? Stream.value(const []);
+  });
   when(() => repository.watchCollectionListItem(any())).thenAnswer(
     (invocation) => Stream.value(
       GameCollectionListItem(
@@ -1273,6 +1300,44 @@ void main() {
       expect(tile('gc_2'), findsNothing);
     });
 
+    testWidgets("an owned chip's picker follows the cache: a copy's badge goes "
+        'when it syncs (#960)', (tester) async {
+      final owned = StreamController<List<GameCollection>>()
+        ..add([
+          _copy('gc_1', GameMedium.physical, isDirty: true),
+          _copy('gc_2', GameMedium.digital),
+        ]);
+      final pickerUpdates = StreamController<List<GameCollection>>.broadcast();
+      addTearDown(owned.close);
+      addTearDown(pickerUpdates.close);
+      // On two platforms, so the detail's watch names both and the picker's,
+      // of the Tabletop copies, names one.
+      games.platformGames = [_tabletop, _steam];
+      await pumpHome(
+        tester,
+        collection: _collection(owned: owned, pickerUpdates: pickerUpdates),
+        sender: _deliveringSender(),
+      );
+      await openCatan(tester);
+
+      await tapChip(tester, 'pg_1');
+      final badge = find.descendant(
+        of: find.byKey(CollectionEntryPicker.tileKey('gc_1')),
+        matching: find.text('Not yet synced'),
+      );
+      expect(badge, findsOneWidget);
+      expect(pickerUpdates.hasListener, isTrue);
+
+      pickerUpdates.add([
+        _copy('gc_1', GameMedium.physical),
+        _copy('gc_2', GameMedium.digital),
+      ]);
+      await tester.pumpAndSettle();
+
+      expect(tile('gc_1'), findsOneWidget);
+      expect(badge, findsNothing);
+    });
+
     // Opened from an owned chip, the picker goes with the detail's page, as
     // Collection's does with its own.
     testWidgets('the picker over the detail page closes as the session ends', (
@@ -1385,6 +1450,34 @@ void main() {
       expect(find.bySemanticsLabel(tabletopOwned), findsNothing);
       expect(find.bySemanticsLabel(tabletopNotOwned), findsOneWidget);
       verifyNever(() => built.watchEntriesForPlatformGames(any()));
+    });
+
+    // The add re-checks the whole of what writing takes, and the watch
+    // answers on the same terms: a repository with no sender to send through
+    // is a session that can't write, so it owns nothing to show (#778).
+    testWidgets("watchOwned's fallback answers nothing for a session that "
+        "can't write the collection", (tester) async {
+      final current = _collection();
+      await pumpHome(
+        tester,
+        collection: _collection(),
+        sender: _deliveringSender(),
+      );
+      final held = games.held = Completer();
+      await openGames(tester);
+      await tester.tap(find.byKey(GameBrowseScreen.rowKey('g_catan')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 450));
+
+      // The repository is there when the page asks, and the sender is not.
+      when(() => cubit.activeServerScope)
+          .thenReturn(activeServer(collection: current));
+      held.complete((game: _catan, platformGames: [_tabletop]));
+      await tester.pumpAndSettle();
+
+      expect(find.bySemanticsLabel(tabletopOwned), findsNothing);
+      expect(find.bySemanticsLabel(tabletopNotOwned), findsOneWidget);
+      verifyNever(() => current.watchEntriesForPlatformGames(any()));
     });
 
     testWidgets('the add goes through the repository active at the press, '
