@@ -1273,19 +1273,33 @@ void main() {
         );
       });
 
-      test('an empty id is refused before any request', () async {
-        await expectLater(
-          () => remote.updateHousehold('', HouseholdUpdate(name: 'Den')),
-          throwsArgumentError,
-        );
-        verifyNever(
-          () => mockDio.patch<String>(
-            any(),
-            options: any(named: 'options'),
-            data: any(named: 'data'),
-          ),
-        );
-      });
+      test(
+        'an id that would leave its route is refused before any request',
+        () async {
+          // An empty or "." id would patch the collection route, and ".." the
+          // one above it (#881).
+          for (final id in ['', '.', '..']) {
+            await expectLater(
+              () => remote.updateHousehold(id, HouseholdUpdate(name: 'Den')),
+              throwsA(
+                isA<ArgumentError>().having(
+                  (e) => e.name,
+                  'name',
+                  'householdId',
+                ),
+              ),
+              reason: '"$id"',
+            );
+          }
+          verifyNever(
+            () => mockDio.patch<String>(
+              any(),
+              options: any(named: 'options'),
+              data: any(named: 'data'),
+            ),
+          );
+        },
+      );
     });
 
     group('the answer', () {

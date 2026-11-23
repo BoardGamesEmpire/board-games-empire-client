@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import 'package:dio_network/src/network/remote_failure.dart';
+import 'package:dio_network/src/network/request_guards.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
@@ -48,10 +49,11 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
     int page = 1,
     int limit = DataGatewayRemoteDataSource.maxPageSize,
   }) async {
-    _checkPaging(
+    checkPage(
       page: page,
       limit: limit,
-      ceiling: DataGatewayRemoteDataSource.maxPageSize,
+      maxSize: DataGatewayRemoteDataSource.maxPageSize,
+      maxDepth: serverMaxPageDepth,
     );
 
     const action = 'DataGateway list';
@@ -83,6 +85,8 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
 
   @override
   Future<DataGateway> fetchOne(String id) async {
+    checkPathId(id);
+
     const action = 'DataGateway fetch';
     const failures = _GatewayFailures(rowRoute: true);
     final response = await sendForJson(
@@ -130,6 +134,7 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
     String id,
     DataGatewayChanges changes,
   ) async {
+    checkPathId(id);
     if (changes.isEmpty) {
       throw ArgumentError.value(
         changes,
@@ -167,6 +172,8 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
     String id,
     List<String> disabled,
   ) async {
+    checkPathId(id);
+
     const action = 'DataGateway capability update';
     const failures = _GatewayFailures(rowRoute: true);
     final response = await sendForJson(
@@ -186,6 +193,8 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
 
   @override
   Future<DataGatewayChangeResult> delete(String id) async {
+    checkPathId(id);
+
     const action = 'DataGateway delete';
     const failures = _GatewayFailures(rowRoute: true);
     final response = await sendForJson(
@@ -198,6 +207,8 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
 
   @override
   Future<DataGatewayChangeResult> connect(String id) async {
+    checkPathId(id);
+
     const action = 'DataGateway connect';
     const failures = _GatewayFailures(rowRoute: true);
     final response = await sendForJson(
@@ -210,6 +221,8 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
 
   @override
   Future<DataGatewayChangeResult> disconnect(String id) async {
+    checkPathId(id);
+
     const action = 'DataGateway disconnect';
     const failures = _GatewayFailures(rowRoute: true);
     final response = await sendForJson(
@@ -222,6 +235,8 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
 
   @override
   Future<DataGatewayInterviewResult> interview(String id) async {
+    checkPathId(id);
+
     const action = 'DataGateway interview';
     // The server may keep interviewing after the caller stops waiting.
     final failures = _GatewayFailures(
@@ -250,10 +265,12 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
     int page = 1,
     int limit = DataGatewayRemoteDataSource.languageLinkPageSize,
   }) async {
-    _checkPaging(
+    checkPathId(id);
+    checkPage(
       page: page,
       limit: limit,
-      ceiling: DataGatewayRemoteDataSource.maxPageSize,
+      maxSize: DataGatewayRemoteDataSource.maxPageSize,
+      maxDepth: serverMaxPageDepth,
     );
     if (statuses != null && statuses.isEmpty) {
       throw ArgumentError.value(
@@ -303,6 +320,9 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
     String linkId,
     String tagId,
   ) async {
+    checkPathId(id);
+    checkPathId(linkId, name: 'linkId');
+
     const action = 'Language link to tag';
     const failures = _GatewayFailures(rowRoute: true);
     final response = await sendForJson(
@@ -319,6 +339,9 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
 
   @override
   Future<LanguageLink> ignoreLanguageLink(String id, String linkId) async {
+    checkPathId(id);
+    checkPathId(linkId, name: 'linkId');
+
     const action = 'Language link ignore';
     const failures = _GatewayFailures(rowRoute: true);
     final response = await sendForJson(
@@ -334,6 +357,9 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
 
   @override
   Future<LanguageLink> acceptLanguageLink(String id, String linkId) async {
+    checkPathId(id);
+    checkPathId(linkId, name: 'linkId');
+
     const action = 'Language link accept';
     const failures = _GatewayFailures(rowRoute: true);
     final response = await sendForJson(
@@ -353,10 +379,11 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
     int page = 1,
     int limit = DataGatewayRemoteDataSource.languageTagPageSize,
   }) async {
-    _checkPaging(
+    checkPage(
       page: page,
       limit: limit,
-      ceiling: DataGatewayRemoteDataSource.languageTagPageSize,
+      maxSize: DataGatewayRemoteDataSource.languageTagPageSize,
+      maxDepth: serverMaxPageDepth,
     );
     // The server matches the text as sent, so a stray space would match
     // nothing. A blank name filters nothing, so it is left out.
@@ -623,26 +650,6 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
   ];
 
   // ── Guards: requests the server is guaranteed to reject ─────────────
-
-  /// [ceiling] is the route's own: the catalogue allows smaller pages than the
-  /// DataGateway routes do.
-  void _checkPaging({
-    required int page,
-    required int limit,
-    required int ceiling,
-  }) {
-    if (limit < 1 || limit > ceiling) {
-      throw ArgumentError.value(
-        limit,
-        'limit',
-        'must be between 1 and $ceiling (the server rejects a larger page '
-            'rather than clamping it)',
-      );
-    }
-    if (page < 1) {
-      throw ArgumentError.value(page, 'page', 'is 1-based');
-    }
-  }
 
   void _checkPort(int port) {
     if (port < 1 || port > 65535) {

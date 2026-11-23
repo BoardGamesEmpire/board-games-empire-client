@@ -203,7 +203,8 @@ final class InviteQuota {
 /// server translates.
 ///
 /// A call that cannot produce a valid request throws [ArgumentError]
-/// unwrapped: a page below 1, a limit out of range, or a status filter of
+/// unwrapped: a page below 1 or starting past row 100000 (the server's depth
+/// ceiling), a limit out of range, or a status filter of
 /// [HouseholdInviteStatus.unknown].
 abstract class HouseholdInviteRemoteDataSource {
   /// The page size the screens ask for.

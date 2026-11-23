@@ -4,6 +4,7 @@ import 'package:dio_network/src/games/game_summary_json.dart';
 import 'package:dio_network/src/network/api_error_envelope.dart';
 import 'package:dio_network/src/network/non_empty_string.dart';
 import 'package:dio_network/src/network/remote_failure.dart';
+import 'package:dio_network/src/network/request_guards.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 
@@ -47,18 +48,12 @@ class GamesRemoteDataSourceImpl implements GamesRemoteDataSource {
     int limit = GamesRemoteDataSource.maxPageSize,
     GameSort sort = GameSort.title,
   }) async {
-    checkPageLimit(limit);
-    if (page < 1) {
-      throw ArgumentError.value(page, 'page', 'is 1-based');
-    }
-    if ((page - 1) * limit > GamesRemoteDataSource.maxDepth) {
-      throw ArgumentError.value(
-        page,
-        'page',
-        'starts past row ${GamesRemoteDataSource.maxDepth}, which the server '
-            'refuses with a 400',
-      );
-    }
+    checkPage(
+      page: page,
+      limit: limit,
+      maxSize: GamesRemoteDataSource.maxPageSize,
+      maxDepth: GamesRemoteDataSource.maxDepth,
+    );
 
     const action = 'Game catalog';
     const failures = _GamesFailures();

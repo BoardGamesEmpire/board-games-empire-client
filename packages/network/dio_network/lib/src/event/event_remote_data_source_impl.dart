@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:dio_network/src/network/api_error_envelope.dart';
 import 'package:dio_network/src/network/non_empty_string.dart';
 import 'package:dio_network/src/network/remote_failure.dart';
+import 'package:dio_network/src/network/request_guards.dart';
 import 'package:dio_network/src/network/user_projection.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
@@ -60,8 +61,8 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     String householdId, {
     int page = 1,
     int limit = EventRemoteDataSource.maxPageSize,
-  }) {
-    _checkId(householdId, name: 'householdId');
+  }) async {
+    checkPathId(householdId, name: 'householdId');
     return _fetchList(
       '/api/households/${Uri.encodeComponent(householdId)}/events',
       page: page,
@@ -80,7 +81,12 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     required _Route route,
     bool includeArchived = false,
   }) async {
-    _checkPaging(page: page, limit: limit);
+    checkPage(
+      page: page,
+      limit: limit,
+      maxSize: EventRemoteDataSource.maxPageSize,
+      maxDepth: serverMaxPageDepth,
+    );
 
     final failures = _EventFailures(route);
     final response = await sendForJson(
@@ -116,7 +122,7 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
 
   @override
   Future<EventSnapshot> fetchEvent(String id) async {
-    _checkId(id);
+    checkPathId(id);
 
     const action = 'Event fetch';
     const failures = _EventFailures(_Route.row);
@@ -141,7 +147,10 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     EventDraft draft, {
     required String clientRequestId,
   }) async {
-    _checkClientRequestId(clientRequestId);
+    checkClientRequestId(
+      clientRequestId,
+      maxLength: EventRemoteDataSource.maxClientRequestIdLength,
+    );
     draft.checkSendable();
 
     const action = 'Event create';
@@ -173,7 +182,7 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
 
   @override
   Future<void> deleteEvent(String id) async {
-    _checkId(id);
+    checkPathId(id);
 
     await sendForJson(
       () => _dio.delete<String>(_pathOf(id), options: _plainBody),
@@ -191,7 +200,7 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
 
   @override
   Future<Event> cancelEvent(String id, {String? reason}) async {
-    _checkId(id);
+    checkPathId(id);
     final trimmed = _checkedReason(reason);
 
     return _writeEvent(
@@ -203,25 +212,25 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
 
   @override
   Future<Event> reopenEvent(String id) async {
-    _checkId(id);
+    checkPathId(id);
     return _writeEvent('Event reopen', '${_pathOf(id)}/reopen');
   }
 
   @override
   Future<Event> archiveEvent(String id) async {
-    _checkId(id);
+    checkPathId(id);
     return _writeEvent('Event archive', '${_pathOf(id)}/archive');
   }
 
   @override
   Future<Event> unarchiveEvent(String id) async {
-    _checkId(id);
+    checkPathId(id);
     return _writeEvent('Event unarchive', '${_pathOf(id)}/unarchive');
   }
 
   @override
   Future<Event> updateEvent(String id, EventUpdate update) async {
-    _checkId(id);
+    checkPathId(id);
     _checkNotEmpty(update.isEmpty, update);
 
     return _writeEvent(
@@ -251,7 +260,7 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     String id,
     EventPolicyUpdate update,
   ) async {
-    _checkId(id);
+    checkPathId(id);
     _checkNotEmpty(update.isEmpty, update);
 
     const action = 'Event policy update';
@@ -342,7 +351,7 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     EventOccurrenceDraft draft, {
     required int sortOrder,
   }) async {
-    _checkId(eventId, name: 'eventId');
+    checkPathId(eventId, name: 'eventId');
 
     return _writeOccurrence(
       'Date add',
@@ -367,7 +376,8 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     String occurrenceId,
     OccurrenceUpdate update,
   ) async {
-    _checkOccurrenceIds(eventId, occurrenceId);
+    checkPathId(eventId, name: 'eventId');
+    checkPathId(occurrenceId, name: 'occurrenceId');
     if (update.isEmpty) {
       throw ArgumentError.value(update, 'update', 'must change something');
     }
@@ -413,7 +423,8 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     String occurrenceId, {
     String? reason,
   }) async {
-    _checkOccurrenceIds(eventId, occurrenceId);
+    checkPathId(eventId, name: 'eventId');
+    checkPathId(occurrenceId, name: 'occurrenceId');
     final trimmed = _checkedReason(reason);
 
     return _writeOccurrence(
@@ -429,7 +440,8 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
 
   @override
   Future<void> removeOccurrence(String eventId, String occurrenceId) async {
-    _checkOccurrenceIds(eventId, occurrenceId);
+    checkPathId(eventId, name: 'eventId');
+    checkPathId(occurrenceId, name: 'occurrenceId');
 
     await sendForJson(
       () => _dio.delete<String>(
@@ -450,7 +462,8 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     String occurrenceId,
     AvailabilityResponse response,
   ) async {
-    _checkOccurrenceIds(eventId, occurrenceId);
+    checkPathId(eventId, name: 'eventId');
+    checkPathId(occurrenceId, name: 'occurrenceId');
     if (response == AvailabilityResponse.unknown) {
       // It stands for a name this client could not read, and has none to send.
       throw ArgumentError.value(
@@ -487,8 +500,8 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     EventParticipationStatus status, {
     String? notes,
   }) async {
-    _checkId(eventId, name: 'eventId');
-    _checkId(attendeeId, name: 'attendeeId');
+    checkPathId(eventId, name: 'eventId');
+    checkPathId(attendeeId, name: 'attendeeId');
     if (status == EventParticipationStatus.unknown) {
       // It stands for a name this client could not read, and has none to send.
       throw ArgumentError.value(
@@ -525,8 +538,8 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     required String userId,
     required EventRole role,
   }) async {
-    _checkId(eventId, name: 'eventId');
-    _checkId(userId, name: 'userId');
+    checkPathId(eventId, name: 'eventId');
+    checkIdNotEmpty(userId, name: 'userId');
     if (role == EventRole.host || role == EventRole.unknown) {
       // The host belongs to whoever created the event, and unknown has no
       // wire name.
@@ -557,8 +570,8 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     String eventId,
     String attendeeId,
   ) async {
-    _checkId(eventId, name: 'eventId');
-    _checkId(attendeeId, name: 'attendeeId');
+    checkPathId(eventId, name: 'eventId');
+    checkPathId(attendeeId, name: 'attendeeId');
 
     const action = 'Remove attendee';
     const failures = _EventFailures(_Route.write);
@@ -584,7 +597,7 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     List<String>? attendeeIds,
     Future<void>? cancelled,
   }) async {
-    _checkId(eventId, name: 'eventId');
+    checkPathId(eventId, name: 'eventId');
     if (attendeeIds != null) {
       const most = EventRemoteDataSource.maxPoolAttendeeIds;
       if (attendeeIds.length > most) {
@@ -596,7 +609,7 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
         );
       }
       for (final attendeeId in attendeeIds) {
-        _checkId(attendeeId, name: 'attendeeIds');
+        checkIdNotEmpty(attendeeId, name: 'attendeeIds');
       }
       // The server refuses an empty list, and no attendees offer no games.
       if (attendeeIds.isEmpty) return const [];
@@ -709,8 +722,8 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     String attendeeId, {
     required List<String> collectionIds,
   }) async {
-    _checkId(eventId, name: 'eventId');
-    _checkId(attendeeId, name: 'attendeeId');
+    checkPathId(eventId, name: 'eventId');
+    checkPathId(attendeeId, name: 'attendeeId');
     const most = EventRemoteDataSource.maxOfferBatch;
     if (collectionIds.isEmpty || collectionIds.length > most) {
       throw ArgumentError.value(
@@ -720,7 +733,7 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
       );
     }
     for (final id in collectionIds) {
-      _checkId(id, name: 'collectionIds');
+      checkIdNotEmpty(id, name: 'collectionIds');
     }
     if (collectionIds.toSet().length != collectionIds.length) {
       throw ArgumentError.value(
@@ -763,9 +776,9 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     String attendeeId,
     String offeredGameId,
   ) async {
-    _checkId(eventId, name: 'eventId');
-    _checkId(attendeeId, name: 'attendeeId');
-    _checkId(offeredGameId, name: 'offeredGameId');
+    checkPathId(eventId, name: 'eventId');
+    checkPathId(attendeeId, name: 'attendeeId');
+    checkPathId(offeredGameId, name: 'offeredGameId');
 
     await sendForJson(
       () => _dio.delete<String>(
@@ -783,7 +796,7 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
 
   @override
   Future<List<EventNomination>> fetchNominations(String eventId) async {
-    _checkId(eventId, name: 'eventId');
+    checkPathId(eventId, name: 'eventId');
 
     // A nomination created mid-read shifts the offsets of a newest-first
     // list, so a later page can repeat a row an earlier one held: the first
@@ -801,7 +814,7 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
 
   @override
   Future<List<LineupGame>> fetchLineup(String eventId) async {
-    _checkId(eventId, name: 'eventId');
+    checkPathId(eventId, name: 'eventId');
 
     // The list is ordered by date and then the host's order, and a page is an
     // offset into it. A game added or removed mid-read shifts the rows after
@@ -823,8 +836,8 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     String eventId,
     String nominationId,
   ) async {
-    _checkId(eventId, name: 'eventId');
-    _checkId(nominationId, name: 'nominationId');
+    checkPathId(eventId, name: 'eventId');
+    checkPathId(nominationId, name: 'nominationId');
 
     const action = 'Nomination';
     const failures = _EventFailures(_Route.row);
@@ -851,10 +864,12 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     required String suppliedFromId,
     String? occurrenceId,
   }) async {
-    _checkId(eventId, name: 'eventId');
-    _checkId(platformGameId, name: 'platformGameId');
-    _checkId(suppliedFromId, name: 'suppliedFromId');
-    if (occurrenceId != null) _checkId(occurrenceId, name: 'occurrenceId');
+    checkPathId(eventId, name: 'eventId');
+    checkIdNotEmpty(platformGameId, name: 'platformGameId');
+    checkIdNotEmpty(suppliedFromId, name: 'suppliedFromId');
+    if (occurrenceId != null) {
+      checkIdNotEmpty(occurrenceId, name: 'occurrenceId');
+    }
 
     const action = 'Nominate game';
     const failures = _EventFailures(_Route.nominate);
@@ -889,10 +904,12 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     String? notes,
     int? maxPlayTime,
   }) async {
-    _checkId(eventId, name: 'eventId');
-    _checkId(platformGameId, name: 'platformGameId');
-    _checkId(suppliedById, name: 'suppliedById');
-    if (occurrenceId != null) _checkId(occurrenceId, name: 'occurrenceId');
+    checkPathId(eventId, name: 'eventId');
+    checkIdNotEmpty(platformGameId, name: 'platformGameId');
+    checkIdNotEmpty(suppliedById, name: 'suppliedById');
+    if (occurrenceId != null) {
+      checkIdNotEmpty(occurrenceId, name: 'occurrenceId');
+    }
     // Before anything is sent: an unknown role has no wire name.
     if (role == ScheduledGameRole.unknown) {
       throw ArgumentError.value(role, 'role', 'has no wire name');
@@ -940,8 +957,8 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     String eventId,
     String lineupGameId,
   ) async {
-    _checkId(eventId, name: 'eventId');
-    _checkId(lineupGameId, name: 'lineupGameId');
+    checkPathId(eventId, name: 'eventId');
+    checkPathId(lineupGameId, name: 'lineupGameId');
 
     const action = 'Remove game from lineup';
     const failures = _EventFailures(_Route.lineupRemove);
@@ -970,8 +987,8 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     required VoteType voteType,
     String? comment,
   }) async {
-    _checkId(eventId, name: 'eventId');
-    _checkId(nominationId, name: 'nominationId');
+    checkPathId(eventId, name: 'eventId');
+    checkPathId(nominationId, name: 'nominationId');
     // Before anything is sent: an unknown vote has no wire name.
     if (voteType == VoteType.unknown) {
       throw ArgumentError.value(voteType, 'voteType', 'has no wire name');
@@ -996,8 +1013,8 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     String eventId,
     String nominationId,
   ) async {
-    _checkId(eventId, name: 'eventId');
-    _checkId(nominationId, name: 'nominationId');
+    checkPathId(eventId, name: 'eventId');
+    checkPathId(nominationId, name: 'nominationId');
 
     const action = 'Withdraw nomination';
     const failures = _EventFailures(_Route.write);
@@ -1066,8 +1083,8 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     String action,
     T Function(Map<String, dynamic> body) parse,
   ) async {
-    _checkId(eventId, name: 'eventId');
-    _checkId(nominationId, name: 'nominationId');
+    checkPathId(eventId, name: 'eventId');
+    checkPathId(nominationId, name: 'nominationId');
 
     const failures = _EventFailures(_Route.write);
     final result = await sendForJson(
@@ -1092,7 +1109,7 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
 
   @override
   Future<AvailabilitySummary> fetchAvailabilitySummary(String eventId) async {
-    _checkId(eventId, name: 'eventId');
+    checkPathId(eventId, name: 'eventId');
 
     const action = 'Availability summary';
     const failures = _EventFailures(_Route.row);
@@ -1120,7 +1137,8 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     String eventId,
     String occurrenceId,
   ) async {
-    _checkOccurrenceIds(eventId, occurrenceId);
+    checkPathId(eventId, name: 'eventId');
+    checkPathId(occurrenceId, name: 'occurrenceId');
 
     return _writeOccurrence(
       action,
@@ -1953,64 +1971,6 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
       },
     if (draft.inviteUserIds.isNotEmpty) 'inviteUserIds': draft.inviteUserIds,
   };
-
-  // ── Guards: requests the server is guaranteed to reject ─────────────
-
-  void _checkPaging({required int page, required int limit}) {
-    const maxPageSize = EventRemoteDataSource.maxPageSize;
-    if (limit < 1 || limit > maxPageSize) {
-      throw ArgumentError.value(
-        limit,
-        'limit',
-        'must be between 1 and $maxPageSize (the server rejects a larger '
-            'page rather than clamping it)',
-      );
-    }
-    if (page < 1) {
-      throw ArgumentError.value(page, 'page', 'is 1-based');
-    }
-  }
-
-  /// The server trims `clientRequestId`, then requires 1 to
-  /// [EventRemoteDataSource.maxClientRequestIdLength] characters, and answers a
-  /// violation with a 400. That is permanent, and a permanent create is parked
-  /// on its first attempt, so a key the caller got wrong is refused here with
-  /// an error outside the transient and permanent split (#499), as the
-  /// household create does.
-  ///
-  /// This matches the server exactly for ASCII keys, which every key this
-  /// client mints is. Past ASCII the two can disagree at the edges: Dart's
-  /// `trim` also strips U+0085, which the server's does not, and the server
-  /// counts a surrogate pair as one character where `length` counts two.
-  void _checkClientRequestId(String clientRequestId) {
-    const maxLength = EventRemoteDataSource.maxClientRequestIdLength;
-    final length = clientRequestId.trim().length;
-    if (length == 0 || length > maxLength) {
-      throw ArgumentError.value(
-        clientRequestId,
-        'clientRequestId',
-        'must be 1 to $maxLength characters after trimming (the server '
-            'rejects anything else with a 400)',
-      );
-    }
-  }
-
-  /// An empty id would send `GET /api/events/`, which the server routes to
-  /// the list, so its 200 would fail to parse and read as the server breaking
-  /// the contract rather than the caller's mistake. A `DELETE /api/events/`
-  /// has no route, and its 404 would read as the event being gone.
-  void _checkId(String id, {String name = 'id'}) {
-    if (id.isEmpty) {
-      throw ArgumentError.value(id, name, 'must not be empty');
-    }
-  }
-
-  /// An empty occurrence id would send the request to the event's dates
-  /// route, and read the answer as if it were about one date.
-  void _checkOccurrenceIds(String eventId, String occurrenceId) {
-    _checkId(eventId, name: 'eventId');
-    _checkId(occurrenceId, name: 'occurrenceId');
-  }
 }
 
 /// How the event source builds its failures for the shared classifier.

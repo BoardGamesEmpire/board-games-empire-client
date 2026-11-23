@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:dio_network/src/household/household_member_json.dart';
 import 'package:dio_network/src/network/remote_failure.dart';
+import 'package:dio_network/src/network/request_guards.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 
@@ -36,6 +37,8 @@ class HouseholdMemberRemoteDataSourceImpl
     String memberId,
     HouseholdRole role,
   ) async {
+    checkPathId(householdId, name: 'householdId');
+    checkPathId(memberId, name: 'memberId');
     if (!HouseholdMemberRemoteDataSource.assignableRoles.contains(role)) {
       throw ArgumentError.value(
         role,
@@ -54,36 +57,57 @@ class HouseholdMemberRemoteDataSourceImpl
   }
 
   @override
-  Future<HouseholdMember> remove(String householdId, String memberId) =>
-      _sendForMember(
-        () => _dio.delete<String>(
-          _member(householdId, memberId),
-          options: _plainBody,
-        ),
-        action: 'Household member remove',
+  Future<HouseholdMember> remove(String householdId, String memberId) async {
+    checkPathId(householdId, name: 'householdId');
+    checkPathId(memberId, name: 'memberId');
+    if (memberId == 'me') {
+      // `DELETE .../members/me` is the leave route, so this would remove the
+      // caller rather than refuse the id.
+      throw ArgumentError.value(
+        memberId,
+        'memberId',
+        'must not be "me" (that path is the leave route)',
       );
+    }
+    return _sendForMember(
+      () => _dio.delete<String>(
+        _member(householdId, memberId),
+        options: _plainBody,
+      ),
+      action: 'Household member remove',
+    );
+  }
 
   @override
-  Future<HouseholdMember> leave(String householdId) => _sendForMember(
-    () => _dio.delete<String>(_member(householdId, 'me'), options: _plainBody),
-    action: 'Household leave',
-  );
+  Future<HouseholdMember> leave(String householdId) async {
+    // Only the household is checked: the `me` segment is a constant.
+    checkPathId(householdId, name: 'householdId');
+    return _sendForMember(
+      () =>
+          _dio.delete<String>(_member(householdId, 'me'), options: _plainBody),
+      action: 'Household leave',
+    );
+  }
 
   @override
   Future<HouseholdOwnershipTransfer> transferOwnership(
     String householdId,
     String memberId,
-  ) => _send(
-    () => _dio.post<String>(
-      '${_member(householdId, memberId)}/transfer-ownership',
-      options: _plainBody,
-    ),
-    action: 'Household ownership transfer',
-    parse: (body) => (
-      owner: _memberAt(body, 'owner'),
-      previousOwner: _memberAt(body, 'previousOwner'),
-    ),
-  );
+  ) async {
+    checkPathId(householdId, name: 'householdId');
+    checkPathId(memberId, name: 'memberId');
+    return _send(
+      () => _dio.post<String>(
+        '${_member(householdId, memberId)}/transfer-ownership',
+        options: _plainBody,
+      ),
+      action: 'Household ownership transfer',
+      parse: (body) => (
+        owner: _memberAt(body, 'owner'),
+        previousOwner: _memberAt(body, 'previousOwner'),
+      ),
+    );
+  }
 
   static String _member(String householdId, String memberId) =>
       '/api/households/${Uri.encodeComponent(householdId)}'

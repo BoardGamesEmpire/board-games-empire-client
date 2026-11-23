@@ -1790,4 +1790,43 @@ void main() {
       );
     });
   });
+
+  group('path ids (#881)', () {
+    test(
+      'every id route refuses an id that would leave its route, before sending',
+      () async {
+        final remote = answering('{}');
+        List<(String, Future<Object?> Function())> calls(String id) => [
+          ('id', () => remote.fetchOne(id)),
+          (
+            'id',
+            () => remote.update(id, const DataGatewayChanges(name: 'BGG')),
+          ),
+          ('id', () => remote.setDisabledCapabilities(id, const [])),
+          ('id', () => remote.delete(id)),
+          ('id', () => remote.connect(id)),
+          ('id', () => remote.disconnect(id)),
+          ('id', () => remote.interview(id)),
+          ('id', () => remote.fetchLanguageLinks(id)),
+          ('id', () => remote.linkLanguageLink(id, 'l1', 't1')),
+          ('linkId', () => remote.linkLanguageLink('dg_1', id, 't1')),
+          ('id', () => remote.ignoreLanguageLink(id, 'l1')),
+          ('linkId', () => remote.ignoreLanguageLink('dg_1', id)),
+          ('id', () => remote.acceptLanguageLink(id, 'l1')),
+          ('linkId', () => remote.acceptLanguageLink('dg_1', id)),
+        ];
+
+        for (final id in ['', '.', '..']) {
+          for (final (name, call) in calls(id)) {
+            await expectLater(
+              call(),
+              throwsA(isA<ArgumentError>().having((e) => e.name, 'name', name)),
+              reason: '$name "$id"',
+            );
+          }
+        }
+        expect(adapter.sent, isEmpty);
+      },
+    );
+  });
 }

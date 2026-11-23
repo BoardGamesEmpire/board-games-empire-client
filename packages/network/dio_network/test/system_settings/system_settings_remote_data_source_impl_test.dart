@@ -621,4 +621,30 @@ void main() {
       }
     });
   });
+
+  group('path ids (#881)', () {
+    test(
+      'every id route refuses an id that would leave its route, before sending',
+      () async {
+        final remote = answering('{}');
+        List<(String, Future<Object?> Function())> calls(String id) => [
+          (
+            'id',
+            () => remote.update(id, const SystemSettingsPatch(smtpPort: 465)),
+          ),
+        ];
+
+        for (final id in ['', '.', '..']) {
+          for (final (name, call) in calls(id)) {
+            await expectLater(
+              call(),
+              throwsA(isA<ArgumentError>().having((e) => e.name, 'name', name)),
+              reason: '$name "$id"',
+            );
+          }
+        }
+        expect(adapter.sent, isEmpty);
+      },
+    );
+  });
 }

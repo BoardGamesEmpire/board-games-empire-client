@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:dio_network/src/household/household_member_json.dart';
 import 'package:dio_network/src/network/remote_failure.dart';
+import 'package:dio_network/src/network/request_guards.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 
@@ -103,6 +104,8 @@ class AdminHouseholdRemoteDataSourceImpl
 
   @override
   Future<AdminHouseholdDetail> fetchDetail(String id) async {
+    checkPathId(id);
+
     const action = 'Staff household fetch';
     const failures = _AdminHouseholdFailures(rowRoute: true);
     final response = await sendForJson(
@@ -120,6 +123,8 @@ class AdminHouseholdRemoteDataSourceImpl
 
   @override
   Future<void> restore(String id) async {
+    checkPathId(id);
+
     const action = 'Staff household restore';
     await sendForJson(
       () => _dio.post<String>('${_pathOf(id)}/restore', options: _plainBody),

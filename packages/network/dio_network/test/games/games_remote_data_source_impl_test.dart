@@ -514,6 +514,12 @@ void main() {
         () => remote.fetchPage(page: 1002),
         throwsArgumentError,
       );
+      // (page - 1) * limit is 2^63 here, which wraps negative on the VM and
+      // would pass a multiplying check.
+      expect(
+        () => remote.fetchPage(page: (1 << 62) + 1, limit: 2),
+        throwsArgumentError,
+      );
       expect(adapter.sent, isEmpty);
     });
 

@@ -45,7 +45,8 @@ import 'package:network_interface/src/paginated_result.dart';
 ///
 /// A call that cannot produce a valid request throws [ArgumentError]
 /// unwrapped: a search shorter than [minSearchLength] after trimming, a page
-/// below 1, a limit out of range, or an access question about no types.
+/// below 1 or starting past row 100000 (the server's depth ceiling), a limit
+/// out of range, or an access question about no types.
 abstract class UserRemoteDataSource {
   /// The backend's `limit` ceiling for user search. A larger limit is a 400,
   /// not clamped.

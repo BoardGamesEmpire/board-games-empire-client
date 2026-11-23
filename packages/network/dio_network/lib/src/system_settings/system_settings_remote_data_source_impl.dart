@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:dio_network/src/network/api_error_envelope.dart';
 import 'package:dio_network/src/network/remote_failure.dart';
+import 'package:dio_network/src/network/request_guards.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 
@@ -47,6 +48,7 @@ class SystemSettingsRemoteDataSourceImpl
 
   @override
   Future<SystemSettings> update(String id, SystemSettingsPatch patch) async {
+    checkPathId(id);
     // Every check runs before the first `wireName`, so an unknown enum is an
     // ArgumentError and never the StateError its wire name throws.
     _validate(patch);
