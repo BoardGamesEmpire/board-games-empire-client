@@ -68,7 +68,10 @@ bool _ringShows(WidgetTester tester, String entryId) {
 }
 
 /// A page with a button that opens the picker over `items`, recording what
-/// each tile's tap hands to `onOpen`.
+/// each tile's tap hands to `onOpen`. With a `relay`, the page sits under the
+/// session's scope as the app holds it: below the root navigator, built from
+/// the relay and carrying it, as `SyncStatusScopeHost` does. A pop-up on the
+/// root navigator is above it.
 class _Host {
   final opener = FocusNode(debugLabel: 'opener');
   final opened = <({BuildContext context, String entryId})>[];
@@ -78,12 +81,36 @@ class _Host {
     List<GameCollectionListItem> items, {
     Size size = const Size(400, 800),
     double textScale = 1,
+    ThemeData? theme,
+    ValueNotifier<BgeSyncStatusData>? relay,
+    Stream<List<GameCollection>>? updates,
   }) async {
     useViewSize(tester, size);
     addTearDown(opener.dispose);
+    Widget page = Scaffold(
+      body: Center(
+        child: Builder(
+          builder: (context) => TextButton(
+            key: _openKey,
+            focusNode: opener,
+            onPressed: () => unawaited(
+              showCollectionEntryPicker(
+                context,
+                items: items,
+                updates: updates,
+                onOpen: (context, entryId) =>
+                    opened.add((context: context, entryId: entryId)),
+              ),
+            ),
+            child: const Text('Open'),
+          ),
+        ),
+      ),
+    );
+    page = BgeSyncStatusRelayScope(relay: relay, child: page);
     await tester.pumpWidget(
       MaterialApp(
-        theme: BgeTheme.light(),
+        theme: theme ?? BgeTheme.light(),
         localizationsDelegates:
             GameCollectionLocalizations.localizationsDelegates,
         supportedLocales: GameCollectionLocalizations.supportedLocales,
@@ -92,25 +119,7 @@ class _Host {
               .copyWith(textScaler: TextScaler.linear(textScale)),
           child: child!,
         ),
-        home: Scaffold(
-          body: Center(
-            child: Builder(
-              builder: (context) => TextButton(
-                key: _openKey,
-                focusNode: opener,
-                onPressed: () => unawaited(
-                  showCollectionEntryPicker(
-                    context,
-                    items: items,
-                    onOpen: (context, entryId) =>
-                        opened.add((context: context, entryId: entryId)),
-                  ),
-                ),
-                child: const Text('Open'),
-              ),
-            ),
-          ),
-        ),
+        home: page,
       ),
     );
   }
@@ -388,6 +397,355 @@ void main() {
     expect(beside.right, lessThanOrEqualTo(320));
     expect(below.width, long.width);
     expect(below.left, long.left);
+  });
+
+  group('a copy that has not synced', () {
+    const notSynced = 'Not yet synced';
+    const couldNotSync = "Couldn't sync";
+
+    GameCollectionListItem copy(
+      String id,
+      String platform, {
+      bool isDirty = false,
+      bool isLocalOnly = false,
+    }) => listItem(
+      id,
+      gameId: 'g-wingspan',
+      title: 'Wingspan',
+      platformName: platform,
+      isDirty: isDirty,
+      isLocalOnly: isLocalOnly,
+    );
+
+    /// Sends [entries] down [updates] and lets the picker see them: a
+    /// broadcast stream delivers in a microtask, which a pump runs after its
+    /// frame, so the frame it asks for takes a second.
+    Future<void> emit(
+      WidgetTester tester,
+      StreamController<List<GameCollection>> updates,
+      List<GameCollection> entries,
+    ) async {
+      updates.add(entries);
+      await tester.pump();
+      await tester.pump();
+    }
+
+    Finder badgeIn(String entryId, String text) =>
+        find.descendant(of: _tile(entryId), matching: find.text(text));
+
+    testWidgets("a stuck change says Couldn't sync, and a waiting one says "
+        'Not yet synced', (tester) async {
+      // The session's scope is below the opener's navigator, so the picker,
+      // on the root navigator, hears it only through the relay.
+      final relay = ValueNotifier(
+        const BgeSyncStatusData(
+          waiting: 2,
+          stuck: 1,
+          stuckRecordIds: {'e-1'},
+        ),
+      );
+      addTearDown(relay.dispose);
+      final host = _Host();
+      await host.pump(tester, [
+        copy('e-1', 'Switch', isDirty: true),
+        copy('e-2', 'Steam', isDirty: true),
+      ], relay: relay);
+      await host.open(tester);
+
+      expect(badgeIn('e-1', couldNotSync), findsOneWidget);
+      expect(badgeIn('e-1', notSynced), findsNothing);
+      expect(badgeIn('e-2', notSynced), findsOneWidget);
+      expect(badgeIn('e-2', couldNotSync), findsNothing);
+    });
+
+    testWidgets('a local-only copy says Not synced with no session', (
+      tester,
+    ) async {
+      final host = _Host();
+      await host.pump(tester, [
+        copy('e-1', 'Switch', isLocalOnly: true),
+        copy('e-2', 'Steam'),
+      ]);
+      await host.open(tester);
+
+      expect(badgeIn('e-1', notSynced), findsOneWidget);
+      expect(find.text(notSynced), findsOneWidget);
+    });
+
+    testWidgets('a copy the server has shows no badge', (tester) async {
+      final relay = ValueNotifier(
+        const BgeSyncStatusData(waiting: 0, stuck: 0),
+      );
+      addTearDown(relay.dispose);
+      final host = _Host();
+      await host.pump(tester, [
+        copy('e-1', 'Switch'),
+        copy('e-2', 'Steam'),
+      ], relay: relay);
+      await host.open(tester);
+
+      expect(find.text(notSynced), findsNothing);
+      expect(find.text(couldNotSync), findsNothing);
+      expect(find.byType(BgeSyncBadge), findsNothing);
+    });
+
+    testWidgets('a badge changes while the picker is open, down to synced', (
+      tester,
+    ) async {
+      final relay = ValueNotifier(const BgeSyncStatusData());
+      addTearDown(relay.dispose);
+      final updates = StreamController<List<GameCollection>>.broadcast();
+      addTearDown(updates.close);
+      final host = _Host();
+      await host.pump(
+        tester,
+        [
+          copy('e-1', 'Switch', isDirty: true),
+          copy('e-2', 'Steam'),
+        ],
+        relay: relay,
+        updates: updates.stream,
+      );
+      await host.open(tester);
+      expect(badgeIn('e-1', notSynced), findsOneWidget);
+
+      relay.value = const BgeSyncStatusData(
+        waiting: 1,
+        stuck: 1,
+        stuckRecordIds: {'e-1'},
+      );
+      await tester.pump();
+      expect(badgeIn('e-1', couldNotSync), findsOneWidget);
+      expect(badgeIn('e-1', notSynced), findsNothing);
+
+      // Retried: no longer stuck, and the copy's own flags still say the
+      // server hasn't had it.
+      relay.value = const BgeSyncStatusData(waiting: 1, stuck: 0);
+      await tester.pump();
+      expect(badgeIn('e-1', notSynced), findsOneWidget);
+      expect(badgeIn('e-1', couldNotSync), findsNothing);
+
+      // The push landed: the entry is clean in the live source, and the
+      // queue is clear.
+      await emit(tester, updates, [
+        copy('e-1', 'Switch').entry,
+        copy('e-2', 'Steam').entry,
+      ]);
+      relay.value = const BgeSyncStatusData(waiting: 0, stuck: 0);
+      await tester.pump();
+      expect(find.byType(BgeSyncBadge), findsNothing);
+      // The tiles are the ones the picker opened with.
+      expect(_tile('e-1'), findsOneWidget);
+      expect(_tile('e-2'), findsOneWidget);
+    });
+
+    testWidgets('a copy the live source goes dirty on says Not yet synced', (
+      tester,
+    ) async {
+      final updates = StreamController<List<GameCollection>>.broadcast();
+      addTearDown(updates.close);
+      final host = _Host();
+      await host.pump(tester, [
+        copy('e-1', 'Switch'),
+        copy('e-2', 'Steam'),
+      ], updates: updates.stream);
+      await host.open(tester);
+      expect(find.byType(BgeSyncBadge), findsNothing);
+
+      await emit(tester, updates, [copy('e-1', 'Switch', isDirty: true).entry]);
+
+      expect(badgeIn('e-1', notSynced), findsOneWidget);
+      // Only the copy the emission names changed: the other, left out of it,
+      // keeps the entry it had.
+      expect(find.byType(BgeSyncBadge), findsOneWidget);
+    });
+
+    testWidgets('a tile missing from an emission keeps its last entry, and '
+        'an entry the picker has no tile for adds none', (tester) async {
+      final updates = StreamController<List<GameCollection>>.broadcast();
+      addTearDown(updates.close);
+      final host = _Host();
+      await host.pump(tester, [
+        copy('e-1', 'Switch', isDirty: true),
+        copy('e-2', 'Steam'),
+      ], updates: updates.stream);
+      await host.open(tester);
+
+      await emit(tester, updates, [copy('e-9', 'Stadia', isDirty: true).entry]);
+
+      expect(badgeIn('e-1', notSynced), findsOneWidget);
+      expect(find.byType(BgeSyncBadge), findsOneWidget);
+      expect(_tile('e-9'), findsNothing);
+    });
+
+    testWidgets('closing the picker cancels its subscription to the live '
+        'source', (tester) async {
+      final updates = StreamController<List<GameCollection>>.broadcast();
+      addTearDown(updates.close);
+      final host = _Host();
+      await host.pump(tester, [
+        copy('e-1', 'Switch'),
+        copy('e-2', 'Steam'),
+      ], updates: updates.stream);
+      expect(updates.hasListener, isFalse);
+      await host.open(tester);
+      expect(updates.hasListener, isTrue);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+
+      expect(_tile('e-1'), findsNothing);
+      expect(updates.hasListener, isFalse);
+    });
+
+    testWidgets('a live source that errors leaves the tiles as they were', (
+      tester,
+    ) async {
+      final updates = StreamController<List<GameCollection>>.broadcast();
+      addTearDown(updates.close);
+      final host = _Host();
+      await host.pump(tester, [
+        copy('e-1', 'Switch', isDirty: true),
+        copy('e-2', 'Steam'),
+      ], updates: updates.stream);
+      await host.open(tester);
+
+      updates.addError(StateError('session ended'));
+      await tester.pump();
+      await tester.pump();
+
+      expect(tester.takeException(), isNull);
+      expect(badgeIn('e-1', notSynced), findsOneWidget);
+    });
+
+    testWidgets("the badge is read in the copy's merged node", (tester) async {
+      final handle = tester.ensureSemantics();
+      try {
+        final relay = ValueNotifier(
+          const BgeSyncStatusData(
+            waiting: 1,
+            stuck: 1,
+            stuckRecordIds: {'e-1'},
+          ),
+        );
+        addTearDown(relay.dispose);
+        final host = _Host();
+        await host.pump(tester, [
+          copy('e-1', 'Switch', isDirty: true),
+          copy('e-2', 'Steam'),
+        ], relay: relay);
+        await host.open(tester);
+
+        final stuck = tester.getSemantics(_tile('e-1'));
+        expect(stuck.label, contains('Switch'));
+        expect(stuck.label, contains(couldNotSync));
+        expect(stuck, isSemantics(isButton: true, hasTapAction: true));
+        // One node: the drawn badge is not a second one.
+        expect(stuck.childrenCount, 0);
+        expect(find.bySemanticsLabel(couldNotSync), findsNothing);
+        // A copy the server has is named by its platform alone.
+        expect(tester.getSemantics(_tile('e-2')).label, 'Steam');
+      } finally {
+        handle.dispose();
+      }
+    });
+
+    for (final (name, theme, floor) in [
+      ('light', BgeTheme.light(), Wcag.aaNormalText),
+      ('dark', BgeTheme.dark(), Wcag.aaNormalText),
+      ('high-contrast light', BgeTheme.highContrastLight(), Wcag.aaaNormalText),
+      ('high-contrast dark', BgeTheme.highContrastDark(), Wcag.aaaNormalText),
+    ]) {
+      // A compact window opens a sheet, on `surfaceContainerLow`, and a wide
+      // one a dialog, on `surfaceContainerHigh`.
+      for (final (form, size) in [
+        ('sheet', const Size(320, 640)),
+        ('dialog', const Size(800, 600)),
+      ]) {
+        testWidgets('meets contrast and tap targets at 2.0 text in a $form, '
+            'in $name', (tester) async {
+          final handle = tester.ensureSemantics();
+          try {
+            final relay = ValueNotifier(
+              const BgeSyncStatusData(
+                waiting: 1,
+                stuck: 1,
+                stuckRecordIds: {'e-1'},
+              ),
+            );
+            addTearDown(relay.dispose);
+            final host = _Host();
+            await host.pump(
+              tester,
+              [
+                copy('e-1', 'Switch', isDirty: true),
+                copy('e-2', 'Steam', isDirty: true),
+              ],
+              size: size,
+              textScale: 2,
+              theme: theme,
+              relay: relay,
+            );
+            await host.open(tester);
+
+            expect(tester.takeException(), isNull);
+            expect(
+              ModalRoute.of(tester.element(_tile('e-1'))),
+              form == 'sheet'
+                  ? isA<BgePopupSheetRoute<void>>()
+                  : isA<BgePopupDialogRoute<void>>(),
+            );
+            // The badge's words are drawn text with no node of their own, so
+            // the guideline, which reads nodes whose label is one Text, can't
+            // see them: measure the words, and the icon beside them, on the
+            // pop-up's ground directly.
+            final ground = tester
+                .widget<Material>(
+                  find
+                      .ancestor(
+                        of: _tile('e-1'),
+                        matching: find.byType(Material),
+                      )
+                      .first,
+                )
+                .color!;
+            for (final (id, words, status) in [
+              ('e-1', couldNotSync, BgeStatus.conflict),
+              ('e-2', notSynced, BgeStatus.pending),
+            ]) {
+              final text = badgeIn(id, words);
+              expect(text, findsOneWidget, reason: id);
+              expect(
+                Wcag.contrastRatio(
+                  tester.widget<Text>(text).style!.color!,
+                  ground,
+                ),
+                greaterThanOrEqualTo(floor),
+                reason: '$id words',
+              );
+              // The icon is a mark beside words that say the same: 3:1.
+              final icon = find.descendant(
+                of: _tile(id),
+                matching: find.byIcon(BgeStatusColors.iconFor(status)),
+              );
+              expect(
+                Wcag.contrastRatio(tester.widget<Icon>(icon).color!, ground),
+                greaterThanOrEqualTo(Wcag.aaNonText),
+                reason: '$id icon',
+              );
+            }
+            await expectLater(tester, meetsGuideline(textContrastGuideline));
+            await expectLater(
+              tester,
+              meetsGuideline(androidTapTargetGuideline),
+            );
+            await expectLater(tester, meetsGuideline(iOSTapTargetGuideline));
+          } finally {
+            handle.dispose();
+          }
+        });
+      }
+    }
   });
 
   group('openCollectionEntries', () {

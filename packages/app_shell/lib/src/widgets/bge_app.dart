@@ -2012,6 +2012,13 @@ class _BgeAppState extends State<BgeApp> {
             context,
             items: items,
             onOpen: _openCollectionEntry,
+            // A picker's copies follow the cache, so a badge goes when its
+            // push lands (#960).
+            updates: current
+                .get<GameCollectionRepository>()
+                .watchEntriesForPlatformGames({
+                  for (final item in items) item.entry.platformGameId,
+                }),
           ),
         );
       },
