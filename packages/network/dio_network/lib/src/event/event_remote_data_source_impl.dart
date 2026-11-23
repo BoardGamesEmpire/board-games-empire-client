@@ -89,7 +89,7 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     );
 
     final failures = _EventFailures(route);
-    final response = await sendForJson(
+    return sendForParsed(
       () => _dio.get<String>(
         path,
         options: _plainBody,
@@ -106,17 +106,11 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
       // household's list is the exception: its path names the household, so
       // an enveloped 404 says the household is missing or deleted (#503).
       family: failures,
-    );
-
-    return parseRemote(
-      failures,
-      () => PaginatedResult.fromEnvelope(
-        response.body,
+      map: (body) => PaginatedResult.fromEnvelope(
+        body,
         key: 'events',
         item: mapListRow,
       ),
-      action: action,
-      status: response.status,
     );
   }
 
@@ -126,22 +120,17 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
 
     const action = 'Event fetch';
     const failures = _EventFailures(_Route.row);
-    final response = await sendForJson(
+    return sendForParsed(
       () => _dio.get<String>(_pathOf(id), options: _plainBody),
       action: action,
       // The path names one event, so an application 404 is the service saying
       // it is gone, or that the caller may not read it: the server answers
       // both alike.
       family: failures,
-    );
-    return parseRemote(
-      failures,
-      () => mapDetail(
-        requireObject(response.body['event'], 'event'),
+      map: (body) => mapDetail(
+        requireObject(body['event'], 'event'),
         servesDateRules: true,
       ),
-      action: action,
-      status: response.status,
     );
   }
 
@@ -158,7 +147,7 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
 
     const action = 'Event create';
     const failures = _EventFailures(_Route.create);
-    final response = await sendForJson(
+    return sendForParsed(
       () => _dio.post<String>(
         _basePath,
         options: _plainBody,
@@ -166,11 +155,8 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
       ),
       action: action,
       family: failures,
-    );
-    return parseRemote(
-      failures,
-      () {
-        final event = requireObject(response.body['event'], 'event');
+      map: (body) {
+        final event = requireObject(body['event'], 'event');
         return (
           snapshot: mapDetail(event, servesDateRules: false),
           // A repeat of a create whose event was deleted since still answers
@@ -178,8 +164,6 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
           deletedAt: dateOrNull(event['deletedAt']),
         );
       },
-      action: action,
-      status: response.status,
     );
   }
 
@@ -268,7 +252,9 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
 
     const action = 'Event policy update';
     const failures = _EventFailures(_Route.write);
-    final response = await sendForJson(
+    // Null for a caller who may change the rules but not read them: the
+    // rules are saved all the same.
+    return sendForParsed(
       () => _dio.patch<String>(
         '${_pathOf(id)}/policy',
         options: _plainBody,
@@ -286,14 +272,7 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
       ),
       action: action,
       family: failures,
-    );
-    // Null for a caller who may change the rules but not read them: the
-    // rules are saved all the same.
-    return parseRemote(
-      failures,
-      () => mapPolicy(response.body['policy'], served: true),
-      action: action,
-      status: response.status,
+      map: (body) => mapPolicy(body['policy'], served: true),
     );
   }
 
@@ -314,19 +293,14 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     bool patch = false,
   }) async {
     const failures = _EventFailures(_Route.write);
-    final response = await sendForJson(
+    return sendForParsed(
       () => patch
           ? _dio.patch<String>(path, options: _plainBody, data: data)
           : _dio.post<String>(path, options: _plainBody, data: data),
       action: action,
       // The path names one event, and the call is a write to it.
       family: failures,
-    );
-    return parseRemote(
-      failures,
-      () => mapEvent(requireObject(response.body['event'], 'event')),
-      action: action,
-      status: response.status,
+      map: (body) => mapEvent(requireObject(body['event'], 'event')),
     );
   }
 
@@ -478,7 +452,7 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
 
     const action = 'Availability vote';
     const failures = _EventFailures(_Route.write);
-    final result = await sendForJson(
+    return sendForParsed(
       () => _dio.post<String>(
         '${_occurrencePath(eventId, occurrenceId)}/availability',
         options: _plainBody,
@@ -487,12 +461,7 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
       action: action,
       // The path names one date of one event, and the call is a write to it.
       family: failures,
-    );
-    return parseRemote(
-      failures,
-      () => mapVote(requireObject(result.body['vote'], 'vote')),
-      action: action,
-      status: result.status,
+      map: (body) => mapVote(requireObject(body['vote'], 'vote')),
     );
   }
 
@@ -516,7 +485,7 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
 
     const action = 'RSVP';
     const failures = _EventFailures(_Route.write);
-    final result = await sendForJson(
+    return sendForParsed(
       () => _dio.patch<String>(
         '${_pathOf(eventId)}/attendees/${Uri.encodeComponent(attendeeId)}'
         '/status',
@@ -526,12 +495,7 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
       ),
       action: action,
       family: failures,
-    );
-    return parseRemote(
-      failures,
-      () => mapAttendee(requireObject(result.body['attendee'], 'attendee')),
-      action: action,
-      status: result.status,
+      map: (body) => mapAttendee(requireObject(body['attendee'], 'attendee')),
     );
   }
 
@@ -551,7 +515,7 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
 
     const action = 'Add attendee';
     const failures = _EventFailures(_Route.attendeeAdd);
-    final result = await sendForJson(
+    return sendForParsed(
       () => _dio.post<String>(
         '${_pathOf(eventId)}/attendees',
         options: _plainBody,
@@ -559,12 +523,7 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
       ),
       action: action,
       family: failures,
-    );
-    return parseRemote(
-      failures,
-      () => mapAttendee(requireObject(result.body['attendee'], 'attendee')),
-      action: action,
-      status: result.status,
+      map: (body) => mapAttendee(requireObject(body['attendee'], 'attendee')),
     );
   }
 
@@ -578,19 +537,14 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
 
     const action = 'Remove attendee';
     const failures = _EventFailures(_Route.write);
-    final result = await sendForJson(
+    return sendForParsed(
       () => _dio.delete<String>(
         '${_pathOf(eventId)}/attendees/${Uri.encodeComponent(attendeeId)}',
         options: _plainBody,
       ),
       action: action,
       family: failures,
-    );
-    return parseRemote(
-      failures,
-      () => mapAttendee(requireObject(result.body['attendee'], 'attendee')),
-      action: action,
-      status: result.status,
+      map: (body) => mapAttendee(requireObject(body['attendee'], 'attendee')),
     );
   }
 
@@ -748,7 +702,7 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
 
     const action = 'Offer games';
     const failures = _EventFailures(_Route.write);
-    final result = await sendForJson(
+    return sendForParsed(
       () => _dio.post<String>(
         '${_offeredGamesPath(eventId, attendeeId)}/batch',
         options: _plainBody,
@@ -760,16 +714,11 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
       ),
       action: action,
       family: failures,
-    );
-    return parseRemote(
-      failures,
-      () => mapObjects(
-        result.body['results'],
+      map: (body) => mapObjects(
+        body['results'],
         field: 'results',
         item: mapGameOfferResult,
       ),
-      action: action,
-      status: result.status,
     );
   }
 
@@ -844,21 +793,16 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
 
     const action = 'Nomination';
     const failures = _EventFailures(_Route.row);
-    final response = await sendForJson(
+    return sendForParsed(
       () => _dio.get<String>(
         _nominationPath(eventId, nominationId),
         options: _plainBody,
       ),
       action: action,
       family: failures,
-    );
-    return parseRemote(
-      failures,
-      () => mapNomination(
-        requireObject(response.body['nomination'], 'nomination'),
+      map: (body) => mapNomination(
+        requireObject(body['nomination'], 'nomination'),
       ),
-      action: action,
-      status: response.status,
     );
   }
 
@@ -878,7 +822,7 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
 
     const action = 'Nominate game';
     const failures = _EventFailures(_Route.nominate);
-    final result = await sendForJson(
+    return sendForParsed(
       () => _dio.post<String>(
         _nominationsPath(eventId),
         options: _plainBody,
@@ -890,14 +834,9 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
       ),
       action: action,
       family: failures,
-    );
-    return parseRemote(
-      failures,
-      () => mapNomination(
-        requireObject(result.body['nomination'], 'nomination'),
+      map: (body) => mapNomination(
+        requireObject(body['nomination'], 'nomination'),
       ),
-      action: action,
-      status: result.status,
     );
   }
 
@@ -932,7 +871,7 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
 
     const action = 'Add game to lineup';
     const failures = _EventFailures(_Route.lineupAdd);
-    final result = await sendForJson(
+    return sendForParsed(
       () => _dio.post<String>(
         '${_nominationsPath(eventId)}/direct-add',
         options: _plainBody,
@@ -949,12 +888,8 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
       ),
       action: action,
       family: failures,
-    );
-    return parseRemote(
-      failures,
-      () => mapLineupGame(requireObject(result.body['eventGame'], 'eventGame')),
-      action: action,
-      status: result.status,
+      map: (body) =>
+          mapLineupGame(requireObject(body['eventGame'], 'eventGame')),
     );
   }
 
@@ -968,21 +903,16 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
 
     const action = 'Remove game from lineup';
     const failures = _EventFailures(_Route.lineupRemove);
-    final result = await sendForJson(
+    return sendForParsed(
       () => _dio.delete<String>(
         '${_lineupPath(eventId)}/${Uri.encodeComponent(lineupGameId)}',
         options: _plainBody,
       ),
       action: action,
       family: failures,
-    );
-    return parseRemote(
-      failures,
-      () => mapLineupGame(
-        requireObject(result.body['lineupGame'], 'lineupGame'),
+      map: (body) => mapLineupGame(
+        requireObject(body['lineupGame'], 'lineupGame'),
       ),
-      action: action,
-      status: result.status,
     );
   }
 
@@ -1024,21 +954,16 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
 
     const action = 'Withdraw nomination';
     const failures = _EventFailures(_Route.write);
-    final result = await sendForJson(
+    return sendForParsed(
       () => _dio.patch<String>(
         '${_nominationPath(eventId, nominationId)}/withdraw',
         options: _plainBody,
       ),
       action: action,
       family: failures,
-    );
-    return parseRemote(
-      failures,
-      () => mapNomination(
-        requireObject(result.body['nomination'], 'nomination'),
+      map: (body) => mapNomination(
+        requireObject(body['nomination'], 'nomination'),
       ),
-      action: action,
-      status: result.status,
     );
   }
 
@@ -1095,19 +1020,14 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     checkPathId(nominationId, name: 'nominationId');
 
     const failures = _EventFailures(_Route.write);
-    final result = await sendForJson(
+    return sendForParsed(
       () => _dio.post<String>(
         '${_nominationPath(eventId, nominationId)}/$verb',
         options: _plainBody,
       ),
       action: action,
       family: failures,
-    );
-    return parseRemote(
-      failures,
-      () => parse(result.body),
-      action: action,
-      status: result.status,
+      map: parse,
     );
   }
 
@@ -1121,7 +1041,7 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
 
     const action = 'Availability summary';
     const failures = _EventFailures(_Route.row);
-    final response = await sendForJson(
+    return sendForParsed(
       () => _dio.get<String>(
         '${_occurrencesPath(eventId)}/summary/availability',
         options: _plainBody,
@@ -1130,12 +1050,7 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
       // The path names one event, so an application 404 is the service saying
       // it is gone, as for the detail read.
       family: failures,
-    );
-    return parseRemote(
-      failures,
-      () => mapSummary(requireObject(response.body['summary'], 'summary')),
-      action: action,
-      status: response.status,
+      map: (body) => mapSummary(requireObject(body['summary'], 'summary')),
     );
   }
 
@@ -1163,19 +1078,14 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     Future<Response<String>> Function(String path) request,
   ) async {
     const failures = _EventFailures(_Route.write);
-    final response = await sendForJson(
+    return sendForParsed(
       () => request(path),
       action: action,
       // The path names one date of one event, and the call is a write to it.
       family: failures,
-    );
-    return parseRemote(
-      failures,
-      () => mapOccurrence(
-        requireObject(response.body['occurrence'], 'occurrence'),
+      map: (body) => mapOccurrence(
+        requireObject(body['occurrence'], 'occurrence'),
       ),
-      action: action,
-      status: response.status,
     );
   }
 

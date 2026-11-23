@@ -62,7 +62,7 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
     // is a 200. So a 404 here means the route is not deployed, such as a
     // server older than backend#710's rename.
     const failures = _GatewayFailures(rowRoute: false);
-    final response = await sendForJson(
+    return sendForParsed(
       () => _dio.get<String>(
         _basePath,
         options: _plainBody,
@@ -70,17 +70,11 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
       ),
       action: action,
       family: failures,
-    );
-
-    return parseRemote(
-      failures,
-      () => PaginatedResult.fromEnvelope(
-        response.body,
+      map: (body) => PaginatedResult.fromEnvelope(
+        body,
         key: 'dataGateways',
         item: _mapDataGateway,
       ),
-      action: action,
-      status: response.status,
     );
   }
 
@@ -90,18 +84,13 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
 
     const action = 'DataGateway fetch';
     const failures = _GatewayFailures(rowRoute: true);
-    final response = await sendForJson(
+    return sendForParsed(
       () => _dio.get<String>(_pathOf(id), options: _plainBody),
       action: action,
       family: failures,
-    );
-    return parseRemote(
-      failures,
-      () => _mapDataGateway(
-        requireObject(response.body['dataGateway'], 'dataGateway'),
+      map: (body) => _mapDataGateway(
+        requireObject(body['dataGateway'], 'dataGateway'),
       ),
-      action: action,
-      status: response.status,
     );
   }
 
@@ -111,7 +100,7 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
 
     const action = 'DataGateway create';
     const failures = _GatewayFailures(rowRoute: false, conflictIsName: true);
-    final response = await sendForJson(
+    return sendForParsed(
       () => _dio.post<String>(
         _basePath,
         options: _plainBody,
@@ -128,8 +117,8 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
       ),
       action: action,
       family: failures,
+      map: _mapChangeResult,
     );
-    return _changeResult(response, action: action, family: failures);
   }
 
   @override
@@ -162,12 +151,12 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
 
     const action = 'DataGateway update';
     const failures = _GatewayFailures(rowRoute: true, conflictIsName: true);
-    final response = await sendForJson(
+    return sendForParsed(
       () => _dio.patch<String>(_pathOf(id), options: _plainBody, data: body),
       action: action,
       family: failures,
+      map: _mapChangeResult,
     );
-    return _changeResult(response, action: action, family: failures);
   }
 
   @override
@@ -179,7 +168,7 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
 
     const action = 'DataGateway capability update';
     const failures = _GatewayFailures(rowRoute: true);
-    final response = await sendForJson(
+    return sendForParsed(
       () => _dio.patch<String>(
         _pathOf(id),
         options: _plainBody,
@@ -190,8 +179,8 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
       ),
       action: action,
       family: failures,
+      map: _mapChangeResult,
     );
-    return _changeResult(response, action: action, family: failures);
   }
 
   @override
@@ -200,12 +189,12 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
 
     const action = 'DataGateway delete';
     const failures = _GatewayFailures(rowRoute: true);
-    final response = await sendForJson(
+    return sendForParsed(
       () => _dio.delete<String>(_pathOf(id), options: _plainBody),
       action: action,
       family: failures,
+      map: _mapChangeResult,
     );
-    return _changeResult(response, action: action, family: failures);
   }
 
   @override
@@ -214,12 +203,12 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
 
     const action = 'DataGateway connect';
     const failures = _GatewayFailures(rowRoute: true);
-    final response = await sendForJson(
+    return sendForParsed(
       () => _dio.post<String>('${_pathOf(id)}/connect', options: _plainBody),
       action: action,
       family: failures,
+      map: _mapChangeResult,
     );
-    return _changeResult(response, action: action, family: failures);
   }
 
   @override
@@ -228,12 +217,12 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
 
     const action = 'DataGateway disconnect';
     const failures = _GatewayFailures(rowRoute: true);
-    final response = await sendForJson(
+    return sendForParsed(
       () => _dio.post<String>('${_pathOf(id)}/disconnect', options: _plainBody),
       action: action,
       family: failures,
+      map: _mapChangeResult,
     );
-    return _changeResult(response, action: action, family: failures);
   }
 
   @override
@@ -247,7 +236,7 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
       timeoutIsUnknown: true,
       browser: _browser,
     );
-    final response = await sendForJson(
+    return sendForParsed(
       () => _dio.post<String>(
         '${_pathOf(id)}/interview',
         options: _plainBody.copyWith(
@@ -257,8 +246,8 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
       ),
       action: action,
       family: failures,
+      map: _mapInterviewResult,
     );
-    return _interviewResult(response, action: action, family: failures);
   }
 
   @override
@@ -289,7 +278,7 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
 
     const action = 'Language link list';
     const failures = _GatewayFailures(rowRoute: true);
-    final response = await sendForJson(
+    return sendForParsed(
       () => _dio.get<String>(
         _languageLinksPath(id),
         options: _plainBody,
@@ -303,17 +292,11 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
       ),
       action: action,
       family: failures,
-    );
-
-    return parseRemote(
-      failures,
-      () => PaginatedResult.fromEnvelope(
-        response.body,
+      map: (body) => PaginatedResult.fromEnvelope(
+        body,
         key: 'languageLinks',
         item: _mapLanguageLink,
       ),
-      action: action,
-      status: response.status,
     );
   }
 
@@ -328,7 +311,7 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
 
     const action = 'Language link to tag';
     const failures = _GatewayFailures(rowRoute: true);
-    final response = await sendForJson(
+    return sendForParsed(
       () => _dio.post<String>(
         '${_languageLinkPath(id, linkId)}/link',
         options: _plainBody,
@@ -336,8 +319,8 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
       ),
       action: action,
       family: failures,
+      map: _mapLanguageLinkResult,
     );
-    return _languageLinkResult(response, action: action, family: failures);
   }
 
   @override
@@ -347,15 +330,15 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
 
     const action = 'Language link ignore';
     const failures = _GatewayFailures(rowRoute: true);
-    final response = await sendForJson(
+    return sendForParsed(
       () => _dio.post<String>(
         '${_languageLinkPath(id, linkId)}/ignore',
         options: _plainBody,
       ),
       action: action,
       family: failures,
+      map: _mapLanguageLinkResult,
     );
-    return _languageLinkResult(response, action: action, family: failures);
   }
 
   @override
@@ -365,15 +348,15 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
 
     const action = 'Language link accept';
     const failures = _GatewayFailures(rowRoute: true);
-    final response = await sendForJson(
+    return sendForParsed(
       () => _dio.post<String>(
         '${_languageLinkPath(id, linkId)}/accept',
         options: _plainBody,
       ),
       action: action,
       family: failures,
+      map: _mapLanguageLinkResult,
     );
-    return _languageLinkResult(response, action: action, family: failures);
   }
 
   @override
@@ -397,7 +380,7 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
     // absent for a caller who reached it, so a 404 here means the route is
     // not deployed.
     const failures = _GatewayFailures(rowRoute: false);
-    final response = await sendForJson(
+    return sendForParsed(
       () => _dio.get<String>(
         _languagesPath,
         options: _plainBody,
@@ -409,15 +392,11 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
       ),
       action: action,
       family: failures,
-    );
-
-    return parseRemote(
-      failures,
-      () {
+      map: (body) {
         // The server pages languages, so the page is read as one, and its
         // tags are flattened afterwards. `meta` stays the languages'.
         final languages = PaginatedResult.fromEnvelope(
-          response.body,
+          body,
           key: 'languages',
           item: _languageTags,
         );
@@ -426,8 +405,6 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
           meta: languages.meta,
         );
       },
-      action: action,
-      status: response.status,
     );
   }
 
@@ -441,15 +418,8 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
 
   /// Reads `{ dataGateway, connection_* | disconnection_* }`, the body every
   /// change route answers with.
-  DataGatewayChangeResult _changeResult(
-    RemoteJson response, {
-    required String action,
-    required _GatewayFailures family,
-  }) => parseRemote(
-    family,
-    () {
-      final body = response.body;
-      return DataGatewayChangeResult(
+  static DataGatewayChangeResult _mapChangeResult(Map<String, dynamic> body) =>
+      DataGatewayChangeResult(
         dataGateway: _mapDataGateway(
           requireObject(body['dataGateway'], 'dataGateway'),
         ),
@@ -467,53 +437,31 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
               action: DataGatewayConnectionAction.disconnect,
             ),
       );
-    },
-    action: action,
-    status: response.status,
-  );
 
   /// Reads `{ dataGateway, interview_attempt, interview_response }`, the body
   /// the interview route answers with.
   ///
   /// `interview_attempt` is always true there, so it says nothing and is not
   /// read.
-  DataGatewayInterviewResult _interviewResult(
-    RemoteJson response, {
-    required String action,
-    required _GatewayFailures family,
-  }) => parseRemote(
-    family,
-    () {
-      final body = response.body;
-      final answer = requireObject(
-        body['interview_response'],
-        'interview_response',
-      );
-      return DataGatewayInterviewResult(
-        dataGateway: _mapDataGateway(
-          requireObject(body['dataGateway'], 'dataGateway'),
-        ),
-        succeeded: answer['success'] as bool,
-      );
-    },
-    action: action,
-    status: response.status,
-  );
+  static DataGatewayInterviewResult _mapInterviewResult(
+    Map<String, dynamic> body,
+  ) {
+    final answer = requireObject(
+      body['interview_response'],
+      'interview_response',
+    );
+    return DataGatewayInterviewResult(
+      dataGateway: _mapDataGateway(
+        requireObject(body['dataGateway'], 'dataGateway'),
+      ),
+      succeeded: answer['success'] as bool,
+    );
+  }
 
   /// Reads `{ languageLink }`, the body every language link action answers
   /// with: the link as it stands afterwards.
-  LanguageLink _languageLinkResult(
-    RemoteJson response, {
-    required String action,
-    required _GatewayFailures family,
-  }) => parseRemote(
-    family,
-    () => _mapLanguageLink(
-      requireObject(response.body['languageLink'], 'languageLink'),
-    ),
-    action: action,
-    status: response.status,
-  );
+  static LanguageLink _mapLanguageLinkResult(Map<String, dynamic> body) =>
+      _mapLanguageLink(requireObject(body['languageLink'], 'languageLink'));
 
   /// The attempt [attemptKey] reports, or null when the server made none.
   ///

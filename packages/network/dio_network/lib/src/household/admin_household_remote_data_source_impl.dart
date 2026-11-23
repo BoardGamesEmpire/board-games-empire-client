@@ -74,7 +74,7 @@ class AdminHouseholdRemoteDataSourceImpl
     // A list route is never absent for a caller who reached it, so even an
     // application 404 here means the route is not deployed.
     const failures = _AdminHouseholdFailures(rowRoute: false);
-    final response = await sendForJson(
+    return sendForParsed(
       () => _dio.get<String>(
         _listPath,
         options: _plainBody,
@@ -88,17 +88,11 @@ class AdminHouseholdRemoteDataSourceImpl
       ),
       action: action,
       family: failures,
-    );
-
-    return parseRemote(
-      failures,
-      () => PaginatedResult.fromEnvelope(
-        response.body,
+      map: (body) => PaginatedResult.fromEnvelope(
+        body,
         key: 'households',
         item: _mapRow,
       ),
-      action: action,
-      status: response.status,
     );
   }
 
@@ -108,16 +102,11 @@ class AdminHouseholdRemoteDataSourceImpl
 
     const action = 'Staff household fetch';
     const failures = _AdminHouseholdFailures(rowRoute: true);
-    final response = await sendForJson(
+    return sendForParsed(
       () => _dio.get<String>(_pathOf(id), options: _plainBody),
       action: action,
       family: failures,
-    );
-    return parseRemote(
-      failures,
-      () => _mapDetail(response.body),
-      action: action,
-      status: response.status,
+      map: _mapDetail,
     );
   }
 

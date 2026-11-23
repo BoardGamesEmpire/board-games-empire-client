@@ -39,7 +39,7 @@ class HouseholdInviteRemoteDataSourceImpl
 
     const action = 'Household invite send';
     const failures = _InviteFailures(rowRoute: true);
-    final response = await sendForJson(
+    return sendForParsed(
       () => _dio.post<String>(
         _householdInvites(householdId),
         options: _plainBody,
@@ -59,12 +59,7 @@ class HouseholdInviteRemoteDataSourceImpl
       // the same way, but the list on the screen before this one would have
       // failed first.
       family: failures,
-    );
-    return parseRemote(
-      failures,
-      () => _mapInvite(requireObject(response.body['invite'], 'invite')),
-      action: action,
-      status: response.status,
+      map: (body) => _mapInvite(requireObject(body['invite'], 'invite')),
     );
   }
 
@@ -133,7 +128,7 @@ class HouseholdInviteRemoteDataSourceImpl
     }
 
     const failures = _InviteFailures();
-    final response = await sendForJson(
+    return sendForParsed(
       () => _dio.get<String>(
         path,
         options: _plainBody,
@@ -145,16 +140,11 @@ class HouseholdInviteRemoteDataSourceImpl
       ),
       action: action,
       family: failures,
-    );
-    return parseRemote(
-      failures,
-      () => PaginatedResult.fromEnvelope(
-        response.body,
+      map: (body) => PaginatedResult.fromEnvelope(
+        body,
         key: 'invites',
         item: _mapInvite,
       ),
-      action: action,
-      status: response.status,
     );
   }
 
@@ -164,23 +154,18 @@ class HouseholdInviteRemoteDataSourceImpl
 
     const action = 'Household invite accept';
     const failures = _InviteFailures(rowRoute: true);
-    final response = await sendForJson(
+    return sendForParsed(
       () =>
           _dio.post<String>('${_invite(inviteId)}/accept', options: _plainBody),
       action: action,
       family: failures,
-    );
-    return parseRemote(
-      failures,
-      () {
-        final member = requireObject(response.body['member'], 'member');
+      map: (body) {
+        final member = requireObject(body['member'], 'member');
         return (
-          invite: _mapInvite(requireObject(response.body['invite'], 'invite')),
+          invite: _mapInvite(requireObject(body['invite'], 'invite')),
           householdId: member['householdId'] as String,
         );
       },
-      action: action,
-      status: response.status,
     );
   }
 
@@ -230,16 +215,11 @@ class HouseholdInviteRemoteDataSourceImpl
   /// A POST to [path] answered by `{ message, invite }`.
   Future<HouseholdInvite> _change(String path, String action) async {
     const failures = _InviteFailures(rowRoute: true);
-    final response = await sendForJson(
+    return sendForParsed(
       () => _dio.post<String>(path, options: _plainBody),
       action: action,
       family: failures,
-    );
-    return parseRemote(
-      failures,
-      () => _mapInvite(requireObject(response.body['invite'], 'invite')),
-      action: action,
-      status: response.status,
+      map: (body) => _mapInvite(requireObject(body['invite'], 'invite')),
     );
   }
 

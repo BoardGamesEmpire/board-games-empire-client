@@ -30,16 +30,11 @@ class UserProfileRemoteDataSourceImpl implements UserProfileRemoteDataSource {
   @override
   Future<UserProfile> fetchOwn() async {
     const action = 'Own profile fetch';
-    final response = await sendForJson(
+    return sendForParsed(
       () => _dio.get<String>(_path, options: _plainBody),
       action: action,
       family: _failures,
-    );
-    return parseRemote(
-      _failures,
-      () => _mapProfile(response.body),
-      action: action,
-      status: response.status,
+      map: _mapProfile,
     );
   }
 
@@ -50,7 +45,7 @@ class UserProfileRemoteDataSourceImpl implements UserProfileRemoteDataSource {
     _validate(patch);
 
     const action = 'Own profile update';
-    final response = await sendForJson(
+    return sendForParsed(
       () => _dio.patch<String>(
         _path,
         data: _bodyOf(patch),
@@ -58,12 +53,7 @@ class UserProfileRemoteDataSourceImpl implements UserProfileRemoteDataSource {
       ),
       action: action,
       family: _failures,
-    );
-    return parseRemote(
-      _failures,
-      () => _mapProfile(response.body),
-      action: action,
-      status: response.status,
+      map: _mapProfile,
     );
   }
 

@@ -33,16 +33,11 @@ class SystemSettingsRemoteDataSourceImpl
   @override
   Future<SystemSettings> fetch() async {
     const action = 'Server settings fetch';
-    final response = await sendForJson(
+    return sendForParsed(
       () => _dio.get<String>(_path, options: _plainBody),
       action: action,
       family: _failures,
-    );
-    return parseRemote(
-      _failures,
-      () => _mapSettings(response.body),
-      action: action,
-      status: response.status,
+      map: _mapSettings,
     );
   }
 
@@ -54,7 +49,7 @@ class SystemSettingsRemoteDataSourceImpl
     _validate(patch);
 
     const action = 'Server settings update';
-    final response = await sendForJson(
+    return sendForParsed(
       () => _dio.patch<String>(
         '$_path/${Uri.encodeComponent(id)}',
         data: _bodyOf(patch),
@@ -62,12 +57,7 @@ class SystemSettingsRemoteDataSourceImpl
       ),
       action: action,
       family: _failures,
-    );
-    return parseRemote(
-      _failures,
-      () => _mapSettings(response.body),
-      action: action,
-      status: response.status,
+      map: _mapSettings,
     );
   }
 

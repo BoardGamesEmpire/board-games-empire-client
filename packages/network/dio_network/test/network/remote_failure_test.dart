@@ -397,4 +397,59 @@ void main() {
       );
     });
   });
+
+  group('sendForParsed', () {
+    test('returns the mapped body', () async {
+      final value = await sendForParsed(
+        _get(cannedDio(body: '{"a":1}', statusCode: 200)),
+        action: 'act',
+        family: _family,
+        map: (body) => body['a'] as int,
+      );
+
+      expect(value, 1);
+    });
+
+    test("files a map throw as permanent with the response's status", () async {
+      await expectLater(
+        sendForParsed<_Failure, int>(
+          _get(cannedDio(body: '{"a":1}', statusCode: 201)),
+          action: 'act',
+          family: _family,
+          map: (body) => throw StateError('bad'),
+        ),
+        throwsA(
+          _permanent(201)
+              .having(
+                (e) => e.message,
+                'message',
+                startsWith('Failed to parse the act response:'),
+              )
+              .having((e) => e.cause, 'cause', isA<StateError>()),
+        ),
+      );
+    });
+
+    test('passes a send failure through unchanged', () async {
+      var mapped = false;
+
+      await expectLater(
+        sendForParsed<_Failure, int>(
+          _get(cannedDio(body: _envelope(503), statusCode: 503)),
+          action: 'act',
+          family: _family,
+          map: (body) {
+            mapped = true;
+            return 0;
+          },
+        ),
+        throwsA(
+          _transient(
+            503,
+          ).having((e) => e.message, 'message', 'act returned 503'),
+        ),
+      );
+      expect(mapped, isFalse);
+    });
+  });
 }

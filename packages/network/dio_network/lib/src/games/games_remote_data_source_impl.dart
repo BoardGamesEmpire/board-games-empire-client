@@ -58,7 +58,7 @@ class GamesRemoteDataSourceImpl implements GamesRemoteDataSource {
 
     const action = 'Game catalog';
     const failures = _GamesFailures();
-    final response = await sendForJson(
+    return sendForParsed(
       () => _dio.get<String>(
         _basePath,
         options: _plainBody,
@@ -71,17 +71,11 @@ class GamesRemoteDataSourceImpl implements GamesRemoteDataSource {
       ),
       action: action,
       family: failures,
-    );
-
-    return parseRemote(
-      failures,
-      () => PaginatedResult.fromEnvelope(
-        response.body,
+      map: (body) => PaginatedResult.fromEnvelope(
+        body,
         key: 'games',
         item: _mapGame,
       ),
-      action: action,
-      status: response.status,
     );
   }
 
@@ -93,7 +87,7 @@ class GamesRemoteDataSourceImpl implements GamesRemoteDataSource {
 
     const action = 'Random games';
     const failures = _GamesFailures();
-    final response = await sendForJson(
+    return sendForParsed(
       () => _dio.get<String>(
         '$_basePath/random',
         options: _plainBody,
@@ -101,12 +95,8 @@ class GamesRemoteDataSourceImpl implements GamesRemoteDataSource {
       ),
       action: action,
       family: failures,
-    );
-
-    return parseRemote(
-      failures,
-      () {
-        final rows = response.body['games'];
+      map: (body) {
+        final rows = body['games'];
         if (rows is! List) {
           throw const FormatException('response is missing a "games" array');
         }
@@ -115,8 +105,6 @@ class GamesRemoteDataSourceImpl implements GamesRemoteDataSource {
             mapGameSummary(row),
         ];
       },
-      action: action,
-      status: response.status,
     );
   }
 
@@ -126,20 +114,14 @@ class GamesRemoteDataSourceImpl implements GamesRemoteDataSource {
 
     const action = 'Game fetch';
     const failures = _GamesFailures(row: _Row.game);
-    final response = await sendForJson(
+    return sendForParsed(
       () => _dio.get<String>('$_basePath/$id', options: _plainBody),
       action: action,
       family: failures,
-    );
-
-    return parseRemote(
-      failures,
-      () {
-        final row = requireObject(response.body['game'], 'game');
+      map: (body) {
+        final row = requireObject(body['game'], 'game');
         return (game: _mapGame(row), platformGames: _mapPlatformGames(row));
       },
-      action: action,
-      status: response.status,
     );
   }
 
@@ -155,7 +137,7 @@ class GamesRemoteDataSourceImpl implements GamesRemoteDataSource {
 
     const action = 'Game search';
     const failures = _GamesFailures();
-    final response = await sendForJson(
+    return sendForParsed(
       () => _dio.get<String>(
         '$_basePath/search',
         options: _plainBody.copyWith(receiveTimeout: searchReceiveTimeout),
@@ -181,13 +163,7 @@ class GamesRemoteDataSourceImpl implements GamesRemoteDataSource {
       ),
       action: action,
       family: failures,
-    );
-
-    return parseRemote(
-      failures,
-      () => _mapSearchResults(response.body),
-      action: action,
-      status: response.status,
+      map: _mapSearchResults,
     );
   }
 
@@ -209,7 +185,7 @@ class GamesRemoteDataSourceImpl implements GamesRemoteDataSource {
     final failures = _GamesFailures(
       row: target is ServerGameExpansionsTarget ? _Row.game : null,
     );
-    final response = await sendForJson(
+    return sendForParsed(
       () => _dio.get<String>(
         '$_basePath/search/expansions',
         options: _plainBody.copyWith(receiveTimeout: searchReceiveTimeout),
@@ -223,13 +199,7 @@ class GamesRemoteDataSourceImpl implements GamesRemoteDataSource {
       ),
       action: action,
       family: failures,
-    );
-
-    return parseRemote(
-      failures,
-      () => _mapSearchResults(response.body),
-      action: action,
-      status: response.status,
+      map: _mapSearchResults,
     );
   }
 
@@ -250,7 +220,7 @@ class GamesRemoteDataSourceImpl implements GamesRemoteDataSource {
 
     const action = 'Game import start';
     const failures = _GamesFailures();
-    final response = await sendForJson(
+    return sendForParsed(
       () => _dio.post<String>(
         '$_basePath/import',
         options: _plainBody,
@@ -267,17 +237,11 @@ class GamesRemoteDataSourceImpl implements GamesRemoteDataSource {
       ),
       action: action,
       family: failures,
-    );
-
-    return parseRemote(
-      failures,
-      () => GameImportReceipt(
-        batchId: response.body['batchId'] as String,
-        baseJobId: response.body['baseJobId'] as String,
-        correlationId: response.body['correlationId'] as String,
+      map: (body) => GameImportReceipt(
+        batchId: body['batchId'] as String,
+        baseJobId: body['baseJobId'] as String,
+        correlationId: body['correlationId'] as String,
       ),
-      action: action,
-      status: response.status,
     );
   }
 
@@ -289,17 +253,11 @@ class GamesRemoteDataSourceImpl implements GamesRemoteDataSource {
 
     const action = 'Game import poll';
     const failures = _GamesFailures(row: _Row.importBatch);
-    final response = await sendForJson(
+    return sendForParsed(
       () => _dio.get<String>('$_basePath/import/$batchId', options: _plainBody),
       action: action,
       family: failures,
-    );
-
-    return parseRemote(
-      failures,
-      () => _mapImportBatch(response.body),
-      action: action,
-      status: response.status,
+      map: _mapImportBatch,
     );
   }
 

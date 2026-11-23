@@ -61,7 +61,7 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
 
     const action = 'Household list';
     const failures = _HouseholdFailures();
-    final (:body, :status) = await sendForJson(
+    return sendForParsed(
       () => _dio.get<String>(
         _basePath,
         options: _plainBody,
@@ -69,17 +69,11 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
       ),
       action: action,
       family: failures,
-    );
-
-    return parseRemote(
-      failures,
-      () => PaginatedResult.fromEnvelope(
+      map: (body) => PaginatedResult.fromEnvelope(
         body,
         key: 'households',
         item: _mapHouseholdWithMembers,
       ),
-      action: action,
-      status: status,
     );
   }
 
@@ -91,7 +85,7 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
 
     const action = 'Household game pool sample';
     const failures = _HouseholdFailures();
-    final (:body, :status) = await sendForJson(
+    return sendForParsed(
       () => _dio.get<String>(
         '$_basePath/game-pool/random',
         options: _plainBody,
@@ -99,11 +93,7 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
       ),
       action: action,
       family: failures,
-    );
-
-    return parseRemote(
-      failures,
-      () {
+      map: (body) {
         final games = body['games'];
         final gameCount = body['gameCount'];
         if (games is! List) {
@@ -124,8 +114,6 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
           gameCount: gameCount,
         );
       },
-      action: action,
-      status: status,
     );
   }
 

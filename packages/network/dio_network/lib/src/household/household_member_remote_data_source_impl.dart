@@ -96,13 +96,14 @@ class HouseholdMemberRemoteDataSourceImpl
   ) async {
     checkPathId(householdId, name: 'householdId');
     checkPathId(memberId, name: 'memberId');
-    return _send(
+    return sendForParsed(
       () => _dio.post<String>(
         '${_member(householdId, memberId)}/transfer-ownership',
         options: _plainBody,
       ),
       action: 'Household ownership transfer',
-      parse: (body) => (
+      family: const _MemberFailures(),
+      map: (body) => (
         owner: _memberAt(body, 'owner'),
         previousOwner: _memberAt(body, 'previousOwner'),
       ),
@@ -118,33 +119,12 @@ class HouseholdMemberRemoteDataSourceImpl
   Future<HouseholdMember> _sendForMember(
     Future<Response<String>> Function() request, {
     required String action,
-  }) => _send(
+  }) => sendForParsed(
     request,
     action: action,
-    parse: (body) => _memberAt(body, 'member'),
+    family: const _MemberFailures(),
+    map: (body) => _memberAt(body, 'member'),
   );
-
-  /// Sends [request], classifying a failure through [_MemberFailures], and
-  /// reads its answer with [parse]. A [FormatException] from [parse] is a
-  /// body that cannot be read as the contract.
-  Future<T> _send<T>(
-    Future<Response<String>> Function() request, {
-    required String action,
-    required T Function(Map<String, dynamic> body) parse,
-  }) async {
-    const failures = _MemberFailures();
-    final response = await sendForJson(
-      request,
-      action: action,
-      family: failures,
-    );
-    return parseRemote(
-      failures,
-      () => parse(response.body),
-      action: action,
-      status: response.status,
-    );
-  }
 
   /// The member object under [key] in [body].
   static HouseholdMember _memberAt(Map<String, dynamic> body, String key) {

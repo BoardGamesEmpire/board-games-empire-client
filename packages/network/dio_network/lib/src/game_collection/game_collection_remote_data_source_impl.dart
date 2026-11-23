@@ -92,7 +92,11 @@ class GameCollectionRemoteDataSourceImpl
     const action = 'Collection list';
     // A list route that 404s was never reached — see _NotFoundMeaning.
     const failures = _CollectionFailures(_NotFoundMeaning.unreachableEndpoint);
-    final response = await sendForJson(
+    // The envelope parse and the row mapping share one permanent
+    // classification: a missing array, a missing or partial `pagination`, and
+    // a row the mapper cannot read — its summary included (#259) — are all a
+    // 2xx this source cannot map.
+    return sendForParsed(
       () => _dio.get<String>(
         _basePath,
         options: _plainBody,
@@ -110,21 +114,11 @@ class GameCollectionRemoteDataSourceImpl
       ),
       action: action,
       family: failures,
-    );
-
-    // The envelope parse and the row mapping share one permanent
-    // classification: a missing array, a missing or partial `pagination`, and
-    // a row the mapper cannot read — its summary included (#259) — are all a
-    // 2xx this source cannot map.
-    return parseRemote(
-      failures,
-      () => PaginatedResult.fromEnvelope(
-        response.body,
+      map: (body) => PaginatedResult.fromEnvelope(
+        body,
         key: 'collections',
         item: _mapEntryWithSummary,
       ),
-      action: action,
-      status: response.status,
     );
   }
 

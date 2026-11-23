@@ -52,7 +52,7 @@ class UserRemoteDataSourceImpl implements UserRemoteDataSource {
     );
 
     const action = 'User search';
-    final response = await sendForJson(
+    return sendForParsed(
       () => _dio.get<String>(
         _searchPath,
         options: _plainBody,
@@ -60,16 +60,11 @@ class UserRemoteDataSourceImpl implements UserRemoteDataSource {
       ),
       action: action,
       family: _failures,
-    );
-    return parseRemote(
-      _failures,
-      () => PaginatedResult.fromEnvelope(
-        response.body,
+      map: (body) => PaginatedResult.fromEnvelope(
+        body,
         key: 'users',
         item: userSummaryFromJson,
       ),
-      action: action,
-      status: response.status,
     );
   }
 
@@ -86,7 +81,7 @@ class UserRemoteDataSourceImpl implements UserRemoteDataSource {
     }
 
     const action = 'Caller access';
-    final response = await sendForJson(
+    return sendForParsed(
       () => _dio.get<String>(
         _accessPath,
         options: _plainBody,
@@ -96,12 +91,7 @@ class UserRemoteDataSourceImpl implements UserRemoteDataSource {
       ),
       action: action,
       family: _failures,
-    );
-    return parseRemote(
-      _failures,
-      () => callerAccessFromJson(response.body, resourceTypes),
-      action: action,
-      status: response.status,
+      map: (body) => callerAccessFromJson(body, resourceTypes),
     );
   }
 }
