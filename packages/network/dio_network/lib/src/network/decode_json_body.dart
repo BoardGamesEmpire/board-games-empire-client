@@ -32,20 +32,22 @@ import 'package:flutter/foundation.dart';
 ///
 /// ## Threshold
 ///
-/// Reproduces the rule dio's own `BackgroundTransformer` applies
-/// (`background_transformer.dart:15-25`), which taking the body as a `String`
-/// otherwise loses: below 50 KB decode inline, above it hand the work to
-/// another isolate so a large page does not jank the frame it lands on.
+/// Reproduces the offload dio's default transformer applies, which taking
+/// the body as a `String` otherwise loses. That transformer is
+/// `FusedTransformer(contentLengthIsolateThreshold: 50 * 1024)`
+/// (`dio_mixin.dart:50`): at 50 KB and above it decodes on another isolate
+/// (`fused_transformer.dart:146-147`), so a large page does not jank the frame
+/// it lands on. This function keeps the same 50 KB line and the same `>=`.
 ///
-/// `codeUnits.length` is dio's own expression, kept deliberately rather than
-/// swapped for an encoded byte count. The UTF-8 size of the response describes
-/// work that has **already happened** — the transformer ran `utf8.decode` at
-/// `sync_transformer.dart:65` before this function was handed a `String` — so
-/// it governs nothing here. What remains is parse cost, which tracks the
-/// string being parsed. Measured on a ~60 KB UTF-8 payload: 20k CJK code units
-/// parse in ~38us against ~69us for 60k ASCII code units, so switching to
-/// bytes would offload the *cheaper* body. Diverging from dio would also mean
-/// this path and the transformer's disagree about the same body.
+/// It measures differently, on purpose. dio counts **bytes**: the
+/// `content-length` header, or the consolidated byte count when there is none
+/// (`fused_transformer.dart:133-147`). This counts `codeUnits.length`, because
+/// the bytes describe work that has **already happened**: for a `String` body
+/// the transformer ran `utf8.decode` at `fused_transformer.dart:105` before
+/// this function was handed the string, so they govern nothing here. What
+/// remains is parse cost, which tracks the string being parsed. Measured on a
+/// ~60 KB UTF-8 payload: 20k CJK code units parse in ~38us against ~69us for
+/// 60k ASCII code units, so counting bytes would offload the *cheaper* body.
 ///
 /// ## Failures
 ///
