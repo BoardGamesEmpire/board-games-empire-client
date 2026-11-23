@@ -1264,6 +1264,266 @@ void main() {
 
     expect(watch.hasListener, isFalse);
   });
+
+  group('an entry whose add syncs, moving it to the server id (#693)', () {
+    /// The watch on the server's id, for a bloc that opened on the local
+    /// one ('gc_1', on [watch]).
+    late StreamController<GameCollectionListItem?> serverWatch;
+
+    /// A synchronous watch on the local id, for the tests that need its
+    /// answers queued in the bloc at the moment they are sent.
+    late StreamController<GameCollectionListItem?> syncWatch;
+
+    /// The entry the reconcile moved [row] onto.
+    GameCollectionListItem serverRow() {
+      final local = row();
+      return GameCollectionListItem(
+        entry: local.entry.copyWith(id: 'gc_server'),
+        gameId: local.gameId,
+        title: local.title,
+        subtitle: local.subtitle,
+        platformName: local.platformName,
+        thumbnail: local.thumbnail,
+      );
+    }
+
+    void watchServer() {
+      serverWatch = StreamController<GameCollectionListItem?>();
+      // Not awaited: a bloc that never followed the move never listened, and
+      // the close of a watch nobody listened to never completes.
+      addTearDown(() => unawaited(serverWatch.close()));
+      when(
+        () => repository.watchCollectionListItem('gc_server'),
+      ).thenAnswer((_) => serverWatch.stream);
+    }
+
+    /// Watches the local id on [syncWatch] in place of [watch], which gets
+    /// the listener its tear-down close waits for.
+    void watchLocalSynchronously() {
+      syncWatch = StreamController<GameCollectionListItem?>(sync: true);
+      addTearDown(syncWatch.close);
+      watch.stream.listen(null);
+      when(
+        () => repository.watchCollectionListItem('gc_1'),
+      ).thenAnswer((_) => syncWatch.stream);
+    }
+
+    void recordMove() => when(
+      () => repository.reconciledCollectionEntryId('gc_1'),
+    ).thenReturn('gc_server');
+
+    /// The reconcile: the move is recorded, and the local id's watch answers
+    /// null as its row goes.
+    Future<void> reconcile(CollectionEntryBloc bloc) async {
+      recordMove();
+      await show(bloc, null);
+    }
+
+    blocTest<CollectionEntryBloc, CollectionEntryState>(
+      'opened on a local id that already moved, it watches the server id',
+      setUp: () {
+        recordMove();
+        // The shared watch plays the server's here, since the local id is
+        // never watched.
+        when(
+          () => repository.watchCollectionListItem('gc_server'),
+        ).thenAnswer((_) => watch.stream);
+      },
+      build: build,
+      act: (bloc) async {
+        expect(bloc.entryId, 'gc_server');
+        await show(bloc, serverRow());
+      },
+      expect: () => [ready(serverRow())],
+      verify: (_) =>
+          verifyNever(() => repository.watchCollectionListItem('gc_1')),
+    );
+
+    blocTest<CollectionEntryBloc, CollectionEntryState>(
+      'a null from the move is followed: the entry stays shown and the '
+      'watch moves to the server id',
+      setUp: watchServer,
+      build: build,
+      act: (bloc) async {
+        await show(bloc, row());
+        await reconcile(bloc);
+        expect(bloc.entryId, 'gc_server');
+        expect(watch.hasListener, isFalse);
+        serverWatch.add(serverRow());
+        await pumpEventQueue();
+      },
+      expect: () => [ready(row()), ready(serverRow())],
+      verify: (_) => verify(
+        () => repository.watchCollectionListItem('gc_server'),
+      ).called(1),
+    );
+
+    blocTest<CollectionEntryBloc, CollectionEntryState>(
+      'an edit sent after the move goes to the server id',
+      setUp: () {
+        watchServer();
+        answerUpdate();
+      },
+      build: build,
+      act: (bloc) async {
+        await show(bloc, row());
+        // The sheet opens on the local id's entry, and stays open across the
+        // move.
+        final sheetOpenedOn = bloc.state.item!.entry;
+        await reconcile(bloc);
+        serverWatch.add(serverRow());
+        await pumpEventQueue();
+        bloc.add(edit(quantity: 3, base: sheetOpenedOn));
+        await pumpEventQueue();
+      },
+      skip: 2,
+      expect: () => [
+        ready(serverRow(), action: CollectionEntryAction.saving),
+        ready(
+          serverRow(),
+          action: CollectionEntryAction.saved,
+          sync: CollectionSync.synced,
+        ),
+      ],
+      verify: (_) {
+        verify(
+          () => repository.updateCollectionEntry(
+            id: 'gc_server',
+            quantity: 3,
+            rating: any(named: 'rating'),
+            playAgain: any(named: 'playAgain'),
+            favorite: any(named: 'favorite'),
+            comment: any(named: 'comment'),
+          ),
+        ).called(1);
+        verify(() => sender.deliver('sq_1', _updateOp)).called(1);
+      },
+    );
+
+    blocTest<CollectionEntryBloc, CollectionEntryState>(
+      'a removal confirmed across the move reports Removed only for the real '
+      'removal',
+      setUp: () {
+        watchServer();
+        when(
+          () => repository.removeFromCollection('gc_server'),
+        ).thenAnswer((_) async => (syncQueueId: 'sq_2', operation: _removeOp));
+      },
+      build: build,
+      act: (bloc) async {
+        await show(bloc, row());
+        // The confirm is up across the move.
+        await reconcile(bloc);
+        serverWatch.add(serverRow());
+        await pumpEventQueue();
+        bloc.add(const CollectionEntryRemoveConfirmed());
+        await pumpEventQueue();
+        // The removal's own null.
+        serverWatch.add(null);
+        await pumpEventQueue();
+      },
+      expect: () => [
+        ready(row()),
+        ready(serverRow()),
+        ready(serverRow(), action: CollectionEntryAction.removing),
+        ready(
+          serverRow(),
+          action: CollectionEntryAction.removed,
+          sync: CollectionSync.synced,
+        ),
+      ],
+      verify: (_) {
+        verifyNever(() => repository.removeFromCollection('gc_1'));
+        verify(() => sender.deliver('sq_2', _removeOp)).called(1);
+      },
+    );
+
+    blocTest<CollectionEntryBloc, CollectionEntryState>(
+      'what the local id watch reported after the move is dropped',
+      setUp: () {
+        watchServer();
+        watchLocalSynchronously();
+      },
+      build: build,
+      act: (bloc) async {
+        syncWatch.add(row());
+        await pumpEventQueue();
+        recordMove();
+        // Both are queued in the bloc before it handles the null and lets
+        // this watch go.
+        syncWatch
+          ..add(null)
+          ..addError(StateError('the read failed'));
+        await pumpEventQueue();
+      },
+      expect: () => [ready(row())],
+    );
+
+    blocTest<CollectionEntryBloc, CollectionEntryState>(
+      'a removal of the local id the move overtook is removeFailed, not '
+      'removed',
+      setUp: () {
+        watchServer();
+        _gate = Completer<void>();
+        when(() => repository.removeFromCollection('gc_1')).thenAnswer((
+          _,
+        ) async {
+          await _gate.future;
+          throw StateError('GameCollection entry gc_1 not found');
+        });
+      },
+      build: build,
+      act: (bloc) async {
+        await show(bloc, row());
+        bloc.add(const CollectionEntryRemoveConfirmed());
+        await pumpEventQueue();
+        await reconcile(bloc);
+        _gate.complete();
+        await pumpEventQueue();
+      },
+      skip: 2,
+      expect: () => [ready(row(), action: CollectionEntryAction.removeFailed)],
+      verify: (_) => verifyNoSend(),
+    );
+
+    test('a move in the same turn as close leaves no watch open', () async {
+      watchServer();
+      watchLocalSynchronously();
+      final bloc = build();
+      syncWatch.add(row());
+      await pumpEventQueue();
+
+      recordMove();
+      // The null reaches the bloc after close has begun, and is handled
+      // after close has let the local watch go.
+      final closed = bloc.close();
+      syncWatch.add(null);
+      await closed;
+      await pumpEventQueue();
+
+      expect(syncWatch.hasListener, isFalse);
+      expect(serverWatch.hasListener, isFalse);
+    });
+
+    blocTest<CollectionEntryBloc, CollectionEntryState>(
+      'a null with no recorded move is still gone',
+      build: build,
+      act: (bloc) async {
+        await show(bloc, row());
+        await show(bloc, null);
+      },
+      expect: () => [
+        ready(row()),
+        CollectionEntryState(view: CollectionEntryView.gone, item: row()),
+      ],
+      verify: (bloc) {
+        // Asked when it opened, and again on the null.
+        verify(() => repository.reconciledCollectionEntryId('gc_1')).called(2);
+        verifyNever(() => repository.watchCollectionListItem('gc_server'));
+        expect(bloc.entryId, 'gc_1');
+      },
+    );
+  });
 }
 
 /// Held by the tests that need a write to stay in flight.

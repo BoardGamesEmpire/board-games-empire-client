@@ -26,6 +26,29 @@ import 'package:observability/observability.dart';
 /// again, `loading` until the new watch answers. A retry in any other view
 /// does nothing, as does one that reaches the bloc while it closes.
 ///
+/// ## An entry whose id changes (#693)
+///
+/// An entry added offline is shown under its local id until the server
+/// confirms the add. The reconcile then moves it onto the server's id and
+/// deletes the local row, so the watch on the local id answers null. That is
+/// not a removal, and must not be shown as one.
+///
+/// So on a null the bloc first asks
+/// [GameCollectionRepository.reconciledCollectionEntryId] whether its id
+/// moved. If it did, [entryId] becomes the server's id and the bloc watches
+/// that instead. The entry on screen stays until the new watch answers, and
+/// whatever the old watch still reports is dropped. A bloc opened on a local
+/// id that has already moved (a restored route, a web reload) starts on the
+/// server's id.
+///
+/// An edit or a removal sends [entryId] as it is when sent. The edit sheet
+/// and the removal confirm hold no id of their own, so one left open across
+/// the move goes to the server's id. And the move's null is followed rather
+/// than read as gone, so only the removal's own null ends it. A removal sent
+/// on the local id just before the move lands finds no row there and ends
+/// `removeFailed`, not `removed`: the entry is still in the collection, and
+/// confirming again removes it under the server's id.
+///
 /// ## Before the cache has it
 ///
 /// An entry that isn't in the cache yet is not one that was removed. The
@@ -90,7 +113,7 @@ class CollectionEntryBloc
   CollectionEntryBloc({
     required this._repository,
     required this._sender,
-    required this.entryId,
+    required String entryId,
     Stream<Hydration>? hydration,
     BgeLogger? logger,
   }) : _logger = logger ?? BgeLogger('bge.collection.entry'),
@@ -105,6 +128,7 @@ class CollectionEntryBloc
     on<CollectionEntryHydrationUpdated>(_onHydrationUpdated);
     on<CollectionEntryHydrationEnded>(_onHydrationEnded);
 
+    _entryId = _repository.reconciledCollectionEntryId(entryId) ?? entryId;
     _watch = _watchEntry();
     _hasHydrationSource = hydration != null;
     _hydrationUpdates = hydration?.listen(
@@ -118,8 +142,10 @@ class CollectionEntryBloc
     );
   }
 
-  /// The entry the screen shows.
-  final String entryId;
+  /// The entry the screen shows: the id it was opened on, or the server's
+  /// id once an add's reconcile moved it there (#693).
+  String get entryId => _entryId;
+  late String _entryId;
 
   final GameCollectionRepository _repository;
   final SyncOperationSender _sender;
@@ -149,20 +175,47 @@ class CollectionEntryBloc
   bool _hydrationSeen = false;
   bool _hydrationDone = false;
 
-  StreamSubscription<GameCollectionListItem?> _watchEntry() => _repository
-      .watchCollectionListItem(entryId)
-      .listen(
-        (item) => add(CollectionEntryRowChanged(item)),
-        onError: (Object error, StackTrace stackTrace) {
-          _logger.warn(
-            'Watching the collection entry failed',
-            error: error,
-            stackTrace: stackTrace,
-          );
-          add(const CollectionEntryWatchFailed());
-        },
-        onDone: () => add(const CollectionEntryWatchEnded()),
-      );
+  StreamSubscription<GameCollectionListItem?> _watchEntry() {
+    final entryId = _entryId;
+    return _repository
+        .watchCollectionListItem(entryId)
+        .listen(
+          (item) => add(CollectionEntryRowChanged(item, entryId: entryId)),
+          onError: (Object error, StackTrace stackTrace) {
+            _logger.warn(
+              'Watching the collection entry failed',
+              error: error,
+              stackTrace: stackTrace,
+            );
+            add(CollectionEntryWatchFailed(entryId: entryId));
+          },
+          onDone: () => add(CollectionEntryWatchEnded(entryId: entryId)),
+        );
+  }
+
+  /// Moves the bloc onto the id an add's reconcile moved its entry to, if
+  /// one has, and watches that (#693). Whether it moved.
+  ///
+  /// Asked on the watch's null, which is how the move reaches this bloc: the
+  /// local row goes in the move, and the repository reads the moves before
+  /// it delivers that null, in whichever tab the reconcile ran.
+  bool _followReconcile() {
+    final movedTo = _repository.reconciledCollectionEntryId(_entryId);
+    if (movedTo == null) return false;
+    _entryId = movedTo;
+    _absent = false;
+    // As for a retry: no watch that [close] has already gone past.
+    if (!_closing) {
+      unawaited(_watch.cancel());
+      _watch = _watchEntry();
+    }
+    return true;
+  }
+
+  /// Whether a watch event was read for an id this bloc has moved off
+  /// (#693): queued before the move, and saying nothing about the entry now
+  /// on screen.
+  bool _isStale(String entryId) => entryId != _entryId;
 
   bool get _removalBegun =>
       state.action == CollectionEntryAction.removing ||
@@ -184,12 +237,16 @@ class CollectionEntryBloc
     CollectionEntryRowChanged event,
     Emitter<CollectionEntryState> emit,
   ) {
+    if (_isStale(event.entryId)) return;
     final item = event.item;
     _absent = item == null;
     if (item != null) {
       _everRead = true;
       return emit(state.withView(CollectionEntryView.ready, item: item));
     }
+    // The add's reconcile moved the entry: the server's id holds it, and the
+    // bloc now watches that.
+    if (_followReconcile()) return;
     // The bloc's own removal makes the entry vanish; that is not "gone", and
     // changes nothing the screen shows.
     if (_removalBegun) return;
@@ -227,6 +284,7 @@ class CollectionEntryBloc
     CollectionEntryWatchEnded event,
     Emitter<CollectionEntryState> emit,
   ) {
+    if (_isStale(event.entryId)) return;
     // After a row the detail keeps showing it; its writes fail visibly. A
     // watch closed while loading (a disposed session's repository), before
     // any answer or while a null waited on the hydrate, never will answer.
@@ -238,7 +296,10 @@ class CollectionEntryBloc
   void _onWatchFailed(
     CollectionEntryWatchFailed event,
     Emitter<CollectionEntryState> emit,
-  ) => emit(state.withView(CollectionEntryView.error));
+  ) {
+    if (_isStale(event.entryId)) return;
+    emit(state.withView(CollectionEntryView.error));
+  }
 
   Future<void> _onRetried(
     CollectionEntryRetried event,
@@ -299,7 +360,7 @@ class CollectionEntryBloc
     updated;
     try {
       updated = await _repository.updateCollectionEntry(
-        id: entryId,
+        id: _entryId,
         quantity: quantity,
         rating: rating,
         playAgain: playAgain,
@@ -344,7 +405,7 @@ class CollectionEntryBloc
     final ({String syncQueueId, RemoveFromCollectionOperation operation})?
     removed;
     try {
-      removed = await _repository.removeFromCollection(entryId);
+      removed = await _repository.removeFromCollection(_entryId);
     } on Object catch (error, stackTrace) {
       _logger.warn(
         'Removing the collection entry failed',
