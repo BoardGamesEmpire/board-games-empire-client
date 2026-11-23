@@ -563,14 +563,16 @@ class GameCollectionRepositoryImpl
       // AND be live (not tombstoned). A tombstoned row is treated as
       // "not found" — mutating a removed entry would leave the local
       // state inconsistent with what the user can see in the UI.
-      final existing =
-          await (_db.select(_db.gameCollectionsTable)..where(
+      Future<GameCollectionsTableData?> liveRow(String id) =>
+          (_db.select(_db.gameCollectionsTable)..where(
                 (t) =>
                     t.id.equals(id) &
                     t.userId.equals(_userId) &
                     t.deletedAt.isNull(),
               ))
               .getSingleOrNull();
+      // An id whose entry moved is edited where it went (#693).
+      final (id: target, row: existing) = await _followingMoves(id, liveRow);
       if (existing == null) {
         throw StateError(
           'GameCollection entry $id not found for current user '
@@ -580,7 +582,7 @@ class GameCollectionRepositoryImpl
 
       await (_db.update(
         _db.gameCollectionsTable,
-      )..where((t) => t.id.equals(id) & t.userId.equals(_userId))).write(
+      )..where((t) => t.id.equals(target) & t.userId.equals(_userId))).write(
         GameCollectionsTableCompanion(
           quantity: quantity != null ? Value(quantity) : const Value.absent(),
           rating: rating != null ? Value(rating) : const Value.absent(),
@@ -595,7 +597,7 @@ class GameCollectionRepositoryImpl
       );
 
       final operation = UpdateCollectionOperation(
-        collectionId: id,
+        collectionId: target,
         quantity: quantity,
         rating: rating,
         playAgain: playAgain,
@@ -604,9 +606,11 @@ class GameCollectionRepositoryImpl
       );
       final queued = await _syncQueue.enqueue(operation);
 
-      final row = await (_db.select(
-        _db.gameCollectionsTable,
-      )..where((t) => t.id.equals(id) & t.userId.equals(_userId))).getSingle();
+      final row =
+          await (_db.select(
+                _db.gameCollectionsTable,
+              )..where((t) => t.id.equals(target) & t.userId.equals(_userId)))
+              .getSingle();
       return (
         entry: _mapRow(row),
         syncQueueId: queued.id,
@@ -622,10 +626,14 @@ class GameCollectionRepositoryImpl
     return _db.transaction(() async {
       final now = _clock.nowUtc();
 
-      final existing =
-          await (_db.select(_db.gameCollectionsTable)
-                ..where((t) => t.id.equals(id) & t.userId.equals(_userId)))
-              .getSingleOrNull();
+      // An id whose entry moved is removed where it went (#693).
+      final (id: target, row: existing) = await _followingMoves(
+        id,
+        (id) =>
+            (_db.select(_db.gameCollectionsTable)
+                  ..where((t) => t.id.equals(id) & t.userId.equals(_userId)))
+                .getSingleOrNull(),
+      );
       if (existing == null) {
         // Genuinely missing or cross-user: throw to keep the existing
         // contract for callers that pass an id they shouldn't.
@@ -647,7 +655,7 @@ class GameCollectionRepositoryImpl
       // confirmRemoved.
       await (_db.update(
         _db.gameCollectionsTable,
-      )..where((t) => t.id.equals(id) & t.userId.equals(_userId))).write(
+      )..where((t) => t.id.equals(target) & t.userId.equals(_userId))).write(
         GameCollectionsTableCompanion(
           deletedAt: Value(now),
           isDirty: const Value(true),
@@ -655,7 +663,7 @@ class GameCollectionRepositoryImpl
         ),
       );
 
-      final operation = RemoveFromCollectionOperation(collectionId: id);
+      final operation = RemoveFromCollectionOperation(collectionId: target);
       final queued = await _syncQueue.enqueue(operation);
       return (syncQueueId: queued.id, operation: operation);
     });
@@ -1286,6 +1294,36 @@ class GameCollectionRepositoryImpl
           row.isLocalOnly ||
           row.updatedAt.isAfter(serverEntry.updatedAt),
     );
+  }
+
+  /// [find]'s row for [id], or, when it has none, for the id [id]'s entry
+  /// moved to, with the id it was found under (#693). The id is [id] when
+  /// there is no row and no move.
+  ///
+  /// For an edit or a removal sent on an add's local id just before its
+  /// reconcile commits: drift runs the transactions one at a time, so the
+  /// write finds the local row gone. The move is read from
+  /// `collection_moves` inside the caller's transaction, not from
+  /// [_moves], so it is exact whichever repository or tab recorded it. A
+  /// move is looked up only when [find] has no row for the id, and is
+  /// followed on through any later move of the id it reached.
+  Future<({String id, GameCollectionsTableData? row})> _followingMoves(
+    String id,
+    Future<GameCollectionsTableData?> Function(String id) find,
+  ) async {
+    var current = id;
+    final seen = {id};
+    while (true) {
+      final row = await find(current);
+      if (row != null) return (id: current, row: row);
+      final move = await (_db.select(
+        _db.collectionMovesTable,
+      )..where((t) => t.localId.equals(current))).getSingleOrNull();
+      if (move == null || !seen.add(move.serverId)) {
+        return (id: id, row: null);
+      }
+      current = move.serverId;
+    }
   }
 
   /// The write both server paths share: remap on id reassignment, then

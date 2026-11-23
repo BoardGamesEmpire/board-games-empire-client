@@ -43,11 +43,12 @@ import 'package:observability/observability.dart';
 ///
 /// An edit or a removal sends [entryId] as it is when sent. The edit sheet
 /// and the removal confirm hold no id of their own, so one left open across
-/// the move goes to the server's id. And the move's null is followed rather
-/// than read as gone, so only the removal's own null ends it. A removal sent
-/// on the local id just before the move lands finds no row there and ends
-/// `removeFailed`, not `removed`: the entry is still in the collection, and
-/// confirming again removes it under the server's id.
+/// the move goes to the server's id. One already sent on the local id when
+/// the move commits goes there too: the repository finds the local row gone
+/// and follows the move it recorded, so the edit saves and the removal
+/// removes the server's row. The move's null is followed rather than read as
+/// gone or as the removal's, so the removal ends `removed` once, when the
+/// repository returns, and only the removal's own null ends the entry.
 ///
 /// ## Before the cache has it
 ///

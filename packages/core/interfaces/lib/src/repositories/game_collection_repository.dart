@@ -144,6 +144,12 @@ abstract class GameCollectionRepository {
   /// wants the edit sent at once passes them to `SendQueuedOpNow.sendNow`
   /// (#46), as it does for an add; otherwise the drain sends it.
   ///
+  /// An [id] whose entry has moved ([reconciledCollectionEntryId], #693)
+  /// updates the entry where it went, as the move is stored when this runs,
+  /// so an edit sent on an add's local id just before its reconcile commits
+  /// lands on the server's row. The result's entry and operation carry the
+  /// id it went to. An id with no entry and no move throws [StateError].
+  ///
   /// Play history (`playCount`, `lastPlayed`) is not editable here. The
   /// server owns it and rejects both fields on this update (#258), so
   /// it reaches the cache only from server data.
@@ -217,10 +223,18 @@ abstract class GameCollectionRepository {
   /// play history — see [addToCollection]'s "Re-adding a previously
   /// removed entry" section for the per-field rules.
   ///
+  /// ### An entry that moved
+  ///
+  /// An [id] whose entry has moved ([reconciledCollectionEntryId], #693)
+  /// removes the entry where it went, as the move is stored when this runs,
+  /// so a removal sent on an add's local id just before its reconcile
+  /// commits removes the server's row. The operation carries the id it went
+  /// to.
+  ///
   /// ### Throws
   ///
   /// [StateError] if the id is not found for the current user (i.e.
-  /// belongs to another user or was never cached).
+  /// belongs to another user or was never cached), and has not moved.
   Future<({String syncQueueId, RemoveFromCollectionOperation operation})?>
   removeFromCollection(String id);
 

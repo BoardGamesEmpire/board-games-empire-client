@@ -21,6 +21,16 @@ class _MockLogger extends Mock implements BgeLogger {}
 const _updateOp = UpdateCollectionOperation(collectionId: 'gc_1', quantity: 3);
 const _removeOp = RemoveFromCollectionOperation(collectionId: 'gc_1');
 
+/// What the repository queues for an edit or a removal sent on 'gc_1' after
+/// its add's reconcile moved it to 'gc_server' (#693).
+const _updateServerOp = UpdateCollectionOperation(
+  collectionId: 'gc_server',
+  quantity: 3,
+);
+const _removeServerOp = RemoveFromCollectionOperation(
+  collectionId: 'gc_server',
+);
+
 void main() {
   late _MockGameCollectionRepository repository;
   late _MockSyncOperationSender sender;
@@ -1536,8 +1546,54 @@ void main() {
     );
 
     blocTest<CollectionEntryBloc, CollectionEntryState>(
-      'a removal of the local id the move overtook is removeFailed, not '
-      'removed',
+      'a removal of the local id the move overtook removes the server row, '
+      'and reports Removed once, only when that removal returns',
+      setUp: () {
+        watchServer();
+        _gate = Completer<void>();
+        // The repository finds the local row gone and follows the move.
+        when(() => repository.removeFromCollection('gc_1')).thenAnswer((
+          _,
+        ) async {
+          await _gate.future;
+          return (syncQueueId: 'sq_2', operation: _removeServerOp);
+        });
+      },
+      build: build,
+      act: (bloc) async {
+        await show(bloc, row());
+        bloc.add(const CollectionEntryRemoveConfirmed());
+        await pumpEventQueue();
+        // The move commits first. Its null is followed, not read as the
+        // removal's.
+        await reconcile(bloc);
+        expect(bloc.entryId, 'gc_server');
+        serverWatch.add(serverRow());
+        await pumpEventQueue();
+        expect(bloc.state.action, CollectionEntryAction.removing);
+
+        _gate.complete();
+        await pumpEventQueue();
+        // The removal's own null.
+        serverWatch.add(null);
+        await pumpEventQueue();
+      },
+      skip: 2,
+      expect: () => [
+        ready(serverRow(), action: CollectionEntryAction.removing),
+        ready(
+          serverRow(),
+          action: CollectionEntryAction.removed,
+          sync: CollectionSync.synced,
+        ),
+      ],
+      verify: (_) =>
+          verify(() => sender.deliver('sq_2', _removeServerOp)).called(1),
+    );
+
+    blocTest<CollectionEntryBloc, CollectionEntryState>(
+      'a removal the move overtook, whose tombstone the server watch reads '
+      'first, still reports Removed once',
       setUp: () {
         watchServer();
         _gate = Completer<void>();
@@ -1545,7 +1601,7 @@ void main() {
           _,
         ) async {
           await _gate.future;
-          throw StateError('GameCollection entry gc_1 not found');
+          return (syncQueueId: 'sq_2', operation: _removeServerOp);
         });
       },
       build: build,
@@ -1554,12 +1610,73 @@ void main() {
         bloc.add(const CollectionEntryRemoveConfirmed());
         await pumpEventQueue();
         await reconcile(bloc);
+        // The server id's first answer is the removal's null.
+        serverWatch.add(null);
+        await pumpEventQueue();
+        expect(bloc.state.action, CollectionEntryAction.removing);
+
         _gate.complete();
         await pumpEventQueue();
       },
       skip: 2,
-      expect: () => [ready(row(), action: CollectionEntryAction.removeFailed)],
-      verify: (_) => verifyNoSend(),
+      expect: () => [
+        ready(
+          row(),
+          action: CollectionEntryAction.removed,
+          sync: CollectionSync.synced,
+        ),
+      ],
+      verify: (_) =>
+          verify(() => sender.deliver('sq_2', _removeServerOp)).called(1),
+    );
+
+    blocTest<CollectionEntryBloc, CollectionEntryState>(
+      'an edit of the local id the move overtook saves on the server row',
+      setUp: () {
+        watchServer();
+        _gate = Completer<void>();
+        // The repository finds the local row gone and follows the move.
+        when(
+          () => repository.updateCollectionEntry(
+            id: 'gc_1',
+            quantity: 3,
+            rating: any(named: 'rating'),
+            playAgain: any(named: 'playAgain'),
+            favorite: any(named: 'favorite'),
+            comment: any(named: 'comment'),
+          ),
+        ).thenAnswer((_) async {
+          await _gate.future;
+          return (
+            entry: serverRow().entry.copyWith(quantity: 3),
+            syncQueueId: 'sq_1',
+            operation: _updateServerOp,
+          );
+        });
+      },
+      build: build,
+      act: (bloc) async {
+        await show(bloc, row());
+        bloc.add(edit(quantity: 3));
+        await pumpEventQueue();
+        await reconcile(bloc);
+        serverWatch.add(serverRow());
+        await pumpEventQueue();
+
+        _gate.complete();
+        await pumpEventQueue();
+      },
+      skip: 2,
+      expect: () => [
+        ready(serverRow(), action: CollectionEntryAction.saving),
+        ready(
+          serverRow(),
+          action: CollectionEntryAction.saved,
+          sync: CollectionSync.synced,
+        ),
+      ],
+      verify: (_) =>
+          verify(() => sender.deliver('sq_1', _updateServerOp)).called(1),
     );
 
     test('a move in the same turn as close leaves no watch open', () async {

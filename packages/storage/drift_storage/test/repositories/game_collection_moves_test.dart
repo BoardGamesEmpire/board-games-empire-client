@@ -195,6 +195,82 @@ void main() {
     });
   });
 
+  group('an edit or a removal begun before the move goes to the server '
+      'id', () {
+    Future<GameCollectionsTableData?> serverRow() => (db.select(
+      db.gameCollectionsTable,
+    )..where((t) => t.id.equals(_kServerId))).getSingleOrNull();
+
+    test('an edit sent on the local id in the turn the reconcile starts '
+        'applies to the server row', () async {
+      final added = await add();
+
+      // Drift runs the two transactions one after the other, the
+      // reconcile's first: the edit finds the local row gone.
+      final reconciling = reconcile(added);
+      final updated = await repo.updateCollectionEntry(
+        id: added.entry.id,
+        quantity: 3,
+      );
+      await reconciling;
+
+      expect(updated.entry.id, _kServerId);
+      expect(updated.entry.quantity, 3);
+      expect(updated.operation.collectionId, _kServerId);
+      final row = await serverRow();
+      expect(row?.quantity, 3);
+      expect(row?.isDirty, isTrue);
+    });
+
+    test('a removal sent on the local id in the turn the reconcile starts '
+        'removes the server row', () async {
+      final added = await add();
+
+      final reconciling = reconcile(added);
+      final removed = await repo.removeFromCollection(added.entry.id);
+      await reconciling;
+
+      expect(removed?.operation.collectionId, _kServerId);
+      expect((await serverRow())?.deletedAt, isNotNull);
+      final queued = await queue.getAllEntries();
+      expect(
+        queued.map((op) => op.id),
+        contains(removed?.syncQueueId),
+      );
+    });
+
+    test('the move is read from the table, so a repository that has not '
+        'seen it still follows it', () async {
+      final added = await add();
+      await reconcile(added);
+      // Nothing it has watched has read the move.
+      final later = otherTab();
+      expect(later.reconciledCollectionEntryId(added.entry.id), isNull);
+
+      final updated = await later.updateCollectionEntry(
+        id: added.entry.id,
+        favorite: true,
+      );
+      final removed = await later.removeFromCollection(added.entry.id);
+
+      expect(updated.entry.id, _kServerId);
+      expect(updated.entry.favorite, isTrue);
+      expect(removed?.operation.collectionId, _kServerId);
+      expect((await serverRow())?.deletedAt, isNotNull);
+    });
+
+    test('an id with no row and no move still throws', () async {
+      await expectLater(
+        repo.updateCollectionEntry(id: 'gc-unknown', quantity: 2),
+        throwsStateError,
+      );
+      await expectLater(
+        repo.removeFromCollection('gc-unknown'),
+        throwsStateError,
+      );
+    });
+  });
+
   test('disposal waits for a moves read a watch has under way', () async {
     // The suspend path closes the database as soon as disposal returns,
     // and cancelling a watch does not wait for a read it started.
