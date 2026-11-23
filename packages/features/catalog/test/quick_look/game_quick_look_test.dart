@@ -10,6 +10,7 @@ import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:ui/ui.dart';
+import 'package:ui_tokens/ui_tokens.dart';
 
 import '../support/catalog_app.dart';
 import '../support/fake_games_remote.dart';
@@ -71,6 +72,7 @@ void main() {
     void Function(BuildContext context, String gameId)? onViewDetails,
     List<Widget> sections = const [],
     List<Widget> actions = const [],
+    WatchOwnedEntries? watchOwned,
   }) => Builder(
     builder: (context) => TextButton(
       onPressed: () => unawaited(
@@ -83,6 +85,7 @@ void main() {
           onViewDetails: onViewDetails,
           sections: sections,
           actions: actions,
+          watchOwned: watchOwned,
         ),
       ),
       child: const Text('open'),
@@ -99,9 +102,12 @@ void main() {
     bool viewDetails = true,
     List<Widget> sections = const [],
     List<Widget> actions = const [],
+    WatchOwnedEntries? watchOwned,
+    ThemeData? theme,
   }) async {
     await tester.pumpWidget(
       catalogApp(
+        theme: theme,
         Scaffold(
           body: Center(
             child: opener(
@@ -111,6 +117,7 @@ void main() {
               onViewDetails: viewDetails ? (_, id) => viewed.add(id) : null,
               sections: sections,
               actions: actions,
+              watchOwned: watchOwned,
             ),
           ),
         ),
@@ -875,6 +882,256 @@ void main() {
       expect(tester.takeException(), isNull);
       // A fresh app for the next scale, with no quick look left open.
       await tester.pumpWidget(const SizedBox.shrink());
+    }
+  });
+
+  group('the platforms you own (#799)', () {
+    const tabletopOwned = 'Tabletop, in your collection';
+    const steamNotOwned = 'Steam, not in your collection';
+    const steamOwned = 'Steam, in your collection';
+
+    GameCollection entry(String platformGameId, {DateTime? deletedAt}) =>
+        GameCollection(
+          id: 'e_$platformGameId',
+          userId: 'u_1',
+          platformGameId: platformGameId,
+          medium: GameMedium.physical,
+          deletedAt: deletedAt,
+          createdAt: DateTime.utc(2026),
+          updatedAt: DateTime.utc(2026),
+        );
+
+    Finder chipOn(String platformGameId) => find.descendant(
+      of: find.byKey(GameQuickLook.platformsKey),
+      matching: find.byKey(ValueKey(platformGameId)),
+    );
+    Finder checkOn(String platformGameId) => find.descendant(
+      of: chipOn(platformGameId),
+      matching: find.byIcon(Icons.check),
+    );
+
+    /// The [Chip] drawn for [platformGameId]: the keyed chip itself, or the
+    /// one inside an owned chip.
+    Chip chipOf(WidgetTester tester, String platformGameId) =>
+        tester.widget<Chip>(
+          find.descendant(
+            of: chipOn(platformGameId),
+            matching: find.byType(Chip),
+            matchRoot: true,
+          ),
+        );
+
+    /// Whether the node a screen reader hears as [label] can be pressed.
+    bool tappable(WidgetTester tester, String label) => tester
+        .getSemantics(find.bySemanticsLabel(label))
+        .getSemanticsData()
+        .hasAction(SemanticsAction.tap);
+
+    /// Expects the chips plain: no check, and nothing said of ownership.
+    void expectPlain(WidgetTester tester) {
+      expect(find.byIcon(Icons.check), findsNothing);
+      expect(find.bySemanticsLabel(RegExp('collection')), findsNothing);
+      expect(find.bySemanticsLabel('Tabletop'), findsOneWidget);
+      expect(find.bySemanticsLabel('Steam'), findsOneWidget);
+    }
+
+    /// Opens Wingspan's quick look on Tabletop and Steam, watching what the
+    /// user owns through the returned controller, and lands the read. Each
+    /// set of ids the quick look watches goes in [watched].
+    Future<StreamController<List<GameCollection>>> openWatched(
+      WidgetTester tester, {
+      List<Set<String>>? watched,
+      ThemeData? theme,
+    }) async {
+      // Made in the test's fake-async zone, so its events run as it pumps.
+      final owned = StreamController<List<GameCollection>>.broadcast();
+      addTearDown(owned.close);
+      await open(
+        tester,
+        GameQuickLookSeed.fromSummary(summary),
+        theme: theme,
+        watchOwned: (ids) {
+          watched?.add(ids);
+          return owned.stream;
+        },
+      );
+      read.complete((game: wingspan, platformGames: [tabletop, steam]));
+      await tester.pumpAndSettle();
+      return owned;
+    }
+
+    testWidgets('a chip for a platform you own shows the check and the owned '
+        'colour, and is named "Tabletop, in your collection"', (tester) async {
+      final handle = tester.ensureSemantics();
+      final watched = <Set<String>>[];
+      final owned = await openWatched(tester, watched: watched);
+
+      owned.add([entry('pg_1')]);
+      await tester.pumpAndSettle();
+
+      expect(watched, [
+        {'pg_1', 'pg_2'},
+      ]);
+      expect(checkOn('pg_1'), findsOneWidget);
+      final scheme = Theme.of(tester.element(chipOn('pg_1'))).colorScheme;
+      final chip = chipOf(tester, 'pg_1');
+      expect(chip.backgroundColor, scheme.primary);
+      expect(chip.labelStyle?.color, scheme.onPrimary);
+      expect(chip.side, BorderSide.none);
+      expect(tester.widget<Icon>(checkOn('pg_1')).color, scheme.onPrimary);
+      // Named in full, once: the shown name isn't read again on its own.
+      expect(find.bySemanticsLabel(tabletopOwned), findsOneWidget);
+      expect(find.bySemanticsLabel('Tabletop'), findsNothing);
+
+      handle.dispose();
+    });
+
+    testWidgets("a chip for a platform you don't own is plain and named "
+        '"Steam, not in your collection"', (tester) async {
+      final handle = tester.ensureSemantics();
+      final owned = await openWatched(tester);
+
+      owned.add([entry('pg_1')]);
+      await tester.pumpAndSettle();
+
+      expect(checkOn('pg_2'), findsNothing);
+      final chip = chipOf(tester, 'pg_2');
+      // The theme's, as before ownership was known.
+      expect(chip.backgroundColor, isNull);
+      expect(chip.labelStyle, isNull);
+      expect(chip.avatar, isNull);
+      expect(find.bySemanticsLabel(steamNotOwned), findsOneWidget);
+      expect(find.bySemanticsLabel('Steam'), findsNothing);
+
+      handle.dispose();
+    });
+
+    testWidgets('ownership follows the collection while the quick look is '
+        'open', (tester) async {
+      final handle = tester.ensureSemantics();
+      final watched = <Set<String>>[];
+      final owned = await openWatched(tester, watched: watched);
+
+      owned.add([entry('pg_1')]);
+      await tester.pumpAndSettle();
+      expect(find.bySemanticsLabel(steamNotOwned), findsOneWidget);
+
+      owned.add([entry('pg_1'), entry('pg_2')]);
+      await tester.pumpAndSettle();
+      expect(find.bySemanticsLabel(steamOwned), findsOneWidget);
+      expect(checkOn('pg_2'), findsOneWidget);
+
+      // A copy awaiting removal is no longer owned.
+      owned.add([
+        entry('pg_1', deletedAt: DateTime.utc(2026, 2)),
+        entry('pg_2'),
+      ]);
+      await tester.pumpAndSettle();
+      expect(
+        find.bySemanticsLabel('Tabletop, not in your collection'),
+        findsOneWidget,
+      );
+      expect(checkOn('pg_1'), findsNothing);
+
+      // One watch the whole time, however often the quick look rebuilt.
+      expect(watched, hasLength(1));
+
+      handle.dispose();
+    });
+
+    testWidgets('until the watch answers, and after it fails, the chips name '
+        'no ownership', (tester) async {
+      final handle = tester.ensureSemantics();
+      final owned = await openWatched(tester);
+
+      expectPlain(tester);
+
+      owned.add([entry('pg_1')]);
+      await tester.pumpAndSettle();
+      expect(find.bySemanticsLabel(tabletopOwned), findsOneWidget);
+
+      owned.addError(StateError('the collection failed'));
+      await tester.pumpAndSettle();
+      expectPlain(tester);
+      expect(tester.takeException(), isNull);
+
+      handle.dispose();
+    });
+
+    testWidgets('without watchOwned the chips name no ownership', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      await open(tester, GameQuickLookSeed.fromSummary(summary));
+      read.complete((game: wingspan, platformGames: [tabletop, steam]));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(GameQuickLook.platformsKey), findsOneWidget);
+      expectPlain(tester);
+
+      handle.dispose();
+    });
+
+    testWidgets('a watch answering after close changes nothing and throws '
+        'nothing', (tester) async {
+      final owned = await openWatched(tester);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      // The route is still mounted, on its way out.
+      await tester.pump();
+      expect(find.byType(GameQuickLook), findsOneWidget);
+      owned.add([entry('pg_1')]);
+      await tester.pumpAndSettle();
+
+      expect(find.byType(GameQuickLook), findsNothing);
+      expect(owned.hasListener, isFalse, reason: 'the watch is cancelled');
+      owned.add([entry('pg_2')]);
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('the chips do nothing when tapped', (tester) async {
+      final handle = tester.ensureSemantics();
+      final owned = await openWatched(tester);
+
+      owned.add([entry('pg_1')]);
+      await tester.pumpAndSettle();
+
+      expect(
+        find.descendant(
+          of: find.byKey(GameQuickLook.platformsKey),
+          matching: find.byType(ActionChip),
+        ),
+        findsNothing,
+      );
+      for (final label in [tabletopOwned, steamNotOwned]) {
+        expect(tappable(tester, label), isFalse, reason: label);
+      }
+
+      handle.dispose();
+    });
+
+    for (final (name, theme) in [
+      ('light', BgeTheme.light()),
+      ('dark', BgeTheme.dark()),
+    ]) {
+      testWidgets("the owned chip's label is onPrimary on primary ($name)", (
+        tester,
+      ) async {
+        final owned = await openWatched(tester, theme: theme);
+
+        owned.add([entry('pg_1')]);
+        await tester.pumpAndSettle();
+
+        // The pair game_detail_platforms_contrast_test holds to contrast.
+        final chip = chipOf(tester, 'pg_1');
+        expect(chip.backgroundColor, theme.colorScheme.primary);
+        expect(chip.labelStyle?.color, theme.colorScheme.onPrimary);
+        expect(
+          tester.widget<Icon>(checkOn('pg_1')).color,
+          theme.colorScheme.onPrimary,
+        );
+      });
     }
   });
 

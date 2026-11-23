@@ -591,6 +591,26 @@
       }
     }
   },
+  "catalogQuickLookPlatformOwnedSpoken": "{platform}, in your collection",
+  "@catalogQuickLookPlatformOwnedSpoken": {
+    "description": "What a screen reader says for a platform the user owns the game on, in the list of platforms in a game's quick look, the pop-up a tapped cover or search result opens over the page. The chip does nothing when pressed, so the name has no action words. Shown on screen as the platform's name with a check mark.",
+    "placeholders": {
+      "platform": {
+        "type": "String",
+        "example": "Tabletop"
+      }
+    }
+  },
+  "catalogQuickLookPlatformNotOwnedSpoken": "{platform}, not in your collection",
+  "@catalogQuickLookPlatformNotOwnedSpoken": {
+    "description": "What a screen reader says for a platform the user does not own the game on, in the list of platforms in a game's quick look, the pop-up a tapped cover or search result opens over the page. The chip does nothing when pressed, so the name has no action words. Shown on screen as the platform's name alone.",
+    "placeholders": {
+      "platform": {
+        "type": "String",
+        "example": "Android"
+      }
+    }
+  },
   "catalogImportStarting": "Sending the import to the server…",
   "@catalogImportStarting": {
     "description": "Shown and announced in the import progress while the request to import a game from a data source is on its way to the server."

@@ -20,6 +20,7 @@ import 'package:hydrated_bloc/hydrated_bloc.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:interfaces/services.dart';
+import 'package:interfaces/sync.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
@@ -33,6 +34,8 @@ class _MockAppBootstrapCubit extends MockCubit<AppBootstrapState>
     implements AppBootstrapCubit {}
 
 class _MockStorage extends Mock implements Storage {}
+
+class _MockSyncOperationSender extends Mock implements SyncOperationSender {}
 
 Game _game(String id) => Game(
   id: id,
@@ -51,6 +54,10 @@ class _GamesRemote implements GamesRemoteDataSource {
 
   /// Games whose detail answers 404, as one deleted since the list loaded.
   final Set<String> gone = {};
+
+  /// The platforms each game's detail answers with, by game id: none for a
+  /// game not here.
+  final Map<String, List<PlatformGame>> platformGames = {};
 
   /// The order each list read asked for.
   final List<GameSort> sorts = [];
@@ -89,7 +96,7 @@ class _GamesRemote implements GamesRemoteDataSource {
   @override
   Future<GameWithPlatformGames> fetchGame(String id) async {
     if (gone.contains(id)) throw const GameNotFoundException('404');
-    return (game: _game(id), platformGames: const <PlatformGame>[]);
+    return (game: _game(id), platformGames: platformGames[id] ?? const []);
   }
 
   @override
@@ -129,6 +136,32 @@ class _Collection implements GameCollectionRepository {
   final bool fails;
   int watches = 0;
 
+  /// Each set of platform games watched for what the user owns of them.
+  final List<Set<String>> platformWatches = [];
+
+  /// The entry on `pg-<id>` for each id in [gameIds].
+  GameCollection _entry(String id) => GameCollection(
+    id: 'entry-$id',
+    userId: 'u1',
+    platformGameId: 'pg-$id',
+    medium: GameMedium.physical,
+    createdAt: DateTime.utc(2026),
+    updatedAt: DateTime.utc(2026),
+  );
+
+  @override
+  Stream<List<GameCollection>> watchEntriesForPlatformGames(
+    Set<String> platformGameIds,
+  ) {
+    platformWatches.add(platformGameIds);
+    return Stream.multi(
+      (stream) => stream.add([
+        for (final id in gameIds)
+          if (platformGameIds.contains('pg-$id')) _entry(id),
+      ]),
+    );
+  }
+
   @override
   Stream<List<GameCollectionListItem>> watchCollectionListItems() {
     watches++;
@@ -140,14 +173,7 @@ class _Collection implements GameCollectionRepository {
       stream.add([
         for (final id in gameIds)
           GameCollectionListItem(
-            entry: GameCollection(
-              id: 'entry-$id',
-              userId: 'u1',
-              platformGameId: 'pg-$id',
-              medium: GameMedium.physical,
-              createdAt: DateTime.utc(2026),
-              updatedAt: DateTime.utc(2026),
-            ),
+            entry: _entry(id),
             gameId: id,
             title: 'Game $id',
             platformName: 'Board game',
@@ -399,6 +425,7 @@ void main() {
     HouseholdRemoteDataSource? pool,
     GameCollectionRepository? collection,
     GameCollectionHydrationStatus? collectionHydration,
+    SyncOperationSender? sender,
     HouseholdRepository? households,
     HouseholdHydrationStatus? householdHydration,
     EventRepository? events,
@@ -416,6 +443,7 @@ void main() {
           householdRemoteDataSource: pool,
           gameCollectionRepository: collection,
           gameCollectionHydrationStatus: collectionHydration,
+          syncOperationSender: sender,
           householdRepository: households,
           householdHydrationStatus: householdHydration,
           eventRepository: events,
@@ -604,6 +632,87 @@ void main() {
       expect(toPlayA, findsNothing);
       expect(find.byKey(NewestGamesSection.coverKey('b')), findsOneWidget);
       expect(toPlayB, findsOneWidget);
+    });
+
+    group("a cover's quick look and the user's collection (#799)", () {
+      PlatformGame platformGame(String id, String name) => PlatformGame(
+        id: id,
+        gameId: 'b',
+        platformId: 'plat-$id',
+        platformName: name,
+        createdAt: DateTime.utc(2026),
+        updatedAt: DateTime.utc(2026),
+      );
+
+      /// Game b, on a board and on Steam, owned on the board.
+      _GamesRemote gamesOnTwoPlatforms() =>
+          _GamesRemote([_game('a'), _game('b')])
+            ..platformGames['b'] = [
+              platformGame('pg-b', 'Board game'),
+              platformGame('pg-b-steam', 'Steam'),
+            ];
+
+      Finder inQuickLook(Finder finder) =>
+          find.descendant(of: find.byType(GameQuickLook), matching: finder);
+
+      testWidgets('marks the platform the signed-in user owns', (
+        tester,
+      ) async {
+        final handle = tester.ensureSemantics();
+        final collection = _Collection(['b']);
+        await pumpHome(
+          tester,
+          games: gamesOnTwoPlatforms(),
+          collection: collection,
+          sender: _MockSyncOperationSender(),
+        );
+
+        await tester.tap(find.byKey(NewestGamesSection.coverKey('b')));
+        await tester.pumpAndSettle();
+
+        expect(collection.platformWatches, [
+          {'pg-b', 'pg-b-steam'},
+        ]);
+        expect(
+          inQuickLook(find.bySemanticsLabel('Board game, in your collection')),
+          findsOneWidget,
+        );
+        expect(
+          inQuickLook(find.bySemanticsLabel('Steam, not in your collection')),
+          findsOneWidget,
+        );
+        expect(inQuickLook(find.byIcon(Icons.check)), findsOneWidget);
+
+        handle.dispose();
+      });
+
+      testWidgets("a session that can't write the collection names no "
+          'ownership', (tester) async {
+        final handle = tester.ensureSemantics();
+        final collection = _Collection(['b']);
+        // No sender to send a write through, as the detail page's add needs.
+        await pumpHome(
+          tester,
+          games: gamesOnTwoPlatforms(),
+          collection: collection,
+        );
+
+        await tester.tap(find.byKey(NewestGamesSection.coverKey('b')));
+        await tester.pumpAndSettle();
+
+        expect(collection.platformWatches, isEmpty);
+        expect(
+          inQuickLook(find.bySemanticsLabel('Board game')),
+          findsOneWidget,
+        );
+        expect(
+          inQuickLook(find.bySemanticsLabel(RegExp('collection'))),
+          findsNothing,
+        );
+        expect(inQuickLook(find.byIcon(Icons.check)), findsNothing);
+
+        handle.dispose();
+      });
     });
 
     testWidgets('View full details opens the game over the quick look, and '

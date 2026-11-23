@@ -4,6 +4,7 @@ import 'package:game_catalog/src/widgets/catalog_facts.dart';
 import 'package:game_catalog/src/widgets/catalog_slivers.dart';
 import 'package:game_catalog/src/widgets/cover_beside_title.dart';
 import 'package:game_catalog/src/widgets/game_description.dart';
+import 'package:game_catalog/src/widgets/owned_platform_chip.dart';
 import 'package:game_filters/game_filters.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
@@ -12,10 +13,17 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// chip keeps its place as the list changes.
 @immutable
 class QuickLookPlatform {
-  const QuickLookPlatform({required this.key, required this.name});
+  const QuickLookPlatform({required this.key, required this.name, this.owned});
 
   final Key key;
   final String name;
+
+  /// Whether the user owns the game on this platform (#799). Null where
+  /// that isn't known: until the collection answers, after it fails, and
+  /// where the session has no collection. The chip then says nothing of
+  /// ownership, so a screen reader never hears "not in your collection" of
+  /// a copy the user owns.
+  final bool? owned;
 }
 
 /// What a quick look draws (#707), given what it has to show: the cover
@@ -110,18 +118,12 @@ class QuickLookLayout extends StatelessWidget {
           ],
           if (platforms.isNotEmpty) ...[
             CatalogSectionHeading(l10n.catalogDetailAvailableOn),
-            // Chips with no action: adding the game on a platform is the
-            // detail page's.
             Wrap(
               key: platformsKey,
               spacing: tokens.spaceSm,
               runSpacing: tokens.spaceSm,
               children: [
-                for (final platform in platforms)
-                  Chip(
-                    key: platform.key,
-                    label: GameFilterChipLabel(platform.name),
-                  ),
+                for (final platform in platforms) _platformChip(l10n, platform),
               ],
             ),
           ],
@@ -158,6 +160,34 @@ class QuickLookLayout extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  /// [platform]'s chip: the detail page's owned chip where the user owns the
+  /// game there, and a plain one otherwise (#799). Named for a screen reader
+  /// by whether it is owned, where that's known.
+  ///
+  /// None has an action: adding the game on a platform, and opening a copy,
+  /// are the detail page's (#707). So none pads itself out to a tap target,
+  /// and owned and plain chips are the same height in a row.
+  Widget _platformChip(
+    GameCatalogLocalizations l10n,
+    QuickLookPlatform platform,
+  ) {
+    final name = platform.name;
+    Widget plain(String? semanticsLabel) => Chip(
+      key: platform.key,
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      label: GameFilterChipLabel(name, semanticsLabel: semanticsLabel),
+    );
+    return switch (platform.owned) {
+      true => OwnedPlatformChip(
+        key: platform.key,
+        name: name,
+        semanticsLabel: l10n.catalogQuickLookPlatformOwnedSpoken(name),
+      ),
+      false => plain(l10n.catalogQuickLookPlatformNotOwnedSpoken(name)),
+      null => plain(null),
+    };
   }
 
   /// The cover beside the title, with the subtitle and the publish year

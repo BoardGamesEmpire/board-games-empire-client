@@ -6,6 +6,7 @@ import 'package:flutter/rendering.dart';
 import 'package:game_catalog/l10n/game_catalog_localizations.dart';
 import 'package:game_catalog/src/screens/game_detail_collection.dart';
 import 'package:game_catalog/src/screens/game_detail_screen.dart';
+import 'package:game_catalog/src/widgets/owned_platform_chip.dart';
 import 'package:game_catalog/src/widgets/platform_ownership.dart';
 import 'package:game_filters/game_filters.dart';
 import 'package:models/domain.dart';
@@ -46,7 +47,10 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// is open. Before the watch first answers, the chips are plain labels with
 /// no action, and there is no key and no button, so a screen reader never
 /// hears "not in your collection" of a copy the user owns. Without a
-/// [collection] they stay that way, as the quick look's are.
+/// [collection] they stay that way.
+///
+/// The quick look marks what the user owns through the same watch and the
+/// same [OwnedPlatformChip], with no action on any chip (#799).
 ///
 /// After the watch fails the chips are plain too, since ownership is still
 /// unknown, but the button comes back offering every platform in either
@@ -75,9 +79,6 @@ class GameDetailPlatforms extends StatefulWidget {
 
 class _GameDetailPlatformsState extends State<GameDetailPlatforms> {
   static final BgeLogger _log = BgeLogger('bge.catalog.detail.ownership');
-
-  /// The check's size: a Material chip's avatar size, set on the chips.
-  static const double _checkSize = 18;
 
   /// The platform game ids the watch is over.
   late Set<String> _ids;
@@ -294,19 +295,10 @@ class _GameDetailPlatformsState extends State<GameDetailPlatforms> {
     // the chip's own node, which keeps the chip's press and focus for a
     // screen reader.
     if (owned.isNotEmpty) {
-      return ActionChip(
+      return OwnedPlatformChip(
         focusNode: _chipFocusOf(platformGame.id),
-        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        avatar: Icon(Icons.check, size: _checkSize, color: scheme.onPrimary),
-        label: GameFilterChipLabel(
-          name,
-          semanticsLabel: l10n.catalogDetailPlatformOwnedSpoken(name),
-        ),
-        labelStyle: TextStyle(color: scheme.onPrimary),
-        backgroundColor: scheme.primary,
-        // Its own side keeps the theme's chip ring (#761) off a chip
-        // `_ChipSlot` already rings (#708).
-        side: BorderSide.none,
+        name: name,
+        semanticsLabel: l10n.catalogDetailPlatformOwnedSpoken(name),
         onPressed: () => collection.onOpenOwned(context, [
           for (final entry in owned)
             GameCollectionListItem(

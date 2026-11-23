@@ -9,6 +9,7 @@ import 'package:game_catalog/src/bloc/game_search_state.dart';
 import 'package:game_catalog/src/quick_look/game_quick_look.dart';
 import 'package:game_catalog/src/quick_look/game_quick_look_seed.dart';
 import 'package:game_catalog/src/quick_look/search_hit_quick_look.dart';
+import 'package:game_catalog/src/screens/game_detail_collection.dart';
 import 'package:game_catalog/src/search/data_gateway_search_grant.dart';
 import 'package:game_catalog/src/widgets/catalog_facts.dart';
 import 'package:game_catalog/src/widgets/catalog_game_row.dart';
@@ -110,6 +111,7 @@ class GameSearchScreen extends StatelessWidget {
     this.onGone,
     this.access,
     this.grant,
+    this.watchOwned,
     super.key,
   });
 
@@ -262,6 +264,11 @@ class GameSearchScreen extends StatelessWidget {
   /// [GameSearchBloc.grant] is the one both use.
   final DataGatewaySearchGrant? grant;
 
+  /// What the user owns of a game's platforms, which the quick look of a
+  /// game this server holds marks on its chips (#799). Null, as where the
+  /// session can't write the collection, marks nothing.
+  final WatchOwnedEntries? watchOwned;
+
   @override
   Widget build(BuildContext context) => BlocProvider<GameSearchBloc>(
     // The bloc owns the channel and closes it with itself, so the channel
@@ -280,6 +287,7 @@ class GameSearchScreen extends StatelessWidget {
       onOpen: onOpen,
       onGone: onGone,
       access: access,
+      watchOwned: watchOwned,
     ),
   );
 
@@ -309,6 +317,7 @@ class _GameSearchPage extends StatefulWidget {
     this.onOpen,
     this.onGone,
     this.access,
+    this.watchOwned,
   });
 
   final GamesRemoteDataSource remote;
@@ -316,6 +325,7 @@ class _GameSearchPage extends StatefulWidget {
   final void Function(BuildContext context, String gameId)? onOpen;
   final void Function(String gameId)? onGone;
   final CallerAccessRepository? access;
+  final WatchOwnedEntries? watchOwned;
 
   @override
   State<_GameSearchPage> createState() => _GameSearchPageState();
@@ -723,6 +733,7 @@ class _GameSearchPageState extends State<_GameSearchPage> {
           onGone: widget.onGone,
           onViewDetails: widget.onOpen,
           sections: sections,
+          watchOwned: widget.watchOwned,
         ),
       );
 

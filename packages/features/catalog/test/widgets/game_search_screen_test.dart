@@ -48,6 +48,7 @@ void main() {
     ThemeData? theme,
     DataGatewaySearchGrant? grant,
     GameSearchStreamSource? streamSource,
+    WatchOwnedEntries? watchOwned,
   }) async {
     await tester.pumpWidget(
       catalogApp(
@@ -62,6 +63,7 @@ void main() {
           onOpen: onOpen,
           access: access,
           onGone: onGone,
+          watchOwned: watchOwned,
         ),
         offline: offline,
       ),
@@ -429,6 +431,68 @@ void main() {
 
       await pressViewDetails(tester);
       expect(opened, ['g_catan']);
+    });
+
+    testWidgets("a held result's quick look marks an owned platform (#799)", (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      remote.onSearch = (_, _, _) async => results;
+      final platforms = [
+        for (final (id, name) in [('pg_1', 'Tabletop'), ('pg_2', 'Steam')])
+          PlatformGame(
+            id: id,
+            gameId: 'g_catan',
+            platformId: 'plat_$id',
+            platformName: name,
+            createdAt: DateTime.utc(2026),
+            updatedAt: DateTime.utc(2026),
+          ),
+      ];
+      remote.onFetchGame = (_) async =>
+          (game: game('g_catan', title: 'Catan'), platformGames: platforms);
+      final watched = <Set<String>>[];
+
+      await show(
+        tester,
+        onOpen: (_, _) {},
+        watchOwned: (ids) {
+          watched.add(ids);
+          return Stream.value([
+            GameCollection(
+              id: 'e_1',
+              userId: 'u_1',
+              platformGameId: 'pg_1',
+              medium: GameMedium.physical,
+              createdAt: DateTime.utc(2026),
+              updatedAt: DateTime.utc(2026),
+            ),
+          ]);
+        },
+      );
+      await search(tester, 'catan');
+      await openQuickLook(tester, serverRow('g_catan'));
+
+      expect(watched, [
+        {'pg_1', 'pg_2'},
+      ]);
+      expect(
+        find.bySemanticsLabel('Tabletop, in your collection'),
+        findsOneWidget,
+      );
+      expect(
+        find.bySemanticsLabel('Steam, not in your collection'),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(GameQuickLook.platformsKey),
+          matching: find.byIcon(Icons.check),
+        ),
+        findsOneWidget,
+      );
+
+      handle.dispose();
     });
 
     testWidgets("closing a result's quick look after a screen reader's tap "

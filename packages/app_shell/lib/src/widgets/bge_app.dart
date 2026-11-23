@@ -1960,7 +1960,8 @@ class _BgeAppState extends State<BgeApp> {
   ///   nothing owned. The cache's answer waits for the collection's first
   ///   refresh on this device, and a failed one reads as ownership unknown,
   ///   through [ownershipOnceRefreshed]. The page keeps that one stream while
-  ///   it is open, and a session's end routes the page away.
+  ///   it is open, and a session's end routes the page away. A game's quick
+  ///   look takes this watch alone (#799), which a session's end closes.
   /// - **The add** resolves the repository and the sender again at each
   ///   press. A press once the active container lacks either does nothing.
   /// - **An owned copy** opens its entry's page, through
@@ -2096,11 +2097,16 @@ class _BgeAppState extends State<BgeApp> {
   /// The page arrives beneath the quick look, which sits over the navigation
   /// shell (#414) and removes itself once the page has arrived, so back from
   /// the page lands where the cover was tapped.
+  ///
+  /// Its platform chips say which the user owns through the detail page's
+  /// watch ([_detailCollection]), so a session that can't write the
+  /// collection gets none, and its chips stay plain (#799).
   void Function(BuildContext context, GameQuickLookSeed seed) _openQuickLook(
     DependencyContainer container,
   ) {
     final remote = container.get<GamesRemoteDataSource>();
     final cache = _gamesCache(container);
+    final watchOwned = _detailCollection(container)?.watchOwned;
     return (context, seed) => unawaited(
       showGameQuickLook(
         context,
@@ -2109,6 +2115,7 @@ class _BgeAppState extends State<BgeApp> {
         cache: cache,
         onGone: _reportGameGone,
         onViewDetails: _openGame,
+        watchOwned: watchOwned,
       ),
     );
   }
@@ -2174,6 +2181,9 @@ class _BgeAppState extends State<BgeApp> {
   /// The search streams over the session's [GameSearchStreamSource] when one
   /// is registered, which it is only for a signed-in user on a server with a
   /// socket (#473). Without one, the search goes over REST.
+  ///
+  /// A held game's quick look marks the platforms the user owns, through the
+  /// detail page's watch, as a cover's does (#799).
   Widget? _buildGameSearchRoute(BuildContext context) {
     final container = _catalogContainer();
     if (container == null) return null;
@@ -2193,6 +2203,7 @@ class _BgeAppState extends State<BgeApp> {
       onOpen: _openGame,
       onGone: _reportGameGone,
       access: _callerAccess(container),
+      watchOwned: _detailCollection(container)?.watchOwned,
     );
   }
 
