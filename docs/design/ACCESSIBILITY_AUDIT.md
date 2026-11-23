@@ -435,7 +435,18 @@ The same flows as the keyboard tests, plus the screens they don't reach:
    when you're online". At the largest text and 320dp wide, check a long
    date's chip scales down to fit, and that the add dialog scrolls to its
    last field.
-8. Game detail from Games, and a cover's quick look from a home row.
+8. Game detail from Games, and a cover's quick look from a home row. Then,
+   on a desktop window narrower than 600dp, open a quick look, move focus
+   to a control in it, widen the window past 600dp and narrow it again. The
+   quick look changes from a sheet to a dialog and back (#733): check that
+   focus stays inside it each time, on the control it was on, and that
+   closing it returns focus to the cover. Do it once more in a browser with
+   a screen reader running, from a button and then from a text field in a
+   pop-up that has one: the automated check for it can't run in a browser.
+   In that pass, also check that a narrow pop-up, in its sheet form, is
+   announced as a dialog, and that its content and its drag handle's
+   dismiss control can be reached. On the web a sheet's content is inside
+   `role="dialog"` with `aria-modal="true"`, as a dialog's is, on purpose.
 9. Collection: the list in both layouts, a stack's picker, and an entry with
    its edit sheet and remove dialog. Then the header: type in the search and
    check the count under the filters ("1 game of 3") is read as it changes;
