@@ -1,7 +1,10 @@
+import 'dart:async';
 import 'dart:math' as math;
+import 'dart:ui' show SemanticsRole;
 
 import 'package:bge_test_support/widgets.dart';
 import 'package:flutter/foundation.dart' show ValueListenable;
+import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart'
     show DebugSemanticsDumpOrder, RenderAbstractViewport, SemanticsNode;
@@ -132,6 +135,25 @@ Future<void> _tapLastItemUnderTheButton(
 
   await tester.tapAt(Offset((left + right) / 2, item.center.dy));
   await tester.pumpAndSettle();
+}
+
+/// Every node in the semantics tree, in the order a screen reader reads them:
+/// a viewport lists its slivers' nodes in paint order, which runs the other
+/// way.
+List<SemanticsNode> _semanticsNodes(WidgetTester tester) {
+  final nodes = <SemanticsNode>[];
+  void walk(SemanticsNode node) {
+    nodes.add(node);
+    node
+        .debugListChildrenInOrder(DebugSemanticsDumpOrder.traversalOrder)
+        .forEach(walk);
+  }
+
+  tester.binding.rootPipelineOwner.visitChildren((owner) {
+    final root = owner.semanticsOwner?.rootSemanticsNode;
+    if (root != null) walk(root);
+  });
+  return nodes;
 }
 
 void main() {
@@ -966,6 +988,42 @@ void main() {
       handle.dispose();
     });
 
+    // Here rather than under 'BgePage refresh (#314)', for this group's page
+    // and fields.
+    testWidgets('with onRefresh, a scrolled slivers page is walked in order '
+        'both ways, the back button once (#314)', (tester) async {
+      final handle = tester.ensureSemantics();
+      await pushPage(
+        tester,
+        BgePage.slivers(
+          title: const Text('t'),
+          onRefresh: () async {},
+          slivers: [
+            SliverList.list(
+              children: [
+                for (var i = 0; i < builtFields; i++) ...[
+                  field(i),
+                  const BgeGap.xl(),
+                ],
+              ],
+            ),
+          ],
+        ),
+      );
+      expect(find.byType(RefreshIndicator), findsOneWidget);
+      expect(
+        pageScrollOf(tester).position.maxScrollExtent,
+        greaterThan(0),
+        reason: 'the page scrolls',
+      );
+
+      await expectTraversable(
+        tester,
+        expectedOrder: ['Back', ...fieldNames.take(builtFields)],
+      );
+      handle.dispose();
+    });
+
     // Back at the top of a lazily built list, its last children are no
     // longer built, so Shift+Tab from the back button wraps to the last one
     // that is (field 9 of 12 here), not to the list's end. Skipped so the
@@ -1471,34 +1529,15 @@ void main() {
   });
 
   group('BgePage.slivers header (#516)', () {
-    /// Every node in the semantics tree, in the order a screen reader reads
-    /// them: a viewport lists its slivers' nodes in paint order, which runs
-    /// the other way.
-    List<SemanticsNode> semanticsNodes(WidgetTester tester) {
-      final nodes = <SemanticsNode>[];
-      void walk(SemanticsNode node) {
-        nodes.add(node);
-        node
-            .debugListChildrenInOrder(DebugSemanticsDumpOrder.traversalOrder)
-            .forEach(walk);
-      }
-
-      tester.binding.rootPipelineOwner.visitChildren((owner) {
-        final root = owner.semanticsOwner?.rootSemanticsNode;
-        if (root != null) walk(root);
-      });
-      return nodes;
-    }
-
     /// The live regions in the semantics tree, each by its own label: the
     /// text a screen reader announces from it.
     List<String> liveRegions(WidgetTester tester) => [
-      for (final node in semanticsNodes(tester))
+      for (final node in _semanticsNodes(tester))
         if (node.getSemanticsData().flagsCollection.isLiveRegion)
           node.getSemanticsData().label,
     ];
 
-    bool inTree(WidgetTester tester, String label) => semanticsNodes(
+    bool inTree(WidgetTester tester, String label) => _semanticsNodes(
       tester,
     ).any((node) => node.getSemanticsData().label == label);
 
@@ -1569,7 +1608,7 @@ void main() {
       expect(liveRegions(tester), ['One thing happened']);
       // Not marked hidden, which Android needs before it announces a live
       // region.
-      final live = semanticsNodes(tester).singleWhere(
+      final live = _semanticsNodes(tester).singleWhere(
         (node) => node.getSemanticsData().flagsCollection.isLiveRegion,
       );
       expect(
@@ -1773,12 +1812,12 @@ void main() {
     ) async {
       final handle = tester.ensureSemantics();
       await pumpPage(tester);
-      final nodes = semanticsNodes(tester).length;
+      final nodes = _semanticsNodes(tester).length;
       final top = tester.getRect(find.byType(TextButton)).top;
 
       for (final empty in [const SizedBox.shrink(), const Column()]) {
         await pumpPage(tester, header: empty);
-        expect(semanticsNodes(tester), hasLength(nodes), reason: '$empty');
+        expect(_semanticsNodes(tester), hasLength(nodes), reason: '$empty');
         expect(tester.getRect(find.byType(TextButton)).top, top);
       }
 
@@ -1791,7 +1830,7 @@ void main() {
       await pumpPage(tester, header: banner('header'));
 
       final labels = [
-        for (final node in semanticsNodes(tester))
+        for (final node in _semanticsNodes(tester))
           node.getSemanticsData().label,
       ];
       expect(labels.indexOf('header'), lessThan(labels.indexOf('content')));
@@ -1969,5 +2008,323 @@ void main() {
         lessThan(RenderAbstractViewport.defaultCacheExtent),
       );
     });
+  });
+
+  group('BgePage refresh (#314)', () {
+    /// A refresh that runs until [held] completes, and counts its calls.
+    ///
+    /// Each test makes its own [held] in its body: one made in `setUp`, outside
+    /// the test's fake async zone, hangs its pumps.
+    late Completer<void> held;
+    late int calls;
+
+    setUp(() {
+      calls = 0;
+    });
+
+    Future<void> refresh() {
+      calls++;
+      return held.future;
+    }
+
+    /// Forty 48dp rows: longer than any window here.
+    Widget rows() => SliverList.builder(
+      itemCount: 40,
+      itemBuilder: (_, index) =>
+          SizedBox(height: 48, child: Text('row $index')),
+    );
+
+    Future<void> pumpPage(
+      WidgetTester tester, {
+      Future<void> Function()? onRefresh,
+      List<Widget>? slivers,
+      ScrollController? scrollController,
+    }) async {
+      await tester.pumpWidget(
+        hostAtSize(
+          tester,
+          BgePage.slivers(
+            title: const Text('t'),
+            onRefresh: onRefresh,
+            scrollController: scrollController,
+            slivers: slivers ?? [rows()],
+          ),
+          size: const Size(400, 600),
+        ),
+      );
+    }
+
+    /// A touch pull down from the top of the page.
+    Future<void> pull(WidgetTester tester) async {
+      await tester.fling(
+        find.byType(CustomScrollView),
+        const Offset(0, 300),
+        1000,
+      );
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+    }
+
+    testWidgets('without onRefresh there is no RefreshIndicator', (
+      tester,
+    ) async {
+      await pumpPage(tester);
+
+      expect(find.byType(RefreshIndicator), findsNothing);
+    });
+
+    testWidgets('a pull calls onRefresh once', (tester) async {
+      held = Completer<void>();
+      await pumpPage(tester, onRefresh: refresh);
+
+      await pull(tester);
+
+      expect(calls, 1);
+      held.complete();
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets('the spinner stays until the Future completes', (
+      tester,
+    ) async {
+      held = Completer<void>();
+      await pumpPage(tester, onRefresh: refresh);
+
+      await pull(tester);
+      expect(find.byType(RefreshProgressIndicator), findsOneWidget);
+
+      held.complete();
+      await tester.pumpAndSettle();
+      expect(find.byType(RefreshProgressIndicator), findsNothing);
+    });
+
+    testWidgets(
+      'a page shorter than the view can still be pulled',
+      (tester) async {
+        held = Completer<void>();
+        // With a controller of its own, as a screen may pass, a scroll view
+        // no longer scrolls by default when its content fits.
+        final controller = ScrollController();
+        addTearDown(controller.dispose);
+        await pumpPage(
+          tester,
+          onRefresh: refresh,
+          scrollController: controller,
+          slivers: const [SliverToBoxAdapter(child: Text('row'))],
+        );
+        expect(pageScrollOf(tester).position.maxScrollExtent, 0);
+
+        await pull(tester);
+
+        expect(calls, 1);
+        held.complete();
+        await tester.pumpAndSettle();
+      },
+      // A variant rather than setting `debugDefaultTargetPlatformOverride` in
+      // the body: the binding checks it is unset before `addTearDown` runs.
+      // Android's physics clamp at the top, and macOS's bounce past it.
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.macOS,
+        TargetPlatform.linux,
+      }),
+    );
+
+    testWidgets('the indicator adds no semantics node', (tester) async {
+      held = Completer<void>();
+      final handle = tester.ensureSemantics();
+      await pumpPage(
+        tester,
+        onRefresh: refresh,
+        slivers: const [SliverToBoxAdapter(child: Text('row'))],
+      );
+      final before = _semanticsNodes(tester).length;
+
+      await pull(tester);
+      expect(find.byType(RefreshProgressIndicator), findsOneWidget);
+
+      // Read from the tree, not with `find.bySemanticsLabel`: that reads the
+      // node each render object forms, and the spinner still forms one, with
+      // the indicator's own "Refresh" label. It just never joins the tree.
+      final nodes = [
+        for (final node in _semanticsNodes(tester)) node.getSemanticsData(),
+      ];
+      expect(nodes, hasLength(before));
+      expect(
+        nodes.map((node) => node.role),
+        isNot(contains(SemanticsRole.loadingSpinner)),
+      );
+      expect(
+        nodes.map((node) => node.label),
+        isNot(contains(contains('Refresh'))),
+      );
+      expect(nodes.map((node) => node.label), contains('row'));
+
+      held.complete();
+      await tester.pumpAndSettle();
+      handle.dispose();
+    });
+
+    // While the finger is down, and as a short pull snaps back, the indicator
+    // is determinate, which forms a progress-bar node rather than a spinner.
+    testWidgets('the indicator adds no semantics node mid-drag or when a '
+        'pull is let go short', (tester) async {
+      final handle = tester.ensureSemantics();
+      await pumpPage(
+        tester,
+        onRefresh: refresh,
+        slivers: const [SliverToBoxAdapter(child: Text('row'))],
+      );
+      final before = _semanticsNodes(tester).length;
+
+      void expectNoIndicatorNode() {
+        expect(find.byType(RefreshProgressIndicator), findsOneWidget);
+        final nodes = [
+          for (final node in _semanticsNodes(tester)) node.getSemanticsData(),
+        ];
+        expect(nodes, hasLength(before));
+        expect(
+          nodes.map((node) => node.role),
+          isNot(contains(SemanticsRole.progressBar)),
+        );
+        expect(
+          nodes.map((node) => node.label),
+          isNot(contains(contains('Refresh'))),
+        );
+      }
+
+      final gesture = await tester.startGesture(
+        tester.getCenter(find.byType(CustomScrollView)),
+      );
+      for (var i = 0; i < 5; i++) {
+        await gesture.moveBy(const Offset(0, 10));
+        await tester.pump();
+      }
+      expectNoIndicatorNode();
+
+      await gesture.up();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+      expectNoIndicatorNode();
+
+      await tester.pumpAndSettle();
+      expect(calls, 0);
+      handle.dispose();
+    });
+
+    testWidgets('a spinner or a progress bar among the slivers stays in the '
+        'semantics tree', (tester) async {
+      held = Completer<void>();
+      final handle = tester.ensureSemantics();
+      await pumpPage(
+        tester,
+        onRefresh: refresh,
+        slivers: const [
+          SliverToBoxAdapter(
+            child: CircularProgressIndicator(semanticsLabel: 'Loading'),
+          ),
+          SliverToBoxAdapter(
+            child: LinearProgressIndicator(
+              value: 0.5,
+              semanticsLabel: 'Upload',
+            ),
+          ),
+        ],
+      );
+
+      await pull(tester);
+      expect(find.byType(RefreshProgressIndicator), findsOneWidget);
+
+      List<String> labelled(SemanticsRole role) => [
+        for (final node in _semanticsNodes(tester))
+          if (node.getSemanticsData().role == role)
+            node.getSemanticsData().label,
+      ];
+      expect(labelled(SemanticsRole.loadingSpinner), ['Loading']);
+      expect(labelled(SemanticsRole.progressBar), ['Upload']);
+
+      // Not settled: the content's spinner never stops.
+      held.complete();
+      await tester.pump(const Duration(seconds: 1));
+      handle.dispose();
+    });
+
+    testWidgets("a footer page still pulls and still tracks the page's "
+        'scroll', (tester) async {
+      held = Completer<void>();
+      const rowKey = Key('row');
+      const room = 120.0;
+      final height = ValueNotifier<double>(room);
+      addTearDown(height.dispose);
+      await tester.pumpWidget(
+        hostAtSize(
+          tester,
+          BgePage.slivers(
+            title: const Text('t'),
+            padding: EdgeInsets.zero,
+            onRefresh: refresh,
+            footer: ValueListenableBuilder<double>(
+              valueListenable: height,
+              builder: (context, value, _) => SizedBox(height: value),
+            ),
+            slivers: [
+              SliverList.builder(
+                itemCount: 40,
+                itemBuilder: (_, index) => SizedBox(
+                  key: index == 39 ? rowKey : null,
+                  height: 48,
+                  child: Text('row $index'),
+                ),
+              ),
+            ],
+          ),
+          size: const Size(400, 600),
+        ),
+      );
+
+      await pull(tester);
+      expect(calls, 1);
+      held.complete();
+      await tester.pumpAndSettle();
+
+      // The footer keeps the room it gives back only while it hears where
+      // the page is, so a page at its end that doesn't move is one whose
+      // scroll still reaches the footer through the indicator.
+      final page = pageScrollOf(tester).position;
+      page.jumpTo(page.maxScrollExtent);
+      await tester.pumpAndSettle();
+      final before = tester.getRect(find.byKey(rowKey));
+      final pixels = page.pixels;
+
+      height.value = 0;
+      await tester.pumpAndSettle();
+
+      expect(page.pixels, pixels);
+      expect(tester.getRect(find.byKey(rowKey)), before);
+    });
+
+    // A trackpad gesture is sent as pan-zoom events, as a trackpad sends it
+    // on macOS, not as pointer moves. Measured with Flutter 3.47, it pulls.
+    testWidgets(
+      'a trackpad pull on macOS',
+      (tester) async {
+        held = Completer<void>();
+        await pumpPage(tester, onRefresh: refresh);
+
+        final gesture = await tester.startGesture(
+          tester.getCenter(find.byType(CustomScrollView)),
+          kind: PointerDeviceKind.trackpad,
+        );
+        await gesture.moveBy(const Offset(0, 300));
+        await gesture.up();
+        await tester.pump();
+        await tester.pump(const Duration(seconds: 1));
+
+        expect(calls, 1);
+        held.complete();
+        await tester.pumpAndSettle();
+      },
+      variant: TargetPlatformVariant.only(TargetPlatform.macOS),
+    );
   });
 }
