@@ -1955,11 +1955,12 @@ class _BgeAppState extends State<BgeApp> {
   /// a mounted route keeps these callbacks until it is rebuilt.
   ///
   /// - **The watch** resolves the repository from the server active when the
-  ///   page asks for it, once its platforms are known. With none there, it
-  ///   reports nothing owned. The cache's answer waits for the collection's
-  ///   first refresh on this device, and a failed one reads as ownership
-  ///   unknown, through [ownershipOnceRefreshed]. The page keeps that one
-  ///   stream while it is open, and a session's end routes the page away.
+  ///   page asks for it, once its platforms are known. With none there, or one
+  ///   that can't write the collection ([_canWriteCollection]), it reports
+  ///   nothing owned. The cache's answer waits for the collection's first
+  ///   refresh on this device, and a failed one reads as ownership unknown,
+  ///   through [ownershipOnceRefreshed]. The page keeps that one stream while
+  ///   it is open, and a session's end routes the page away.
   /// - **The add** resolves the repository and the sender again at each
   ///   press. A press once the active container lacks either does nothing.
   /// - **An owned copy** opens its entry's page, through
@@ -1973,8 +1974,7 @@ class _BgeAppState extends State<BgeApp> {
     return GameDetailCollection(
       watchOwned: (platformGameIds) {
         final current = active();
-        if (current == null ||
-            !current.isRegistered<GameCollectionRepository>()) {
+        if (current == null || !_canWriteCollection(current)) {
           return Stream.value(const []);
         }
         final entries = current

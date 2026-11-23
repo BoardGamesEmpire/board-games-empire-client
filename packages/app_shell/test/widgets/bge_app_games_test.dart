@@ -1452,6 +1452,34 @@ void main() {
       verifyNever(() => built.watchEntriesForPlatformGames(any()));
     });
 
+    // The add re-checks the whole of what writing takes, and the watch
+    // answers on the same terms: a repository with no sender to send through
+    // is a session that can't write, so it owns nothing to show (#778).
+    testWidgets("watchOwned's fallback answers nothing for a session that "
+        "can't write the collection", (tester) async {
+      final current = _collection();
+      await pumpHome(
+        tester,
+        collection: _collection(),
+        sender: _deliveringSender(),
+      );
+      final held = games.held = Completer();
+      await openGames(tester);
+      await tester.tap(find.byKey(GameBrowseScreen.rowKey('g_catan')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 450));
+
+      // The repository is there when the page asks, and the sender is not.
+      when(() => cubit.activeServerScope)
+          .thenReturn(activeServer(collection: current));
+      held.complete((game: _catan, platformGames: [_tabletop]));
+      await tester.pumpAndSettle();
+
+      expect(find.bySemanticsLabel(tabletopOwned), findsNothing);
+      expect(find.bySemanticsLabel(tabletopNotOwned), findsOneWidget);
+      verifyNever(() => current.watchEntriesForPlatformGames(any()));
+    });
+
     testWidgets('the add goes through the repository active at the press, '
         'not the one the detail was built with', (tester) async {
       final built = _collection();
