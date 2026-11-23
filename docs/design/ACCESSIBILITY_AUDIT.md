@@ -248,6 +248,9 @@ The same flows as the keyboard tests, plus the screens they don't reach:
    stopped it, open the quick look of another result this server doesn't
    hold, press Import, and close the quick look before the import ends:
    check that no game page opens once it would have ended.
+   Also close a result's quick look after opening it by a screen reader's
+   activation, and check that focus is back on that result's row, not on the
+   search field (#1038).
 5. Settings, and the feedback flow with its review screen.
 6. The bootstrap error screen (stop the server, open the app).
 7. Event detail from Events: an answer, with its note and not-going dialogs,

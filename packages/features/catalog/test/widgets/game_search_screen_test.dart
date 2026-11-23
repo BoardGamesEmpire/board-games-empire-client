@@ -431,6 +431,53 @@ void main() {
       expect(opened, ['g_catan']);
     });
 
+    testWidgets("closing a result's quick look after a screen reader's tap "
+        'returns focus to the row, not the search field (#1038)', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      remote.onSearch = (_, _, _) async => results;
+      readsAs(game('g_catan', title: 'Catan'));
+
+      await show(tester, access: mayImport(), onOpen: (_, _) {});
+      await search(tester, 'catan');
+      // Typing left focus on the search field, where the bug keeps it.
+      final field = tester.widget<EditableText>(
+        find.descendant(
+          of: find.byKey(GameSearchScreen.fieldKey),
+          matching: find.byType(EditableText),
+        ),
+      );
+      expect(field.focusNode.hasPrimaryFocus, isTrue, reason: 'to begin with');
+
+      tester.semantics.tap(
+        find.semantics.byPredicate(
+          (node) =>
+              node.label == 'Catan' &&
+              node.getSemanticsData().hasAction(SemanticsAction.tap) &&
+              node.rect.height > 0,
+          describeMatch: (_) => 'the Catan result',
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(GameQuickLook), findsOneWidget);
+
+      await closeQuickLook(tester);
+      expect(find.byType(GameQuickLook), findsNothing);
+
+      final row = Focus.of(
+        tester.element(
+          find.descendant(
+            of: serverRow('g_catan'),
+            matching: find.text('Catan'),
+          ),
+        ),
+      );
+      expect(row.hasPrimaryFocus, isTrue, reason: 'the row has focus');
+      expect(field.focusNode.hasFocus, isFalse, reason: 'not the search field');
+      handle.dispose();
+    });
+
     testWidgets('a DataGateway result on the server offers Re-import', (
       tester,
     ) async {
