@@ -250,7 +250,11 @@ The same flows as the keyboard tests, plus the screens they don't reach:
    check that no game page opens once it would have ended.
    Also close a result's quick look after opening it by a screen reader's
    activation, and check that focus is back on that result's row, not on the
-   search field (#1038).
+   search field (#1038). Then open the quick look of a result this server
+   holds: check its title is read as the game's heading and as a link, that
+   Enter on it or a screen reader's activation opens the game's page, and
+   that back from the page lands on the search with no quick look, focus on
+   that result's row (#798).
 5. Settings, and the feedback flow with its review screen.
 6. The bootstrap error screen (stop the server, open the app).
 7. Event detail from Events: an answer, with its note and not-going dialogs,
@@ -450,6 +454,15 @@ The same flows as the keyboard tests, plus the screens they don't reach:
    announced as a dialog, and that its content and its drag handle's
    dismiss control can be reached. On the web a sheet's content is inside
    `role="dialog"` with `aria-modal="true"`, as a dialog's is, on purpose.
+   On iOS and Android the quick look's title is read as the game's heading
+   and as a link, in one stop. On the web it is a level-2 heading holding a
+   link to the game: check the screen reader names both, and that its
+   activation of the link opens the game's page. On a desktop it is read as
+   a link (the level isn't voiced there yet). By keyboard it is ringed, with
+   room between the ring and the words, and Enter on it opens the game's
+   page; a mouse click on it draws no ring. With the system's high contrast
+   on, its words are the body text's colour, still underlined. Back from the
+   page lands on home with no quick look, focus on the cover (#798).
 9. Collection: the list in both layouts, a stack's picker, and an entry with
    its edit sheet and remove dialog. Then the header: type in the search and
    check the count under the filters ("1 game of 3") is read as it changes;

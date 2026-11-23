@@ -28,9 +28,9 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// One page of results, in two sections: what this server holds, then what
 /// its DataGateways found. Each result opens a quick look over the page, not
 /// an import or a page (#713). A game the server holds, from either section,
-/// opens its [GameQuickLook], read by its id, whose View full details goes
-/// to [onOpen]. A DataGateway result it doesn't hold opens a
-/// [SearchHitQuickLook], drawn from the hit alone.
+/// opens its [GameQuickLook], read by its id, whose title goes to [onOpen]
+/// (#798). A DataGateway result it doesn't hold opens a [SearchHitQuickLook],
+/// drawn from the hit alone.
 ///
 /// A DataGateway result's quick look also offers Import, or Re-import for a
 /// game the server holds, with the expansions the user ticks: a
@@ -241,10 +241,10 @@ class GameSearchScreen extends StatelessWidget {
   /// taken down from the results. Null hears of none.
   final Stream<String>? gone;
 
-  /// Opens a game this server holds: from its quick look's View full
-  /// details, or once an import has made it. The context is the quick
-  /// look's, which a page pushed from it removes once it has arrived. Null
-  /// offers no View full details, and an import ends in place.
+  /// Opens a game this server holds: from its quick look's title, or once
+  /// an import has made it. The context is the quick look's, which a page
+  /// pushed from it removes once it has arrived. Null leaves the title plain
+  /// text, and an import ends in place.
   final void Function(BuildContext context, String gameId)? onOpen;
 
   /// Told the id of a game a quick look finds gone. Null tells no one.

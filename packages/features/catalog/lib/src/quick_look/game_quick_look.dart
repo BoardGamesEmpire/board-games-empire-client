@@ -25,14 +25,14 @@ import 'package:ui/ui.dart';
 /// [showBgePopup]: a sheet on a phone and a dialog on a wider window, on the
 /// root navigator. The pop-up is named by the game's title.
 ///
-/// **View full details opens from the pop-up's own context, not [context].**
-/// The widget that opened the quick look can go while it is open: a read the
-/// server refuses takes the cover it was opened from down from the home
-/// shelves, and "Something to play" can draw new games under it. A push from
-/// a context that has gone asserts. The pop-up's context is there for as
-/// long as its button can be pressed, and is under the same router, so
-/// [onViewDetails] pushes the detail page from it just as it would from
-/// [context].
+/// **The title opens the page from the pop-up's own context, not
+/// [context]** (#798). The widget that opened the quick look can go while it
+/// is open: a read the server refuses takes the cover it was opened from
+/// down from the home shelves, and "Something to play" can draw new games
+/// under it. A push from a context that has gone asserts. The pop-up's
+/// context is there for as long as its title can be pressed, and is under
+/// the same router, so [onViewDetails] pushes the detail page from it just
+/// as it would from [context].
 ///
 /// It doesn't close the quick look either. The page it opens removes it
 /// once the page has arrived ([BgeRemoveWhenCovered]), so back from that
@@ -40,13 +40,12 @@ import 'package:ui/ui.dart';
 /// app's navigation shell the page arrives beneath the quick look, which
 /// goes once it has (see `showBgePopup`).
 ///
-/// So it opens the page once, however often it is pressed while the page
-/// arrives (#978): later presses do nothing
+/// So it opens the page once, however often the title is pressed while the
+/// page arrives (#978): later presses do nothing
 /// ([BgeRemoveWhenCovered.openPage]). A page popped before it has arrived
-/// leaves the quick look in place, and View full details opens the page
-/// again.
+/// leaves the quick look in place, and its title opens the page again.
 ///
-/// Null [onViewDetails] offers no View full details. [sections], [actions]
+/// Null [onViewDetails] leaves the title plain text. [sections], [actions]
 /// and [watchOwned] are [GameQuickLook]'s.
 Future<void> showGameQuickLook(
   BuildContext context, {
@@ -63,9 +62,13 @@ Future<void> showGameQuickLook(
     context,
     semanticLabel: seed.title,
     builder: (popup) {
-      // The guard is the route's, not the builder's, so a rebuild of the
-      // pop-up doesn't reset it. And the route knows when the page has gone
-      // back without arriving, which leaves the quick look as it was.
+      // The guard is the route's, not the builder's, so a new run of the
+      // builder doesn't reset it. A plain push doesn't run it again, but the
+      // app's router does: it builds its navigators again on each push, and
+      // `Navigator.didUpdateWidget` calls each route's
+      // `changedExternalState`, so a second press can reach a callback from
+      // a new run. And the route knows when the page has gone back without
+      // arriving, which leaves the quick look and its title as they were.
       final guard = switch (ModalRoute.of(popup)) {
         final BgeRemoveWhenCovered<dynamic> route => route,
         _ => null,
@@ -95,8 +98,8 @@ Future<void> showGameQuickLook(
 
 /// A game's important facts in a pop-up, without leaving the page (#707):
 /// its cover, title and publish year, its players, play time and age, the
-/// platforms it is on, and its whole description, with **View full
-/// details** to open its page.
+/// platforms it is on, and its whole description. Its title is the link to
+/// the game's page (#798).
 ///
 /// ## The seed shows at once
 ///
@@ -136,14 +139,13 @@ Future<void> showGameQuickLook(
 /// ## No add to the collection
 ///
 /// Nothing here adds the game to the collection, platform chips included,
-/// which have no action. Adding is the detail page's, behind View full
-/// details.
+/// which have no action. Adding is the detail page's, behind the title.
 ///
 /// ## Callers add to it
 ///
-/// [sections] sit below the description and [actions] beside View full
-/// details, so a caller with more to offer about a game, such as an import
-/// from search (#713), doesn't fork this.
+/// [sections] sit below the description and [actions] in a row at the foot,
+/// so a caller with more to offer about a game, such as an import from
+/// search (#713), doesn't fork this.
 ///
 /// A game the server answers as unavailable draws the banner and none of
 /// them (#1040): what a caller adds is about a game that's there.
@@ -168,7 +170,8 @@ class GameQuickLook extends StatelessWidget {
     super.key,
   });
 
-  static const Key viewDetailsKey = QuickLookLayout.viewDetailsKey;
+  /// The title, where it is the link to the game's page (#798).
+  static const Key titleLinkKey = QuickLookLayout.titleLinkKey;
   static const Key factsKey = QuickLookLayout.factsKey;
   static const Key platformsKey = QuickLookLayout.platformsKey;
 
@@ -199,14 +202,15 @@ class GameQuickLook extends StatelessWidget {
   /// Told the game's id when it turns out to be gone. Null tells no one.
   final void Function(String gameId)? onGone;
 
-  /// Opens the game's detail page. Null offers no View full details: where
-  /// there is nowhere to open it, there never will be while this is open.
+  /// Opens the game's detail page, from the title. Null leaves the title
+  /// plain text: where there is nowhere to open it, there never will be
+  /// while this is open.
   final VoidCallback? onViewDetails;
 
   /// The caller's own sections, below the description.
   final List<Widget> sections;
 
-  /// The caller's own actions, before View full details.
+  /// The caller's own actions, in a row at the foot.
   final List<Widget> actions;
 
   /// Opens a description link outside the app.

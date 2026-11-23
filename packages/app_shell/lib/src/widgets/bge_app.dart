@@ -2093,10 +2093,10 @@ class _BgeAppState extends State<BgeApp> {
   ///
   /// A game the quick look finds gone is told to [_gamesFoundGone], so it
   /// comes down from every list showing it, the shelf it was opened from
-  /// included. View full details pushes the detail page through [_openGame].
-  /// The page arrives beneath the quick look, which sits over the navigation
-  /// shell (#414) and removes itself once the page has arrived, so back from
-  /// the page lands where the cover was tapped.
+  /// included. The quick look's title pushes the detail page through
+  /// [_openGame] (#798). The page arrives beneath the quick look, which sits
+  /// over the navigation shell (#414) and removes itself once the page has
+  /// arrived, so back from the page lands where the cover was tapped.
   ///
   /// Its platform chips say which the user owns through the detail page's
   /// watch ([_detailCollection]), so a session that can't write the
@@ -2166,7 +2166,7 @@ class _BgeAppState extends State<BgeApp> {
   ///
   /// Each result opens a quick look over the search (#713), as a cover does
   /// ([_openQuickLook]): a game the quick look finds gone is told to
-  /// [_gamesFoundGone], and View full details pushes the game's page through
+  /// [_gamesFoundGone], and its title pushes the game's page through
   /// [_openGame]. A DataGateway result's quick look offers its import where
   /// the session's [CallerAccessRepository] allows `create` on `Game`, and
   /// the game the import makes opens through [_openGame] too, from the quick

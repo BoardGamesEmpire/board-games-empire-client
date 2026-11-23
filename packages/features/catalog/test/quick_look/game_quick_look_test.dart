@@ -1,8 +1,10 @@
 import 'dart:async';
 
 import 'package:bge_test_support/widgets.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/semantics.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:game_catalog/game_catalog.dart';
@@ -92,8 +94,8 @@ void main() {
     ),
   );
 
-  /// Opens [seed]'s quick look from a page. View full details records the
-  /// game's id in `viewed`, unless [viewDetails] is false.
+  /// Opens [seed]'s quick look from a page. Its title records the game's id
+  /// in `viewed`, unless [viewDetails] is false.
   Future<void> open(
     WidgetTester tester,
     GameQuickLookSeed seed, {
@@ -147,6 +149,23 @@ void main() {
     matching: find.byType(TextButton),
   );
 
+  /// The title, as the link to the game's page.
+  Finder titleLink() => find.byKey(GameQuickLook.titleLinkKey);
+
+  /// The title link's focus node.
+  FocusNode titleFocus(WidgetTester tester) =>
+      tester.widget<InkWell>(titleLink()).focusNode!;
+
+  /// Tabs until the title has focus, as a keyboard user gets there.
+  Future<void> tabToTitle(WidgetTester tester) async {
+    final node = titleFocus(tester);
+    for (var i = 0; i < 10 && !node.hasPrimaryFocus; i++) {
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pump();
+    }
+    expect(node.hasPrimaryFocus, isTrue, reason: 'Tab reaches the title');
+  }
+
   testWidgets("the cover draws the game's whole image, not a crop", (
     tester,
   ) async {
@@ -168,12 +187,8 @@ void main() {
     expect(cover(), findsOneWidget);
     expect(find.byKey(GameQuickLook.factsKey), findsNothing);
     expect(find.byKey(GameQuickLook.platformsKey), findsNothing);
-    expect(
-      tester
-          .widget<FilledButton>(find.byKey(GameQuickLook.viewDetailsKey))
-          .enabled,
-      isTrue,
-    );
+    // The way to the page doesn't wait for the read.
+    expect(tester.widget<InkWell>(titleLink()).onTap, isNotNull);
 
     handle.dispose();
   });
@@ -476,224 +491,7 @@ void main() {
     expect(find.text('extra section'), findsNothing);
     expect(find.widgetWithText(TextButton, 'Import'), findsNothing);
     // What the quick look itself offers stays.
-    expect(find.byKey(GameQuickLook.viewDetailsKey), findsOneWidget);
-  });
-
-  testWidgets("View full details calls onViewDetails with the game's id", (
-    tester,
-  ) async {
-    await open(tester, GameQuickLookSeed.fromSummary(summary));
-
-    await tester.tap(find.byKey(GameQuickLook.viewDetailsKey));
-    await tester.pumpAndSettle();
-
-    expect(viewed, ['g_wingspan']);
-    // Left open: the page pushed over it takes it away once it has arrived.
-    expect(find.byType(GameQuickLook), findsOneWidget);
-  });
-
-  testWidgets('without onViewDetails there is no View full details', (
-    tester,
-  ) async {
-    await open(
-      tester,
-      GameQuickLookSeed.fromSummary(summary),
-      viewDetails: false,
-      actions: [TextButton(onPressed: () {}, child: const Text('Import'))],
-    );
-
-    // Not disabled: there is nowhere to open it, and won't be.
-    expect(find.text('Import'), findsOneWidget);
-    expect(find.byKey(GameQuickLook.viewDetailsKey), findsNothing);
-  });
-
-  testWidgets("View full details still opens after the caller's widget is "
-      'gone', (tester) async {
-    final showCaller = ValueNotifier(true);
-    addTearDown(showCaller.dispose);
-    bool? mountedWhenPressed;
-    await tester.pumpWidget(
-      catalogApp(
-        Scaffold(
-          body: Center(
-            child: ValueListenableBuilder<bool>(
-              valueListenable: showCaller,
-              builder: (_, show, _) => show
-                  ? opener(
-                      GameQuickLookSeed.fromSummary(summary),
-                      onViewDetails: (context, gameId) {
-                        mountedWhenPressed = context.mounted;
-                        Navigator.of(context).push(
-                          MaterialPageRoute<void>(
-                            builder: (_) =>
-                                Scaffold(body: Text('Details of $gameId')),
-                          ),
-                        );
-                      },
-                    )
-                  : const SizedBox.shrink(),
-            ),
-          ),
-        ),
-      ),
-    );
-    await tester.tap(find.text('open'));
-    await tester.pumpAndSettle();
-    final caller = tester.element(find.text('open'));
-
-    // As a refused read takes its cover down from the home shelves.
-    showCaller.value = false;
-    await tester.pumpAndSettle();
-    expect(caller.mounted, isFalse);
-
-    await tester.tap(find.byKey(GameQuickLook.viewDetailsKey));
-    await tester.pumpAndSettle();
-
-    expect(tester.takeException(), isNull);
-    expect(mountedWhenPressed, isTrue);
-    expect(find.text('Details of g_wingspan'), findsOneWidget);
-  });
-
-  testWidgets('View full details pressed twice while the page arrives pushes '
-      'one page', (tester) async {
-    final opened = <String>[];
-    await tester.pumpWidget(
-      catalogApp(
-        Scaffold(
-          body: Center(
-            child: opener(
-              GameQuickLookSeed.fromSummary(summary),
-              onViewDetails: (context, gameId) {
-                opened.add(gameId);
-                Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => Scaffold(body: Text('Details of $gameId')),
-                  ),
-                );
-              },
-            ),
-          ),
-        ),
-      ),
-    );
-    await tester.tap(find.text('open'));
-    await tester.pumpAndSettle();
-
-    // The second press lands while the page is still arriving. A tap would
-    // miss: the page's route already takes the pointer. A screen reader or a
-    // key press reaches the button's callback all the same, so call it.
-    final onPressed = tester
-        .widget<FilledButton>(find.byKey(GameQuickLook.viewDetailsKey))
-        .onPressed!;
-    onPressed();
-    await tester.pump();
-    onPressed();
-    await tester.pump();
-
-    expect(opened, ['g_wingspan']);
-
-    // Back lands where the quick look was opened, not on a second copy.
-    await tester.pumpAndSettle();
-    await tester.binding.handlePopRoute();
-    await tester.pumpAndSettle();
-    expect(
-      find.text('Details of g_wingspan', skipOffstage: false),
-      findsNothing,
-    );
-    expect(find.byType(GameQuickLook), findsNothing);
-    expect(find.text('open'), findsOneWidget);
-  });
-
-  group('a page popped on its way leaves View full details working', () {
-    /// A page for [gameId], standing in for the game's detail page.
-    Route<void> detailsPage(String gameId) => MaterialPageRoute<void>(
-      builder: (_) => Scaffold(body: Text('Details of $gameId')),
-    );
-
-    /// Presses View full details, pops the page halfway through its
-    /// entrance, and presses it again: it opens the page again, and that one
-    /// takes the quick look away once it has arrived.
-    Future<void> popOnItsWayThenAgain(
-      WidgetTester tester,
-      List<String> opened,
-      NavigatorState Function() pagesNavigator,
-    ) async {
-      final viewDetails = find.byKey(GameQuickLook.viewDetailsKey);
-      await tester.ensureVisible(viewDetails);
-      await tester.tap(viewDetails);
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 100));
-      expect(find.text('Details of g_wingspan'), findsOneWidget);
-
-      pagesNavigator().pop();
-      await tester.pumpAndSettle();
-      expect(find.text('Details of g_wingspan'), findsNothing);
-      // Never covered, so still there.
-      expect(find.byType(GameQuickLook), findsOneWidget);
-
-      await tester.ensureVisible(viewDetails);
-      await tester.tap(viewDetails);
-      await tester.pumpAndSettle();
-
-      expect(opened, ['g_wingspan', 'g_wingspan']);
-      expect(find.text('Details of g_wingspan'), findsOneWidget);
-      expect(find.byType(GameQuickLook, skipOffstage: false), findsNothing);
-    }
-
-    testWidgets("on the pop-up's own navigator", (tester) async {
-      final opened = <String>[];
-      late NavigatorState pages;
-      await tester.pumpWidget(
-        catalogApp(
-          Scaffold(
-            body: Center(
-              child: opener(
-                GameQuickLookSeed.fromSummary(summary),
-                onViewDetails: (context, gameId) {
-                  opened.add(gameId);
-                  pages = Navigator.of(context)..push(detailsPage(gameId));
-                },
-              ),
-            ),
-          ),
-        ),
-      );
-      await tester.tap(find.text('open'));
-      await tester.pumpAndSettle();
-
-      await popOnItsWayThenAgain(tester, opened, () => pages);
-    });
-
-    testWidgets('on a nested navigator, beneath the pop-up', (tester) async {
-      final nested = GlobalKey<NavigatorState>();
-      final observer = BgePopupCoverObserver();
-      final opened = <String>[];
-      await tester.pumpWidget(
-        catalogApp(
-          Navigator(
-            key: nested,
-            observers: [observer],
-            onGenerateRoute: (_) => MaterialPageRoute<void>(
-              builder: (_) => Scaffold(
-                body: Center(
-                  child: opener(
-                    GameQuickLookSeed.fromSummary(summary),
-                    onViewDetails: (_, gameId) {
-                      opened.add(gameId);
-                      nested.currentState!.push(detailsPage(gameId));
-                    },
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      );
-      await tester.tap(find.text('open'));
-      await tester.pumpAndSettle();
-
-      await popOnItsWayThenAgain(tester, opened, () => nested.currentState!);
-    });
+    expect(titleLink(), findsOneWidget);
   });
 
   testWidgets("a caller's sections and actions are shown", (tester) async {
@@ -711,15 +509,711 @@ void main() {
       ),
     );
 
+    // The actions row, at the foot and at the end of the line.
     final import = find.widgetWithText(TextButton, 'Import');
-    final details = find.byKey(GameQuickLook.viewDetailsKey);
-    final bar = find.ancestor(of: details, matching: find.byType(OverflowBar));
-    expect(find.descendant(of: bar, matching: import), findsOneWidget);
+    final bar = find.ancestor(of: import, matching: find.byType(OverflowBar));
+    expect(bar, findsOneWidget);
     expect(
-      tester.getCenter(import).dy,
-      moreOrLessEquals(tester.getCenter(details).dy, epsilon: 1),
+      tester.getTopLeft(import).dy,
+      greaterThanOrEqualTo(tester.getBottomLeft(find.text('extra section')).dy),
     );
-    expect(tester.getCenter(import).dx, lessThan(tester.getCenter(details).dx));
+    expect(
+      tester.getTopRight(import).dx,
+      moreOrLessEquals(tester.getTopRight(bar).dx, epsilon: 1),
+    );
+  });
+
+  group("the title opens the game's page (#798)", () {
+    /// A page for [gameId], standing in for the game's detail page.
+    Route<void> detailsPage(String gameId) => MaterialPageRoute<void>(
+      builder: (_) => Scaffold(
+        appBar: AppBar(),
+        body: Text('Details of $gameId'),
+      ),
+    );
+
+    /// Whether the title's ring is drawn.
+    bool ringDrawn(WidgetTester tester) {
+      final ring = find.ancestor(
+        of: titleLink(),
+        matching: find.byType(BgeFocusRing),
+      );
+      // The ring's own outer box comes first in its subtree.
+      final drawn = tester.widget<DecoratedBox>(
+        find.descendant(of: ring, matching: find.byType(DecoratedBox)).first,
+      );
+      return (drawn.decoration as BoxDecoration).border != null;
+    }
+
+    /// The opener's focus node: the nearest above its words.
+    FocusNode openerFocus(WidgetTester tester) =>
+        Focus.of(tester.element(find.text('open')));
+
+    /// Opens the quick look from the keyboard, Tab to the opener and Enter,
+    /// so that focus has somewhere to come back to.
+    Future<void> openByKeyboard(WidgetTester tester) async {
+      final node = openerFocus(tester);
+      for (var i = 0; i < 10 && !node.hasPrimaryFocus; i++) {
+        await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+        await tester.pump();
+      }
+      expect(node.hasPrimaryFocus, isTrue, reason: 'Tab reaches the opener');
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(find.byType(GameQuickLook), findsOneWidget);
+    }
+
+    testWidgets("tapping the title opens the game's page", (tester) async {
+      await open(tester, GameQuickLookSeed.fromSummary(summary));
+
+      // A one-line title is still a whole target.
+      expect(
+        tester.getSize(titleLink()).height,
+        greaterThanOrEqualTo(kMinInteractiveDimension),
+      );
+      await tester.tap(titleLink());
+      await tester.pumpAndSettle();
+
+      expect(viewed, ['g_wingspan']);
+      // Left open: the page pushed over it takes it away once it has arrived.
+      expect(find.byType(GameQuickLook), findsOneWidget);
+    });
+
+    testWidgets("Enter on the focused title opens the game's page", (
+      tester,
+    ) async {
+      await open(tester, GameQuickLookSeed.fromSummary(summary));
+
+      await tabToTitle(tester);
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pump();
+
+      expect(viewed, ['g_wingspan']);
+    });
+
+    testWidgets('Enter then a tap opens the page once', (tester) async {
+      // As in the app. The opener's page is on the shell's nested navigator,
+      // and the quick look over it on the root one. The game's page arrives
+      // on the nested one, beneath the quick look, which goes once the page
+      // has arrived (#414): until then the title is on top, where a second
+      // press reaches it. And the app's router builds its navigators again
+      // on each push, and each route's page with them, so the title the
+      // second press reaches carries a callback from a new run of the
+      // pop-up's builder. A guard made in the builder would let it through.
+      final nested = GlobalKey<NavigatorState>();
+      final observer = BgePopupCoverObserver();
+      final pushes = ValueNotifier(0);
+      addTearDown(pushes.dispose);
+      final opened = <String>[];
+      await tester.pumpWidget(
+        ValueListenableBuilder<int>(
+          valueListenable: pushes,
+          builder: (_, _, _) => catalogApp(
+            Navigator(
+              key: nested,
+              observers: [observer],
+              onGenerateRoute: (_) => MaterialPageRoute<void>(
+                builder: (_) => Scaffold(
+                  body: Center(
+                    child: opener(
+                      GameQuickLookSeed.fromSummary(summary),
+                      onViewDetails: (_, gameId) {
+                        opened.add(gameId);
+                        nested.currentState!.push(detailsPage(gameId));
+                        pushes.value++;
+                      },
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await openByKeyboard(tester);
+      await tabToTitle(tester);
+      final pressed = tester.widget<InkWell>(titleLink()).onTap;
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      // The page is arriving beneath the quick look, which is still there,
+      // its title built again.
+      expect(find.text('Details of g_wingspan'), findsOneWidget);
+      expect(find.byType(GameQuickLook), findsOneWidget);
+      expect(
+        tester.widget<InkWell>(titleLink()).onTap,
+        isNot(same(pressed)),
+        reason: "the pop-up's builder ran again",
+      );
+
+      // A tap on the title, which it reaches.
+      final title = tester.getCenter(titleLink());
+      expect(
+        tester.hitTestOnBinding(title).path.map((entry) => entry.target),
+        contains(tester.renderObject(titleLink())),
+      );
+      await tester.tapAt(title);
+      await tester.pump();
+
+      expect(opened, ['g_wingspan']);
+
+      await tester.pumpAndSettle();
+      expect(find.byType(GameQuickLook, skipOffstage: false), findsNothing);
+      await tester.tap(find.byType(BackButton));
+      await tester.pumpAndSettle();
+
+      // Back lands where the quick look was opened, not on a second copy.
+      expect(
+        find.text('Details of g_wingspan', skipOffstage: false),
+        findsNothing,
+      );
+      expect(find.byType(GameQuickLook), findsNothing);
+      expect(find.text('open'), findsOneWidget);
+      expect(FocusManager.instance.primaryFocus, same(openerFocus(tester)));
+    });
+
+    group('a page popped before it arrives leaves the title working', () {
+      /// Presses the title, pops the page halfway through its entrance, and
+      /// presses the title again: it opens the page again, and that one
+      /// takes the quick look away once it has arrived.
+      Future<void> popOnItsWayThenAgain(
+        WidgetTester tester,
+        List<String> opened,
+        NavigatorState Function() pagesNavigator,
+      ) async {
+        await tester.tap(titleLink());
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(find.text('Details of g_wingspan'), findsOneWidget);
+
+        pagesNavigator().pop();
+        await tester.pumpAndSettle();
+        expect(find.text('Details of g_wingspan'), findsNothing);
+        // Never covered, so still there.
+        expect(find.byType(GameQuickLook), findsOneWidget);
+
+        await tester.tap(titleLink());
+        await tester.pumpAndSettle();
+
+        expect(opened, ['g_wingspan', 'g_wingspan']);
+        expect(find.text('Details of g_wingspan'), findsOneWidget);
+        expect(find.byType(GameQuickLook, skipOffstage: false), findsNothing);
+      }
+
+      testWidgets("on the pop-up's own navigator", (tester) async {
+        final opened = <String>[];
+        late NavigatorState pages;
+        await tester.pumpWidget(
+          catalogApp(
+            Scaffold(
+              body: Center(
+                child: opener(
+                  GameQuickLookSeed.fromSummary(summary),
+                  onViewDetails: (context, gameId) {
+                    opened.add(gameId);
+                    pages = Navigator.of(context)..push(detailsPage(gameId));
+                  },
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.tap(find.text('open'));
+        await tester.pumpAndSettle();
+
+        await popOnItsWayThenAgain(tester, opened, () => pages);
+      });
+
+      testWidgets('on a nested navigator, beneath the pop-up', (
+        tester,
+      ) async {
+        final nested = GlobalKey<NavigatorState>();
+        final observer = BgePopupCoverObserver();
+        final opened = <String>[];
+        await tester.pumpWidget(
+          catalogApp(
+            Navigator(
+              key: nested,
+              observers: [observer],
+              onGenerateRoute: (_) => MaterialPageRoute<void>(
+                builder: (_) => Scaffold(
+                  body: Center(
+                    child: opener(
+                      GameQuickLookSeed.fromSummary(summary),
+                      onViewDetails: (_, gameId) {
+                        opened.add(gameId);
+                        nested.currentState!.push(detailsPage(gameId));
+                      },
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.tap(find.text('open'));
+        await tester.pumpAndSettle();
+
+        await popOnItsWayThenAgain(tester, opened, () => nested.currentState!);
+      });
+    });
+
+    testWidgets("the title still opens after the caller's widget is gone", (
+      tester,
+    ) async {
+      final showCaller = ValueNotifier(true);
+      addTearDown(showCaller.dispose);
+      bool? mountedWhenPressed;
+      await tester.pumpWidget(
+        catalogApp(
+          Scaffold(
+            body: Center(
+              child: ValueListenableBuilder<bool>(
+                valueListenable: showCaller,
+                builder: (_, show, _) => show
+                    ? opener(
+                        GameQuickLookSeed.fromSummary(summary),
+                        onViewDetails: (context, gameId) {
+                          mountedWhenPressed = context.mounted;
+                          Navigator.of(context).push(detailsPage(gameId));
+                        },
+                      )
+                    : const SizedBox.shrink(),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+      final caller = tester.element(find.text('open'));
+
+      // As a refused read takes its cover down from the home shelves.
+      showCaller.value = false;
+      await tester.pumpAndSettle();
+      expect(caller.mounted, isFalse);
+
+      await tester.tap(titleLink());
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(mountedWhenPressed, isTrue);
+      expect(find.text('Details of g_wingspan'), findsOneWidget);
+    });
+
+    testWidgets('back from the page lands where the quick look was opened, '
+        'with focus on the opener', (tester) async {
+      await tester.pumpWidget(
+        catalogApp(
+          Scaffold(
+            body: Center(
+              child: opener(
+                GameQuickLookSeed.fromSummary(summary),
+                onViewDetails: (context, gameId) =>
+                    Navigator.of(context).push(detailsPage(gameId)),
+              ),
+            ),
+          ),
+        ),
+      );
+      await openByKeyboard(tester);
+
+      await tabToTitle(tester);
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(find.text('Details of g_wingspan'), findsOneWidget);
+      // Gone once the page has arrived, not just hidden under it.
+      expect(find.byType(GameQuickLook, skipOffstage: false), findsNothing);
+
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text('Details of g_wingspan', skipOffstage: false),
+        findsNothing,
+      );
+      expect(find.byType(GameQuickLook), findsNothing);
+      expect(find.text('open'), findsOneWidget);
+      expect(FocusManager.instance.primaryFocus, same(openerFocus(tester)));
+    });
+
+    testWidgets('the quick look has no View full details', (tester) async {
+      await open(tester, GameQuickLookSeed.fromGame(wingspan));
+
+      expect(find.text('View full details'), findsNothing);
+      expect(
+        find.descendant(
+          of: find.byType(GameQuickLook),
+          matching: find.byWidgetPredicate((w) => w is ButtonStyleButton),
+        ),
+        findsNothing,
+      );
+      // With no actions of the caller's, there is no actions row.
+      expect(
+        find.descendant(
+          of: find.byType(GameQuickLook),
+          matching: find.byType(OverflowBar),
+        ),
+        findsNothing,
+      );
+    });
+
+    testWidgets('without onViewDetails the title is plain text and no link', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      await open(
+        tester,
+        GameQuickLookSeed.fromSummary(summary),
+        viewDetails: false,
+        actions: [TextButton(onPressed: () {}, child: const Text('Import'))],
+      );
+
+      // Not disabled: there is nowhere to open it, and won't be.
+      expect(titleLink(), findsNothing);
+      expect(find.text('Import'), findsOneWidget);
+      expect(
+        tester.getSemantics(find.text('Wingspan')),
+        isSemantics(
+          label: 'Wingspan',
+          isHeader: true,
+          isLink: false,
+          hasTapAction: false,
+        ),
+      );
+      final style = tester.widget<Text>(find.text('Wingspan')).style;
+      expect(style?.decoration, isNot(TextDecoration.underline));
+
+      handle.dispose();
+    });
+
+    // iOS and Android read a heading that is also a link from one node.
+    // Elsewhere a node has one role, and a heading wins over a link, so the
+    // link would go: there the heading holds the link, as HTML's
+    // <h2><a></a></h2> does (#798).
+    const oneNode = {TargetPlatform.iOS, TargetPlatform.android};
+    testWidgets(
+      'a screen reader hears the title as a heading and a link',
+      (tester) async {
+        final handle = tester.ensureSemantics();
+        await open(tester, GameQuickLookSeed.fromSummary(summary));
+
+        final heard = tester.getSemantics(titleLink());
+        // The words, the link and its tap are one node.
+        expect(tester.getSemantics(find.text('Wingspan')), same(heard));
+        if (oneNode.contains(defaultTargetPlatform)) {
+          // The level is what those engines read as a heading; the header
+          // flag alone is not. Both survive the tap action.
+          expect(heard.getSemanticsData().headingLevel, 2);
+          expect(
+            heard,
+            isSemantics(
+              label: 'Wingspan',
+              isHeader: true,
+              isLink: true,
+              hasTapAction: true,
+              isFocusable: true,
+              isButton: false,
+            ),
+          );
+        } else {
+          expect(
+            heard,
+            isSemantics(
+              label: 'Wingspan',
+              isHeader: false,
+              isLink: true,
+              hasTapAction: true,
+              isFocusable: true,
+              isButton: false,
+            ),
+          );
+          // A heading of level 2, named by the link alone.
+          final heading = heard.parent!;
+          expect(heading.getSemanticsData().headingLevel, 2);
+          expect(
+            heading,
+            isSemantics(label: '', isHeader: false, isLink: false),
+          );
+          expect(heading.childrenCount, 1);
+        }
+
+        tester.semantics.tap(
+          find.semantics.byPredicate((node) => node.id == heard.id),
+        );
+        await tester.pump();
+        expect(viewed, ['g_wingspan']);
+
+        handle.dispose();
+      },
+      variant: TargetPlatformVariant.all(),
+    );
+
+    for (final direction in TextDirection.values) {
+      testWidgets('a one-letter title takes a press 48 dp wide, though its '
+          'target reaches into the margin, ${direction.name}', (
+        tester,
+      ) async {
+        await tester.pumpWidget(
+          catalogApp(
+            builder: (context, child) =>
+                Directionality(textDirection: direction, child: child!),
+            Scaffold(
+              body: Center(
+                child: opener(
+                  const GameQuickLookSeed(id: 'g_7', title: '7'),
+                  onViewDetails: (_, id) => viewed.add(id),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.tap(find.text('open'));
+        await tester.pumpAndSettle();
+
+        // Across the target's row, a dp at a time: what reaches the link.
+        final target = tester.getRect(titleLink());
+        final link = tester.renderObject(titleLink());
+        final pressed = [
+          for (var x = target.left.floor() - 10; x <= target.right + 10; x++)
+            if (tester
+                .hitTestOnBinding(Offset(x + 0.5, target.center.dy))
+                .path
+                .any((entry) => entry.target == link))
+              x,
+        ];
+        expect(
+          pressed.length,
+          greaterThanOrEqualTo(kMinInteractiveDimension),
+          reason: 'the strip before the words takes no press',
+        );
+
+        // A tap at the edge before the words, the one moved into the margin.
+        final start = switch (direction) {
+          TextDirection.ltr => pressed.first,
+          TextDirection.rtl => pressed.last,
+        };
+        await tester.tapAt(Offset(start + 0.5, target.center.dy));
+        expect(viewed, ['g_7']);
+      });
+    }
+
+    for (final (name, theme, highContrast, minimum) in [
+      ('light', BgeTheme.light(), false, Wcag.aaNormalText),
+      ('dark', BgeTheme.dark(), false, Wcag.aaNormalText),
+      (
+        'high-contrast light',
+        BgeTheme.highContrastLight(),
+        true,
+        Wcag.aaaNormalText,
+      ),
+      (
+        'high-contrast dark',
+        BgeTheme.highContrastDark(),
+        true,
+        Wcag.aaaNormalText,
+      ),
+    ]) {
+      for (final (form, view, chrome) in [
+        ('sheet', const Size(400, 800), BottomSheet),
+        ('dialog', const Size(800, 800), Dialog),
+      ]) {
+        testWidgets("the title's words read on the $form, $name", (
+          tester,
+        ) async {
+          useViewSize(tester, view);
+          // As the system's setting picks the high-contrast theme.
+          tester.platformDispatcher.accessibilityFeaturesTestValue =
+              FakeAccessibilityFeatures(highContrast: highContrast);
+          addTearDown(
+            tester.platformDispatcher.clearAccessibilityFeaturesTestValue,
+          );
+          await open(
+            tester,
+            GameQuickLookSeed.fromSummary(summary),
+            theme: theme,
+          );
+          expect(find.byType(chrome), findsOneWidget);
+
+          final words = tester
+              .widget<Text>(
+                find.descendant(of: titleLink(), matching: find.byType(Text)),
+              )
+              .style!;
+          // The pop-up's own surface, as it paints it.
+          final surface = tester.widget<Material>(
+            find
+                .ancestor(
+                  of: titleLink(),
+                  matching: find.byWidgetPredicate(
+                    (w) => w is Material && w.type != MaterialType.transparency,
+                  ),
+                )
+                .first,
+          );
+          final ground = ElevationOverlay.applySurfaceTint(
+            surface.color!,
+            surface.surfaceTintColor,
+            surface.elevation,
+          );
+          final ratio = Wcag.contrastRatio(words.color!, ground);
+          expect(
+            ratio,
+            greaterThanOrEqualTo(minimum),
+            reason: '${ratio.toStringAsFixed(2)}:1',
+          );
+          // The underline, in the words' colour, still says it's a link.
+          expect(words.decoration, TextDecoration.underline);
+          expect(words.decorationColor, words.color);
+        });
+      }
+    }
+
+    testWidgets("the title's target is at least 48 dp tall and spans every "
+        'wrapped line at 320 dp × 2.0', (tester) async {
+      const view = Size(320, 640);
+      useViewSize(tester, view);
+      // Short words: the test font draws each letter an em wide, so a long
+      // word would run past the line it is on, as no word does in the
+      // title's own face. These wrap one or two to a line.
+      const title = 'Ark Nova: Marine Worlds of the Deep';
+      await tester.pumpWidget(
+        MediaQuery(
+          data: const MediaQueryData(
+            size: view,
+            textScaler: TextScaler.linear(2),
+          ),
+          child: catalogApp(
+            Scaffold(
+              body: Center(
+                child: opener(
+                  const GameQuickLookSeed(id: 'g_ti', title: title),
+                  onViewDetails: (_, id) => viewed.add(id),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      final target = tester.getRect(titleLink());
+      expect(target.height, greaterThanOrEqualTo(kMinInteractiveDimension));
+      final words = tester.renderObject<RenderParagraph>(
+        find.descendant(of: titleLink(), matching: find.byType(RichText)),
+      );
+      final toScreen = words.getTransformTo(null);
+      // Each word's box, leaving out the spaces, whose boxes run on past the
+      // end of a line the text wraps at.
+      final drawn = [
+        for (final word in RegExp(r'\S+').allMatches(title))
+          for (final box in words.getBoxesForSelection(
+            TextSelection(baseOffset: word.start, extentOffset: word.end),
+          ))
+            MatrixUtils.transformRect(toScreen, box.toRect()),
+      ];
+      expect(
+        {for (final box in drawn) box.top},
+        hasLength(greaterThan(2)),
+        reason: 'the title wraps',
+      );
+      for (final box in drawn) {
+        expect(box.left, greaterThanOrEqualTo(target.left), reason: '$box');
+        expect(box.right, lessThanOrEqualTo(target.right), reason: '$box');
+        expect(box.top, greaterThanOrEqualTo(target.top), reason: '$box');
+        expect(box.bottom, lessThanOrEqualTo(target.bottom), reason: '$box');
+      }
+
+      // A tap on the last line opens the page, as one on the first does.
+      await tester.tapAt(drawn.last.center);
+      await tester.pump();
+      expect(viewed, ['g_ti']);
+    });
+
+    for (final direction in TextDirection.values) {
+      testWidgets("the title's words start where the subtitle's do, with room "
+          'for the ring around them (${direction.name})', (tester) async {
+        await tester.pumpWidget(
+          catalogApp(
+            builder: (_, child) =>
+                Directionality(textDirection: direction, child: child!),
+            Scaffold(
+              body: Center(
+                child: opener(
+                  GameQuickLookSeed.fromSummary(
+                    const GameSummary(
+                      id: 'g_wingspan',
+                      title: 'Wingspan',
+                      subtitle: 'European Expansion',
+                    ),
+                  ),
+                  onViewDetails: (_, id) => viewed.add(id),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.tap(find.text('open'));
+        await tester.pumpAndSettle();
+
+        final words = tester.getRect(find.text('Wingspan'));
+        final subtitle = tester.getRect(find.text('European Expansion'));
+        // In line with the subtitle, as a plain title is.
+        if (direction == TextDirection.ltr) {
+          expect(words.left, moreOrLessEquals(subtitle.left));
+        } else {
+          expect(words.right, moreOrLessEquals(subtitle.right));
+        }
+        // The ring is drawn on the target's edge, clear of the words.
+        const tokens = BgeTokens.standard;
+        final target = tester.getRect(titleLink());
+        expect(words.left - target.left, greaterThanOrEqualTo(tokens.spaceSm));
+        expect(
+          target.right - words.right,
+          greaterThanOrEqualTo(tokens.spaceSm),
+        );
+        expect(words.top - target.top, greaterThanOrEqualTo(tokens.spaceXs));
+        expect(
+          target.bottom - words.bottom,
+          greaterThanOrEqualTo(tokens.spaceXs),
+        );
+      });
+    }
+
+    testWidgets(
+      'a mouse click on the title draws no ring; Tab to it draws one',
+      (tester) async {
+        await open(tester, GameQuickLookSeed.fromSummary(summary));
+        expect(ringDrawn(tester), isFalse, reason: 'at rest');
+
+        await tabToTitle(tester);
+        expect(ringDrawn(tester), isTrue, reason: 'Tab');
+
+        final title = tester.getCenter(titleLink());
+        final mouse = await tester.createGesture(
+          kind: PointerDeviceKind.mouse,
+        );
+        await mouse.addPointer(location: title + const Offset(0, -200));
+        addTearDown(mouse.removePointer);
+        await mouse.moveTo(title);
+        await mouse.down(title);
+        await tester.pump(const Duration(milliseconds: 50));
+        await mouse.up();
+        await tester.pump();
+
+        expect(viewed, ['g_wingspan']);
+        expect(
+          FocusManager.instance.highlightMode,
+          FocusHighlightMode.traditional,
+        );
+        expect(ringDrawn(tester), isFalse, reason: 'clicked');
+        // Nor the ink's focus tint.
+        expect(tester.widget<InkWell>(titleLink()).focusColor?.a, 0);
+      },
+      variant: TargetPlatformVariant.only(TargetPlatform.macOS),
+    );
   });
 
   testWidgets('a long description is shown whole, with no More or Less', (
@@ -883,6 +1377,42 @@ void main() {
       // A fresh app for the next scale, with no quick look left open.
       await tester.pumpWidget(const SizedBox.shrink());
     }
+  });
+
+  testWidgets('on a 320dp phone at 1.0 text a title that is a link goes '
+      'under the cover, where its padded words would break a word (#798)', (
+    tester,
+  ) async {
+    const view = Size(320, 640);
+    useViewSize(tester, view);
+    await tester.pumpWidget(
+      MediaQuery(
+        data: const MediaQueryData(size: view),
+        child: catalogApp(
+          Scaffold(
+            body: Center(
+              child: opener(
+                GameQuickLookSeed.fromGame(wingspan),
+                onViewDetails: (_, id) => viewed.add(id),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+
+    // The test font draws every glyph 1 em wide, so "Wingspan" at the
+    // title's 22sp is 8 ems, 176dp: as wide as the room beside the cover
+    // at 320dp, the 8 ems a plain title needs, but wider than the 160dp the
+    // link leaves its words once it pads them.
+    final title = tester.getRect(find.text('Wingspan'));
+    final shown = tester.getRect(cover());
+    expect(title.top, greaterThanOrEqualTo(shown.bottom));
+    // Unbroken: one line as wide as the word.
+    expect(title.width, 8 * BgeTypography.titleLarge);
+    expect(tester.takeException(), isNull);
   });
 
   group('the platforms you own (#799)', () {

@@ -27,12 +27,12 @@ Future<void> showSearchHitQuickLook(
 );
 
 /// A search hit's important facts in a pop-up (#713), drawn from the hit
-/// alone: nothing is read, so there is no banner and no View full details.
+/// alone: nothing is read, so there is no banner.
 ///
 /// This is for a DataGateway result the server doesn't hold. It has the
 /// title, thumbnail, year, players, content type and platforms the search
 /// found, and its Markdown summary as the description, shown whole. The title
-/// is plain text.
+/// is plain text, not a link: the game has no page here yet (#798).
 ///
 /// [sourceName] is listed among the facts, as a search row lists it.
 /// [sections] sit below the description, which is where the caller's import

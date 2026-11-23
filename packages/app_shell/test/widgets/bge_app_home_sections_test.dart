@@ -619,9 +619,9 @@ void main() {
       expect(newestA, findsNothing);
       expect(toPlayA, findsNothing);
 
-      // The cover it was opened from has gone, and View full details still
-      // opens the page.
-      await tester.tap(find.byKey(GameQuickLook.viewDetailsKey));
+      // The cover it was opened from has gone, and the quick look's title
+      // still opens the page.
+      await tester.tap(find.byKey(GameQuickLook.titleLinkKey));
       await tester.pumpAndSettle();
       expect(find.byKey(GameDetailScreen.unavailableKey), findsOneWidget);
       await tester.tap(find.byType(BackButton));
@@ -715,8 +715,8 @@ void main() {
       });
     });
 
-    testWidgets('View full details opens the game over the quick look, and '
-        'back lands on home without it', (tester) async {
+    testWidgets("the quick look's title opens the game over the quick look, "
+        'and back lands on home without it', (tester) async {
       await pumpHome(tester, games: _GamesRemote([_game('a')]));
       final cover = find.byKey(NewestGamesSection.coverKey('a'));
       final coverFocus = tester
@@ -738,7 +738,7 @@ void main() {
         same(root),
       );
 
-      await tester.tap(find.byKey(GameQuickLook.viewDetailsKey));
+      await tester.tap(find.byKey(GameQuickLook.titleLinkKey));
       await tester.pumpAndSettle();
 
       expect(find.byType(GameDetailScreen), findsOneWidget);
@@ -798,7 +798,7 @@ void main() {
       await tester.sendKeyEvent(LogicalKeyboardKey.enter);
       await tester.pumpAndSettle();
       expect(focusedRoute(), same(quickLookRoute()));
-      await tester.tap(find.byKey(GameQuickLook.viewDetailsKey));
+      await tester.tap(find.byKey(GameQuickLook.titleLinkKey));
       await tester.pumpAndSettle();
       expect(find.byType(GameDetailScreen), findsOneWidget);
       expect(
@@ -1313,21 +1313,21 @@ void main() {
       expect(find.byType(GameQuickLook), findsNothing);
     });
 
-    // View full details's page covers the quick look before it removes it,
+    // The page the title opens covers the quick look before it removes it,
     // once it has arrived. A session ending in between reaches the quick
     // look only once the routing has taken the page down (#707).
     Future<void> detailsArriving(WidgetTester tester) async {
       await tester.tap(find.byKey(cover('first')));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(GameQuickLook.viewDetailsKey));
+      await tester.tap(find.byKey(GameQuickLook.titleLinkKey));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 50));
       expect(find.byType(GameDetailScreen), findsOneWidget);
       expect(find.byType(GameQuickLook, skipOffstage: false), findsOneWidget);
     }
 
-    testWidgets("a quick look under View full details's arriving page closes "
-        "as another user's session replaces it", (tester) async {
+    testWidgets("a quick look under its title's arriving page closes as "
+        "another user's session replaces it", (tester) async {
       await signedInAsFirstUser(tester);
       await detailsArriving(tester);
 
@@ -1341,8 +1341,8 @@ void main() {
       expectOnlySecondUser(tester);
     });
 
-    testWidgets("a quick look under View full details's arriving page closes "
-        'as the session ends', (tester) async {
+    testWidgets("a quick look under its title's arriving page closes as the "
+        'session ends', (tester) async {
       await signedInAsFirstUser(tester);
       await detailsArriving(tester);
 

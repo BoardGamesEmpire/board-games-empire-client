@@ -628,6 +628,51 @@ The pieces, and the rules the build proved:
   after the content it follows, never by moving that content between parents,
   or a live region in it is announced again on every flip.
 
+### Links
+
+A link opens a page in the app from words that are content as well, where a
+button beside them would only repeat them. The quick look's title is the
+first: it opens the game's page (#798). A link out of the app, in a
+description's Markdown, is a span in body text, and not this.
+
+- **It looks like a link.** The words are `primary`, underlined in the same
+  colour: the underline is the cue that isn't colour (§1). In high contrast
+  (`MediaQuery.highContrastOf`) they are `onSurface`, underlined in it, as
+  text there needs 7:1 and `primary` doesn't hold it on a pop-up's
+  container; `onSurface` holds it on every surface role. Check `primary`
+  against the surface the link sits on: it holds 4.5:1 on the quick look's
+  sheet (`surfaceContainerLow`) and dialog (`surfaceContainerHigh`), but
+  falls short on `surfaceDim` and `surfaceContainerHighest` in light, and
+  `surfaceBright` and `surfaceContainerHighest` in dark. A test holds the
+  quick look's words to 4.5:1, and 7:1 in high contrast, on both.
+- **The whole text is the target**, every line it wraps to, and at least
+  `minTapTarget` each way: one `InkWell` around the words, not a recognizer
+  on a span, which takes the glyphs alone.
+- **Ringed from the keyboard** by a `BgeFocusRing`, with `spaceSm` of room
+  beside the words and `spaceXs` above and below them. The target is moved
+  back by the side room at its start, so the words stay in line with the
+  text above and below them, and the ring reaches into the margin before
+  them, as a browser's focus outline does; only the words take a press.
+  The strip moved into the margin takes none, so the target's minimum width
+  is `minTapTarget` plus that room, and what takes a press still meets it.
+- **No ring from a mouse.** A click draws neither the ring nor the ink's
+  focus tint (`BgePointerFocus`).
+- **Enter opens it**, as a tap and a screen reader's activation do.
+- **Read as a link.** `Semantics(link: true)`, with the words and the tap on
+  one node (`MergeSemantics`). A title that is a link is a heading as well
+  (#798). On iOS and Android that node also takes `headingLevel: 2`, and a
+  screen reader hears both. It is the level those engines read as a
+  heading; `header: true` alone isn't one there. Elsewhere a node has one
+  role and a heading wins over a link, which would take the way to the page
+  away: on the web and
+  the desktops a `Semantics(container: true, headingLevel: 2)` with no label
+  of its own holds the link node, which has no header flag, as HTML's
+  `<h2><a>` does. It is `headingLevel`, not `header: true`, which on a node
+  with children is a banner landmark on the web. The desktops don't voice
+  the level yet, so there the link is heard without the heading.
+- **With nowhere to go, the words are plain text**: not a disabled link, as
+  there is nothing to wait for.
+
 ### Error and outcome surfaces
 
 Three screens once answered this three different ways, on contradictory

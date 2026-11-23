@@ -99,7 +99,8 @@ void main() {
     expect(find.byType(GameQuickLook), findsNothing);
     // The year is in the header, not repeated in the facts.
     expect(factsShown(tester), '1–5 players');
-    expect(find.text('View full details'), findsNothing);
+    // The title is plain text: the game has no page here yet (#798).
+    expect(find.byKey(GameQuickLook.titleLinkKey), findsNothing);
   });
 
   testWidgets('the summary is the description, shown whole', (tester) async {

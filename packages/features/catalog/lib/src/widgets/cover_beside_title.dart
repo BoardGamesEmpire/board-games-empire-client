@@ -22,6 +22,7 @@ class CoverBesideTitle extends StatelessWidget {
     required this.coverExtent,
     required this.titles,
     required this.titleFontSize,
+    this.titleInset = 0,
     super.key,
   });
 
@@ -36,6 +37,12 @@ class CoverBesideTitle extends StatelessWidget {
   /// at the quick look's size, and at 2.0 it goes under it on a phone.
   /// The detail page's larger cover and title put its title under the cover
   /// on a phone at 1.0 too (#735).
+  ///
+  /// The ems are counted in the room the words get, after [titleInset]. A
+  /// title that is a link pads its words (#798), so at 1.0 the quick look's
+  /// linked title needs 16dp more than a plain one, and stays beside the
+  /// cover from 336dp: at 320dp a word of 8 ems would have had the 176dp
+  /// beside the cover, but only 160dp once the link padded it, and broken.
   static const double minTitleWidthEms = 8;
 
   /// The cover, drawn [coverExtent] square.
@@ -51,6 +58,12 @@ class CoverBesideTitle extends StatelessWidget {
   /// in.
   final double titleFontSize;
 
+  /// The room across that [titles] takes from the title's words, as a link's
+  /// padding does (#798); none for a plain title. Beside the cover, the
+  /// words get the titles' width less this, which must still hold
+  /// [minTitleWidthEms].
+  final double titleInset;
+
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
@@ -60,7 +73,8 @@ class CoverBesideTitle extends StatelessWidget {
             minTitleWidthEms *
             MediaQuery.textScalerOf(context).scale(titleFontSize);
         final direction =
-            constraints.maxWidth - coverExtent - gap >= minTitleWidth
+            constraints.maxWidth - coverExtent - gap - titleInset >=
+                minTitleWidth
             ? Axis.horizontal
             : Axis.vertical;
         // One Flex either way, so the cover keeps its element, and its

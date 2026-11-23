@@ -369,11 +369,12 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    Future<void> pressViewDetails(WidgetTester tester) async {
-      final button = find.byKey(GameQuickLook.viewDetailsKey);
-      await tester.ensureVisible(button);
+    /// Presses the quick look's title, the link to the game's page (#798).
+    Future<void> pressTitle(WidgetTester tester) async {
+      final title = find.byKey(GameQuickLook.titleLinkKey);
+      await tester.ensureVisible(title);
       await tester.pumpAndSettle();
-      await tester.tap(button);
+      await tester.tap(title);
       await tester.pump();
     }
 
@@ -429,7 +430,7 @@ void main() {
       // This server's own result came from no DataGateway to import from.
       expect(find.byType(GameImportPanel), findsNothing);
 
-      await pressViewDetails(tester);
+      await pressTitle(tester);
       expect(opened, ['g_catan']);
     });
 
@@ -576,7 +577,7 @@ void main() {
         isEmpty,
       );
 
-      await pressViewDetails(tester);
+      await pressTitle(tester);
       expect(opened, ['g_imported']);
     });
 
@@ -776,8 +777,8 @@ void main() {
       );
     });
 
-    testWidgets("with no onOpen, a local result's quick look offers no View "
-        'full details', (tester) async {
+    testWidgets("with no onOpen, a local result's quick look title is no "
+        'link', (tester) async {
       remote.onSearch = (_, _, _) async => results;
       readsAs(game('g_catan', title: 'Catan'));
 
@@ -786,7 +787,15 @@ void main() {
       await openQuickLook(tester, serverRow('g_catan'));
 
       expect(find.byType(GameQuickLook), findsOneWidget);
-      expect(find.byKey(GameQuickLook.viewDetailsKey), findsNothing);
+      expect(find.byKey(GameQuickLook.titleLinkKey), findsNothing);
+      // The title is still there, as plain text.
+      expect(
+        find.descendant(
+          of: find.byType(GameQuickLook),
+          matching: find.text('Catan'),
+        ),
+        findsOneWidget,
+      );
     });
 
     for (final (name, onOpen)

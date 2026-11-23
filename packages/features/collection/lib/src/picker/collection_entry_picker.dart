@@ -29,7 +29,7 @@ import 'package:ui_tokens/ui_tokens.dart';
 ///
 /// **A tile opens its entry from its own context, not [context].** [onOpen]
 /// is given the tile's context and the entry's id, as the catalog's quick
-/// look hands its View full details the pop-up's. The widget that opened the
+/// look hands its title link the pop-up's. The widget that opened the
 /// picker can go while it is open, as a stack does when a sync leaves its
 /// game with one entry, and a push from a context that has gone asserts.
 ///
