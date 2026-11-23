@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -34,6 +35,7 @@ void main() {
   // What the probe under the host last read from the scope.
   ({int? waiting, int? stuck})? counts;
   bool? stuckLocal1;
+  ValueListenable<BgeSyncStatusData>? relay;
 
   // Built once per test, so the host's own rebuilds pass the same child and
   // only the scope's notifications rebuild it.
@@ -42,10 +44,12 @@ void main() {
   setUp(() {
     counts = null;
     stuckLocal1 = null;
+    relay = null;
     probe = Builder(
       builder: (context) {
         counts = BgeSyncStatusScope.countsOf(context);
         stuckLocal1 = BgeSyncStatusScope.isStuckOf(context, 'local-1');
+        relay = BgeSyncStatusScope.relayOf(context);
         return const SizedBox.shrink();
       },
     );
@@ -346,6 +350,134 @@ void main() {
 
     expect(phases, hasLength(3));
     expect(phases, everyElement(isNot(SchedulerPhase.persistentCallbacks)));
+  });
+
+  group('the relay, for pop-ups above the shell (#960)', () {
+    testWidgets('the relay follows the cubit', (tester) async {
+      await tester.pumpWidget(host(queue));
+      final first = relay!;
+      expect(first.value, const BgeSyncStatusData());
+
+      queue.pending.add(2);
+      await tester.pumpAndSettle();
+      expect(first.value, const BgeSyncStatusData(waiting: 2));
+
+      queue.stuck.add([_stuckAdd]);
+      await tester.pumpAndSettle();
+      expect(
+        first.value,
+        const BgeSyncStatusData(
+          waiting: 2,
+          stuck: 1,
+          stuckRecordIds: {'local-1'},
+        ),
+      );
+
+      // A failed read unreads its half there too.
+      queue.pending.addError(StateError('read failed'));
+      await tester.pumpAndSettle();
+      expect(
+        first.value,
+        const BgeSyncStatusData(stuck: 1, stuckRecordIds: {'local-1'}),
+      );
+
+      // One relay for the host's life, so a pop-up that captured it keeps
+      // hearing.
+      await tester.pumpWidget(host(queue));
+      expect(relay, same(first));
+    });
+
+    testWidgets('a host given a new queue clears the relay before the new '
+        "queue's first state", (tester) async {
+      final next = StreamingQueue();
+      addTearDown(() => unawaited(next.dispose()));
+      SyncQueueRepository? current = queue;
+      late StateSetter setQueue;
+      // A pop-up's content, beside the host rather than below it, as a
+      // pop-up on the root navigator is: it hears the relay alone.
+      Widget? popup;
+
+      Widget app() => Directionality(
+        textDirection: TextDirection.ltr,
+        child: Column(
+          children: [
+            StatefulBuilder(
+              builder: (context, setState) {
+                setQueue = setState;
+                return SyncStatusScopeHost(queue: current, child: probe);
+              },
+            ),
+            popup ?? const SizedBox.shrink(),
+          ],
+        ),
+      );
+
+      await tester.pumpWidget(app());
+      final heard = relay!;
+      final values = <BgeSyncStatusData>[];
+      final phases = <SchedulerPhase>[];
+      heard.addListener(() {
+        values.add(heard.value);
+        phases.add(SchedulerBinding.instance.schedulerPhase);
+      });
+      bool? popupStuck;
+      popup = BgeSyncStatusRelayScope(
+        relay: heard,
+        child: Builder(
+          builder: (context) {
+            popupStuck = BgeSyncStatusScope.isStuckOf(context, 'local-1');
+            return const SizedBox.shrink();
+          },
+        ),
+      );
+      await tester.pumpWidget(app());
+
+      queue.pending.add(2);
+      queue.stuck.add([_stuckAdd]);
+      await tester.pumpAndSettle();
+      expect(popupStuck, isTrue);
+
+      // Another session's queue, from a rebuild above the host and not
+      // above the pop-up. Its first count is already waiting, buffered, so
+      // it arrives as soon as the host follows the queue and races the
+      // clear, which has to come first.
+      next.pending.add(4);
+      setQueue(() => current = next);
+      await tester.pumpAndSettle();
+      expect(heard.value, const BgeSyncStatusData(waiting: 4));
+      expect(popupStuck, isFalse);
+      expect(values, [
+        const BgeSyncStatusData(waiting: 2),
+        const BgeSyncStatusData(
+          waiting: 2,
+          stuck: 1,
+          stuckRecordIds: {'local-1'},
+        ),
+        // The old session's state cleared before the new one's first.
+        const BgeSyncStatusData(),
+        const BgeSyncStatusData(waiting: 4),
+      ]);
+
+      // No queue at all clears it too.
+      setQueue(() => current = null);
+      await tester.pump();
+      expect(heard.value, const BgeSyncStatusData());
+      expect(values, hasLength(5));
+
+      // Never told mid-build, where a listener outside the host, such as a
+      // pop-up, would be marked dirty during the host's rebuild.
+      expect(phases, everyElement(isNot(SchedulerPhase.persistentCallbacks)));
+    });
+
+    testWidgets("a disposed host's relay is disposed", (tester) async {
+      await tester.pumpWidget(host(queue));
+      final heard = relay!;
+
+      await tester.pumpWidget(const SizedBox.shrink());
+
+      // A disposed notifier refuses a new listener.
+      expect(() => heard.addListener(() {}), throwsFlutterError);
+    });
   });
 
   testWidgets('the child keeps its State as a queue arrives and goes', (

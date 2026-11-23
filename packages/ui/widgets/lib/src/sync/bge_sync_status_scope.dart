@@ -1,6 +1,7 @@
-import 'package:flutter/foundation.dart' show setEquals;
+import 'package:flutter/foundation.dart' show ValueListenable, setEquals;
 import 'package:flutter/widgets.dart';
 import 'package:ui/src/sync/bge_sync_badge.dart';
+import 'package:ui/src/sync/bge_sync_status_relay.dart';
 
 /// What the session's sync queue holds, for the rows and lines below it
 /// (#47).
@@ -22,6 +23,10 @@ import 'package:ui/src/sync/bge_sync_badge.dart';
 /// Each lookup depends on its own part of the state. A row depends on its
 /// own record's id alone, so a count changing rebuilds no row, and a record
 /// getting stuck or unstuck rebuilds only that record's rows.
+///
+/// A pop-up on the root navigator is above the session's scope, so it reads
+/// [relayOf] from its opener and puts the state back with a
+/// [BgeSyncStatusRelayScope] (#960).
 class BgeSyncStatusScope extends InheritedModel<Object> {
   // Not const: a const constructor's assert can't read a set's contents.
   BgeSyncStatusScope({
@@ -29,6 +34,7 @@ class BgeSyncStatusScope extends InheritedModel<Object> {
     this.waiting,
     this.stuck,
     this.stuckRecordIds = const {},
+    this.relay,
     super.key,
   }) : assert(
          stuck != null || stuckRecordIds.isEmpty,
@@ -53,8 +59,26 @@ class BgeSyncStatusScope extends InheritedModel<Object> {
   /// contents.
   final Set<String> stuckRecordIds;
 
+  /// The same state as a listenable, for a pop-up above this scope's
+  /// navigator to put back over its content with a
+  /// [BgeSyncStatusRelayScope] (#960); null where the scope's holder offers
+  /// none.
+  ///
+  /// It holds what this scope does, and changes as the holder rebuilds the
+  /// scope, so a pop-up that captured it keeps hearing while it is open.
+  final ValueListenable<BgeSyncStatusData>? relay;
+
   static BgeSyncStatusScope? _of(BuildContext context, Object aspect) =>
       InheritedModel.inheritFrom<BgeSyncStatusScope>(context, aspect: aspect);
+
+  /// The nearest scope's [relay], for an opener to hand a pop-up; null with
+  /// no scope, or one with no relay.
+  ///
+  /// Takes no dependency: the relay is the same object for its holder's
+  /// life, and what it holds reaches the pop-up through the relay itself,
+  /// so the opener doesn't rebuild as the counts change.
+  static ValueListenable<BgeSyncStatusData>? relayOf(BuildContext context) =>
+      context.getInheritedWidgetOfExactType<BgeSyncStatusScope>()?.relay;
 
   /// The waiting and stuck counts, each null where it hasn't been read, and
   /// both null with no scope.

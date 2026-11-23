@@ -66,10 +66,12 @@
 /// they take from `BgeTokens.contentMaxWidth`.
 ///
 /// New widgets belong here once a second call site wants them — not in
-/// anticipation of one. Two exceptions, each by decision. `showBgePopup` came
-/// here with one call site, the game quick look, because #707 placed the
-/// sheet-or-dialog launcher in this package for #709's picker to open the
-/// same way. That picker, the collection entry picker, is now its second.
+/// anticipation of one. Three exceptions, each by decision and told below:
+/// `showBgePopup`, `BgeSearchField` and `BgeSyncStatusRelayScope`.
+/// `showBgePopup` came here with one call site, the game quick look, because
+/// #707 placed the sheet-or-dialog launcher in this package for #709's
+/// picker to open the same way. That picker, the collection entry picker, is
+/// now its second.
 /// `BgePopupCoverObserver` is part of it: the navigation shell installs one
 /// on its nested navigator, so a pop-up opened from a page there hears of
 /// the pages it opens (#414).
@@ -89,7 +91,10 @@
 /// the offer page's not-synced reason, and the collection and event rows,
 /// which said nothing before. `BgeSyncMark` is part of them: `BgeCoverTile`
 /// draws it, for a cover in the Collection grid, which has no room for the
-/// badge's words.
+/// badge's words. `BgeSyncStatusRelayScope` and `BgeSyncStatusData` came
+/// with #960 for one call site, the collection entry picker, by that
+/// issue's decision: they put the session's scope back over a pop-up on the
+/// root navigator, which is above it, and belong beside the scope.
 /// `BgeNestedRowsBox` came with #1048 for two call sites at once, the Games
 /// and Collection lists, which hold a base game's expansions in it once
 /// there are more than four.
@@ -151,4 +156,5 @@ export 'src/states/bge_error_state.dart';
 export 'src/states/bge_loading_state.dart';
 export 'src/states/bge_state_sliver.dart';
 export 'src/sync/bge_sync_badge.dart';
+export 'src/sync/bge_sync_status_relay.dart';
 export 'src/sync/bge_sync_status_scope.dart';

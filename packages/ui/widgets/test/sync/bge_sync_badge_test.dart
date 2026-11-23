@@ -125,6 +125,67 @@ void main() {
         expect(drawn.height, greaterThan(1.5 * size * (style.height ?? 1)));
       });
     }
+
+    for (final (name, theme, floor) in [
+      ('light', BgeTheme.light(), Wcag.aaNormalText),
+      ('dark', BgeTheme.dark(), Wcag.aaNormalText),
+      ('high-contrast light', BgeTheme.highContrastLight(), Wcag.aaaNormalText),
+      ('high-contrast dark', BgeTheme.highContrastDark(), Wcag.aaaNormalText),
+    ]) {
+      testWidgets('on a container, the words are onSurfaceVariant and the '
+          'icon keeps its status colour, each clearing its floor on every '
+          'container ground, in $name', (tester) async {
+        final scheme = theme.colorScheme;
+        final grounds = {
+          'surfaceContainerLowest': scheme.surfaceContainerLowest,
+          'surfaceContainerLow': scheme.surfaceContainerLow,
+          'surfaceContainer': scheme.surfaceContainer,
+          'surfaceContainerHigh': scheme.surfaceContainerHigh,
+          'surfaceContainerHighest': scheme.surfaceContainerHighest,
+        };
+        for (final (state, label, status) in [
+          (BgeSyncState.waiting, _waiting, BgeStatus.pending),
+          (BgeSyncState.stuck, _stuck, BgeStatus.conflict),
+        ]) {
+          await tester.pumpWidget(
+            MaterialApp(
+              theme: theme,
+              home: Scaffold(
+                body: BgeSyncBadge(
+                  state: state,
+                  label: label,
+                  onContainer: true,
+                ),
+              ),
+            ),
+          );
+
+          final words = tester.widget<Text>(find.text(label)).style!.color!;
+          final icon = tester
+              .widget<Icon>(find.byIcon(BgeStatusColors.iconFor(status)))
+              .color!;
+          expect(words, scheme.onSurfaceVariant, reason: state.name);
+          expect(
+            icon,
+            _colors(tester, BgeSyncBadge).colorFor(status),
+            reason: state.name,
+          );
+          for (final MapEntry(key: ground, value: color) in grounds.entries) {
+            expect(
+              Wcag.contrastRatio(words, color),
+              greaterThanOrEqualTo(floor),
+              reason: '${state.name} words on $ground',
+            );
+            // The icon is a non-text mark beside words that say the same.
+            expect(
+              Wcag.contrastRatio(icon, color),
+              greaterThanOrEqualTo(Wcag.aaNonText),
+              reason: '${state.name} icon on $ground',
+            );
+          }
+        }
+      });
+    }
   });
 
   group('BgeSyncMark', () {
