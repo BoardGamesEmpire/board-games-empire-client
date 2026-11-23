@@ -474,6 +474,166 @@ void main() {
       pass.complete();
     });
 
+    group('says when its pass ends (#314)', () {
+      // A pull's spinner lasts as long as the Future its `onRefresh`
+      // returns, and a bloc event returns nothing — so the request carries
+      // a completer the screen can hand back instead.
+      test('done completes when the pass it started ends', () async {
+        final bloc = buildWithRetry();
+        addTearDown(bloc.close);
+        await settleOnAFailedRefresh(bloc);
+
+        final done = Completer<void>();
+        bloc.add(HouseholdListRetryRequested(done: done));
+        await pumpEventQueue();
+
+        expect(done.isCompleted, isFalse);
+
+        pass.complete();
+        await pumpEventQueue();
+
+        expect(done.isCompleted, isTrue);
+      });
+
+      test('a request made while a pass is running completes when that pass '
+          'ends', () async {
+        final bloc = buildWithRetry();
+        addTearDown(bloc.close);
+        await settleOnAFailedRefresh(bloc);
+
+        final done = Completer<void>();
+        final done2 = Completer<void>();
+        bloc.add(HouseholdListRetryRequested(done: done));
+        await pumpEventQueue();
+        bloc.add(HouseholdListRetryRequested(done: done2));
+        await pumpEventQueue();
+
+        expect(calls, 1);
+        expect(done2.isCompleted, isFalse);
+
+        pass.complete();
+        await pumpEventQueue();
+        expect(calls, 1);
+
+        expect(done.isCompleted, isTrue);
+        expect(done2.isCompleted, isTrue);
+      });
+
+      test('done completes at once without a refresher', () async {
+        final bloc = build();
+        addTearDown(bloc.close);
+        households.add([_household('h-1')]);
+        await pumpEventQueue();
+
+        final done = Completer<void>();
+        bloc.add(HouseholdListRetryRequested(done: done));
+        await pumpEventQueue();
+
+        expect(done.isCompleted, isTrue);
+      });
+
+      test('done completes even when the pass throws', () async {
+        // The joiner awaits the same pass the starter does. A throw must
+        // reach neither: a spinner whose Future errors is an uncaught error.
+        final bloc = buildWithRetry();
+        addTearDown(bloc.close);
+        await settleOnAFailedRefresh(bloc);
+
+        final done = Completer<void>();
+        final done2 = Completer<void>();
+        bloc.add(HouseholdListRetryRequested(done: done));
+        await pumpEventQueue();
+        bloc.add(HouseholdListRetryRequested(done: done2));
+        await pumpEventQueue();
+
+        pass.completeError(StateError('escaped'));
+        await pumpEventQueue();
+
+        // `completes` fails on an errored Future, so these pin that neither
+        // completer was errored.
+        await expectLater(done.future, completes);
+        await expectLater(done2.future, completes);
+        expect(
+          bloc.state,
+          isA<HouseholdListReady>().having(
+            (s) => s.refreshing,
+            'refreshing',
+            isFalse,
+          ),
+        );
+      });
+
+      test('done completes when the bloc closes mid-pass', () async {
+        // A screen popped under a held spinner closes the bloc while the
+        // pass runs. The spinner must still end, and nothing may emit
+        // after close.
+        final bloc = buildWithRetry();
+        await settleOnAFailedRefresh(bloc);
+
+        final done = Completer<void>();
+        final done2 = Completer<void>();
+        bloc.add(HouseholdListRetryRequested(done: done));
+        await pumpEventQueue();
+        bloc.add(HouseholdListRetryRequested(done: done2));
+        await pumpEventQueue();
+        final before = bloc.state;
+
+        await bloc.close();
+        pass.complete();
+        await pumpEventQueue();
+
+        expect(done.isCompleted, isTrue);
+        expect(done2.isCompleted, isTrue);
+        expect(bloc.state, same(before));
+      });
+    });
+
+    test('a retry over the error state says a refresh is happening, until '
+        'the pass ends (#314)', () async {
+      // The error surface has no banner, so the flag is for the app bar's
+      // refresh button: its label is the only thing that can say a pass the
+      // user asked for is running.
+      final bloc = buildWithRetry();
+      addTearDown(bloc.close);
+      households.addError(StateError('transient read failure'));
+      await Future<void>.delayed(Duration.zero);
+      expect(bloc.state, const HouseholdListError());
+
+      bloc.add(const HouseholdListRetryRequested());
+      await Future<void>.delayed(Duration.zero);
+
+      expect(calls, 1);
+      expect(bloc.state, const HouseholdListError(refreshing: true));
+
+      pass.complete();
+      await Future<void>.delayed(Duration.zero);
+
+      expect(bloc.state, const HouseholdListError());
+    });
+
+    test('a retry during the first fill keeps the spinner and says a refresh '
+        'is happening, until the pass ends (#314)', () async {
+      // Loading outranks the retry (#269), as on a retried empty list; only
+      // the flag rides along, for the app bar's refresh button.
+      status.started();
+      final bloc = buildWithRetry();
+      addTearDown(bloc.close);
+      households.add(const []);
+      await Future<void>.delayed(Duration.zero);
+      expect(bloc.state, const HouseholdListLoading());
+
+      bloc.add(const HouseholdListRetryRequested());
+      await Future<void>.delayed(Duration.zero);
+
+      expect(calls, 1);
+      expect(bloc.state, const HouseholdListLoading(refreshing: true));
+
+      pass.complete();
+      await Future<void>.delayed(Duration.zero);
+
+      expect(bloc.state, const HouseholdListLoading());
+    });
+
     test('a retried EMPTY list goes back to loading, not to a banner over an '
         'emptiness nobody has confirmed', () async {
       // The loading-versus-empty rule (#269) outranks the retry treatment
@@ -494,7 +654,7 @@ void main() {
       await Future<void>.delayed(Duration.zero);
 
       expect(calls, 1);
-      expect(bloc.state, isA<HouseholdListLoading>());
+      expect(bloc.state, const HouseholdListLoading(refreshing: true));
 
       status.finished(HydrateOutcome.failed);
       pass.complete();

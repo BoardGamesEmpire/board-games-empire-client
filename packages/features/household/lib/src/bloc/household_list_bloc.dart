@@ -148,7 +148,12 @@ class HouseholdListBloc extends Bloc<HouseholdListEvent, HouseholdListState> {
   ///
   /// Not derived from the hydration state: `running` says a pass is in
   /// flight, not who started it.
-  bool _retrying = false;
+  bool get _retrying => _inFlight != null;
+
+  /// Ends when the pass this screen asked for ends, or null when none is
+  /// running. Never completes with an error, so a request that joins it
+  /// only waits (#314).
+  Future<void>? _inFlight;
 
   void _onCacheUpdated(
     HouseholdListCacheUpdated event,
@@ -166,7 +171,7 @@ class HouseholdListBloc extends Bloc<HouseholdListEvent, HouseholdListState> {
     Emitter<HouseholdListState> emit,
   ) {
     _readFailed = true;
-    emit(const HouseholdListError());
+    emit(HouseholdListError(refreshing: _retrying));
   }
 
   void _onCacheEnded(
@@ -179,7 +184,7 @@ class HouseholdListBloc extends Bloc<HouseholdListEvent, HouseholdListState> {
     // a failed read: a closed stream will never send the rows that would
     // clear it, so a later hydrate result must not lift it (#453).
     _readFailed = true;
-    emit(const HouseholdListError());
+    emit(HouseholdListError(refreshing: _retrying));
   }
 
   void _onHydrationUpdated(
@@ -194,13 +199,34 @@ class HouseholdListBloc extends Bloc<HouseholdListEvent, HouseholdListState> {
     HouseholdListRetryRequested event,
     Emitter<HouseholdListState> emit,
   ) async {
+    try {
+      await _retry(emit);
+    } finally {
+      // Never with an error: whatever the pass did, the spinner a pull
+      // handed this to must end with it (#314).
+      event.done?.complete();
+    }
+  }
+
+  Future<void> _retry(Emitter<HouseholdListState> emit) async {
     final retry = _onRetry;
+    if (retry == null) return;
+
     // Already running one: `HydratePass` single-flights (#302), so a second
     // call would join the drain in flight rather than duplicate it — but
-    // the button should not queue passes either.
-    if (retry == null || _retrying) return;
+    // the button should not queue passes either. A request made now waits
+    // for that pass instead of returning at once, so a pull's spinner ends
+    // with it (#314). This handler runs while the first is still awaiting
+    // because the event takes bloc's default, concurrent transformer. It is
+    // an exception to the rule that an operation handler takes
+    // `droppable()` (CONTRIBUTING.md): `droppable()` would drop a joining
+    // request unrun, so its `done` would never complete and the pull's
+    // spinner would hang.
+    final running = _inFlight;
+    if (running != null) return running;
 
-    _retrying = true;
+    final ended = Completer<void>();
+    _inFlight = ended.future;
     _emitDerived(emit);
 
     try {
@@ -209,15 +235,18 @@ class HouseholdListBloc extends Bloc<HouseholdListEvent, HouseholdListState> {
       // Unreachable by contract — the pass reports failure through the
       // status stream and swallows the rest (#267). Caught anyway: the
       // cost of being wrong is a stuck "refreshing" the user cannot
-      // clear.
+      // clear. Caught here, once, so a request waiting on [_inFlight]
+      // never sees it.
       _logger.warn(
         'Household refresh escaped its own error handling',
         error: error,
         stackTrace: stackTrace,
       );
+    } finally {
+      _inFlight = null;
+      ended.complete();
     }
 
-    _retrying = false;
     // The pass has reported its outcome to the status by now, but that
     // report reaches this bloc as a separate event, so this emit can land
     // first and still carry the failure the press set out to clear. Both
@@ -232,10 +261,16 @@ class HouseholdListBloc extends Bloc<HouseholdListEvent, HouseholdListState> {
     // emptiness no pass has confirmed (#269) — see the screen doc.
     // Holds the error against everything except fresh rows — see the class
     // doc. In particular a hydrate result must not lift it.
-    if (_readFailed) return emit(const HouseholdListError());
+    //
+    // Every state carries [_retrying], not only the rows': it rides along
+    // for the refresh button's label and changes none of the ordering
+    // (#314).
+    if (_readFailed) return emit(HouseholdListError(refreshing: _retrying));
 
     final households = _households;
-    if (households == null) return emit(const HouseholdListLoading());
+    if (households == null) {
+      return emit(HouseholdListLoading(refreshing: _retrying));
+    }
 
     // "Filling" means the emptiness has never been confirmed, not merely
     // that a pass is running (#300). #269 exists to stop "no households
@@ -247,7 +282,7 @@ class HouseholdListBloc extends Bloc<HouseholdListEvent, HouseholdListState> {
         households.isEmpty &&
         _hydration.state == HydrationState.running &&
         !_hydration.everRefreshed;
-    if (filling) return emit(const HouseholdListLoading());
+    if (filling) return emit(HouseholdListLoading(refreshing: _retrying));
 
     emit(
       HouseholdListReady(

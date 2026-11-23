@@ -581,6 +581,224 @@ void main() {
       pass.complete();
     });
 
+    group('says it is running on every surface (#717)', () {
+      // The app bar's button names a pass it started on every surface, and
+      // only a ready state has a banner to say so. The state shown is
+      // decided as before; the flag rides along.
+      Matcher error({required bool refreshing}) =>
+          isA<GameCollectionListError>().having(
+            (s) => s.refreshing,
+            'refreshing',
+            refreshing,
+          );
+      Matcher loading({required bool refreshing}) =>
+          isA<GameCollectionListLoading>().having(
+            (s) => s.refreshing,
+            'refreshing',
+            refreshing,
+          );
+
+      test('a retry over a failed read is an error that says so, then one '
+          'that does not', () async {
+        final bloc = buildWithRetry();
+        addTearDown(bloc.close);
+        items.addError(StateError('no authenticated user'));
+        await settle();
+        expect(bloc.state, error(refreshing: false));
+
+        bloc.add(const GameCollectionListRetryRequested());
+        await settle();
+
+        expect(calls, 1);
+        expect(bloc.state, error(refreshing: true));
+
+        pass.complete();
+        await settle();
+
+        expect(bloc.state, error(refreshing: false));
+      });
+
+      test(
+        'a read that fails mid-pass still says the pass is running',
+        () async {
+          final bloc = buildWithRetry();
+          addTearDown(bloc.close);
+          await settleOnAFailedRefresh();
+          bloc.add(const GameCollectionListRetryRequested());
+          await settle();
+
+          items.addError(StateError('transient read failure'));
+          await settle();
+
+          expect(bloc.state, error(refreshing: true));
+
+          pass.complete();
+          await settle();
+
+          expect(bloc.state, error(refreshing: false));
+        },
+      );
+
+      test(
+        'a cache that ends mid-pass still says the pass is running',
+        () async {
+          final bloc = buildWithRetry();
+          addTearDown(bloc.close);
+          status.started();
+          await settle();
+          bloc.add(const GameCollectionListRetryRequested());
+          await settle();
+
+          await items.close();
+          await settle();
+
+          expect(bloc.state, error(refreshing: true));
+
+          pass.complete();
+          await settle();
+
+          expect(bloc.state, error(refreshing: false));
+        },
+      );
+
+      test('a retry during a first fill stays on the spinner, and says '
+          'so', () async {
+        final bloc = buildWithRetry();
+        addTearDown(bloc.close);
+        status.started();
+        items.add(const []);
+        await settle();
+        expect(bloc.state, loading(refreshing: false));
+
+        bloc.add(const GameCollectionListRetryRequested());
+        await settle();
+
+        expect(bloc.state, loading(refreshing: true));
+
+        pass.complete();
+        await settle();
+
+        expect(bloc.state, loading(refreshing: false));
+      });
+    });
+
+    group('says when its pass ends (#314)', () {
+      // A pull's spinner lasts as long as the Future its `onRefresh`
+      // returns, and a bloc event returns nothing — so the request carries
+      // a completer the screen can hand back instead.
+      test('done completes when the pass it started ends', () async {
+        final bloc = buildWithRetry();
+        addTearDown(bloc.close);
+        await settleOnAFailedRefresh();
+
+        final done = Completer<void>();
+        bloc.add(GameCollectionListRetryRequested(done: done));
+        await pumpEventQueue();
+
+        expect(done.isCompleted, isFalse);
+
+        pass.complete();
+        await pumpEventQueue();
+
+        expect(done.isCompleted, isTrue);
+      });
+
+      test(
+        'a request made while a pass is running completes when that pass '
+        'ends',
+        () async {
+          final bloc = buildWithRetry();
+          addTearDown(bloc.close);
+          await settleOnAFailedRefresh();
+
+          final done = Completer<void>();
+          final done2 = Completer<void>();
+          bloc.add(GameCollectionListRetryRequested(done: done));
+          await pumpEventQueue();
+          bloc.add(GameCollectionListRetryRequested(done: done2));
+          await pumpEventQueue();
+
+          expect(calls, 1);
+          expect(done2.isCompleted, isFalse);
+
+          pass.complete();
+          await pumpEventQueue();
+          expect(calls, 1);
+
+          expect(done.isCompleted, isTrue);
+          expect(done2.isCompleted, isTrue);
+        },
+      );
+
+      test('done completes at once without a refresher', () async {
+        final bloc = build();
+        addTearDown(bloc.close);
+        items.add([listItem('e-1')]);
+        await pumpEventQueue();
+
+        final done = Completer<void>();
+        bloc.add(GameCollectionListRetryRequested(done: done));
+        await pumpEventQueue();
+
+        expect(done.isCompleted, isTrue);
+      });
+
+      test('done completes even when the pass throws', () async {
+        // The joiner awaits the same pass the starter does. A throw must
+        // reach neither: a spinner whose Future errors is an uncaught error.
+        final bloc = buildWithRetry();
+        addTearDown(bloc.close);
+        await settleOnAFailedRefresh();
+
+        final done = Completer<void>();
+        final done2 = Completer<void>();
+        bloc.add(GameCollectionListRetryRequested(done: done));
+        await pumpEventQueue();
+        bloc.add(GameCollectionListRetryRequested(done: done2));
+        await pumpEventQueue();
+
+        pass.completeError(StateError('escaped'));
+        await pumpEventQueue();
+
+        // `completes` fails on an errored Future, so these pin that neither
+        // completer was errored.
+        await expectLater(done.future, completes);
+        await expectLater(done2.future, completes);
+        expect(
+          bloc.state,
+          isA<GameCollectionListReady>().having(
+            (s) => s.refreshing,
+            'refreshing',
+            isFalse,
+          ),
+        );
+      });
+
+      test('done completes when the bloc closes mid-pass', () async {
+        // A screen popped under a held spinner closes the bloc while the
+        // pass runs. The spinner must still end, and nothing may emit
+        // after close.
+        final bloc = buildWithRetry();
+        await settleOnAFailedRefresh();
+
+        final done = Completer<void>();
+        final done2 = Completer<void>();
+        bloc.add(GameCollectionListRetryRequested(done: done));
+        await pumpEventQueue();
+        bloc.add(GameCollectionListRetryRequested(done: done2));
+        await pumpEventQueue();
+        final before = bloc.state;
+
+        await bloc.close();
+        pass.complete();
+        await pumpEventQueue();
+
+        expect(done.isCompleted, isTrue);
+        expect(done2.isCompleted, isTrue);
+        expect(bloc.state, same(before));
+      });
+    });
+
     test(
       'a retry over an unconfirmed empty list goes back to loading',
       () async {
@@ -947,6 +1165,15 @@ void main() {
       expect(
         const GameCollectionListLoading(),
         isNot(const GameCollectionListError()),
+      );
+      // The refresh button's label rides on every state (#717).
+      expect(
+        const GameCollectionListLoading(),
+        isNot(const GameCollectionListLoading(refreshing: true)),
+      );
+      expect(
+        const GameCollectionListError(),
+        isNot(const GameCollectionListError(refreshing: true)),
       );
     });
 

@@ -30,7 +30,11 @@
   },
   "collectionRefreshInProgress": "Refreshing…",
   "@collectionRefreshInProgress": {
-    "description": "Replaces the couldn't-refresh banner copy while a refresh the user asked for is running, and is the retry button's label while it is disabled. Shown ONLY for a user-initiated retry — a refresh triggered by reconnecting, by resuming the app or by opening the screen is not narrated."
+    "description": "Shown while a refresh the user asked for runs: from the banner's retry, a pull on the list, or the collection's app bar refresh button. It replaces the couldn't-refresh banner copy, and is the label of the retry and the refresh button meanwhile. Both buttons stay available and keep focus while it shows, though a press does nothing until the refresh ends, so word it as busy, not as unavailable. A refresh triggered by reconnecting, by resuming the app or by opening the screen is not narrated."
+  },
+  "collectionRefreshAction": "Refresh",
+  "@collectionRefreshAction": {
+    "description": "The app bar button that asks the server for the collection again, skipping the wait between automatic refreshes. A screen reader hears it beside the screen's title."
   },
   "collectionListError": "We couldn't open your collection.",
   "@collectionListError": {

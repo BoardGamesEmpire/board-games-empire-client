@@ -6,17 +6,33 @@ import 'package:models/domain.dart';
 /// Three states, as the household list has: *empty* is
 /// [GameCollectionListReady] with an empty [GameCollectionListReady.all], so
 /// "empty, and possibly stale" is one value rather than an awkward pair.
+///
+/// Every state carries [refreshing], whatever the list shows: the app bar's
+/// refresh button reports a pass the user asked for on every surface
+/// (#717).
 sealed class GameCollectionListState extends Equatable {
-  const GameCollectionListState();
+  const GameCollectionListState({this.refreshing = false});
+
+  /// A pass **the user asked for** is running; passes started by entry,
+  /// reconnect or resume are not narrated.
+  ///
+  /// Only a ready state's banner narrates it. On a loading or error state
+  /// it is for the refresh button's label alone, so the button says the
+  /// pass it started is running where there is no banner to say so (#717).
+  final bool refreshing;
 
   @override
-  List<Object?> get props => [];
+  List<Object?> get props => [refreshing];
 }
 
 /// Nothing to show yet: the cache has not emitted, or it emitted nothing
 /// while a hydrate is filling it for the first time.
+///
+/// A pass the user asked for can run here, as a retry over an unconfirmed
+/// empty list comes back to the spinner (#300): [refreshing] says so to the
+/// refresh button, and the spinner stays the one thing shown.
 final class GameCollectionListLoading extends GameCollectionListState {
-  const GameCollectionListLoading();
+  const GameCollectionListLoading({super.refreshing});
 }
 
 /// The cache's current answer, narrowed by [filter] and put in [sort]'s
@@ -38,8 +54,8 @@ final class GameCollectionListLoading extends GameCollectionListState {
 ///
 /// [refreshFailed] says the last pass to finish ended early, so the rows may
 /// be stale. A pass starting does not clear it; one completing does.
-/// [refreshing] says a pass **the user asked for** is running; passes
-/// started by entry, reconnect or resume are not narrated.
+/// [refreshing] says a pass **the user asked for** is running, and here the
+/// banner narrates it.
 final class GameCollectionListReady extends GameCollectionListState {
   const GameCollectionListReady({
     required this.items,
@@ -47,7 +63,7 @@ final class GameCollectionListReady extends GameCollectionListState {
     this.filter = const CollectionFilter(),
     this.sort = CollectionSort.title,
     this.refreshFailed = false,
-    this.refreshing = false,
+    super.refreshing,
     this.complete = true,
   });
 
@@ -60,7 +76,6 @@ final class GameCollectionListReady extends GameCollectionListState {
   final CollectionFilter filter;
   final CollectionSort sort;
   final bool refreshFailed;
-  final bool refreshing;
 
   /// False while the session's first pass runs, before any pass has ended
   /// in this session (#810). The pass writes the cache a page at a time, so
@@ -92,6 +107,10 @@ final class GameCollectionListReady extends GameCollectionListState {
 /// Two ways in, both while a session is ending: an unauthenticated read
 /// delivered as a stream error, and a stream that closes on teardown before
 /// it ever emitted.
+///
+/// A pass the user asked for can still run here, and fresh rows from it
+/// clear a transient read failure. There is no banner over this state, so
+/// [refreshing] is for the refresh button's label alone (#717).
 final class GameCollectionListError extends GameCollectionListState {
-  const GameCollectionListError();
+  const GameCollectionListError({super.refreshing});
 }

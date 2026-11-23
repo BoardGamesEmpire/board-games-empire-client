@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:ui/src/banners/bge_inline_banner.dart';
+import 'package:ui/src/banners/refresh_spinner.dart';
 import 'package:ui/src/buttons/bge_inert_button.dart';
-import 'package:ui_tokens/ui_tokens.dart';
 
 /// The stale-data banner and the retry that shares it (#269, #300, #573).
 ///
@@ -135,30 +135,9 @@ class _Retry extends StatelessWidget {
         key: retryKey,
         focusNode: focusNode,
         onPressed: onPressed,
-        icon: refreshing ? const _RetrySpinner() : const Icon(Icons.refresh),
+        icon: refreshing ? const RefreshSpinner() : const Icon(Icons.refresh),
         label: Text(label),
       ),
     );
   }
-}
-
-/// The retry button's in-flight icon: the treatment `BgeSubmitButton` gives
-/// its own spinner, and mute to a screen reader — the button's label is what
-/// announces the state.
-///
-/// A `spaceMd` square scaled by the ambient text scaler rather than a fixed
-/// 16. The spinner sits inline with the label and reads as part of it, so a
-/// fixed size shrinks to a speck beside doubled text at the 200% scale the
-/// app guarantees (#32).
-class _RetrySpinner extends StatelessWidget {
-  const _RetrySpinner();
-
-  @override
-  Widget build(BuildContext context) => ExcludeSemantics(
-    child: SizedBox.square(
-      dimension: BgeTextScale.clampedOf(context)
-          .scale(BgeTokens.of(context).spaceMd),
-      child: const CircularProgressIndicator(strokeWidth: 2),
-    ),
-  );
 }

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:equatable/equatable.dart';
 import 'package:hydration/hydration.dart';
 import 'package:models/domain.dart';
@@ -50,8 +52,17 @@ final class GameCollectionListHydrationUpdated extends GameCollectionListEvent {
 ///
 /// Distinct from a pass arriving on [GameCollectionListHydrationUpdated]:
 /// this one was asked for, which is what lets the screen narrate it.
+///
+/// [done] completes once the pass this request started, or the one it found
+/// already running, has ended — at once where there is no pass to run. It
+/// never completes with an error. A pull-to-refresh hands its Future to the
+/// spinner, so the spinner ends with the pass (#717).
 final class GameCollectionListRetryRequested extends GameCollectionListEvent {
-  const GameCollectionListRetryRequested();
+  const GameCollectionListRetryRequested({this.done});
+
+  /// Completed when the pass ends. Not part of [props]: two requests are
+  /// the same request, whoever is waiting on them.
+  final Completer<void>? done;
 }
 
 /// The user narrowed the list another way (#715).

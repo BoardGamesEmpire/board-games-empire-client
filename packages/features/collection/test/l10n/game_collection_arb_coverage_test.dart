@@ -15,14 +15,17 @@ void main() {
     });
 
     test('the template defines the refresh-retry key surface', () {
-      // Both are accessible names: the retry button keeps its label while
-      // disabled rather than becoming a bare spinner, and the in-progress
-      // copy is what the banner announces.
+      // All three are accessible names. The retry button keeps its label
+      // while disabled rather than becoming a bare spinner, and the
+      // in-progress copy is what the banner announces. The app bar's refresh
+      // button names the same pass at rest (#717), and takes the in-progress
+      // copy while it runs.
       expect(
         report.templateKeys,
         containsAll(<String>[
           'collectionRefreshRetry',
           'collectionRefreshInProgress',
+          'collectionRefreshAction',
         ]),
       );
     });

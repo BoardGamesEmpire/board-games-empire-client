@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:household/l10n/household_localizations.dart';
@@ -58,6 +60,18 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// — is not narrated (#300). The banner simply clears when it succeeds, exactly
 /// as it did before. Announcing background work on a screen that otherwise says
 /// nothing is noise, and the user has no decision to make about it.
+///
+/// ## Refreshing by hand, by pull or by button (#314)
+///
+/// A pull down on the list and the app bar's refresh button send the
+/// banner's own retry event, so a pass started either way is the one the
+/// banner reports, exactly as if its retry had been pressed. A pass already
+/// running is joined, not doubled, and the pull's spinner ends with it. The
+/// button is the route for a mouse, a keyboard and a screen reader, none of
+/// which can pull. Both work on every surface, and neither is offered where
+/// there is no [onRetry]. The button's label says a pass is running on every
+/// surface too, since the error and loading surfaces have no banner to say
+/// it; over the rows, the banner stays the one narrator.
 ///
 /// ## Rows navigate when there is somewhere to go (#270)
 ///
@@ -123,6 +137,9 @@ class HouseholdListScreen extends StatelessWidget {
 
   /// Key on the banner's retry button (#300).
   static const Key refreshRetryKey = Key('household_list.refresh_retry');
+
+  /// Key on the app bar's refresh button (#314).
+  static const Key refreshButtonKey = Key('household_list.refresh_button');
 
   /// Key on the failed-read surface.
   static const Key errorKey = Key('household_list.error');
@@ -405,6 +422,19 @@ class _HouseholdListViewState extends State<_HouseholdListView> {
     super.dispose();
   }
 
+  /// Asks for a pass on a pull, and answers the pull's spinner when the pass
+  /// it started or joined ends (#314).
+  ///
+  /// A fresh completer each time: the bloc completes it, and a completer
+  /// completes once.
+  Future<void> _refresh(BuildContext context) {
+    final done = Completer<void>();
+    context.read<HouseholdListBloc>().add(
+      HouseholdListRetryRequested(done: done),
+    );
+    return done.future;
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = HouseholdLocalizations.of(context);
@@ -434,6 +464,27 @@ class _HouseholdListViewState extends State<_HouseholdListView> {
             // badge, so they take the wider measure.
             width: BgePageWidth.pane,
             semanticChildCount: households.isEmpty ? null : households.length,
+            // Set or not for the screen's whole life, as [canRetry] is: a
+            // page that gains or loses it rebuilds its scroll view.
+            onRefresh: canRetry ? () => _refresh(context) : null,
+            // Where there is no pass to run, there is no button either: one
+            // that did nothing is worse than none (#314).
+            actions: canRetry
+                ? [
+                    BgeRefreshButton(
+                      buttonKey: HouseholdListScreen.refreshButtonKey,
+                      label: l10n.householdListRefreshAction,
+                      inProgressLabel: l10n.householdRefreshInProgress,
+                      // From any state: on the error and loading surfaces
+                      // there is no banner, and the label is what says the
+                      // press was taken.
+                      refreshing: state.refreshing,
+                      onPressed: () => context.read<HouseholdListBloc>().add(
+                        const HouseholdListRetryRequested(),
+                      ),
+                    ),
+                  ]
+                : null,
             floatingActionButton: create == null
                 ? null
                 : BgeExtendedFab(

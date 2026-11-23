@@ -3,7 +3,15 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart'
-    show BoxParentData, PipelineOwner, RenderShiftedBox, ScrollCacheExtent;
+    show
+        BoxParentData,
+        PipelineOwner,
+        RenderProxyBox,
+        RenderShiftedBox,
+        ScrollCacheExtent,
+        SemanticsConfiguration,
+        SemanticsNode,
+        SemanticsRole;
 import 'package:flutter/scheduler.dart' show SchedulerBinding, SchedulerPhase;
 import 'package:ui/src/layout/bge_navigation_menu.dart';
 import 'package:ui_tokens/ui_tokens.dart';
@@ -95,7 +103,8 @@ class BgePage extends StatelessWidget {
     super.key,
   }) : slivers = null,
        semanticChildCount = null,
-       header = null;
+       header = null,
+       onRefresh = null;
 
   /// Creates a page whose content is slivers rather than a single box.
   ///
@@ -133,6 +142,7 @@ class BgePage extends StatelessWidget {
     this.width = BgePageWidth.form,
     this.footer,
     this.scrollController,
+    this.onRefresh,
     super.key,
   }) : child = null,
        // Vertical centring is a box idea — it needs the content's height,
@@ -198,6 +208,42 @@ class BgePage extends StatelessWidget {
   /// nothing to say, which adds no semantics node and no height, or it may
   /// come and go: either way the content below keeps its state and its focus.
   final Widget? header;
+
+  /// Called when the page is pulled down past its top, for [BgePage.slivers]
+  /// (#314). The page shows the material spinner until the returned [Future]
+  /// completes.
+  ///
+  /// Only touch, stylus and trackpad can pull: Flutter scrolls by drag for
+  /// nothing else, so a mouse or a keyboard can't, and the spinner offers a
+  /// screen reader no action. A screen that passes this also offers a button
+  /// that does the same, in [actions].
+  ///
+  /// The page can be pulled however short its content, on every platform: it
+  /// always scrolls while this is set. Null, the default, builds the tree the
+  /// page builds without it.
+  ///
+  /// The returned [Future] should complete normally. [RefreshIndicator] ends
+  /// the spinner when it completes either way, but drops the result, so an
+  /// error escapes uncaught, and in this app an uncaught error opens the crash
+  /// prompt. Catch it in the callback, and say what failed on the screen.
+  ///
+  /// Derive it from something that stays put, such as whether the screen has
+  /// a refresh seam at all, not from what the list shows. This page builds a
+  /// different tree with it than without it, so an [onRefresh] that came and
+  /// went while the page is mounted would lose the scroll position and focus.
+  ///
+  /// The spinner adds no semantics node, so whatever the screen says about its
+  /// refresh is the one thing heard. Its label alone can't do that: measured,
+  /// an empty label still left an unnamed node with the loading-spinner role,
+  /// and while the finger is down, or a short pull snaps back, the indicator
+  /// is determinate and forms a progress-bar node instead. So the page keeps
+  /// that one node out of the tree, in every phase, and the list under it
+  /// stays. Doing that takes a node of its own, an empty container around the
+  /// list, there only while this is set.
+  ///
+  /// The box constructor has no such parameter, because a box page is not a
+  /// list.
+  final Future<void> Function()? onRefresh;
 
   /// How many items the slivers hold, for [BgePage.slivers].
   ///
@@ -569,8 +615,12 @@ class BgePage extends StatelessWidget {
           final gutter = math.max<double>(0, (available - maxWidth) / 2);
           final padding = resolved + EdgeInsets.symmetric(horizontal: gutter);
           final header = this.header;
-          return CustomScrollView(
+          final onRefresh = this.onRefresh;
+          final scrollView = CustomScrollView(
             controller: scrollController,
+            physics: onRefresh == null
+                ? null
+                : const AlwaysScrollableScrollPhysics(),
             semanticChildCount: semanticChildCount,
             // See "A footer over a lazy list" on [footer].
             scrollCacheExtent: footer == null
@@ -591,6 +641,12 @@ class BgePage extends StatelessWidget {
                 sliver: SliverMainAxisGroup(slivers: slivers!),
               ),
             ],
+          );
+          if (onRefresh == null) return scrollView;
+          // See [onRefresh] for why the spinner's semantics are filtered
+          // rather than labelled away.
+          return _WithoutSpinnerSemantics(
+            child: RefreshIndicator(onRefresh: onRefresh, child: scrollView),
           );
         },
       );
@@ -635,6 +691,54 @@ class BgePage extends StatelessWidget {
           );
         },
       );
+}
+
+/// Keeps a [RefreshIndicator]'s spinner out of the semantics tree, and the
+/// rest of what is under it in (#314).
+///
+/// The spinner sits beside the scroll view inside the indicator, where no
+/// widget can reach it, so this filters it out as the nodes below are
+/// gathered: it takes them all as the children of a node of its own, and
+/// drops those with the loading-spinner role, or the progress-bar role the
+/// indicator takes while it is dragged and as a short pull snaps back. The
+/// scroll view's node is gathered whole, so a spinner or a progress bar the
+/// page's content shows stays.
+class _WithoutSpinnerSemantics extends SingleChildRenderObjectWidget {
+  const _WithoutSpinnerSemantics({required super.child});
+
+  @override
+  _RenderWithoutSpinnerSemantics createRenderObject(BuildContext context) =>
+      _RenderWithoutSpinnerSemantics();
+}
+
+class _RenderWithoutSpinnerSemantics extends RenderProxyBox {
+  @override
+  void describeSemanticsConfiguration(SemanticsConfiguration config) {
+    super.describeSemanticsConfiguration(config);
+    // Only a boundary is given the nodes below it to assemble. And explicit
+    // child nodes, or the spinner's role and label merge into this node's
+    // own, rather than forming a node of their own that can be dropped.
+    config
+      ..isSemanticBoundary = true
+      ..explicitChildNodes = true;
+  }
+
+  @override
+  void assembleSemanticsNode(
+    SemanticsNode node,
+    SemanticsConfiguration config,
+    Iterable<SemanticsNode> children,
+  ) => super.assembleSemanticsNode(node, config, [
+    for (final child in children)
+      if (!_indicatorRoles.contains(child.role)) child,
+  ]);
+
+  /// What [RefreshProgressIndicator] forms: a spinner while the refresh runs,
+  /// a progress bar while it is dragged or snaps back.
+  static const Set<SemanticsRole> _indicatorRoles = {
+    SemanticsRole.loadingSpinner,
+    SemanticsRole.progressBar,
+  };
 }
 
 /// A page's content over its footer, capped so that the footer leaves the
