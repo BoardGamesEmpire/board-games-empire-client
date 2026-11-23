@@ -237,10 +237,14 @@ The same flows as the keyboard tests, plus the screens they don't reach:
 2. Home: the drawer, the sections, a destination.
 3. Create event, including the date and time pickers.
 4. Game search, with the filter sheet. Then open the quick look of a
-   DataGateway result this server doesn't hold, tick an expansion and press
-   Import (#713, #824): check the status ("Sending the import to the
-   server…") is read and focus lands on it, that by keyboard it is ringed
-   and Tab goes on from it rather than stopping on it again, and that the
+   DataGateway result this server doesn't hold, one with a long list of
+   expansions: check that Import stays in view under the list as it
+   scrolls and says how many are ticked, and that by keyboard Tab reaches
+   it after the last expansion and Shift+Tab goes back to that expansion
+   (#1037). Tick an expansion, scroll back to the top and press Import
+   (#713, #824): check the status ("Sending the import to the server…") is
+   scrolled into view, is read and focus lands on it, that by keyboard it is
+   ringed and Tab goes on from it rather than stopping on it again, and that the
    rows are read as one batch ("2 games in this import"), each saying its game
    and its state. Make an import fail or finish in part (stop a DataGateway,
    say): check the outcome is read once, as one banner, and that focus is

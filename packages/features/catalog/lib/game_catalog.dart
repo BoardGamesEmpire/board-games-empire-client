@@ -22,6 +22,7 @@ export 'src/home/something_to_play_section.dart';
 export 'src/quick_look/game_quick_look.dart'
     show GameQuickLook, showGameQuickLook;
 export 'src/quick_look/game_quick_look_seed.dart';
+export 'src/quick_look/quick_look_layout.dart' show QuickLookHost;
 export 'src/quick_look/search_hit_quick_look.dart';
 export 'src/screens/game_browse_screen.dart';
 export 'src/screens/game_detail_collection.dart';

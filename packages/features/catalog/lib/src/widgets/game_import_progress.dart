@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:game_catalog/l10n/game_catalog_localizations.dart';
 import 'package:game_catalog/src/bloc/game_import_bloc.dart';
@@ -13,8 +14,9 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// #824).
 ///
 /// It reads the [GameImportBloc] provided above it and owns none. The quick
-/// look hosts it where the import button was, so the import goes on in the
-/// place the user started it, and nothing opens over it.
+/// look hosts it in its scroll view, where the expansion checklist was, so
+/// the import goes on in the quick look it was started from, and nothing
+/// opens over it.
 ///
 /// ## The status
 ///
@@ -86,8 +88,17 @@ class GameImportProgress extends StatefulWidget {
   /// It asks for focus at the end of that frame rather than through
   /// [Focus.autofocus]. The control that started the import is usually the
   /// one this replaces, and once it has gone, Flutter's autofocus gives way
-  /// to the focus the page had before it, such as a description's More
-  /// (#713).
+  /// to the focus the page had before it, such as a control above the
+  /// checklist (#713).
+  ///
+  /// The status is scrolled into view with it, where any of it is out of
+  /// view: to the top of the view, or as near as the page's end allows, so
+  /// the games listed under it have the most room. One wholly in view stays
+  /// where it is. The button that started the import can be pinned under a
+  /// scroll view scrolled anywhere (#1037), and a request for focus moves no
+  /// scroll view by itself: without this, a press at the top of a long
+  /// description would take the button away and show nothing in its place,
+  /// with focus on a status off screen.
   final bool autofocus;
 
   @override
@@ -156,9 +167,27 @@ class _GameImportProgressState extends State<GameImportProgress> {
       // runs in that frame's build, so the callback needs no frame asked
       // for.
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _statusFocus.requestFocus();
+        if (!mounted) return;
+        _statusFocus.requestFocus();
+        _revealStatus();
       });
     }
+  }
+
+  /// Scrolls the status into view unless it is wholly there: see
+  /// [GameImportProgress.autofocus]. Called once this is laid out.
+  void _revealStatus() {
+    final status = _statusFocus.context;
+    final box = status?.findRenderObject();
+    if (status == null || box == null) return;
+    final position = Scrollable.maybeOf(status)?.position;
+    if (position == null) return;
+    final viewport = RenderAbstractViewport.of(box);
+    final atViewTop = viewport.getOffsetToReveal(box, 0).offset;
+    final atViewBottom = viewport.getOffsetToReveal(box, 1).offset;
+    final pixels = position.pixels;
+    if (pixels >= atViewBottom && pixels <= atViewTop) return;
+    Scrollable.ensureVisible(status);
   }
 
   @override

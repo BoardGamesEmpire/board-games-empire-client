@@ -1,5 +1,8 @@
+import 'dart:math' as math;
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:game_catalog/l10n/game_catalog_localizations.dart';
 import 'package:game_catalog/src/widgets/catalog_facts.dart';
 import 'package:game_catalog/src/widgets/catalog_slivers.dart';
@@ -9,6 +12,16 @@ import 'package:game_catalog/src/widgets/owned_platform_chip.dart';
 import 'package:game_filters/game_filters.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
+
+/// Wraps a quick look's [layout] in what its caller's additions share: the
+/// state an import's section and its pinned button both read, for one
+/// (#1037).
+///
+/// The quick look calls it in every state it draws, at one place in its tree,
+/// so a host that is a `StatefulWidget` keeps its state from the seed to the
+/// read's answer. A game the server refuses keeps the host and draws none of
+/// the additions under it (#1040).
+typedef QuickLookHost = Widget Function(BuildContext context, Widget layout);
 
 /// One platform chip a quick look lists. The [key] is the caller's, so a
 /// chip keeps its place as the list changes.
@@ -29,16 +42,42 @@ class QuickLookPlatform {
 
 /// What a quick look draws (#707), given what it has to show: the cover
 /// beside the title, the facts, the platforms, a banner, the whole
-/// description, the caller's sections and its actions.
+/// description, the caller's sections and its actions, and under them all
+/// the caller's pinned [footer].
 ///
 /// With [onViewDetails], the title is the link to the game's page (#798);
 /// without it, plain text.
 ///
 /// Stateless, and package-internal: `GameQuickLook` holds the read and
 /// feeds this, and `SearchHitQuickLook` draws a search hit through it with
-/// no read at all. It brings its own scroll view, and its header's
-/// `LayoutBuilder` throws under intrinsic sizing, so it needs the bounded
-/// box the pop-up gives it.
+/// no read at all. It brings its own scroll view, and it and its header are
+/// built by a `LayoutBuilder`, which throws under intrinsic sizing, so it
+/// needs the bounded box the pop-up gives it, sheet or dialog.
+///
+/// ## The pinned footer
+///
+/// [footer] sits under the scroll view, on screen wherever the body is
+/// scrolled to, for an action that counts picks down a long list (#1037).
+/// It is the quick look's own slot: a pop-up has no `BgePage`, and so no
+/// `BgePage.footer`. It is laid out as that footer is, in a
+/// [BgePinnedFooter], and so keeps its rules:
+///
+/// - **At most half the pop-up's height.** Past that it scrolls within
+///   itself, so the body keeps at least half, and nothing in the footer is
+///   out of reach at 200% text.
+/// - **One tree with a footer and without.** The scroll view keeps its
+///   position when the footer comes, goes or empties.
+/// - **A footer that gets shorter moves no row.** The counting label drops
+///   a line as the last expansion is unticked, and the offline note goes as
+///   the connection returns. With the body scrolled to its end, the footer
+///   keeps the room it would give back until the body leaves its end.
+/// - **Tab takes the body first**, then the footer, wherever the body is
+///   scrolled to.
+///
+/// One thing is the pop-up's own. A footer that comes to draw nothing takes
+/// no room at once, its insets included: an import's button goes as the
+/// body is redrawn around the progress, so there is no row to hold still,
+/// and the room kept would be an empty strip where the button was.
 class QuickLookLayout extends StatelessWidget {
   const QuickLookLayout({
     required this.title,
@@ -52,6 +91,7 @@ class QuickLookLayout extends StatelessWidget {
     this.description,
     this.sections = const [],
     this.actions = const [],
+    this.footer,
     this.onViewDetails,
     super.key,
   });
@@ -60,6 +100,11 @@ class QuickLookLayout extends StatelessWidget {
   static const Key titleLinkKey = Key('catalog.quick_look.title_link');
   static const Key factsKey = Key('catalog.quick_look.facts');
   static const Key platformsKey = Key('catalog.quick_look.platforms');
+
+  /// The pinned footer's band, under the scroll view: the footer, its
+  /// insets, and any room kept for one that got shorter. Always there, with
+  /// no height while the footer draws nothing.
+  static const Key footerKey = Key('catalog.quick_look.footer');
 
   /// Keeps the description in place, its images loaded, as the platforms and
   /// the banner arrive above it.
@@ -85,11 +130,18 @@ class QuickLookLayout extends StatelessWidget {
   /// draws none.
   final String? description;
 
-  /// The caller's own sections, below the description.
+  /// The caller's own sections, below the description, after a gap. When
+  /// all of them draw nothing, as `GameImportSection` does with no
+  /// checklist and no import yet, the gap goes with them.
   final List<Widget> sections;
 
-  /// The caller's own actions, at the foot. None draws no row.
+  /// The caller's own actions, at the foot of the scroll view. None draws
+  /// no row.
   final List<Widget> actions;
+
+  /// Pinned under the scroll view, at the line's end: see "The pinned
+  /// footer". Null draws none.
+  final Widget? footer;
 
   /// Opens the game's page, from the title. Null leaves the title plain
   /// text: there is nowhere to open.
@@ -100,6 +152,41 @@ class QuickLookLayout extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = BgeTokens.of(context);
+
+    // One tree with a footer and without, so the scroll view keeps its
+    // position as the footer comes and goes.
+    return BgePinnedFooter(
+      // As tall as its content, which the pop-up is sized to.
+      shrinkWrap: true,
+      footerKey: footerKey,
+      footerPadding: EdgeInsets.symmetric(
+        horizontal: tokens.spaceMd,
+        vertical: tokens.spaceSm,
+      ),
+      // It empties as the body is redrawn: see "The pinned footer".
+      emptiedFooterKeepsRoom: false,
+      // A traversal group each, as `BgePage` gives its content and its
+      // footer: Tab orders stops by where they are on screen, and the rows
+      // the body has yet to scroll to lie below the footer.
+      body: FocusTraversalGroup(child: _body(context)),
+      footer: FocusTraversalGroup(
+        child: SingleChildScrollView(
+          // Never the route's primary scroll view, which is the body's.
+          primary: false,
+          child: Align(
+            alignment: AlignmentDirectional.centerEnd,
+            // As tall as the footer, not as the cap above.
+            heightFactor: 1,
+            child: footer ?? const SizedBox.shrink(),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// The scroll view, and all of the quick look but its footer.
+  Widget _body(BuildContext context) {
     final l10n = GameCatalogLocalizations.of(context);
     final tokens = BgeTokens.of(context);
     final description = this.description;
@@ -143,7 +230,15 @@ class QuickLookLayout extends StatelessWidget {
               onOpenLink: openLink,
             ),
           ],
-          if (sections.isNotEmpty) ...[const BgeGap.md(), ...sections],
+          if (sections.isNotEmpty)
+            _GapAboveUnlessEmpty(
+              gap: tokens.spaceMd,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: sections,
+              ),
+            ),
           // The title opens the game's page, so the row is the caller's
           // alone (#798).
           if (actions.isNotEmpty) ...[
@@ -399,4 +494,83 @@ class _TitleLinkState extends State<_TitleLink>
         TargetPlatform.iOS || TargetPlatform.android => false,
         _ => true,
       };
+}
+
+/// [child] with [gap] above it, unless [child] has no height: then neither
+/// it nor the gap takes any room, so sections that draw nothing leave no
+/// strip under the description.
+///
+/// A render object, as a widget can't know before layout whether its child
+/// draws anything, and the footer's band does the same with its insets
+/// (`BgePinnedFooter`).
+class _GapAboveUnlessEmpty extends SingleChildRenderObjectWidget {
+  const _GapAboveUnlessEmpty({required this.gap, required super.child});
+
+  final double gap;
+
+  @override
+  _RenderGapAboveUnlessEmpty createRenderObject(BuildContext context) =>
+      _RenderGapAboveUnlessEmpty(gap);
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderGapAboveUnlessEmpty renderObject,
+  ) => renderObject.gap = gap;
+}
+
+class _RenderGapAboveUnlessEmpty extends RenderShiftedBox {
+  _RenderGapAboveUnlessEmpty(this._gap) : super(null);
+
+  double get gap => _gap;
+  double _gap;
+
+  set gap(double value) {
+    if (value == _gap) return;
+    _gap = value;
+    markNeedsLayout();
+  }
+
+  /// The child's constraints: the room below the gap.
+  BoxConstraints _inner(BoxConstraints constraints) => constraints.copyWith(
+    minHeight: 0,
+    maxHeight: math.max(0, constraints.maxHeight - _gap),
+  );
+
+  /// The size for a child of [child]'s size.
+  Size _outer(BoxConstraints constraints, Size child) => constraints.constrain(
+    Size(child.width, child.height == 0 ? 0 : child.height + _gap),
+  );
+
+  @override
+  Size computeDryLayout(BoxConstraints constraints) {
+    final child = this.child;
+    if (child == null) return constraints.smallest;
+    return _outer(constraints, child.getDryLayout(_inner(constraints)));
+  }
+
+  @override
+  double computeMinIntrinsicHeight(double width) =>
+      _withGap(super.computeMinIntrinsicHeight(width));
+
+  @override
+  double computeMaxIntrinsicHeight(double width) =>
+      _withGap(super.computeMaxIntrinsicHeight(width));
+
+  double _withGap(double height) => height == 0 ? 0 : height + _gap;
+
+  @override
+  void performLayout() {
+    final child = this.child;
+    if (child == null) {
+      size = constraints.smallest;
+      return;
+    }
+    child.layout(_inner(constraints), parentUsesSize: true);
+    size = _outer(constraints, child.size);
+    (child.parentData! as BoxParentData).offset = Offset(
+      0,
+      child.size.height == 0 ? 0 : _gap,
+    );
+  }
 }

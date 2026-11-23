@@ -74,6 +74,8 @@ void main() {
     void Function(BuildContext context, String gameId)? onViewDetails,
     List<Widget> sections = const [],
     List<Widget> actions = const [],
+    Widget? footer,
+    QuickLookHost? host,
     WatchOwnedEntries? watchOwned,
   }) => Builder(
     builder: (context) => TextButton(
@@ -87,6 +89,8 @@ void main() {
           onViewDetails: onViewDetails,
           sections: sections,
           actions: actions,
+          footer: footer,
+          host: host,
           watchOwned: watchOwned,
         ),
       ),
@@ -104,6 +108,8 @@ void main() {
     bool viewDetails = true,
     List<Widget> sections = const [],
     List<Widget> actions = const [],
+    Widget? footer,
+    QuickLookHost? host,
     WatchOwnedEntries? watchOwned,
     ThemeData? theme,
   }) async {
@@ -119,6 +125,8 @@ void main() {
               onViewDetails: viewDetails ? (_, id) => viewed.add(id) : null,
               sections: sections,
               actions: actions,
+              footer: footer,
+              host: host,
               watchOwned: watchOwned,
             ),
           ),
@@ -492,6 +500,200 @@ void main() {
     expect(find.widgetWithText(TextButton, 'Import'), findsNothing);
     // What the quick look itself offers stays.
     expect(titleLink(), findsOneWidget);
+  });
+
+  group('the pinned footer and the host (#1037)', () {
+    final footer = find.byKey(GameQuickLook.footerKey);
+
+    /// The quick look's own scroll view, which the footer is pinned under.
+    final body = find
+        .descendant(
+          of: find.byType(GameQuickLook),
+          matching: find.byType(Scrollable),
+        )
+        .first;
+    final pinned = find.widgetWithText(FilledButton, 'Pinned');
+
+    Widget pinnedButton() =>
+        FilledButton(onPressed: () {}, child: const Text('Pinned'));
+
+    ScrollPosition bodyPosition(WidgetTester tester) =>
+        tester.state<ScrollableState>(body).position;
+
+    testWidgets("a caller's footer is pinned below the scroll view, at the "
+        "line's end", (tester) async {
+      useViewSize(tester, const Size(400, 500));
+      await open(
+        tester,
+        GameQuickLookSeed.fromGame(wingspan),
+        footer: pinnedButton(),
+      );
+      read.complete((game: wingspan, platformGames: [tabletop]));
+      await tester.pumpAndSettle();
+      final tokens = BgeTokens.of(tester.element(find.byType(GameQuickLook)));
+
+      expect(find.ancestor(of: pinned, matching: footer), findsOneWidget);
+      expect(find.descendant(of: body, matching: pinned), findsNothing);
+      expect(
+        tester.getRect(footer).top,
+        moreOrLessEquals(tester.getRect(body).bottom),
+      );
+      // Inset as the body is at its sides, and by a small step above and
+      // below.
+      final band = tester.getRect(footer);
+      final button = tester.getRect(pinned);
+      expect(button.right, moreOrLessEquals(band.right - tokens.spaceMd));
+      expect(button.top, moreOrLessEquals(band.top + tokens.spaceSm));
+      expect(button.bottom, moreOrLessEquals(band.bottom - tokens.spaceSm));
+
+      // On screen wherever the long description is scrolled to.
+      final position = bodyPosition(tester);
+      expect(position.maxScrollExtent, greaterThan(0));
+      expect(pinned.hitTestable(), findsOneWidget);
+      position.jumpTo(position.maxScrollExtent);
+      await tester.pump();
+      expect(pinned.hitTestable(), findsOneWidget);
+      expect(tester.getRect(pinned), button);
+    });
+
+    testWidgets('with no footer the band takes no room', (tester) async {
+      await open(tester, GameQuickLookSeed.fromGame(wingspan));
+
+      expect(tester.getSize(footer).height, 0);
+    });
+
+    testWidgets('a game the server refuses draws no footer', (tester) async {
+      remote.onFetchGame = (_) async =>
+          throw const GamesForbiddenException('403');
+      await open(
+        tester,
+        GameQuickLookSeed.fromSummary(summary),
+        footer: pinnedButton(),
+      );
+
+      expect(find.byKey(GameQuickLook.unavailableKey), findsOneWidget);
+      expect(pinned, findsNothing);
+      expect(tester.getSize(footer).height, 0);
+      // What the quick look itself offers stays.
+      expect(titleLink(), findsOneWidget);
+    });
+
+    testWidgets('a read that fails, or is answered from the cache, keeps the '
+        'footer', (tester) async {
+      remote.onFetchGame = (_) async => throw unreachable();
+      await open(
+        tester,
+        GameQuickLookSeed.fromSummary(summary),
+        cache: FakeGamesCache([wingspan]),
+        footer: pinnedButton(),
+      );
+
+      expect(find.byKey(GameQuickLook.partialKey), findsOneWidget);
+      expect(pinned.hitTestable(), findsOneWidget);
+    });
+
+    testWidgets('the footer going with a refused game keeps the scroll '
+        'position', (tester) async {
+      useViewSize(tester, const Size(400, 500));
+      await open(
+        tester,
+        GameQuickLookSeed.fromGame(wingspan),
+        footer: pinnedButton(),
+      );
+      // The seed's long description, with the read still out.
+      final scrollable = tester.state<ScrollableState>(body);
+      final position = scrollable.position;
+      expect(pinned, findsOneWidget);
+      expect(position.maxScrollExtent, greaterThan(40));
+      position.jumpTo(40);
+      await tester.pump();
+
+      read.completeError(const GamesForbiddenException('403'));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(GameQuickLook.unavailableKey), findsOneWidget);
+      expect(pinned, findsNothing);
+      expect(tester.state<ScrollableState>(body), same(scrollable));
+      expect(position.pixels, 40);
+    });
+
+    testWidgets('the host wraps the layout in every state, and keeps its '
+        'state through them', (tester) async {
+      await open(
+        tester,
+        GameQuickLookSeed.fromSummary(summary),
+        cache: FakeGamesCache([wingspan]),
+        host: (context, layout) => _CountingHost(child: layout),
+        sections: const [_HostCount()],
+      );
+      final host = tester.state<_CountingHostState>(find.byType(_CountingHost));
+      // Under the quick look, around all it draws.
+      expect(
+        find.descendant(
+          of: find.byType(GameQuickLook),
+          matching: find.byType(_CountingHost),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byType(_CountingHost),
+          matching: find.text('Wingspan'),
+        ),
+        findsOneWidget,
+      );
+      host.increment();
+      await tester.pump();
+      expect(find.text('count 1'), findsOneWidget);
+
+      // The seed, then a read answered from the cache, with the banner.
+      read.completeError(unreachable());
+      await tester.pumpAndSettle();
+      expect(find.byKey(GameQuickLook.partialKey), findsOneWidget);
+      expect(find.text('count 1'), findsOneWidget);
+
+      // A retry that lands.
+      await tester.tap(retry());
+      await tester.pump();
+      await tester.pump(GameQuickLook.retryDwell);
+      read.complete((game: wingspan, platformGames: [tabletop]));
+      await tester.pumpAndSettle();
+      expect(find.byKey(GameQuickLook.partialKey), findsNothing);
+      expect(find.text('Tabletop'), findsOneWidget);
+      expect(find.text('count 1'), findsOneWidget);
+      expect(
+        tester.state<_CountingHostState>(find.byType(_CountingHost)),
+        same(host),
+      );
+    });
+
+    testWidgets('a game the server refuses keeps the host, with nothing of '
+        'what it shares drawn', (tester) async {
+      await open(
+        tester,
+        GameQuickLookSeed.fromSummary(summary),
+        host: (context, layout) => _CountingHost(child: layout),
+        sections: const [_HostCount()],
+        footer: const _HostCount(),
+      );
+      final host = tester.state<_CountingHostState>(find.byType(_CountingHost))
+        ..increment();
+      await tester.pump();
+      // Before the answer, the section and the footer both read the host.
+      expect(find.text('count 1'), findsNWidgets(2));
+
+      read.completeError(const GamesForbiddenException('403'));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(GameQuickLook.unavailableKey), findsOneWidget);
+      expect(find.byType(_HostCount), findsNothing);
+      expect(
+        tester.state<_CountingHostState>(find.byType(_CountingHost)),
+        same(host),
+      );
+      expect(host.count, 1);
+      expect(tester.takeException(), isNull);
+    });
   });
 
   testWidgets("a caller's sections and actions are shown", (tester) async {
@@ -1706,4 +1908,44 @@ void main() {
       );
     });
   });
+}
+
+/// A host with state of its own, which [_HostCount] shows: stands in for an
+/// import's, which the section and the footer share.
+class _CountingHost extends StatefulWidget {
+  const _CountingHost({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_CountingHost> createState() => _CountingHostState();
+}
+
+class _CountingHostState extends State<_CountingHost> {
+  int count = 0;
+
+  void increment() => setState(() => count++);
+
+  @override
+  Widget build(BuildContext context) =>
+      _HostScope(count: count, child: widget.child);
+}
+
+class _HostScope extends InheritedWidget {
+  const _HostScope({required this.count, required super.child});
+
+  final int count;
+
+  @override
+  bool updateShouldNotify(_HostScope oldWidget) => count != oldWidget.count;
+}
+
+/// The count the [_CountingHost] above it holds.
+class _HostCount extends StatelessWidget {
+  const _HostCount();
+
+  @override
+  Widget build(BuildContext context) => Text(
+    'count ${context.dependOnInheritedWidgetOfExactType<_HostScope>()!.count}',
+  );
 }

@@ -8,6 +8,7 @@ import 'package:game_catalog/src/bloc/game_search_event.dart';
 import 'package:game_catalog/src/bloc/game_search_state.dart';
 import 'package:game_catalog/src/quick_look/game_quick_look.dart';
 import 'package:game_catalog/src/quick_look/game_quick_look_seed.dart';
+import 'package:game_catalog/src/quick_look/quick_look_layout.dart';
 import 'package:game_catalog/src/quick_look/search_hit_quick_look.dart';
 import 'package:game_catalog/src/screens/game_detail_collection.dart';
 import 'package:game_catalog/src/search/data_gateway_search_grant.dart';
@@ -34,10 +35,12 @@ import 'package:ui_tokens/ui_tokens.dart';
 ///
 /// A DataGateway result's quick look also offers Import, or Re-import for a
 /// game the server holds, with the expansions the user ticks: a
-/// [GameImportPanel], shown only when [access] allows `create` on `Game` as
-/// the quick look opens. The game the import makes opens through [onOpen].
-/// Opening a quick look is a read, so every row opens one offline too; only
-/// the import waits for the connection.
+/// [GameImportPanel] around the quick look, with its checklist under the
+/// description and its button, which counts the expansions ticked, pinned
+/// under the scroll view (#1037). It is there only when [access] allows
+/// `create` on `Game` as the quick look opens. The game the import makes
+/// opens through [onOpen]. Opening a quick look is a read, so every row
+/// opens one offline too; only the import waits for the connection.
 ///
 /// ## As results arrive
 ///
@@ -718,12 +721,12 @@ class _GameSearchPageState extends State<_GameSearchPage> {
     );
   }
 
-  /// Opens the quick look of a result this server holds, by its game id,
-  /// with [sections] under its description.
+  /// Opens the quick look of a result this server holds, by its game id.
+  /// With [importHost], it offers the import too: see [_importHost].
   ///
   /// Each quick look opens from the screen's context rather than the row's,
   /// which can be taken down beneath it, as a game found gone is.
-  void _openServerHit(GameSearchHit hit, {List<Widget> sections = const []}) =>
+  void _openServerHit(GameSearchHit hit, {QuickLookHost? importHost}) =>
       unawaited(
         showGameQuickLook(
           context,
@@ -732,7 +735,9 @@ class _GameSearchPageState extends State<_GameSearchPage> {
           cache: widget.cache,
           onGone: widget.onGone,
           onViewDetails: widget.onOpen,
-          sections: sections,
+          host: importHost,
+          sections: _importSections(importHost),
+          footer: _importFooter(importHost),
           watchOwned: widget.watchOwned,
         ),
       );
@@ -746,9 +751,9 @@ class _GameSearchPageState extends State<_GameSearchPage> {
     final mayImport =
         widget.access?.current.allows(ResourceType.game, AccessAction.create) ??
         false;
-    final sections = [if (mayImport) _importPanel(result)];
+    final importHost = mayImport ? _importHost(result) : null;
     if (hit.isOnServer) {
-      _openServerHit(hit, sections: sections);
+      _openServerHit(hit, importHost: importHost);
       return;
     }
     unawaited(
@@ -756,29 +761,47 @@ class _GameSearchPageState extends State<_GameSearchPage> {
         context,
         hit: hit,
         sourceName: result.source.name,
-        sections: sections,
+        host: importHost,
+        sections: _importSections(importHost),
+        footer: _importFooter(importHost),
       ),
     );
   }
 
-  /// The import of [result], with the expansions the user ticks where this
-  /// session may ask the DataGateways. It shares the search's grant, so a
-  /// refusal either meets is kept for both (#795).
-  Widget _importPanel(GameSearchSourceHit result) {
+  /// The import's checklist, and later its progress, under the quick look's
+  /// description, where [importHost] holds an import for it to draw.
+  static List<Widget> _importSections(QuickLookHost? importHost) =>
+      importHost == null ? const [] : const [GameImportSection()];
+
+  /// The import's button, pinned under the quick look's scroll view so its
+  /// count stays in view down a long checklist (#1037).
+  static Widget? _importFooter(QuickLookHost? importHost) =>
+      importHost == null ? null : const GameImportButton();
+
+  /// The import of [result] around its quick look, with the expansions the
+  /// user ticks where this session may ask the DataGateways. It shares the
+  /// search's grant, so a refusal either meets is kept for both (#795).
+  ///
+  /// The grant is read here, as the quick look opens: the host is built in
+  /// the pop-up, on the root navigator, above the search's bloc.
+  QuickLookHost _importHost(GameSearchSourceHit result) {
     final grant = context.read<GameSearchBloc>().grant;
+    final mayChooseExpansions = grant.mayAsk;
     final GameSearchSourceHit(:source, :hit) = result;
     final sourceName = source.name;
+    final remote = widget.remote;
     final open = widget.onOpen;
-    return GameImportPanel(
-      remote: widget.remote,
+    return (_, layout) => GameImportPanel(
+      remote: remote,
       gatewayId: source.id,
       hit: hit,
-      mayChooseExpansions: grant.mayAsk,
+      mayChooseExpansions: mayChooseExpansions,
       grant: grant,
       sourceNames: {source.id: ?sourceName},
       // The pop-up's context, which the game's page removes once it has
       // arrived over it (#707).
       onImported: (popup, gameId) => open?.call(popup, gameId),
+      child: layout,
     );
   }
 

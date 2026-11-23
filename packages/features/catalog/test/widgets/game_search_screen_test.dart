@@ -398,6 +398,17 @@ void main() {
       // Import waits in the quick look, with the hit's expansions read from
       // the DataGateway it came from, which the checklist names.
       expect(importLabel(tester), 'Import');
+      // Pinned under the quick look's scroll view, with the checklist it
+      // counts in the scroll view (#1037).
+      expect(
+        find.ancestor(
+          of: importButton,
+          matching: find.byKey(SearchHitQuickLook.footerKey),
+        ),
+        findsOneWidget,
+      );
+      expect(importButton.hitTestable(), findsOneWidget);
+      expect(find.byType(GameImportSection), findsOneWidget);
       final panel = tester.widget<GameImportPanel>(
         find.byType(GameImportPanel),
       );
@@ -563,6 +574,16 @@ void main() {
       expect(find.byType(SearchHitQuickLook), findsNothing);
       expect(remote.calls, contains('fetchGame(g_imported)'));
       expect(importLabel(tester), 'Re-import');
+      // Pinned here too (#1037).
+      expect(
+        find.ancestor(
+          of: importButton,
+          matching: find.byKey(GameQuickLook.footerKey),
+        ),
+        findsOneWidget,
+      );
+      expect(importButton.hitTestable(), findsOneWidget);
+      expect(find.byType(GameImportSection), findsOneWidget);
       expect(remote.expansionTargets, [
         const GameExpansionsTarget.dataGateway(
           gatewayId: 'dg_bgg',
@@ -593,8 +614,14 @@ void main() {
       await openQuickLook(tester, sourceRow('1'));
 
       expect(find.byKey(GameQuickLook.unavailableKey), findsOneWidget);
+      // Neither the pinned button nor the checklist. The import's host
+      // stays around the quick look, and draws nothing.
       expect(importButton, findsNothing);
-      expect(find.byType(GameImportPanel), findsNothing);
+      expect(find.byType(GameImportSection), findsNothing);
+      expect(
+        tester.getSize(find.byKey(GameQuickLook.footerKey)).height,
+        0,
+      );
     });
 
     testWidgets('without create on Game there is no Import', (tester) async {
