@@ -6,7 +6,6 @@ import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:game_catalog/game_catalog.dart';
-import 'package:game_catalog/src/widgets/folded_description.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
@@ -173,7 +172,7 @@ void main() {
   });
 
   testWidgets('when the read lands it shows year, players, time, age, '
-      'platform chips and the folded description', (tester) async {
+      'platform chips and the whole description', (tester) async {
     final handle = tester.ensureSemantics();
     await open(tester, GameQuickLookSeed.fromSummary(summary));
 
@@ -209,9 +208,9 @@ void main() {
       );
     }
 
-    expect(find.byType(FoldedDescription), findsOneWidget);
+    expect(find.byType(GameDescription), findsOneWidget);
     expect(find.textContaining('birds', findRichText: true), findsOneWidget);
-    expect(find.byKey(FoldedDescription.toggleKey), findsOneWidget);
+    expect(find.text('More'), findsNothing);
 
     handle.dispose();
   });
@@ -253,7 +252,7 @@ void main() {
     expect(read.isCompleted, isFalse);
     expect(find.text('Published 2016'), findsOneWidget);
     expect(factsShown(tester), wingspanFacts);
-    expect(find.byType(FoldedDescription), findsOneWidget);
+    expect(find.byType(GameDescription), findsOneWidget);
     // Only the read knows the platforms.
     expect(find.byKey(GameQuickLook.platformsKey), findsNothing);
   });
@@ -701,7 +700,7 @@ void main() {
     expect(
       tester.getTopLeft(find.text('extra section')).dy,
       greaterThanOrEqualTo(
-        tester.getBottomLeft(find.byType(FoldedDescription)).dy,
+        tester.getBottomLeft(find.byType(GameDescription)).dy,
       ),
     );
 
@@ -716,8 +715,9 @@ void main() {
     expect(tester.getCenter(import).dx, lessThan(tester.getCenter(details).dx));
   });
 
-  testWidgets('a long description expands and reads to its end at 2.0 text '
-      'on a 320dp phone', (tester) async {
+  testWidgets('a long description is shown whole, with no More or Less', (
+    tester,
+  ) async {
     const view = Size(320, 640);
     useViewSize(tester, view);
     final handle = tester.ensureSemantics();
@@ -750,15 +750,9 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(BottomSheet), findsOneWidget);
 
-    // Folded, a screen reader hears only what is drawn.
-    final heard = find.semantics.byLabel(RegExp('The last paragraph'));
-    expect(heard, findsNothing);
-
-    final more = find.byKey(FoldedDescription.toggleKey);
-    await tester.ensureVisible(more);
-    await tester.pumpAndSettle();
-    await tester.tap(more);
-    await tester.pumpAndSettle();
+    // Nothing to press to see the rest: only scrolling.
+    expect(find.text('More'), findsNothing);
+    expect(find.text('Less'), findsNothing);
 
     final last = find.textContaining('The last paragraph.', findRichText: true);
     await tester.scrollUntilVisible(
@@ -778,10 +772,75 @@ void main() {
     expect(shown.top, greaterThanOrEqualTo(0), reason: '$shown');
     expect(shown.bottom, lessThanOrEqualTo(view.height), reason: '$shown');
     expect(last.hitTestable(), findsOneWidget);
-    expect(heard, findsOne);
+    expect(find.semantics.byLabel(RegExp('The last paragraph')), findsOne);
+    expect(find.text('More'), findsNothing);
+    expect(find.text('Less'), findsNothing);
     expect(tester.takeException(), isNull);
 
     handle.dispose();
+  });
+
+  testWidgets('a screen reader reaches every paragraph of the description', (
+    tester,
+  ) async {
+    // Tall enough that every paragraph is on stage, as a screen reader
+    // scrolling the page would bring each one.
+    useViewSize(tester, const Size(800, 4000));
+    final handle = tester.ensureSemantics();
+    final paragraphs = [
+      for (var i = 1; i <= 4; i++)
+        'Paragraph $i. ${List.filled(20, 'w').join(' ')}',
+    ];
+    final described = wingspan.copyWith(description: paragraphs.join('\n\n'));
+    await open(tester, GameQuickLookSeed.fromGame(described));
+
+    final ids = <int>{};
+    for (var i = 1; i <= paragraphs.length; i++) {
+      final node = find.semantics.byLabel(RegExp('^Paragraph $i\\.'));
+      expect(node, findsOne, reason: 'paragraph $i has a node of its own');
+      final heard = node.evaluate().single;
+      final label = heard.label;
+      for (var other = 1; other <= paragraphs.length; other++) {
+        if (other == i) continue;
+        expect(label, isNot(contains('Paragraph $other.')));
+      }
+      ids.add(heard.id);
+    }
+    expect(ids, hasLength(paragraphs.length));
+
+    handle.dispose();
+  });
+
+  testWidgets('a link in the description opens outside the app', (
+    tester,
+  ) async {
+    useViewSize(tester, const Size(800, 1200));
+    final opened = <Uri>[];
+    final linked = wingspan.copyWith(
+      description: 'Rules at [the rulebook](https://example.test/rules).',
+    );
+    remote.onFetchGame = (_) async =>
+        (game: linked, platformGames: const <PlatformGame>[]);
+    await tester.pumpWidget(
+      catalogApp(
+        Scaffold(
+          body: SizedBox(
+            height: 900,
+            child: GameQuickLook(
+              seed: GameQuickLookSeed.fromGame(linked),
+              remote: remote,
+              openLink: (uri) async => opened.add(uri),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tapOnText(find.textRange.ofSubstring('the rulebook'));
+    await tester.pump();
+
+    expect(opened, [Uri.parse('https://example.test/rules')]);
   });
 
   testWidgets('on a 320dp phone the title sits beside the cover at 1.0 text, '

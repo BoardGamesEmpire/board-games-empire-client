@@ -3,7 +3,7 @@ import 'package:game_catalog/l10n/game_catalog_localizations.dart';
 import 'package:game_catalog/src/widgets/catalog_facts.dart';
 import 'package:game_catalog/src/widgets/catalog_slivers.dart';
 import 'package:game_catalog/src/widgets/cover_beside_title.dart';
-import 'package:game_catalog/src/widgets/folded_description.dart';
+import 'package:game_catalog/src/widgets/game_description.dart';
 import 'package:game_filters/game_filters.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
@@ -19,8 +19,8 @@ class QuickLookPlatform {
 }
 
 /// What a quick look draws (#707), given what it has to show: the cover
-/// beside the title, the facts, the platforms, a banner, the description
-/// folded, the caller's sections and its actions.
+/// beside the title, the facts, the platforms, a banner, the whole
+/// description, the caller's sections and its actions.
 ///
 /// Stateless, and package-internal: `GameQuickLook` holds the read and
 /// feeds this, and `SearchHitQuickLook` draws a search hit through it with
@@ -48,8 +48,8 @@ class QuickLookLayout extends StatelessWidget {
   static const Key factsKey = Key('catalog.quick_look.facts');
   static const Key platformsKey = Key('catalog.quick_look.platforms');
 
-  /// Keeps the description's state, More or Less, as the platforms and the
-  /// banner arrive above it.
+  /// Keeps the description in place, its images loaded, as the platforms and
+  /// the banner arrive above it.
   static const Key descriptionKey = ValueKey('description');
 
   /// The cover's side: smaller than the detail page's, as the quick look
@@ -68,7 +68,8 @@ class QuickLookLayout extends StatelessWidget {
   /// Drawn between the platforms and the description.
   final Widget? banner;
 
-  /// Markdown, folded to a few lines. Null or blank draws none.
+  /// Markdown, drawn whole, as the detail page does (#1091). Null or blank
+  /// draws none.
   final String? description;
 
   /// The caller's own sections, below the description.
@@ -125,11 +126,11 @@ class QuickLookLayout extends StatelessWidget {
             ),
           ],
           if (banner != null) ...[const BgeGap.md(), banner],
-          // Not under a MergeSemantics, which would read the folded
-          // paragraphs out too.
+          // Not under a MergeSemantics, which would read the paragraphs out
+          // as one: a screen reader swipes to each on its own.
           if (description != null && description.trim().isNotEmpty) ...[
             const BgeGap.md(),
-            FoldedDescription(
+            GameDescription(
               key: descriptionKey,
               markdown: description,
               onOpenLink: openLink,

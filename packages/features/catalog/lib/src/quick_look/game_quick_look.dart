@@ -89,8 +89,8 @@ Future<void> showGameQuickLook(
 
 /// A game's important facts in a pop-up, without leaving the page (#707):
 /// its cover, title and publish year, its players, play time and age, the
-/// platforms it is on, and its description folded to a few lines, with
-/// **View full details** to open its page.
+/// platforms it is on, and its whole description, with **View full
+/// details** to open its page.
 ///
 /// ## The seed shows at once
 ///

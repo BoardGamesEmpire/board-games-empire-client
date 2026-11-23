@@ -9,7 +9,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:game_catalog/game_catalog.dart';
 import 'package:game_catalog/l10n/game_catalog_localizations.dart';
 import 'package:game_catalog/src/expansions/expansion_checklist.dart';
-import 'package:game_catalog/src/widgets/folded_description.dart';
 import 'package:game_filters/game_filters.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
@@ -22,8 +21,7 @@ import '../support/fake_games_remote.dart';
 const _gateway = 'bgg';
 
 /// Many lines of one paragraph at any width these tests use, so the quick
-/// look's description folds and offers More: a control above the panel
-/// that keeps focus history of its own.
+/// look's long description is what the panel sits below.
 final String _long = List.filled(80, 'word').join(' ');
 
 final _wingspan = GameSearchHit(
@@ -334,9 +332,25 @@ void main() {
       remote.onFetchExpansions = (_) async => _expansions(2);
       final start = Completer<GameImportReceipt>();
       remote.onStartImport = (_, _, _) => start.future;
-      await openQuickLook(tester, panel());
-      // A control above the panel that focus history can fall back to.
-      expect(find.byKey(FoldedDescription.toggleKey), findsOneWidget);
+      // A stop above the panel that stays built when the checklist and
+      // Import give way to the progress: the focus history the status must
+      // win focus from. The description has no such control (#1091).
+      final before = FocusNode(debugLabel: 'before');
+      addTearDown(before.dispose);
+      await openQuickLook(
+        tester,
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            TextButton(
+              focusNode: before,
+              onPressed: () {},
+              child: const Text('Before'),
+            ),
+            panel(),
+          ],
+        ),
+      );
 
       final import = Focus.of(
         tester.element(
@@ -350,7 +364,8 @@ void main() {
         visited.add(FocusManager.instance.primaryFocus!);
       }
       expect(import.hasPrimaryFocus, isTrue);
-      // On the way it passed the description's More and the checklist.
+      // On the way it passed the stop above the panel, and the checklist.
+      expect(visited, contains(before));
       expect(visited.length, greaterThan(2));
 
       await tester.sendKeyEvent(LogicalKeyboardKey.enter);
@@ -718,7 +733,7 @@ void main() {
       ).spaceMd;
       expect(find.text('Available on'), findsOneWidget);
       expect(
-        gapAbove(tester, find.byType(FoldedDescription), 'Expansions'),
+        gapAbove(tester, find.byType(GameDescription), 'Expansions'),
         step,
       );
       expect(

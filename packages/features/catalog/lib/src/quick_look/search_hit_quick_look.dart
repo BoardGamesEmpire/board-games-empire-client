@@ -31,8 +31,8 @@ Future<void> showSearchHitQuickLook(
 ///
 /// This is for a DataGateway result the server doesn't hold. It has the
 /// title, thumbnail, year, players, content type and platforms the search
-/// found, and its Markdown summary as the description, folded. The title is
-/// plain text.
+/// found, and its Markdown summary as the description, shown whole. The title
+/// is plain text.
 ///
 /// [sourceName] is listed among the facts, as a search row lists it.
 /// [sections] sit below the description, which is where the caller's import

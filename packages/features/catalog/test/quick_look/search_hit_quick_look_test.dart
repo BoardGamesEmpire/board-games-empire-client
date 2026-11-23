@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:game_catalog/game_catalog.dart';
-import 'package:game_catalog/src/widgets/folded_description.dart';
 import 'package:models/domain.dart';
 
 import '../support/catalog_app.dart';
@@ -103,21 +102,18 @@ void main() {
     expect(find.text('View full details'), findsNothing);
   });
 
-  testWidgets('the summary is the description, folded', (tester) async {
+  testWidgets('the summary is the description, shown whole', (tester) async {
     await open(tester, hit);
 
-    expect(find.byType(FoldedDescription), findsOneWidget);
-    expect(find.text('More'), findsOneWidget);
-    await tester.tap(find.byKey(FoldedDescription.toggleKey));
-    await tester.pumpAndSettle();
-    expect(find.text('Less'), findsOneWidget);
+    expect(find.byType(GameDescription), findsOneWidget);
+    expect(find.text('More'), findsNothing);
+    expect(find.text('Less'), findsNothing);
   });
 
   testWidgets('a hit with no summary draws no description', (tester) async {
     await open(tester, hit.copyWith(summary: null));
 
-    expect(find.byType(FoldedDescription), findsNothing);
-    expect(find.text('More'), findsNothing);
+    expect(find.byType(GameDescription), findsNothing);
   });
 
   testWidgets("the platforms are the hit's", (tester) async {
@@ -161,7 +157,7 @@ void main() {
     expect(find.text('An action'), findsOneWidget);
     expect(
       tester.getTopLeft(section).dy,
-      greaterThan(tester.getBottomLeft(find.byType(FoldedDescription)).dy),
+      greaterThan(tester.getBottomLeft(find.byType(GameDescription)).dy),
     );
   });
 
