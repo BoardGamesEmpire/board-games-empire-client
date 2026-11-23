@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:dio_network/src/games/game_summary_json.dart';
 import 'package:dio_network/src/household/household_member_json.dart';
+import 'package:dio_network/src/network/json_reads.dart';
 import 'package:dio_network/src/network/remote_failure.dart';
 import 'package:dio_network/src/network/request_guards.dart';
 import 'package:models/domain.dart';
@@ -238,7 +239,7 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
     description: json['description'] as String?,
     image: json['image'] as String?,
     settings: _mapSettings(json['settings']),
-    deletedAt: _dateOrNull(json['deletedAt']),
+    deletedAt: dateOrNull(json['deletedAt']),
     createdAt: DateTime.parse(json['createdAt'] as String),
     updatedAt: DateTime.parse(json['updatedAt'] as String),
   );
@@ -296,9 +297,6 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
       memberInvitePolicy: MemberInvitePolicy.fromWire(policy),
     );
   }
-
-  static DateTime? _dateOrNull(Object? value) =>
-      value == null ? null : DateTime.parse(value as String);
 }
 
 /// How the household source builds its failures for the shared classifier.

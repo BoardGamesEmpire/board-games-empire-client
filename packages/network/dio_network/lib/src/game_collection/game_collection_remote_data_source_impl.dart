@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import 'package:dio_network/src/games/game_summary_json.dart';
+import 'package:dio_network/src/network/json_reads.dart';
 import 'package:dio_network/src/network/non_empty_string.dart';
 import 'package:dio_network/src/network/remote_failure.dart';
 import 'package:dio_network/src/network/request_guards.dart';
@@ -375,15 +376,12 @@ class GameCollectionRemoteDataSourceImpl
     playAgain: json['playAgain'] as bool?,
     favorite: json['favorite'] as bool?,
     comment: json['comment'] as String?,
-    lastPlayed: _dateOrNull(json['lastPlayed']),
-    lastUpdated: _dateOrNull(json['lastUpdated']),
-    deletedAt: _dateOrNull(json['deletedAt']),
+    lastPlayed: dateOrNull(json['lastPlayed']),
+    lastUpdated: dateOrNull(json['lastUpdated']),
+    deletedAt: dateOrNull(json['deletedAt']),
     createdAt: DateTime.parse(json['createdAt'] as String),
     updatedAt: DateTime.parse(json['updatedAt'] as String),
   );
-
-  static DateTime? _dateOrNull(Object? value) =>
-      value == null ? null : DateTime.parse(value as String);
 
   // ── Guards: requests the server is guaranteed to reject ─────────────
 

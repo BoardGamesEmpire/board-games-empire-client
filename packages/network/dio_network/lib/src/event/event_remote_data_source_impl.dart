@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import 'package:dio_network/src/network/api_error_envelope.dart';
+import 'package:dio_network/src/network/json_reads.dart';
 import 'package:dio_network/src/network/non_empty_string.dart';
 import 'package:dio_network/src/network/remote_failure.dart';
 import 'package:dio_network/src/network/request_guards.dart';
@@ -136,7 +137,10 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     );
     return parseRemote(
       failures,
-      () => _mapDetail(_eventObject(response.body), servesDateRules: true),
+      () => _mapDetail(
+        requireObject(response.body['event'], 'event'),
+        servesDateRules: true,
+      ),
       action: action,
       status: response.status,
     );
@@ -167,12 +171,12 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     return parseRemote(
       failures,
       () {
-        final event = _eventObject(response.body);
+        final event = requireObject(response.body['event'], 'event');
         return (
           snapshot: _mapDetail(event, servesDateRules: false),
           // A repeat of a create whose event was deleted since still answers
           // with it, and says when.
-          deletedAt: _dateOrNull(event['deletedAt']),
+          deletedAt: dateOrNull(event['deletedAt']),
         );
       },
       action: action,
@@ -321,7 +325,7 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     );
     return parseRemote(
       failures,
-      () => _mapEvent(_eventObject(response.body)),
+      () => _mapEvent(requireObject(response.body['event'], 'event')),
       action: action,
       status: response.status,
     );
@@ -487,7 +491,7 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     );
     return parseRemote(
       failures,
-      () => _mapVote(_voteObject(result.body)),
+      () => _mapVote(requireObject(result.body['vote'], 'vote')),
       action: action,
       status: result.status,
     );
@@ -526,7 +530,7 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     );
     return parseRemote(
       failures,
-      () => _mapAttendee(_attendeeObject(result.body)),
+      () => _mapAttendee(requireObject(result.body['attendee'], 'attendee')),
       action: action,
       status: result.status,
     );
@@ -559,7 +563,7 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     );
     return parseRemote(
       failures,
-      () => _mapAttendee(_attendeeObject(result.body)),
+      () => _mapAttendee(requireObject(result.body['attendee'], 'attendee')),
       action: action,
       status: result.status,
     );
@@ -585,7 +589,7 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     );
     return parseRemote(
       failures,
-      () => _mapAttendee(_attendeeObject(result.body)),
+      () => _mapAttendee(requireObject(result.body['attendee'], 'attendee')),
       action: action,
       status: result.status,
     );
@@ -851,7 +855,9 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     );
     return parseRemote(
       failures,
-      () => _mapNomination(_nominationObject(response.body)),
+      () => _mapNomination(
+        requireObject(response.body['nomination'], 'nomination'),
+      ),
       action: action,
       status: response.status,
     );
@@ -888,7 +894,9 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     );
     return parseRemote(
       failures,
-      () => _mapNomination(_nominationObject(result.body)),
+      () => _mapNomination(
+        requireObject(result.body['nomination'], 'nomination'),
+      ),
       action: action,
       status: result.status,
     );
@@ -946,7 +954,7 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     return parseRemote(
       failures,
       () =>
-          _mapLineupGame(_nestedObject(result.body['eventGame'], 'eventGame')),
+          _mapLineupGame(requireObject(result.body['eventGame'], 'eventGame')),
       action: action,
       status: result.status,
     );
@@ -973,7 +981,7 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     return parseRemote(
       failures,
       () => _mapLineupGame(
-        _nestedObject(result.body['lineupGame'], 'lineupGame'),
+        requireObject(result.body['lineupGame'], 'lineupGame'),
       ),
       action: action,
       status: result.status,
@@ -1028,7 +1036,9 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     );
     return parseRemote(
       failures,
-      () => _mapNomination(_nominationObject(result.body)),
+      () => _mapNomination(
+        requireObject(result.body['nomination'], 'nomination'),
+      ),
       action: action,
       status: result.status,
     );
@@ -1068,7 +1078,7 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     (body) => (
       nomination: _decidedNomination(body),
       resolution: _mapResolution(
-        _nestedObject(body['resolution'], 'resolution'),
+        requireObject(body['resolution'], 'resolution'),
       ),
     ),
   );
@@ -1105,7 +1115,7 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
 
   /// The nomination a host's decision answers with.
   EventNomination _decidedNomination(Map<String, dynamic> body) =>
-      _mapNomination(_nominationObject(body));
+      _mapNomination(requireObject(body['nomination'], 'nomination'));
 
   @override
   Future<AvailabilitySummary> fetchAvailabilitySummary(String eventId) async {
@@ -1125,7 +1135,7 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     );
     return parseRemote(
       failures,
-      () => _mapSummary(_summaryObject(response.body)),
+      () => _mapSummary(requireObject(response.body['summary'], 'summary')),
       action: action,
       status: response.status,
     );
@@ -1163,7 +1173,9 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     );
     return parseRemote(
       failures,
-      () => _mapOccurrence(_occurrenceObject(response.body)),
+      () => _mapOccurrence(
+        requireObject(response.body['occurrence'], 'occurrence'),
+      ),
       action: action,
       status: response.status,
     );
@@ -1245,55 +1257,6 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     attendance: _mapAttendance(json['attendance']),
   );
 
-  /// Reads the event out of a detail body, `{ "event": { ... } }`.
-  static Map<String, dynamic> _eventObject(Map<String, dynamic> body) {
-    final event = body['event'];
-    if (event is! Map<String, dynamic>) {
-      throw const FormatException('response is missing an "event" object');
-    }
-    return event;
-  }
-
-  /// Reads the date out of a date write's body, `{ "occurrence": { ... } }`.
-  static Map<String, dynamic> _occurrenceObject(Map<String, dynamic> body) {
-    final occurrence = body['occurrence'];
-    if (occurrence is! Map<String, dynamic>) {
-      throw const FormatException('response is missing an "occurrence" object');
-    }
-    return occurrence;
-  }
-
-  /// Reads the attendee out of an RSVP's body, `{ "attendee": { ... } }`.
-  static Map<String, dynamic> _attendeeObject(Map<String, dynamic> body) {
-    final attendee = body['attendee'];
-    if (attendee is! Map<String, dynamic>) {
-      throw const FormatException('response is missing an "attendee" object');
-    }
-    return attendee;
-  }
-
-  /// Reads the vote out of a vote's body, `{ "vote": { ... } }`.
-  static Map<String, dynamic> _voteObject(Map<String, dynamic> body) {
-    final vote = body['vote'];
-    if (vote is! Map<String, dynamic>) {
-      throw const FormatException('response is missing a "vote" object');
-    }
-    return vote;
-  }
-
-  /// Reads the summary out of its body, `{ "summary": { ... } }`.
-  static Map<String, dynamic> _summaryObject(Map<String, dynamic> body) {
-    final summary = body['summary'];
-    if (summary is! Map<String, dynamic>) {
-      throw const FormatException('response is missing a "summary" object');
-    }
-    return summary;
-  }
-
-  /// Reads the nomination out of a body, `{ "nomination": { ... } }`.
-  static Map<String, dynamic> _nominationObject(Map<String, dynamic> body) =>
-      _nestedObject(body['nomination'], 'nomination');
-
   /// One nomination as the server serves it (#517).
   ///
   /// The game's title, thumbnail and platform come from the nested
@@ -1304,9 +1267,9 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
   /// turns into a contract break, as it does any field this can't read: the
   /// server marks every vote, so a missing mark is not a vote that counts.
   static EventNomination _mapNomination(Map<String, dynamic> json) {
-    final platformGame = _nestedObject(json['platformGame'], 'platformGame');
-    final game = _nestedObject(platformGame['game'], 'platformGame.game');
-    final platform = _nestedObject(
+    final platformGame = requireObject(json['platformGame'], 'platformGame');
+    final game = requireObject(platformGame['game'], 'platformGame.game');
+    final platform = requireObject(
       platformGame['platform'],
       'platformGame.platform',
     );
@@ -1332,12 +1295,12 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
       subtitle: game['subtitle'] as String?,
       elevatedTo: elevatedTo == null
           ? null
-          : _mapLineupLink(_nestedObject(elevatedTo, 'elevatedTo')),
+          : _mapLineupLink(requireObject(elevatedTo, 'elevatedTo')),
       status: NominationStatus.fromWire(json['status'] as String),
       pausedFrom: pausedFrom == null
           ? null
           : NominationStatus.fromWire(pausedFrom),
-      votingDeadline: _dateOrNull(json['votingDeadline']),
+      votingDeadline: dateOrNull(json['votingDeadline']),
       nominatedById: json['nominatedById'] as String,
       nominatedByUsername: username,
       suppliedFromId: json['suppliedFromId'] as String,
@@ -1362,13 +1325,13 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
   /// username, else the guest's name. The attendee is null for a caller who
   /// cannot read them, and so is the name.
   static LineupGame _mapLineupGame(Map<String, dynamic> json) {
-    final platformGame = _nestedObject(json['platformGame'], 'platformGame');
-    final game = _nestedObject(platformGame['game'], 'platformGame.game');
-    final platform = _nestedObject(
+    final platformGame = requireObject(json['platformGame'], 'platformGame');
+    final game = requireObject(platformGame['game'], 'platformGame.game');
+    final platform = requireObject(
       platformGame['platform'],
       'platformGame.platform',
     );
-    final suppliedBy = _nestedObject(json['suppliedBy'], 'suppliedBy');
+    final suppliedBy = requireObject(json['suppliedBy'], 'suppliedBy');
     final attendee = suppliedBy['attendee'];
     final thumbnail = game['thumbnail'] as String?;
     return LineupGame(
@@ -1390,7 +1353,7 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
       supplierAttendeeId: suppliedBy['attendeeId'] as String,
       supplierName: attendee == null
           ? null
-          : _attendeeName(_nestedObject(attendee, 'suppliedBy.attendee')),
+          : _attendeeName(requireObject(attendee, 'suppliedBy.attendee')),
     );
   }
 
@@ -1418,7 +1381,7 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
   /// [NominationStatus.fromWire], so a name this client does not know is
   /// [NominationStatus.unknown].
   static NominationResolution _mapResolution(Map<String, dynamic> json) {
-    final tally = _nestedObject(json['tally'], 'resolution.tally');
+    final tally = requireObject(json['tally'], 'resolution.tally');
     return NominationResolution(
       status: NominationStatus.fromWire(json['status'] as String),
       forCount: tally['forCount'] as int,
@@ -1429,16 +1392,6 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
       thresholdMet: json['thresholdMet'] as bool,
       eligibleVoterCount: json['eligibleVoterCount'] as int,
     );
-  }
-
-  /// [raw] as an object, or a [FormatException] naming [field].
-  static Map<String, dynamic> _nestedObject(Object? raw, String field) {
-    if (raw is! Map<String, dynamic>) {
-      throw FormatException(
-        '"$field" is ${raw.runtimeType}, expected an object',
-      );
-    }
-    return raw;
   }
 
   static Event _mapEvent(Map<String, dynamic> json) => Event(
@@ -1457,7 +1410,7 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
       json['schedulingMode'] as String,
     ),
     cancelReason: json['cancelReason'] as String?,
-    cancelledAt: _dateOrNull(json['cancelledAt']),
+    cancelledAt: dateOrNull(json['cancelledAt']),
     createdAt: DateTime.parse(json['createdAt'] as String),
     updatedAt: DateTime.parse(json['updatedAt'] as String),
   );
@@ -1498,14 +1451,14 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
         id: json['id'] as String,
         eventId: json['eventId'] as String,
         label: json['label'] as String?,
-        startDate: _dateOrNull(json['startDate']),
-        endDate: _dateOrNull(json['endDate']),
+        startDate: dateOrNull(json['startDate']),
+        endDate: dateOrNull(json['endDate']),
         location: json['location'] as String?,
         status: OccurrenceStatus.fromWire(json['status'] as String),
         sortOrder: json['sortOrder'] as int,
-        confirmedAt: _dateOrNull(json['confirmedAt']),
-        declinedAt: _dateOrNull(json['declinedAt']),
-        cancelledAt: _dateOrNull(json['cancelledAt']),
+        confirmedAt: dateOrNull(json['confirmedAt']),
+        declinedAt: dateOrNull(json['declinedAt']),
+        cancelledAt: dateOrNull(json['cancelledAt']),
         cancelReason: json['cancelReason'] as String?,
         createdAt: DateTime.parse(json['createdAt'] as String),
         updatedAt: DateTime.parse(json['updatedAt'] as String),
@@ -1656,7 +1609,7 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
       notes: json['notes'] as String?,
       status: EventParticipationStatus.fromWire(json['status'] as String),
       role: _mapRole(json['role']),
-      rsvpDate: _dateOrNull(json['rsvpDate']),
+      rsvpDate: dateOrNull(json['rsvpDate']),
       createdAt: DateTime.parse(json['createdAt'] as String),
       updatedAt: DateTime.parse(json['updatedAt'] as String),
     );
@@ -1687,40 +1640,16 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
       attendeeId: raw['attendeeId'] as String,
       status: EventParticipationStatus.fromWire(raw['status'] as String),
       role: role == null ? null : EventRole.fromWire(role as String),
-      rsvpDate: _dateOrNull(raw['rsvpDate']),
+      rsvpDate: dateOrNull(raw['rsvpDate']),
     );
   }
 
-  /// Reads the role name out of the embedded join projection,
-  /// `{ ..., role: { id, name } }`.
-  ///
-  /// A null projection is an attendee with no role binding, which the model
-  /// represents as a null role. A projection whose shape is wrong is a contract
-  /// breach and throws: it must not be laundered into [EventRole.unknown],
-  /// which would make a parsing failure indistinguishable from a custom server
-  /// role.
+  /// The attendee's role, read by [readRoleName]: null for an attendee with
+  /// no role binding, and a [FormatException] for a projection whose shape is
+  /// wrong.
   static EventRole? _mapRole(Object? projection) {
-    if (projection == null) return null;
-    if (projection is! Map<String, dynamic>) {
-      throw FormatException(
-        'attendee "role" is ${projection.runtimeType}, expected the embedded '
-        'role projection',
-      );
-    }
-    final role = projection['role'];
-    if (role is! Map<String, dynamic>) {
-      throw FormatException(
-        'attendee "role" projection is missing its nested "role" object, got '
-        '${role.runtimeType}',
-      );
-    }
-    final name = role['name'];
-    if (name is! String) {
-      throw FormatException(
-        'attendee role is missing a "name", got ${name.runtimeType}',
-      );
-    }
-    return EventRole.fromWire(name);
+    final name = readRoleName(projection, row: 'attendee');
+    return name == null ? null : EventRole.fromWire(name);
   }
 
   static AvailabilityVote _mapVote(Map<String, dynamic> json) =>
@@ -1802,16 +1731,16 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
   ///
   /// The row's `attendee` and the game's `baseGames` are not read.
   static OfferedGame _mapOfferedGame(Map<String, dynamic> json) {
-    final collection = _nestedObject(json['collection'], 'collection');
-    final platformGame = _nestedObject(
+    final collection = requireObject(json['collection'], 'collection');
+    final platformGame = requireObject(
       collection['platformGame'],
       'collection.platformGame',
     );
-    final game = _nestedObject(
+    final game = requireObject(
       platformGame['game'],
       'collection.platformGame.game',
     );
-    final platform = _nestedObject(
+    final platform = requireObject(
       platformGame['platform'],
       'collection.platformGame.platform',
     );
@@ -1924,9 +1853,6 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
         })
         .toList(growable: false);
   }
-
-  static DateTime? _dateOrNull(Object? value) =>
-      value == null ? null : DateTime.parse(value as String);
 
   // ── Request body ────────────────────────────────────────────────────
 

@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import 'package:dio_network/src/network/api_error_envelope.dart';
+import 'package:dio_network/src/network/json_reads.dart';
 import 'package:dio_network/src/network/remote_failure.dart';
 import 'package:dio_network/src/network/request_guards.dart';
 import 'package:dio_network/src/user/user_summary_json.dart';
@@ -61,7 +62,7 @@ class HouseholdInviteRemoteDataSourceImpl
     );
     return parseRemote(
       failures,
-      () => _mapInvite(_inviteObject(response.body)),
+      () => _mapInvite(requireObject(response.body['invite'], 'invite')),
       action: action,
       status: response.status,
     );
@@ -172,12 +173,9 @@ class HouseholdInviteRemoteDataSourceImpl
     return parseRemote(
       failures,
       () {
-        final member = response.body['member'];
-        if (member is! Map<String, dynamic>) {
-          throw const FormatException('response is missing a "member" object');
-        }
+        final member = requireObject(response.body['member'], 'member');
         return (
-          invite: _mapInvite(_inviteObject(response.body)),
+          invite: _mapInvite(requireObject(response.body['invite'], 'invite')),
           householdId: member['householdId'] as String,
         );
       },
@@ -239,21 +237,13 @@ class HouseholdInviteRemoteDataSourceImpl
     );
     return parseRemote(
       failures,
-      () => _mapInvite(_inviteObject(response.body)),
+      () => _mapInvite(requireObject(response.body['invite'], 'invite')),
       action: action,
       status: response.status,
     );
   }
 
   // ── Mapping ─────────────────────────────────────────────────────────
-
-  static Map<String, dynamic> _inviteObject(Map<String, dynamic> body) {
-    final row = body['invite'];
-    if (row is! Map<String, dynamic>) {
-      throw const FormatException('response is missing an "invite" object');
-    }
-    return row;
-  }
 
   /// Maps a server invite row to [HouseholdInvite], field by field.
   ///

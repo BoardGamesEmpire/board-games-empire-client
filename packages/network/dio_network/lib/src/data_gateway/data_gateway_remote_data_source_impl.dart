@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:dio_network/src/network/json_reads.dart';
 import 'package:dio_network/src/network/remote_failure.dart';
 import 'package:dio_network/src/network/request_guards.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -96,7 +97,9 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
     );
     return parseRemote(
       failures,
-      () => _mapDataGateway(_dataGatewayObject(response.body)),
+      () => _mapDataGateway(
+        requireObject(response.body['dataGateway'], 'dataGateway'),
+      ),
       action: action,
       status: response.status,
     );
@@ -447,7 +450,9 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
     () {
       final body = response.body;
       return DataGatewayChangeResult(
-        dataGateway: _mapDataGateway(_dataGatewayObject(body)),
+        dataGateway: _mapDataGateway(
+          requireObject(body['dataGateway'], 'dataGateway'),
+        ),
         connectionAttempt:
             _attempt(
               body,
@@ -480,14 +485,14 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
     family,
     () {
       final body = response.body;
-      final answer = body['interview_response'];
-      if (answer is! Map<String, dynamic>) {
-        throw const FormatException(
-          'response is missing an "interview_response" object',
-        );
-      }
+      final answer = requireObject(
+        body['interview_response'],
+        'interview_response',
+      );
       return DataGatewayInterviewResult(
-        dataGateway: _mapDataGateway(_dataGatewayObject(body)),
+        dataGateway: _mapDataGateway(
+          requireObject(body['dataGateway'], 'dataGateway'),
+        ),
         succeeded: answer['success'] as bool,
       );
     },
@@ -503,26 +508,12 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
     required _GatewayFailures family,
   }) => parseRemote(
     family,
-    () {
-      final row = response.body['languageLink'];
-      if (row is! Map<String, dynamic>) {
-        throw const FormatException(
-          'response is missing a "languageLink" object',
-        );
-      }
-      return _mapLanguageLink(row);
-    },
+    () => _mapLanguageLink(
+      requireObject(response.body['languageLink'], 'languageLink'),
+    ),
     action: action,
     status: response.status,
   );
-
-  static Map<String, dynamic> _dataGatewayObject(Map<String, dynamic> body) {
-    final row = body['dataGateway'];
-    if (row is! Map<String, dynamic>) {
-      throw const FormatException('response is missing a "dataGateway" object');
-    }
-    return row;
-  }
 
   /// The attempt [attemptKey] reports, or null when the server made none.
   ///
@@ -580,8 +571,8 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
     final failure = json['failure'] as Map<String, dynamic>?;
     return DataGatewayInterviewStatus(
       interviewed: json['interviewed'] as bool,
-      firstInterviewedAt: _dateOrNull(json['firstInterviewedAt']),
-      lastInterviewedAt: _dateOrNull(json['lastInterviewedAt']),
+      firstInterviewedAt: dateOrNull(json['firstInterviewedAt']),
+      lastInterviewedAt: dateOrNull(json['lastInterviewedAt']),
       failure: failure == null
           ? null
           : DataGatewayInterviewFailure(
@@ -597,7 +588,7 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
     final failure = json['failure'] as Map<String, dynamic>?;
     return DataGatewaySection(
       capability: json['capability'] as String,
-      lastLoadedAt: _dateOrNull(json['lastLoadedAt']),
+      lastLoadedAt: dateOrNull(json['lastLoadedAt']),
       failure: failure == null
           ? null
           : DataGatewaySectionFailure(
@@ -612,9 +603,6 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
   /// Capability names, kept as the server sent them (#457). Copied here, so a
   /// name that is not a string fails the parse rather than a later read.
   static List<String> _names(Object? wire) => List<String>.from(wire! as List);
-
-  static DateTime? _dateOrNull(Object? wire) =>
-      wire == null ? null : DateTime.parse(wire as String);
 
   /// Maps a server row to [LanguageLink], field by field. Of the columns the
   /// server sends, it reads only the ones the model holds.

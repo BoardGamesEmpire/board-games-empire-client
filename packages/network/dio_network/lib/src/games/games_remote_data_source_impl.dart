@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:dio_network/src/games/game_search_wire.dart';
 import 'package:dio_network/src/games/game_summary_json.dart';
 import 'package:dio_network/src/network/api_error_envelope.dart';
+import 'package:dio_network/src/network/json_reads.dart';
 import 'package:dio_network/src/network/non_empty_string.dart';
 import 'package:dio_network/src/network/remote_failure.dart';
 import 'package:dio_network/src/network/request_guards.dart';
@@ -134,10 +135,7 @@ class GamesRemoteDataSourceImpl implements GamesRemoteDataSource {
     return parseRemote(
       failures,
       () {
-        final row = response.body['game'];
-        if (row is! Map<String, dynamic>) {
-          throw const FormatException('response is missing a "game" object');
-        }
+        final row = requireObject(response.body['game'], 'game');
         return (game: _mapGame(row), platformGames: _mapPlatformGames(row));
       },
       action: action,
