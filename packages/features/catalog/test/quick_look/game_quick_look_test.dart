@@ -455,6 +455,24 @@ void main() {
     expect(gone, ['g_wingspan']);
   });
 
+  testWidgets('a game the server refuses shows the unavailable banner and '
+      "none of the caller's sections or actions (#1040)", (tester) async {
+    remote.onFetchGame = (_) async =>
+        throw const GamesForbiddenException('403');
+    await open(
+      tester,
+      GameQuickLookSeed.fromSummary(summary),
+      sections: [const Text('extra section')],
+      actions: [TextButton(onPressed: () {}, child: const Text('Import'))],
+    );
+
+    expect(find.byKey(GameQuickLook.unavailableKey), findsOneWidget);
+    expect(find.text('extra section'), findsNothing);
+    expect(find.widgetWithText(TextButton, 'Import'), findsNothing);
+    // What the quick look itself offers stays.
+    expect(find.byKey(GameQuickLook.viewDetailsKey), findsOneWidget);
+  });
+
   testWidgets("View full details calls onViewDetails with the game's id", (
     tester,
   ) async {

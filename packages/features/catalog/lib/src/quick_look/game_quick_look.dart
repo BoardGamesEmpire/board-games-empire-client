@@ -130,6 +130,9 @@ Future<void> showGameQuickLook(
 /// details, so a caller with more to offer about a game, such as an import
 /// from search (#713), doesn't fork this.
 ///
+/// A game the server answers as unavailable draws the banner and none of
+/// them (#1040): what a caller adds is about a game that's there.
+///
 /// ## Opened through [showGameQuickLook]
 ///
 /// Host it through [showGameQuickLook], as #713's search results will, not
@@ -312,6 +315,11 @@ class _QuickLookBodyState extends State<_QuickLookBody> {
       _ => ready?.game ?? seed.game,
     };
     final platformGames = ready?.platformGames ?? const <PlatformGame>[];
+    // What a caller adds is about a game that's there (#1040). A game the
+    // server won't show draws the banner and none of the caller's additions,
+    // whichever caller they came from. Every slot a caller can fill is
+    // gated here, so a new one joins this line.
+    final additions = answer is! GameDetailUnavailable;
     final banner = switch (answer) {
       GameDetailFailed() ||
       GameDetailReady(fromCache: true) => CatalogFromCacheBanner(
@@ -349,8 +357,8 @@ class _QuickLookBodyState extends State<_QuickLookBody> {
       ],
       banner: banner,
       description: game?.description,
-      sections: widget.sections,
-      actions: widget.actions,
+      sections: additions ? widget.sections : const [],
+      actions: additions ? widget.actions : const [],
       onViewDetails: widget.onViewDetails,
       openLink: widget.openLink,
     );

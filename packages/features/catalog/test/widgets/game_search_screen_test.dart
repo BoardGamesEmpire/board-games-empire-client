@@ -516,6 +516,22 @@ void main() {
       expect(opened, ['g_imported']);
     });
 
+    testWidgets('a held DataGateway result whose read is refused offers no '
+        'Re-import (#1040)', (tester) async {
+      remote
+        ..onSearch = ((_, _, _) async => results)
+        ..onFetchGame = ((_) async =>
+            throw const GamesForbiddenException('403'));
+
+      await show(tester, access: mayImport(), onOpen: (_, _) {});
+      await search(tester, 'catan');
+      await openQuickLook(tester, sourceRow('1'));
+
+      expect(find.byKey(GameQuickLook.unavailableKey), findsOneWidget);
+      expect(importButton, findsNothing);
+      expect(find.byType(GameImportPanel), findsNothing);
+    });
+
     testWidgets('without create on Game there is no Import', (tester) async {
       remote.onSearch = (_, _, _) async => results;
       readsAs(game('g_imported', title: 'Catan Junior'));
