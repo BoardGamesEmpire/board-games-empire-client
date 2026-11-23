@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:game_collection/game_collection.dart';
+import 'package:game_collection/src/screens/collection_rows.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
@@ -443,6 +444,127 @@ void main() {
       await settle();
 
       expect(ready(bloc).complete, isTrue);
+    });
+  });
+
+  group('a cold start over a confirmed cache (#1011)', () {
+    // An expansion owned without its base game: the row #810 holds while
+    // the cache may still be filling.
+    final orphan = listItem(
+      'x-1',
+      gameId: 'g-exp',
+      title: 'European Expansion',
+      contentType: ContentType.expansion,
+      baseGames: const [ExpansionLink(gameId: 'g-base', isStandalone: false)],
+    );
+
+    GameCollectionListReady ready(GameCollectionListBloc bloc) =>
+        bloc.state as GameCollectionListReady;
+
+    /// An unrelated base game, as another page of the pass writes.
+    final unrelated = listItem('e-2', title: 'Azul');
+
+    /// Whether [state] shows [orphan] at top level, marked, in the list and
+    /// in the thumbnails, among [rows] top-level rows in all.
+    void expectShownMarked(GameCollectionListReady state, {int rows = 1}) {
+      final placed = placeCollection(
+        state.items,
+        all: state.all,
+        complete: state.complete,
+      );
+      expect(placed, hasLength(rows));
+      final placedOrphan = placed.singleWhere((p) => p.item.contains(orphan));
+      expect(placedOrphan.item, [orphan]);
+      expect(placedOrphan.missingBase, isTrue);
+
+      final listed = collectionRows(
+        state.items,
+        all: state.all,
+        complete: state.complete,
+      );
+      expect(listed, hasLength(rows));
+      final listedOrphan = listed.singleWhere((r) => r.group.contains(orphan));
+      expect(listedOrphan.group, [orphan]);
+      expect(listedOrphan.parentGameId, isNull);
+      expect(listedOrphan.missingBase, isTrue);
+    }
+
+    test('on a cold start over a confirmed cache, an orphan expansion stays '
+        'top level and marked throughout the pass', () async {
+      final confirmed = GameCollectionHydrationStatus(confirmedBefore: true);
+      addTearDown(confirmed.close);
+      final bloc = GameCollectionListBloc(
+        repository: repository,
+        hydration: confirmed.watch(),
+      );
+      addTearDown(bloc.close);
+
+      confirmed.started();
+      items.add([orphan]);
+      await settle();
+      expect(ready(bloc).complete, isTrue);
+      expectShownMarked(ready(bloc));
+
+      // Another page lands while the pass still runs.
+      items.add([unrelated, orphan]);
+      await settle();
+      expect(confirmed.state, HydrationState.running);
+      expect(ready(bloc).complete, isTrue);
+      expectShownMarked(ready(bloc), rows: 2);
+
+      confirmed.finished(CollectionHydrateOutcome.complete);
+      await settle();
+      expect(ready(bloc).complete, isTrue);
+      expectShownMarked(ready(bloc), rows: 2);
+    });
+
+    test('on a real first sync the hold still applies', () async {
+      final bloc = build();
+      addTearDown(bloc.close);
+
+      status.started();
+      items.add([orphan]);
+      await settle();
+      expect(ready(bloc).complete, isFalse);
+      final held = ready(bloc);
+      expect(
+        placeCollection(held.items, all: held.all, complete: held.complete),
+        isEmpty,
+      );
+      expect(
+        collectionRows(held.items, all: held.all, complete: held.complete),
+        isEmpty,
+      );
+
+      status.finished(CollectionHydrateOutcome.complete);
+      await settle();
+      expect(ready(bloc).complete, isTrue);
+      expectShownMarked(ready(bloc));
+    });
+
+    test('the empty-list spinner still shows over an empty cache on a '
+        "confirmed device's first pass this session", () async {
+      // The spinner reads this session's passes (#300): an empty cache an
+      // earlier session confirmed may be one this pass is about to fill.
+      final confirmed = GameCollectionHydrationStatus(confirmedBefore: true);
+      addTearDown(confirmed.close);
+      final bloc = GameCollectionListBloc(
+        repository: repository,
+        hydration: confirmed.watch(),
+      );
+      addTearDown(bloc.close);
+
+      confirmed.started();
+      items.add(const []);
+      await settle();
+      expect(bloc.state, isA<GameCollectionListLoading>());
+
+      confirmed.finished(CollectionHydrateOutcome.complete);
+      await settle();
+      expect(
+        bloc.state,
+        isA<GameCollectionListReady>().having((s) => s.items, 'items', isEmpty),
+      );
     });
   });
 

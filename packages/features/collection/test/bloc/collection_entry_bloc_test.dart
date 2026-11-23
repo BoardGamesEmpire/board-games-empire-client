@@ -1071,6 +1071,31 @@ void main() {
       ],
     );
 
+    // Pinned on this session's passes (#771): an entry opened by link on a
+    // cold start may be one an earlier session's cache doesn't hold yet.
+    blocTest<CollectionEntryBloc, CollectionEntryState>(
+      "a missing entry on a confirmed device still waits for this session's "
+      'pass',
+      build: buildHydrating,
+      act: (bloc) async {
+        await say(
+          const Hydration(state: HydrationState.running, everConfirmed: true),
+        );
+        await show(bloc, null);
+        expect(bloc.state, const CollectionEntryState());
+        await say(
+          const Hydration(
+            state: HydrationState.refreshed,
+            everRefreshed: true,
+            everConfirmed: true,
+          ),
+        );
+      },
+      expect: () => [
+        const CollectionEntryState(view: CollectionEntryView.gone),
+      ],
+    );
+
     blocTest<CollectionEntryBloc, CollectionEntryState>(
       'is gone when the status stream closes without speaking',
       build: buildHydrating,
@@ -1338,6 +1363,57 @@ void main() {
       verify: (_) =>
           verifyNever(() => repository.watchCollectionListItem('gc_1')),
     );
+
+    group('a restored route on a local id, after a reload or a cold '
+        'start', () {
+      // The repository's moves are in memory, empty until a watch emits, so
+      // nothing is known of the move when the bloc opens.
+      late StreamController<Hydration> hydration;
+
+      setUp(() {
+        watchServer();
+        hydration = StreamController<Hydration>();
+        addTearDown(hydration.close);
+      });
+
+      blocTest<CollectionEntryBloc, CollectionEntryState>(
+        'follows the move its first emission reads, with the hydrate '
+        'settled, and is never gone',
+        build: () => CollectionEntryBloc(
+          repository: repository,
+          sender: sender,
+          entryId: 'gc_1',
+          hydration: hydration.stream,
+          logger: logger,
+        ),
+        act: (bloc) async {
+          // Settled: a pass this session landed rows, so a null with no move
+          // would be gone at once.
+          hydration.add(
+            const Hydration(
+              state: HydrationState.refreshed,
+              everRefreshed: true,
+              everConfirmed: true,
+            ),
+          );
+          await pumpEventQueue();
+          expect(bloc.entryId, 'gc_1');
+
+          // The first emission on the local id: no row, and the move the
+          // repository read before delivering it.
+          await reconcile(bloc);
+          expect(bloc.entryId, 'gc_server');
+          expect(watch.hasListener, isFalse);
+
+          serverWatch.add(serverRow());
+          await pumpEventQueue();
+        },
+        expect: () => [ready(serverRow())],
+        verify: (_) => verify(
+          () => repository.watchCollectionListItem('gc_server'),
+        ).called(1),
+      );
+    });
 
     blocTest<CollectionEntryBloc, CollectionEntryState>(
       'a null from the move is followed: the entry stays shown and the '

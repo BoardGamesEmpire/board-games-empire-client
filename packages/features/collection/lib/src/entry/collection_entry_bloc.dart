@@ -225,8 +225,12 @@ class CollectionEntryBloc
       state.action == CollectionEntryAction.saving || _removalBegun;
 
   /// Whether an entry never read could still arrive with the hydrate: no pass
-  /// has landed rows, and one is running or the status hasn't spoken. A
-  /// status stream that closed can't say more, so it settles both.
+  /// this session has landed rows, and one is running or the status hasn't
+  /// spoken. A status stream that closed can't say more, so it settles both.
+  ///
+  /// This session's passes, not this device's (#771): an entry opened by
+  /// link on a cold start may be one an earlier session's cache doesn't
+  /// hold, and the pass may be bringing it.
   bool get _mayStillArrive {
     if (_everRead || _hydration.everRefreshed || _hydrationDone) return false;
     return _hydration.state == HydrationState.running ||

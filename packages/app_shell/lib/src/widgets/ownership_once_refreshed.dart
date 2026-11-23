@@ -3,14 +3,14 @@ import 'dart:async';
 import 'package:game_collection/game_collection.dart';
 import 'package:models/domain.dart';
 
-/// What the detail page is told when no pass this session has refreshed the
-/// collection and one has failed (#708), so what the cache says the user
-/// owns is unknown.
+/// What the detail page is told when no pass on this device has refreshed
+/// the collection for this user and one has failed (#708), so what the cache
+/// says the user owns is unknown.
 ///
-/// After a fresh sign-in the cache holds only what this device wrote. After
-/// an offline cold start it may also hold rows an earlier session's refresh
-/// landed, but the hydration status starts fresh each session and keeps no
-/// record of that refresh, so those rows read as unconfirmed too.
+/// Before any pass on this device has landed the user's rows, the cache
+/// holds only what this device wrote. Once one has, in this session or an
+/// earlier one, the cache is confirmed (#771), and a failed pass after that
+/// raises nothing: an offline cold start answers from the cache.
 final class CollectionNotRefreshedException implements Exception {
   const CollectionNotRefreshedException();
 
@@ -23,18 +23,23 @@ final class CollectionNotRefreshedException implements Exception {
 /// The cache's [entries] for the detail page's ownership (#708), held back
 /// until [hydration] says the cache can answer.
 ///
-/// An empty cache while the first refresh runs is unknown, not empty, as
-/// the Collection list and the entry page read it (#269). Answered from it,
-/// the page would call a copy the user owns "not in your collection" and
-/// offer to add it again. So the cache's answer waits while no pass has
-/// landed rows and one is running, or the status hasn't spoken yet: the
-/// rule the entry page waits on.
+/// An empty cache while the device's first refresh runs is unknown, not
+/// empty (#269). Answered from it, the page would call a copy the user owns
+/// "not in your collection" and offer to add it again. So the cache's answer
+/// waits while no pass on this device has landed rows
+/// ([Hydration.everConfirmed]) and one is running, or the status hasn't
+/// spoken yet.
 ///
-/// - **Released** once a pass has landed rows, once the status is idle (no
-///   pass will bring anything), or once the status stream ends. From then on
-///   every answer the cache gives goes through, the latest one held back
-///   first.
-/// - **A failed pass before any this session landed rows** is a
+/// It reads this device's passes, not this session's (#771): what an earlier
+/// session's pass landed is what the user owned then, and the chips need
+/// nothing fresher. The entry page waits on this session's instead, as an
+/// entry opened by link may be one this pass is bringing.
+///
+/// - **Released** once a pass on this device has landed rows, once the
+///   status is idle (no pass will bring anything), or once the status stream
+///   ends. From then on every answer the cache gives goes through, the
+///   latest one held back first.
+/// - **A failed pass before any on this device landed rows** is a
 ///   [CollectionNotRefreshedException] on the stream, once for that
 ///   failure. The page reads it as ownership unknown: plain chips, and an
 ///   add offering every platform in either medium. A later pass that lands
@@ -59,7 +64,7 @@ Stream<List<GameCollection>> ownershipOnceRefreshed(
     if (released) return;
     final current = reading;
     if (current == null) return;
-    if (!current.everRefreshed &&
+    if (!current.everConfirmed &&
         (current.state == HydrationState.running ||
             current.state == HydrationState.failed)) {
       return;
@@ -74,7 +79,7 @@ Stream<List<GameCollection>> ownershipOnceRefreshed(
         (next) {
           final failedFirst =
               !released &&
-              !next.everRefreshed &&
+              !next.everConfirmed &&
               next.state == HydrationState.failed &&
               reading?.state != HydrationState.failed;
           reading = next;
