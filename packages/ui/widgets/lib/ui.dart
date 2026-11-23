@@ -32,8 +32,10 @@
 /// lists and grids, whose games change form (#769, #711),
 /// `BgeRefreshBanner` by the 7 stale-data banners, on 3 lists, 2 detail
 /// screens, the home events section and the catalog's from-cache screens and
-/// quick look (#573, #607), `BgeInertButton` by buttons that keep focus
-/// while they can do nothing, at 16 call sites in `lib/` (#607, #807),
+/// quick look (#573, #607), `BgeRefreshButton` by the 2 lists a pull
+/// refreshes, the household and collection lists, at 2 call sites in `lib/`
+/// (#314, #717), `BgeInertButton` by buttons that keep focus while they can
+/// do nothing, at 26 call sites in `lib/` (#607, #807),
 /// `BgeExtendedFab` by all 6 extended floating buttons, which it rings
 /// inside their edge on keyboard focus (#760) and whose label, a
 /// `BgeFabLabel`, it keeps on screen at large text (#50), `replaceSnackBar`
@@ -49,7 +51,7 @@
 /// `BgeOnlineOnlyNote`, `BgeOnlineOnlyMenu` and `BgeOnlineOnlyPopupMenuItem`
 /// are on the controls that write straight to the server, at 27, 12, 10, 4
 /// and 4 call sites in `lib/` (#49, #807). Each `lib/` count is of
-/// constructor calls in every package, this one included: 2 of
+/// constructor calls in every package, this one included: 3 of
 /// `BgeInertButton`'s, 1 of `BgeOnlineOnlyLabel`'s and 1 of
 /// `BgeOnlineOnlyNote`'s are inside this package's own widgets.
 /// `BgeMenuButton` is both of the navigation shell's menu buttons, a first
@@ -98,6 +100,7 @@ export 'src/banners/unverified_session_banner.dart';
 export 'src/buttons/bge_extended_fab.dart';
 export 'src/buttons/bge_fab_label.dart';
 export 'src/buttons/bge_inert_button.dart';
+export 'src/buttons/bge_refresh_button.dart';
 export 'src/buttons/bge_submit_button.dart';
 export 'src/connectivity/bge_connectivity_scope.dart';
 export 'src/connectivity/bge_online_only.dart';
