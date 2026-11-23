@@ -11,34 +11,41 @@ import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
 /// The row for [row] (#873): one entry, or the stack of a game owned more
-/// than once, nested under its base game when `parentGameId`
-/// names one.
+/// than once, nested under its base game when `parentGameId` names one.
+///
+/// A base game's row takes [expansions], the control at its end that folds
+/// and unfolds the rows nested under it (#1048).
 Widget collectionRowFor(
   CollectionRow row, {
   void Function(BuildContext context, String entryId)? onOpen,
+  BgeCoverExpansions? expansions,
 }) => switch (row.group) {
   [final item] => _CollectionRow(
     item: item,
     onOpen: onOpen,
     expansionOf: row.parentTitle,
     missingBase: row.missingBase,
+    expansions: expansions,
   ),
   final group => _StackRow(
     items: group,
     onOpen: onOpen,
     expansionOf: row.parentTitle,
     missingBase: row.missingBase,
+    expansions: expansions,
   ),
 };
 
 /// One entry (#44): the thumbnail, the title line, the detail line with its
-/// sync badge under it (#47) and the favorite, as one semantics node.
+/// sync badge under it (#47) and the favorite, as one semantics node. A base
+/// game's row has the control for its expansions at its end (#1048).
 class _CollectionRow extends StatelessWidget {
   const _CollectionRow({
     required this.item,
     this.onOpen,
     this.expansionOf,
     this.missingBase = false,
+    this.expansions,
   });
 
   final GameCollectionListItem item;
@@ -50,6 +57,9 @@ class _CollectionRow extends StatelessWidget {
 
   /// Whether the game is an expansion shown without its base game (#711).
   final bool missingBase;
+
+  /// The game's expansions, for a base game's control (#1048).
+  final BgeCoverExpansions? expansions;
 
   @override
   Widget build(BuildContext context) {
@@ -63,17 +73,22 @@ class _CollectionRow extends StatelessWidget {
       ..._details(l10n, item),
     ];
 
-    // MergeSemantics rather than a Semantics container: a tappable ListTile
-    // builds an InkWell with its own node, and merging keeps the tap action
-    // and the words on one node. It is inside the outline, so the merged
-    // node's rect leaves out the gap below the row and a nested row's indent
-    // (#647). A tap takes focus first, so what it opens hands focus back
-    // (#758).
+    // BgeExpansionsRow merges the tile's semantics, rather than a Semantics
+    // container: a tappable ListTile builds an InkWell with its own node,
+    // and merging keeps the tap action and the words on one node. It is
+    // inside the outline, so the merged node's rect leaves out the gap below
+    // the row and a nested row's indent (#647). It puts a base game's
+    // control beside the tile, outside that node, and is there with
+    // expansions or without, so the tile keeps its element and its focus as
+    // the game's first expansion arrives or its last goes (#1048). A tap
+    // takes focus first, so what it opens hands focus back (#758).
     return _Nested(
       nested: expansionOf != null,
       child: BgeOutlinedRow(
-        child: MergeSemantics(
-          child: BgeRowFocusRing(
+        child: BgeExpansionsRow(
+          expansions: expansions,
+          builder: (_, focusNode) => BgeRowFocusRing(
+            focusNode: focusNode,
             focusOnTap: true,
             builder: (_, row) => ListTile(
               // Both kinds lead with a thumbnail (#647).
@@ -487,13 +502,15 @@ class _CollectionTile extends StatelessWidget {
 /// place of an entry's details. The heart shows when any of them is a
 /// favourite, and the sync badge says the worst state among them (#47). A
 /// tap opens the picker of the entries, and takes focus first
-/// ([BgeRowFocusRing.focusOnTap]).
+/// ([BgeRowFocusRing.focusOnTap]). A base game's stack has the control for
+/// its expansions at its end, as an entry's row does (#1048).
 class _StackRow extends StatelessWidget {
   const _StackRow({
     required this.items,
     this.onOpen,
     this.expansionOf,
     this.missingBase = false,
+    this.expansions,
   });
 
   final List<GameCollectionListItem> items;
@@ -506,6 +523,9 @@ class _StackRow extends StatelessWidget {
   /// Whether the game is an expansion shown without its base game (#711).
   final bool missingBase;
 
+  /// The game's expansions, for a base game's control (#1048).
+  final BgeCoverExpansions? expansions;
+
   @override
   Widget build(BuildContext context) {
     final l10n = GameCollectionLocalizations.of(context);
@@ -514,13 +534,16 @@ class _StackRow extends StatelessWidget {
     final copies = _copies(l10n, items);
     final missing = missingBase ? l10n.collectionListBaseGameMissing : null;
 
-    // As on an entry's row, the MergeSemantics is inside the outline (#647),
-    // and a tap takes focus first (#758).
+    // As on an entry's row, the merged node is inside the outline (#647),
+    // with a base game's control beside it (#1048), and a tap takes focus
+    // first (#758).
     return _Nested(
       nested: expansionOf != null,
       child: BgeOutlinedRow(
-        child: MergeSemantics(
-          child: BgeRowFocusRing(
+        child: BgeExpansionsRow(
+          expansions: expansions,
+          builder: (_, focusNode) => BgeRowFocusRing(
+            focusNode: focusNode,
             focusOnTap: true,
             builder: (_, row) => ListTile(
               // Both kinds lead with a thumbnail (#647).

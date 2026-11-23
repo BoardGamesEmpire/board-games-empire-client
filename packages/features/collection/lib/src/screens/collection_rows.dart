@@ -1,5 +1,6 @@
 import 'package:game_collection/src/screens/collection_groups.dart';
 import 'package:models/domain.dart';
+import 'package:ui/ui.dart' show BgeFoldedRow, foldNested;
 
 /// One row of the collection list: a game's entries, as one stack when it is
 /// owned more than once (#709), with the base game it is shown under (#711).
@@ -90,8 +91,15 @@ final _placed =
       })
     >('placeCollection');
 
-/// [placeCollection] flattened: each top-level group, then the groups nested
-/// under it. An expansion of two owned base games appears under each.
+/// [placeCollection] as the list lays it out (#711, #1048): each top-level
+/// group, and under a base game the groups nested under it, while [open]
+/// holds the base game's id ([foldNested]). An expansion of two owned base
+/// games is under each.
+///
+/// A base game starts folded: its `BgeTopRow` alone, which carries the rows
+/// nested under it for the count on its control. Open, up to
+/// `BgeNestedRowsBox.inlineLimit`, four, nested rows follow it, each a
+/// `BgeNestedRow`, and more are one `BgeNestedBox`.
 ///
 /// [items], [all] and [complete] are [placeCollection]'s: [all], the whole
 /// collection, decides a top-level row's `missingBase`. A nested row is never
@@ -101,27 +109,49 @@ final _placed =
 /// passes the formatter its own rows use, so the parent is named as its row
 /// names it, subtitle and all. It stays out of this file so the file needs no
 /// localizations.
-List<CollectionRow> collectionRows(
+List<BgeFoldedRow<CollectionRow>> collectionRows(
   List<GameCollectionListItem> items, {
+  required Set<Object> open,
   List<GameCollectionListItem>? all,
   String Function(GameCollectionListItem item) titleOf = _plainTitle,
   bool complete = true,
-}) => [
-  for (final top in placeCollection(items, all: all, complete: complete)) ...[
-    (
-      group: top.item,
-      parentGameId: null,
-      parentTitle: null,
-      missingBase: top.missingBase,
-    ),
-    for (final nested in top.expansions)
+}) => foldNested<CollectionRow>(
+  groups: [
+    for (final top in placeCollection(items, all: all, complete: complete))
       (
-        group: nested,
-        parentGameId: top.item.first.gameId,
-        parentTitle: titleOf(top.item.first),
-        missingBase: false,
+        (
+          group: top.item,
+          parentGameId: null,
+          parentTitle: null,
+          missingBase: top.missingBase,
+        ),
+        [
+          for (final nested in top.expansions)
+            (
+              group: nested,
+              parentGameId: top.item.first.gameId,
+              parentTitle: titleOf(top.item.first),
+              missingBase: false,
+            ),
+        ],
       ),
   ],
+  open: open,
+  idOf: (row) => row.group.first.gameId,
+);
+
+/// The games of the whole collection, [all], with games nested under them,
+/// placed as [complete] says (#1048): the base games a list may hold open.
+///
+/// Read from the whole collection, not from what a filter left, so that a
+/// search or a filter that hides an open base game, or its expansions,
+/// folds nothing: cleared, it shows the game open as it was.
+List<String> collectionNestingGameIds(
+  List<GameCollectionListItem> all, {
+  bool complete = true,
+}) => [
+  for (final top in placeCollection(all, complete: complete))
+    if (top.expansions.isNotEmpty) top.item.first.gameId,
 ];
 
 String _plainTitle(GameCollectionListItem item) => item.title;

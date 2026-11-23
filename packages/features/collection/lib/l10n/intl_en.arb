@@ -149,7 +149,7 @@
   },
   "collectionExpansionsBadge": "{title} expansions, {count}",
   "@collectionExpansionsBadge": {
-    "description": "What a screen reader says for the badge on a base game's cover in the collection grid, which counts the expansions the user owns for it and shows or hides them under the cover. The badge also says whether they are shown, so this doesn't. {title} is the base game's title, with its subtitle where it has one; {count} is how many of its expansions the user owns, at least one, an expansion owned more than once counting once.",
+    "description": "What a screen reader says for the badge on a base game's cover in the collection grid, or at the end of its row in the collection list, which counts the expansions the user owns for it and shows or hides them under the cover or the row. The badge also says whether they are shown, so this doesn't. {title} is the base game's title, with its subtitle where it has one; {count} is how many of its expansions the user owns, at least one, an expansion owned more than once counting once.",
     "placeholders": {
       "title": {
         "type": "String",
@@ -163,15 +163,15 @@
   },
   "collectionShowExpansions": "Show expansions",
   "@collectionShowExpansions": {
-    "description": "An action a screen reader offers on a base game's cover in the collection grid while its expansions are hidden: it shows the covers of the expansions the user owns in a row under the cover, as the cover's badge does."
+    "description": "An action a screen reader offers on a base game's cover in the collection grid, or on its row in the collection list, while its expansions are hidden: it shows the expansions the user owns, as a row of their covers under the cover, or as rows of their own under the game's row, as the badge does."
   },
   "collectionHideExpansions": "Hide expansions",
   "@collectionHideExpansions": {
-    "description": "An action a screen reader offers on a base game's cover in the collection grid while its expansions are shown under it: it hides them again. Replaces collectionShowExpansions."
+    "description": "An action a screen reader offers on a base game's cover in the collection grid, or on its row in the collection list, while its expansions are shown under the cover or the row: it hides them again. Replaces collectionShowExpansions."
   },
   "collectionExpansionsStrip": "{title} expansions",
   "@collectionExpansionsStrip": {
-    "description": "Heading of the row of expansion covers shown under a base game's cover in the collection grid: the expansions the user owns for it. Shown, and spoken as a heading. {title} is the base game's title, with its subtitle where it has one.",
+    "description": "Heading of the row of expansion covers shown under a base game's cover in the collection grid: the expansions the user owns for it. Shown, and spoken as a heading. Also what a screen reader calls the scrolling box of a base game's expansion rows under its row in the collection list, when there are too many to show whole; not shown there. {title} is the base game's title, with its subtitle where it has one.",
     "placeholders": {
       "title": {
         "type": "String",

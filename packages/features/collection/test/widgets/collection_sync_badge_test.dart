@@ -92,6 +92,13 @@ void main() {
   Finder within(Key key, Finder matching) =>
       find.descendant(of: find.byKey(key), matching: matching);
 
+  /// Shows the expansions of the base game whose row [key] holds, from the
+  /// control at its end: every base game starts folded (#1048).
+  Future<void> unfold(WidgetTester tester, Key key) async {
+    await tester.tap(within(key, find.byType(BgeRowExpansionsControl)));
+    await tester.pumpAndSettle();
+  }
+
   /// The merged node of the row [row] finds: the `MergeSemantics` sits inside
   /// the row's outline (#647), below the key. A cover has none, so its own
   /// node answers.
@@ -298,6 +305,7 @@ void main() {
       );
 
       final base = GameCollectionListScreen.rowKey('base-1');
+      await unfold(tester, base);
       final nested = GameCollectionListScreen.nestedRowKey('g-base', 'exp-1');
       final synced = GameCollectionListScreen.nestedRowKey('g-base', 'other-1');
       expect(within(base, find.text(_notSyncedCopy)), findsOneWidget);
@@ -333,8 +341,9 @@ void main() {
         stuck: {'exp-1'},
       );
 
-      final stack = GameCollectionListScreen.nestedStackKey('g-base', 'g-exp');
       final base = GameCollectionListScreen.rowKey('base-1');
+      await unfold(tester, base);
+      final stack = GameCollectionListScreen.nestedStackKey('g-base', 'g-exp');
       expect(within(stack, find.text(_couldNotSyncCopy)), findsOneWidget);
       expect(find.byKey(base), findsOneWidget);
       expect(within(base, find.byType(BgeSyncBadge)), findsNothing);

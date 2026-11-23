@@ -477,11 +477,15 @@ void main() {
       expect(placedOrphan.item, [orphan]);
       expect(placedOrphan.missingBase, isTrue);
 
-      final listed = collectionRows(
-        state.items,
-        all: state.all,
-        complete: state.complete,
-      );
+      final listed = [
+        for (final row in collectionRows(
+          state.items,
+          all: state.all,
+          complete: state.complete,
+          open: const {},
+        ))
+          ...row.items,
+      ];
       expect(listed, hasLength(rows));
       final listedOrphan = listed.singleWhere((r) => r.group.contains(orphan));
       expect(listedOrphan.group, [orphan]);
@@ -532,7 +536,12 @@ void main() {
         isEmpty,
       );
       expect(
-        collectionRows(held.items, all: held.all, complete: held.complete),
+        collectionRows(
+          held.items,
+          all: held.all,
+          complete: held.complete,
+          open: const {},
+        ),
         isEmpty,
       );
 

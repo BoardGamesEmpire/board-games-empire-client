@@ -132,6 +132,23 @@ void main() {
     find.byKey(GameCollectionListScreen.rowKey(id)),
   );
 
+  /// The control at the end of the base game's row [row] finds, which folds
+  /// and unfolds its expansions (#1048).
+  Finder controlOf(Finder row) => find.descendant(
+    of: row,
+    matching: find.byType(BgeRowExpansionsControl),
+    skipOffstage: false,
+  );
+
+  /// Shows the expansions of the base game whose row [row] finds, from its
+  /// control: every base game starts folded (#1048).
+  Future<void> unfold(WidgetTester tester, Finder row) async {
+    await tester.ensureVisible(controlOf(row));
+    await tester.pumpAndSettle();
+    await tester.tap(controlOf(row));
+    await tester.pumpAndSettle();
+  }
+
   group('while the cache is filling', () {
     testWidgets('shows a spinner rather than an empty state', (tester) async {
       await tester.pumpWidget(harness());
@@ -673,6 +690,55 @@ void main() {
 
         expect(tester.takeException(), isNull);
         expect(find.textContaining('Last played'), findsOneWidget);
+      });
+
+      // The control takes its room from the row's end (#1048).
+      testWidgets("a full base game's row and its control lay out on a "
+          '${width.toInt()}dp window, folded and open', (tester) async {
+        useViewSize(tester, Size(width, 800));
+        await tester.pumpWidget(
+          harness(
+            onOpen: (_, _) {},
+            textScaler: const TextScaler.linear(BgeTextScale.maxScaleFactor),
+          ),
+        );
+        status.finished(CollectionHydrateOutcome.complete);
+        items.add([
+          listItem(
+            'e-1',
+            gameId: 'g-ti',
+            title: 'Twilight Imperium',
+            subtitle: 'Fourth Edition',
+            quantity: 2,
+            rating: 9,
+            favorite: true,
+            lastPlayed: DateTime(2026, 10, 3),
+            isDirty: true,
+          ),
+          listItem(
+            'x-1',
+            gameId: 'g-pok',
+            title: 'Prophecy of Kings',
+            contentType: ContentType.expansion,
+            baseGames: const [
+              ExpansionLink(gameId: 'g-ti', isStandalone: false),
+            ],
+          ),
+        ]);
+        await tester.pumpAndSettle();
+        final base = find.byKey(GameCollectionListScreen.rowKey('e-1'));
+
+        expect(tester.takeException(), isNull);
+        expect(controlOf(base), findsOneWidget);
+        await unfold(tester, base);
+        expect(tester.takeException(), isNull);
+        // In the test's square font the base row runs to thousands of dp at
+        // 200% text, so its nested row is built only once scrolled to.
+        await scrollListToEnd(
+          tester,
+          find.byKey(GameCollectionListScreen.nestedRowKey('g-ti', 'x-1')),
+        );
+        expect(tester.takeException(), isNull);
       });
     }
   });
@@ -1436,7 +1502,10 @@ void main() {
     tester,
   ) async {
     // #46's two-pane form puts the list beside the detail, under its own app
-    // bar, so the body cannot bring one.
+    // bar, so the body cannot bring one. The host owns the open set, as it
+    // owns the count it is read for (#1048).
+    final open = BgeOpenRows();
+    addTearDown(open.dispose);
     await tester.pumpWidget(
       app(
         Scaffold(
@@ -1445,8 +1514,8 @@ void main() {
               repository: repository,
               hydration: status.watch(),
             ),
-            child: const CustomScrollView(
-              slivers: [GameCollectionListSliver()],
+            child: CustomScrollView(
+              slivers: [GameCollectionListSliver(openRows: open)],
             ),
           ),
         ),
@@ -2395,6 +2464,14 @@ void main() {
         expect(find.byKey(topKey('x-1')), findsNothing);
         expect(find.byKey(topKey('b-1')), findsOneWidget);
         if (layouts == null) {
+          // Under its base game, folded: the control counts it, and opens
+          // its row (#1048).
+          final control = controlOf(find.byKey(topKey('b-1')));
+          expect(
+            find.descendant(of: control, matching: find.text('1')),
+            findsOneWidget,
+          );
+          await unfold(tester, find.byKey(topKey('b-1')));
           expect(
             find.byKey(GameCollectionListScreen.nestedRowKey('g-base', 'x-1')),
             findsOneWidget,
@@ -3194,12 +3271,13 @@ void main() {
       },
     );
 
-    /// Wingspan with five owned expansions nested under it (#711): five
-    /// overflow its strip, so the shelf shows its buttons. Then an owned
+    /// Wingspan with [count] owned expansions nested under it (#711): five
+    /// overflow its strip, so the shelf shows its buttons, and in the list
+    /// more than four are a box of rows once unfolded (#1048). Then an owned
     /// expansion whose base game isn't owned, marked, and two plain games.
-    List<GameCollectionListItem> withExpansions() => [
+    List<GameCollectionListItem> withExpansions([int count = 5]) => [
       listItem('base-1', gameId: 'g-base', title: 'Wingspan'),
-      for (var n = 0; n < 5; n++)
+      for (var n = 0; n < count; n++)
         listItem(
           'exp-$n',
           gameId: 'g-exp-$n',
@@ -3227,12 +3305,15 @@ void main() {
       of: baseTile,
       matching: find.byKey(BgeCoverTile.expansionsBadgeKey),
     );
+    final baseRow = find.byKey(GameCollectionListScreen.rowKey('base-1'));
+    final nestedBox = find.byType(BgeNestedRowsBox);
 
     auditScreen(
       'ready, nested expansions and a marked one',
       build: screen(),
       arrange: (tester) async {
         await answer(tester, withExpansions());
+        await unfold(tester, baseRow);
         expect(
           find.byKey(GameCollectionListScreen.nestedRowKey('g-base', 'exp-0')),
           findsOneWidget,
@@ -3247,6 +3328,7 @@ void main() {
       build: screen(),
       arrange: (tester) async {
         await answer(tester, withExpansions());
+        await unfold(tester, baseRow);
         await scrollListToEnd(
           tester,
           find.byKey(GameCollectionListScreen.rowKey('e-2')),
@@ -3254,6 +3336,70 @@ void main() {
         expect(
           find.byKey(GameCollectionListScreen.rowKey('orphan-1')),
           findsOneWidget,
+        );
+      },
+    );
+
+    // Wingspan's five behind its control, with the marked row after it.
+    auditScreen(
+      'ready, a folded base game (#1048)',
+      build: screen(),
+      arrange: (tester) async {
+        await answer(tester, withExpansions());
+        expect(controlOf(baseRow), findsOneWidget);
+        expect(
+          find.byKey(
+            GameCollectionListScreen.nestedRowKey('g-base', 'exp-0'),
+            skipOffstage: false,
+          ),
+          findsNothing,
+        );
+      },
+    );
+
+    auditScreen(
+      'ready, a base game unfolded, 4 nested rows (#1048)',
+      build: screen(),
+      arrange: (tester) async {
+        await answer(tester, withExpansions(4));
+        await unfold(tester, baseRow);
+        expect(
+          find.byKey(GameCollectionListScreen.nestedRowKey('g-base', 'exp-0')),
+          findsOneWidget,
+        );
+        expect(nestedBox, findsNothing);
+      },
+    );
+
+    // At 320dp × 2.0 the box is held to half the page, less than a row.
+    auditScreen(
+      'ready, a base game unfolded, 6 nested rows in a box (#1048)',
+      build: screen(),
+      arrange: (tester) async {
+        await answer(tester, withExpansions(6));
+        await unfold(tester, baseRow);
+        await tester.ensureVisible(nestedBox);
+        expect(nestedBox, findsOneWidget);
+        expect(
+          find.byKey(GameCollectionListScreen.nestedRowKey('g-base', 'exp-0')),
+          findsOneWidget,
+        );
+      },
+    );
+
+    // Rows that open nowhere take no focus, so the box is a stop itself
+    // (#1048).
+    auditScreen(
+      'ready, rows that open nowhere, a base game unfolded, 6 nested rows in '
+      'a box (#1048)',
+      build: screen(open: false),
+      arrange: (tester) async {
+        await answer(tester, withExpansions(6));
+        await unfold(tester, baseRow);
+        await tester.ensureVisible(nestedBox);
+        expect(
+          tester.widget<BgeNestedRowsBox>(nestedBox).focusable,
+          isTrue,
         );
       },
     );
@@ -3415,13 +3561,14 @@ void main() {
     );
 
     for (final (layout, store, shown) in [
-      ('the list', null, 6),
+      ('the list', null, 2),
       ('thumbnails', thumbnails(), 1),
     ]) {
       testWidgets('under a filter, the semantic child count is what '
           '$layout shows', (tester) async {
-        // Wingspan's five expansions are nested rows under it in the list,
-        // and its cover's strip in thumbnails.
+        // Wingspan's five expansions are a box of rows under it in the list,
+        // once unfolded, which counts once (#1048), and its cover's strip in
+        // thumbnails.
         await tester.pumpWidget(screen(layouts: store)(BgeTheme.light()));
         await answer(tester, withExpansions());
         auditBloc(tester).add(
@@ -3430,6 +3577,7 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
+        if (store == null) await unfold(tester, baseRow);
 
         expect(find.text('6 games of 9'), findsOneWidget);
         expect(
@@ -3540,10 +3688,12 @@ void main() {
       contentType: ContentType.expansion,
       baseGames: const [ExpansionLink(gameId: 'g-base', isStandalone: false)],
     );
+    final baseRow = find.byKey(GameCollectionListScreen.rowKey('base-1'));
 
     testWidgets("an owned expansion's row sits under its base game's, "
         'indented, spoken as its expansion', (tester) async {
       await show(tester, [expansion, base]);
+      await unfold(tester, baseRow);
 
       final nested = find.byKey(
         GameCollectionListScreen.nestedRowKey('g-base', 'exp-1'),
@@ -3571,6 +3721,7 @@ void main() {
     testWidgets("a nested expansion row's outline starts at the indent "
         '(#647)', (tester) async {
       await show(tester, [expansion, base]);
+      await unfold(tester, baseRow);
 
       double outlineStart(Finder row) => tester
           .getTopLeft(
@@ -3601,6 +3752,7 @@ void main() {
         copy('exp-1', 'Tabletop'),
         copy('exp-2', 'Steam'),
       ], onOpen: (_, id) => opened.add(id));
+      await unfold(tester, baseRow);
 
       final stack = find.byKey(
         GameCollectionListScreen.nestedStackKey('g-base', 'g-exp'),
@@ -3672,6 +3824,7 @@ void main() {
         ],
       );
       await show(tester, [catan, nested]);
+      await unfold(tester, find.byKey(GameCollectionListScreen.rowKey('c-1')));
 
       final row = find.byKey(
         GameCollectionListScreen.nestedRowKey('g-catan', 'x-2'),
@@ -3682,8 +3835,9 @@ void main() {
       );
     });
 
-    testWidgets('the semantic child count counts nested rows, an expansion '
-        'of two owned base games under each', (tester) async {
+    testWidgets('the semantic child count counts the rows shown: nested '
+        'ones while their base game is open, an expansion of two owned base '
+        'games under each (#1048)', (tester) async {
       final baseB = listItem('base-2', gameId: 'g-base-b', title: 'Azul');
       final both = listItem(
         'exp-1',
@@ -3696,6 +3850,16 @@ void main() {
         ],
       );
       await show(tester, [base, baseB, both]);
+      int? count() => tester
+          .widget<CustomScrollView>(find.byType(CustomScrollView))
+          .semanticChildCount;
+      expect(count(), 2, reason: 'both folded');
+
+      await unfold(tester, baseRow);
+      await unfold(
+        tester,
+        find.byKey(GameCollectionListScreen.rowKey('base-2')),
+      );
 
       expect(tester.takeException(), isNull);
       expect(
@@ -3706,12 +3870,1038 @@ void main() {
         find.byKey(GameCollectionListScreen.nestedRowKey('g-base-b', 'exp-1')),
         findsOneWidget,
       );
+      expect(count(), 4);
+    });
+  });
+
+  group('folded in the list (#1048)', () {
+    final wingspan = listItem('w-1', gameId: 'g-wingspan', title: 'Wingspan');
+    final azul = listItem('a-1', gameId: 'g-azul', title: 'Azul');
+
+    /// [count] expansions of [baseGameId], each owned once: entries
+    /// `<prefix>0`, `<prefix>1` and on, of games `g-<prefix>0` and on.
+    List<GameCollectionListItem> expansionsOf(
+      String baseGameId,
+      String prefix,
+      int count,
+    ) => [
+      for (var i = 0; i < count; i++)
+        listItem(
+          '$prefix$i',
+          gameId: 'g-$prefix$i',
+          title: 'Expansion $prefix$i',
+          contentType: ContentType.expansion,
+          baseGames: [ExpansionLink(gameId: baseGameId, isStandalone: false)],
+        ),
+    ];
+
+    /// Rows found whether or not they are in view.
+    Finder row(String entryId) => find.byKey(
+      GameCollectionListScreen.rowKey(entryId),
+      skipOffstage: false,
+    );
+    Finder nested(String parentGameId, String entryId) => find.byKey(
+      GameCollectionListScreen.nestedRowKey(parentGameId, entryId),
+      skipOffstage: false,
+    );
+    final wingspanRow = row('w-1');
+    final box = find.byType(BgeNestedRowsBox, skipOffstage: false);
+
+    /// The control's own node: the ink inside it walks up to it.
+    SemanticsNode controlNode(WidgetTester tester, Finder row) =>
+        tester.getSemantics(
+          find.descendant(
+            of: controlOf(row),
+            matching: find.byType(InkWell),
+            skipOffstage: false,
+          ),
+        );
+
+    /// The row's merged node, which its tile walks up to.
+    SemanticsNode rowNode(WidgetTester tester, Finder row) =>
+        tester.getSemantics(
+          find.descendant(
+            of: row,
+            matching: find.byType(ListTile),
+            skipOffstage: false,
+          ),
+        );
+
+    /// The focus of [row]'s tile.
+    FocusNode tileFocusOf(WidgetTester tester, Finder row) => tester
+        .widget<ListTile>(
+          find.descendant(
+            of: row,
+            matching: find.byType(ListTile),
+            skipOffstage: false,
+          ),
+        )
+        .focusNode!;
+
+    /// The focus of the control at the end of [row].
+    FocusNode controlFocusOf(WidgetTester tester, Finder row) => Focus.of(
+      tester.element(
+        find
+            .descendant(
+              of: controlOf(row),
+              matching: find.byType(MouseRegion),
+              skipOffstage: false,
+            )
+            .first,
+      ),
+    );
+
+    /// The box's own stop, which it is where its rows take no focus.
+    FocusNode boxFocusOf(WidgetTester tester) => tester
+        .widget<Focus>(
+          find.descendant(
+            of: box,
+            matching: find.byWidgetPredicate(
+              (widget) =>
+                  widget is Focus &&
+                  widget.focusNode?.debugLabel == 'BgeNestedRowsBox',
+            ),
+            skipOffstage: false,
+          ),
+        )
+        .focusNode!;
+
+    void performCustomAction(SemanticsNode node, String label) =>
+        node.owner!.performAction(
+          node.id,
+          SemanticsAction.customAction,
+          CustomSemanticsAction.getIdentifier(
+            CustomSemanticsAction(label: label),
+          ),
+        );
+
+    Matcher isControl(String label, {required bool expanded}) => isSemantics(
+      label: label,
+      isButton: true,
+      hasExpandedState: true,
+      isExpanded: expanded,
+      hasTapAction: true,
+      isFocusable: true,
+    );
+
+    int? semanticChildCount(WidgetTester tester) => tester
+        .widget<CustomScrollView>(find.byType(CustomScrollView))
+        .semanticChildCount;
+
+    /// A sync that leaves the cache holding [rows].
+    Future<void> sync(
+      WidgetTester tester,
+      List<GameCollectionListItem> rows,
+    ) async {
+      items.add(rows);
+      await tester.pump();
+      await tester.pump();
+      await tester.pumpAndSettle();
+    }
+
+    GameCollectionListBloc bloc(WidgetTester tester) =>
+        BlocProvider.of<GameCollectionListBloc>(
+          tester.element(find.byType(GameCollectionListSliver)),
+        );
+
+    testWidgets('list starts folded: a base game shows its control and no '
+        'nested rows', (tester) async {
+      final handle = tester.ensureSemantics();
+      await show(tester, [
+        wingspan,
+        ...expansionsOf('g-wingspan', 'x', 2),
+        azul,
+      ], onOpen: (_, _) {});
+
+      expect(wingspanRow, findsOneWidget);
+      expect(row('a-1'), findsOneWidget);
+      expect(nested('g-wingspan', 'x0'), findsNothing);
+      expect(nested('g-wingspan', 'x1'), findsNothing);
+      expect(row('x0'), findsNothing);
       expect(
-        tester
-            .widget<CustomScrollView>(find.byType(CustomScrollView))
-            .semanticChildCount,
-        4,
+        find.descendant(of: controlOf(wingspanRow), matching: find.text('2')),
+        findsOneWidget,
       );
+      expect(
+        controlNode(tester, wingspanRow),
+        isControl('Wingspan expansions, 2', expanded: false),
+      );
+      expect(controlOf(row('a-1')), findsNothing);
+      // The control is a node of its own, after the row's, and the row
+      // offers the cover's custom action.
+      expect(
+        rowNode(tester, wingspanRow).id,
+        isNot(controlNode(tester, wingspanRow).id),
+      );
+      expect(
+        rowNode(tester, wingspanRow),
+        isSemantics(
+          hasTapAction: true,
+          customActions: [
+            const CustomSemanticsAction(label: 'Show expansions'),
+          ],
+        ),
+      );
+      expect(semanticChildCount(tester), 2);
+      handle.dispose();
+    });
+
+    testWidgets('unfolding 2 shows them inline; unfolding 6 shows a box of '
+        '6', (tester) async {
+      final handle = tester.ensureSemantics();
+      useViewSize(tester, const Size(400, 2400));
+      await show(tester, [
+        wingspan,
+        ...expansionsOf('g-wingspan', 'x', 2),
+        azul,
+        ...expansionsOf('g-azul', 'y', 6),
+      ], onOpen: (_, _) {});
+
+      await unfold(tester, wingspanRow);
+
+      for (final id in ['x0', 'x1']) {
+        expect(nested('g-wingspan', id), findsOneWidget, reason: id);
+      }
+      expect(box, findsNothing);
+      expect(
+        controlNode(tester, wingspanRow),
+        isControl('Wingspan expansions, 2', expanded: true),
+      );
+      expect(
+        rowNode(tester, wingspanRow),
+        isSemantics(
+          hasTapAction: true,
+          customActions: [
+            const CustomSemanticsAction(label: 'Hide expansions'),
+          ],
+        ),
+      );
+      // Under Wingspan's row, and above Azul's.
+      expect(
+        tester.getRect(nested('g-wingspan', 'x1')).bottom,
+        lessThanOrEqualTo(tester.getRect(row('a-1')).top),
+      );
+
+      await unfold(tester, row('a-1'));
+
+      expect(box, findsOneWidget);
+      expect(
+        tester.widget<BgeNestedRowsBox>(box).semanticLabel,
+        'Azul expansions',
+      );
+      expect(tester.widget<BgeNestedRowsBox>(box).focusable, isFalse);
+      // Each row in the box keeps its key.
+      for (var i = 0; i < 6; i++) {
+        expect(
+          find.descendant(of: box, matching: nested('g-azul', 'y$i')),
+          findsOneWidget,
+          reason: 'y$i',
+        );
+      }
+      // Wingspan stays open.
+      expect(nested('g-wingspan', 'x0'), findsOneWidget);
+      expect(
+        controlNode(tester, row('a-1')),
+        isControl('Azul expansions, 6', expanded: true),
+      );
+      // Wingspan's row and its two, Azul's row, and its box as one.
+      expect(semanticChildCount(tester), 5);
+      handle.dispose();
+    });
+
+    testWidgets('two base games open at once', (tester) async {
+      await show(tester, [
+        wingspan,
+        ...expansionsOf('g-wingspan', 'x', 1),
+        azul,
+        ...expansionsOf('g-azul', 'y', 1),
+      ], onOpen: (_, _) {});
+
+      await unfold(tester, wingspanRow);
+      await unfold(tester, row('a-1'));
+
+      expect(nested('g-wingspan', 'x0'), findsOneWidget);
+      expect(nested('g-azul', 'y0'), findsOneWidget);
+
+      // Folding one leaves the other open.
+      await unfold(tester, wingspanRow);
+      expect(nested('g-wingspan', 'x0'), findsNothing);
+      expect(nested('g-azul', 'y0'), findsOneWidget);
+    });
+
+    testWidgets('open stays open as a sync brings another of its '
+        'expansions', (tester) async {
+      final handle = tester.ensureSemantics();
+      await show(tester, [
+        wingspan,
+        ...expansionsOf('g-wingspan', 'x', 1),
+      ], onOpen: (_, _) {});
+      await unfold(tester, wingspanRow);
+
+      await sync(tester, [
+        wingspan,
+        ...expansionsOf('g-wingspan', 'x', 2),
+        azul,
+      ]);
+
+      expect(row('a-1'), findsOneWidget);
+      expect(nested('g-wingspan', 'x0'), findsOneWidget);
+      expect(nested('g-wingspan', 'x1'), findsOneWidget);
+      expect(
+        controlNode(tester, wingspanRow),
+        isControl('Wingspan expansions, 2', expanded: true),
+      );
+      handle.dispose();
+    });
+
+    testWidgets('a base game whose last expansion goes comes back folded '
+        'when one returns', (tester) async {
+      await show(tester, [
+        wingspan,
+        ...expansionsOf('g-wingspan', 'x', 1),
+      ], onOpen: (_, _) {});
+      await unfold(tester, wingspanRow);
+      expect(nested('g-wingspan', 'x0'), findsOneWidget);
+
+      await sync(tester, [wingspan]);
+      expect(controlOf(wingspanRow), findsNothing);
+      await sync(tester, [wingspan, ...expansionsOf('g-wingspan', 'x', 1)]);
+
+      expect(controlOf(wingspanRow), findsOneWidget);
+      expect(nested('g-wingspan', 'x0'), findsNothing);
+    });
+
+    // A filter or a search narrows what is shown, not what is open: the
+    // open set keeps the base games the whole collection nests games under.
+    testWidgets('an open base game a filter hides, or whose expansions it '
+        'hides, is open again once the filter clears', (tester) async {
+      await show(tester, [
+        wingspan,
+        ...expansionsOf('g-wingspan', 'x', 2),
+        azul,
+      ], onOpen: (_, _) {});
+      await unfold(tester, wingspanRow);
+
+      for (final query in ['azul', 'wingspan']) {
+        bloc(tester).add(
+          GameCollectionListFilterChanged(CollectionFilter(query: query)),
+        );
+        await tester.pumpAndSettle();
+        expect(nested('g-wingspan', 'x0'), findsNothing, reason: query);
+        bloc(tester).add(
+          const GameCollectionListFilterChanged(CollectionFilter()),
+        );
+        await tester.pumpAndSettle();
+
+        expect(nested('g-wingspan', 'x0'), findsOneWidget, reason: query);
+        expect(nested('g-wingspan', 'x1'), findsOneWidget, reason: query);
+      }
+    });
+
+    testWidgets('an open base game stays open through a refresh, a failed '
+        'read and a search that matches nothing', (tester) async {
+      await tester.pumpWidget(
+        harness(onOpen: (_, _) {}, onRetry: () async {}),
+      );
+      status.finished(CollectionHydrateOutcome.complete);
+      final rows = [wingspan, ...expansionsOf('g-wingspan', 'x', 1), azul];
+      items.add(rows);
+      await tester.pumpAndSettle();
+      await unfold(tester, wingspanRow);
+
+      // A refresh by hand (#717).
+      await tester.tap(find.byKey(GameCollectionListScreen.refreshButtonKey));
+      await tester.pump();
+      status.started();
+      await tester.pump();
+      status.finished(CollectionHydrateOutcome.complete);
+      await tester.pumpAndSettle();
+      expect(nested('g-wingspan', 'x0'), findsOneWidget, reason: 'refresh');
+
+      // A read that fails, then answers again.
+      items.addError(StateError('read failed'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(GameCollectionListScreen.errorKey), findsOneWidget);
+      await sync(tester, rows);
+      expect(nested('g-wingspan', 'x0'), findsOneWidget, reason: 'error');
+
+      // A search that leaves nothing.
+      bloc(tester).add(
+        const GameCollectionListFilterChanged(
+          CollectionFilter(query: 'nothing has this name'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(GameCollectionListScreen.noMatchesKey),
+        findsOneWidget,
+      );
+      bloc(tester).add(
+        const GameCollectionListFilterChanged(CollectionFilter()),
+      );
+      await tester.pumpAndSettle();
+      expect(nested('g-wingspan', 'x0'), findsOneWidget, reason: 'no match');
+    });
+
+    // An expansion that lands before its base game, on a first sync, is
+    // held: counted nowhere and shown nowhere, under a folded base game or
+    // an open one (#810).
+    testWidgets('the #810 hold on a real first sync still places nothing '
+        'early, folded or open', (tester) async {
+      final handle = tester.ensureSemantics();
+      // Titled Catan, as every item is by default.
+      final catan = listItem('c-1', gameId: 'g-catan');
+      final early = listItem(
+        'h-1',
+        gameId: 'g-h',
+        title: 'Seafarers',
+        contentType: ContentType.expansion,
+        baseGames: const [
+          ExpansionLink(gameId: 'g-catan', isStandalone: false),
+        ],
+      );
+      final wingspanOne = expansionsOf('g-wingspan', 'x', 1);
+      await tester.pumpWidget(harness(onOpen: (_, _) {}));
+      status.started();
+      items.add([wingspan, ...wingspanOne, early]);
+      await tester.pumpAndSettle();
+      await unfold(tester, wingspanRow);
+
+      // Wingspan open with its one; Seafarers held for Catan.
+      expect(nested('g-wingspan', 'x0'), findsOneWidget);
+      expect(row('h-1'), findsNothing);
+      expect(nested('g-wingspan', 'h-1'), findsNothing);
+      expect(find.text('Seafarers', skipOffstage: false), findsNothing);
+      expect(
+        controlNode(tester, wingspanRow),
+        isControl('Wingspan expansions, 1', expanded: true),
+      );
+      expect(semanticChildCount(tester), 2);
+
+      // Catan's page lands: Seafarers goes under it, folded, and Wingspan
+      // stays open.
+      await sync(tester, [wingspan, ...wingspanOne, early, catan]);
+      expect(row('h-1'), findsNothing);
+      expect(nested('g-catan', 'h-1'), findsNothing);
+      expect(
+        controlNode(tester, row('c-1')),
+        isControl('Catan expansions, 1', expanded: false),
+      );
+      expect(nested('g-wingspan', 'x0'), findsOneWidget);
+
+      await unfold(tester, row('c-1'));
+      expect(nested('g-catan', 'h-1'), findsOneWidget);
+
+      // The pass ends: nothing moves, and nothing is marked.
+      status.finished(CollectionHydrateOutcome.complete);
+      await tester.pumpAndSettle();
+      expect(row('h-1'), findsNothing);
+      expect(nested('g-catan', 'h-1'), findsOneWidget);
+      expect(nested('g-wingspan', 'x0'), findsOneWidget);
+      expect(
+        find.textContaining('Base game not in your collection'),
+        findsNothing,
+      );
+      handle.dispose();
+    });
+
+    testWidgets('a nested stack (several copies of an expansion) folds with '
+        'its base game and keeps its stack marker inside a box', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      GameCollectionListItem copy(String id, String platform) => listItem(
+        id,
+        gameId: 'g-eu',
+        title: 'European Expansion',
+        platformName: platform,
+        contentType: ContentType.expansion,
+        baseGames: const [
+          ExpansionLink(gameId: 'g-wingspan', isStandalone: false),
+        ],
+      );
+      final opened = <String>[];
+      await show(tester, [
+        wingspan,
+        copy('eu-1', 'Tabletop'),
+        copy('eu-2', 'Steam'),
+        ...expansionsOf('g-wingspan', 'x', 4),
+      ], onOpen: (_, id) => opened.add(id));
+      final stack = find.byKey(
+        GameCollectionListScreen.nestedStackKey('g-wingspan', 'g-eu'),
+        skipOffstage: false,
+      );
+
+      // Folded: the stack counts once among Wingspan's five.
+      expect(stack, findsNothing);
+      expect(
+        controlNode(tester, wingspanRow),
+        isControl('Wingspan expansions, 5', expanded: false),
+      );
+
+      await unfold(tester, wingspanRow);
+
+      expect(box, findsOneWidget);
+      expect(find.descendant(of: box, matching: stack), findsOneWidget);
+      expect(
+        find.descendant(
+          of: stack,
+          matching: find.byType(BgeStackMarker, skipOffstage: false),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: stack,
+          matching: find.text('2', skipOffstage: false),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        mergedNode(tester, stack).label,
+        contains('European Expansion, expansion for Wingspan'),
+      );
+      // It still opens its picker.
+      await tester.ensureVisible(stack);
+      await tester.pumpAndSettle();
+      await tester.tap(stack);
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(CollectionEntryPicker.tileKey('eu-2')),
+        findsOneWidget,
+      );
+      handle.dispose();
+    });
+
+    testWidgets('a missing-base row (#711) is unaffected', (tester) async {
+      final orphan = listItem(
+        'o-1',
+        gameId: 'g-orphan',
+        title: 'Seafarers',
+        contentType: ContentType.expansion,
+        baseGames: const [
+          ExpansionLink(gameId: 'g-catan', isStandalone: false),
+        ],
+      );
+      await show(tester, [
+        wingspan,
+        ...expansionsOf('g-wingspan', 'x', 1),
+        orphan,
+      ], onOpen: (_, _) {});
+
+      expect(row('o-1'), findsOneWidget);
+      expect(controlOf(row('o-1')), findsNothing);
+      expect(
+        find.descendant(
+          of: row('o-1'),
+          matching: find.textContaining('Base game not in your collection'),
+        ),
+        findsOneWidget,
+      );
+
+      await unfold(tester, wingspanRow);
+      expect(row('o-1'), findsOneWidget);
+      expect(
+        find.textContaining('Base game not in your collection'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets("a stack-free standalone expansion's own top-level row is "
+        'unaffected', (tester) async {
+      final standalone = listItem(
+        's-1',
+        gameId: 'g-s',
+        title: 'Standalone',
+        contentType: ContentType.standaloneExpansion,
+        baseGames: const [
+          ExpansionLink(gameId: 'g-wingspan', isStandalone: true),
+        ],
+      );
+      await show(tester, [
+        wingspan,
+        standalone,
+        ...expansionsOf('g-wingspan', 'x', 1),
+      ], onOpen: (_, _) {});
+
+      // Its own row, with no control: only its copy under Wingspan folds.
+      expect(row('s-1'), findsOneWidget);
+      expect(controlOf(row('s-1')), findsNothing);
+      expect(nested('g-wingspan', 's-1'), findsNothing);
+      expect(
+        find.descendant(of: controlOf(wingspanRow), matching: find.text('2')),
+        findsOneWidget,
+      );
+
+      await unfold(tester, wingspanRow);
+      expect(nested('g-wingspan', 's-1'), findsOneWidget);
+      expect(row('s-1'), findsOneWidget);
+
+      await unfold(tester, wingspanRow);
+      expect(nested('g-wingspan', 's-1'), findsNothing);
+      expect(row('s-1'), findsOneWidget);
+    });
+
+    testWidgets('switching to thumbnails and back starts folded', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      await show(
+        tester,
+        [
+          wingspan,
+          ...expansionsOf('g-wingspan', 'x', 1),
+          azul,
+        ],
+        onOpen: (_, _) {},
+        layouts: _FakeLayouts(),
+      );
+      await unfold(tester, wingspanRow);
+      expect(nested('g-wingspan', 'x0'), findsOneWidget);
+
+      await tester.tap(find.byTooltip('Thumbnails'));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(GameCollectionListScreen.tileKey('w-1')),
+        findsOneWidget,
+      );
+      await tester.tap(find.byTooltip('List'));
+      await tester.pumpAndSettle();
+
+      expect(wingspanRow, findsOneWidget);
+      expect(nested('g-wingspan', 'x0'), findsNothing);
+      expect(
+        controlNode(tester, wingspanRow),
+        isControl('Wingspan expansions, 1', expanded: false),
+      );
+      expect(semanticChildCount(tester), 2);
+      handle.dispose();
+    });
+
+    testWidgets("a base game's row keeps its focus as its first expansion "
+        'arrives with a sync', (tester) async {
+      await show(tester, [wingspan, azul], onOpen: (_, _) {});
+      expect(controlOf(wingspanRow), findsNothing);
+      final tile = tileFocusOf(tester, wingspanRow)..requestFocus();
+      await tester.pump();
+
+      await sync(tester, [
+        wingspan,
+        ...expansionsOf('g-wingspan', 'x', 1),
+        azul,
+      ]);
+
+      expect(controlOf(wingspanRow), findsOneWidget);
+      expect(tileFocusOf(tester, wingspanRow), same(tile));
+      expect(tile.hasPrimaryFocus, isTrue);
+    });
+
+    group('focus as the rows fold', () {
+      testWidgets('folding with focus on a nested row focuses the base '
+          "game's control", (tester) async {
+        final handle = tester.ensureSemantics();
+        await show(tester, [
+          wingspan,
+          ...expansionsOf('g-wingspan', 'x', 2),
+          azul,
+        ], onOpen: (_, _) {});
+        await unfold(tester, wingspanRow);
+        // By way of Azul's row, so the control the page focused before the
+        // nested row is that row, not Wingspan's control, which the
+        // unfold's tap focused, and where the framework would put focus
+        // anyway.
+        tileFocusOf(tester, row('a-1')).requestFocus();
+        await tester.pump();
+        final tile = tileFocusOf(tester, nested('g-wingspan', 'x1'))
+          ..requestFocus();
+        await tester.pump();
+        expect(tile.hasPrimaryFocus, isTrue);
+
+        // A screen reader on the base game's row folds it, as its custom
+        // action.
+        performCustomAction(rowNode(tester, wingspanRow), 'Hide expansions');
+        await tester.pumpAndSettle();
+
+        expect(nested('g-wingspan', 'x1'), findsNothing);
+        expect(_focusIsWithin(tester, controlOf(wingspanRow)), isTrue);
+        expect(
+          controlNode(tester, wingspanRow),
+          isSemantics(
+            label: 'Wingspan expansions, 2',
+            isButton: true,
+            hasExpandedState: true,
+            isExpanded: false,
+            hasTapAction: true,
+            isFocusable: true,
+            isFocused: true,
+          ),
+        );
+        handle.dispose();
+      });
+
+      // Where the box is held to half the page: at 2.0 in landscape, a row
+      // is taller than that.
+      testWidgets('folding with focus inside the box focuses the base '
+          "game's control, at 320 dp × 2.0 in landscape, and the page still "
+          'drags', (tester) async {
+        final handle = tester.ensureSemantics();
+        useViewSize(tester, const Size(568, 320));
+        tester.platformDispatcher.textScaleFactorTestValue = 2;
+        addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+        await show(tester, [
+          wingspan,
+          ...expansionsOf('g-wingspan', 'x', 6),
+          for (var i = 0; i < 4; i++) listItem('f-$i', title: 'Filler $i'),
+        ], onOpen: (_, _) {});
+        await unfold(tester, wingspanRow);
+
+        final page = _pagePosition(tester);
+        ScrollPosition rows() => tester
+            .state<ScrollableState>(
+              find
+                  .descendant(
+                    of: box,
+                    matching: find.byType(Scrollable),
+                    skipOffstage: false,
+                  )
+                  .first,
+            )
+            .position;
+        expect(
+          rows().viewportDimension,
+          lessThanOrEqualTo(page.viewportDimension / 2),
+        );
+        expect(rows().maxScrollExtent, greaterThan(0));
+
+        // Focus on a row deep in the box, from the keyboard, by way of
+        // Wingspan's own row, so the control the page focused before it isn't
+        // Wingspan's control, where the framework would put focus anyway.
+        // Not by way of the next game's row: with the control at the top of
+        // Wingspan's tall row, unfolding scrolls the page too little for the
+        // list to have built it.
+        await tester.sendKeyEvent(LogicalKeyboardKey.shift);
+        tileFocusOf(tester, wingspanRow).requestFocus();
+        await tester.pump();
+        tileFocusOf(tester, nested('g-wingspan', 'x4')).requestFocus();
+        await tester.pump();
+        await tester.pump();
+        expect(_focusIsWithin(tester, nested('g-wingspan', 'x4')), isTrue);
+
+        performCustomAction(rowNode(tester, wingspanRow), 'Hide expansions');
+        await tester.pumpAndSettle();
+
+        expect(box, findsNothing);
+        expect(_focusIsWithin(tester, controlOf(wingspanRow)), isTrue);
+        expect(
+          controlNode(tester, wingspanRow),
+          isSemantics(
+            label: 'Wingspan expansions, 6',
+            isButton: true,
+            hasExpandedState: true,
+            isExpanded: false,
+            hasTapAction: true,
+            isFocusable: true,
+            isFocused: true,
+          ),
+        );
+
+        final before = page.pixels;
+        await tester.drag(find.byType(CustomScrollView), const Offset(0, -80));
+        await tester.pumpAndSettle();
+        expect(page.pixels, greaterThan(before));
+        handle.dispose();
+      });
+
+      // A sync that brings a fifth expansion moves the rows into the box.
+      testWidgets('a nested row with focus stays focused as the count '
+          'crosses 4 → 5, shown in the box', (tester) async {
+        await show(tester, [
+          wingspan,
+          ...expansionsOf('g-wingspan', 'x', 4),
+          azul,
+        ], onOpen: (_, _) {});
+        await unfold(tester, wingspanRow);
+        expect(box, findsNothing);
+        // From the keyboard, so the focus is drawn, and a hidden row is
+        // brought into view.
+        await tester.sendKeyEvent(LogicalKeyboardKey.shift);
+        tileFocusOf(tester, nested('g-wingspan', 'x3')).requestFocus();
+        await tester.pump();
+
+        await sync(tester, [
+          wingspan,
+          ...expansionsOf('g-wingspan', 'x', 5),
+          azul,
+        ]);
+
+        expect(box, findsOneWidget);
+        final inBox = find.descendant(
+          of: box,
+          matching: nested('g-wingspan', 'x3'),
+        );
+        expect(inBox, findsOneWidget);
+        expect(_focusIsWithin(tester, inBox), isTrue);
+        // The fourth of five, half hidden in a box 3½ rows tall until the
+        // focus brings it into view.
+        final shown = FocusManager.instance.primaryFocus!.rect;
+        final rows = tester.getRect(
+          find
+              .descendant(
+                of: box,
+                matching: find.byType(Scrollable),
+                skipOffstage: false,
+              )
+              .first,
+        );
+        expect(shown.top, greaterThanOrEqualTo(rows.top - 0.5));
+        expect(shown.bottom, lessThanOrEqualTo(rows.bottom + 0.5));
+      });
+
+      // A sync that takes the fifth away lays the rows out in the list.
+      testWidgets('a nested row with focus in the box stays focused as the '
+          'count drops 5 → 4, back in the list', (tester) async {
+        await show(tester, [
+          wingspan,
+          ...expansionsOf('g-wingspan', 'x', 5),
+          azul,
+        ], onOpen: (_, _) {});
+        await unfold(tester, wingspanRow);
+        expect(box, findsOneWidget);
+        // By way of Azul's row, so the framework's fallback isn't the row.
+        tileFocusOf(tester, row('a-1')).requestFocus();
+        await tester.pump();
+        tileFocusOf(tester, nested('g-wingspan', 'x1')).requestFocus();
+        await tester.pump();
+
+        await sync(tester, [
+          wingspan,
+          ...expansionsOf('g-wingspan', 'x', 4),
+          azul,
+        ]);
+
+        expect(box, findsNothing);
+        expect(_focusIsWithin(tester, nested('g-wingspan', 'x1')), isTrue);
+      });
+
+      // The pop gives focus back to the row the user opened, laid out in
+      // the list now, not to the base game's control: the box of rows that
+      // take focus is no item of its own (#813).
+      testWidgets('back from an entry opened from the box, after a sync '
+          'drops the count 5 → 4, lands focus on its row', (tester) async {
+        await show(
+          tester,
+          [wingspan, ...expansionsOf('g-wingspan', 'x', 5), azul],
+          onOpen: (context, id) => Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) =>
+                  Scaffold(appBar: AppBar(), body: Text('entry $id')),
+            ),
+          ),
+        );
+        await unfold(tester, wingspanRow);
+        // By way of Azul's row, so the page's focus history has another
+        // row before this one.
+        tileFocusOf(tester, row('a-1')).requestFocus();
+        await tester.pump();
+        final opened = find.descendant(
+          of: box,
+          matching: nested('g-wingspan', 'x1'),
+        );
+        await tester.ensureVisible(opened);
+        await tester.pumpAndSettle();
+        await tester.tap(opened);
+        await tester.pumpAndSettle();
+        expect(find.text('entry x1'), findsOneWidget);
+
+        items.add([wingspan, ...expansionsOf('g-wingspan', 'x', 4), azul]);
+        await tester.pumpAndSettle();
+        await tester.pageBack();
+        await tester.pumpAndSettle();
+
+        expect(find.text('entry x1'), findsNothing);
+        expect(box, findsNothing);
+        expect(_focusIsWithin(tester, nested('g-wingspan', 'x1')), isTrue);
+      });
+
+      testWidgets("a focused row in a box scrolled out of the list doesn't "
+          "move focus to its game's other copy (#819)", (tester) async {
+        // Wingspan at the top with six, in a box, and Azul at the end with
+        // one, E under both: more than a screen and the list's cache apart.
+        await show(tester, [
+          wingspan,
+          listItem(
+            'e-1',
+            gameId: 'g-e',
+            title: 'Shared Expansion',
+            contentType: ContentType.expansion,
+            baseGames: const [
+              ExpansionLink(gameId: 'g-wingspan', isStandalone: false),
+              ExpansionLink(gameId: 'g-azul', isStandalone: false),
+            ],
+          ),
+          ...expansionsOf('g-wingspan', 'x', 5),
+          for (var i = 0; i < 30; i++) listItem('f-$i', title: 'Filler $i'),
+          azul,
+        ], onOpen: (_, _) {});
+        await scrollListToEnd(
+          tester,
+          find.byKey(GameCollectionListScreen.rowKey('a-1')),
+        );
+        await unfold(tester, row('a-1'));
+        _pagePosition(tester).jumpTo(0);
+        await tester.pumpAndSettle();
+        await unfold(tester, wingspanRow);
+        final near = nested('g-wingspan', 'e-1');
+        final far = nested('g-azul', 'e-1');
+        expect(find.descendant(of: box, matching: near), findsOneWidget);
+        expect(far, findsNothing);
+        tileFocusOf(tester, near).requestFocus();
+        await tester.pump();
+        expect(_focusIsWithin(tester, near), isTrue);
+
+        await scrollListToEnd(tester, far);
+
+        expect(near, findsNothing);
+        expect(_focusIsWithin(tester, far), isFalse);
+      });
+    });
+
+    // Without onOpen the rows take no focus, so the box is a stop itself,
+    // and joins the hand-off as one.
+    group('in a list that opens nothing', () {
+      testWidgets("folding while the box has focus focuses the base game's "
+          'control', (tester) async {
+        await show(tester, [
+          wingspan,
+          ...expansionsOf('g-wingspan', 'x', 6),
+          azul,
+          ...expansionsOf('g-azul', 'y', 1),
+        ]);
+        await unfold(tester, wingspanRow);
+        expect(tester.widget<BgeNestedRowsBox>(box).focusable, isTrue);
+        // By way of Azul's control, so the control the page focused before
+        // the box isn't Wingspan's, where the framework would put focus
+        // anyway.
+        await tester.sendKeyEvent(LogicalKeyboardKey.shift);
+        controlFocusOf(tester, row('a-1')).requestFocus();
+        await tester.pump();
+        boxFocusOf(tester).requestFocus();
+        await tester.pump();
+        expect(boxFocusOf(tester).hasPrimaryFocus, isTrue);
+
+        final handle = tester.ensureSemantics();
+        performCustomAction(rowNode(tester, wingspanRow), 'Hide expansions');
+        await tester.pumpAndSettle();
+
+        expect(box, findsNothing);
+        expect(_focusIsWithin(tester, controlOf(wingspanRow)), isTrue);
+        handle.dispose();
+      });
+
+      testWidgets('a box that drops to 4 rows while it has focus hands it '
+          "to the base game's control", (tester) async {
+        await show(tester, [
+          wingspan,
+          ...expansionsOf('g-wingspan', 'x', 5),
+          azul,
+          ...expansionsOf('g-azul', 'y', 1),
+        ]);
+        await unfold(tester, wingspanRow);
+        await tester.sendKeyEvent(LogicalKeyboardKey.shift);
+        controlFocusOf(tester, row('a-1')).requestFocus();
+        await tester.pump();
+        boxFocusOf(tester).requestFocus();
+        await tester.pump();
+        expect(boxFocusOf(tester).hasPrimaryFocus, isTrue);
+
+        await sync(tester, [
+          wingspan,
+          ...expansionsOf('g-wingspan', 'x', 4),
+          azul,
+          ...expansionsOf('g-azul', 'y', 1),
+        ]);
+
+        expect(box, findsNothing);
+        expect(nested('g-wingspan', 'x3'), findsOneWidget);
+        // The rows take no focus, so not a row: the control, never the
+        // page.
+        expect(_focusIsWithin(tester, controlOf(wingspanRow)), isTrue);
+      });
+
+      // The row's tile takes no focus, so the control that goes has nothing
+      // in its row to give it to: it hands the focus on as Tab would have,
+      // to the next stop after the row, never to the page (#1048).
+      testWidgets('a control that goes with the last expansion while it has '
+          'focus hands it to the next stop after the row', (tester) async {
+        await show(tester, [
+          wingspan,
+          ...expansionsOf('g-wingspan', 'x', 1),
+          azul,
+          ...expansionsOf('g-azul', 'y', 1),
+        ]);
+        // By way of the sort button, above the list, so the framework's
+        // focus history would give the focus back up there, not on to
+        // Azul's control.
+        await tester.sendKeyEvent(LogicalKeyboardKey.shift);
+        Focus.of(
+          tester.element(
+            find.descendant(
+              of: find.byKey(GameCollectionListScreen.sortButtonKey),
+              matching: find.byIcon(Icons.sort),
+            ),
+          ),
+        ).requestFocus();
+        await tester.pump();
+        controlFocusOf(tester, wingspanRow).requestFocus();
+        await tester.pump();
+        expect(_focusIsWithin(tester, controlOf(wingspanRow)), isTrue);
+
+        await sync(tester, [wingspan, azul, ...expansionsOf('g-azul', 'y', 1)]);
+
+        expect(controlOf(wingspanRow), findsNothing);
+        expect(_focusIsWithin(tester, controlOf(row('a-1'))), isTrue);
+      });
+
+      testWidgets('a box keeps its state as its rows come to open, and stop '
+          'opening, entries', (tester) async {
+        useViewSize(tester, const Size(400, 2400));
+        final rows = [
+          wingspan,
+          ...expansionsOf('g-wingspan', 'x', 6),
+          azul,
+        ];
+        await show(tester, rows);
+        await unfold(tester, wingspanRow);
+        expect(tester.widget<BgeNestedRowsBox>(box).focusable, isTrue);
+        final state = tester.state(box);
+        ScrollPosition inner() => tester
+            .state<ScrollableState>(
+              find
+                  .descendant(
+                    of: box,
+                    matching: find.byType(Scrollable),
+                    skipOffstage: false,
+                  )
+                  .first,
+            )
+            .position;
+        inner().jumpTo(40);
+        await tester.pump();
+
+        // A session that can write now: the rows open their entries.
+        await tester.pumpWidget(harness(onOpen: (_, _) {}));
+        await tester.pumpAndSettle();
+        expect(tester.widget<BgeNestedRowsBox>(box).focusable, isFalse);
+        expect(tester.state(box), same(state));
+        expect(inner().pixels, 40);
+
+        // And back.
+        await tester.pumpWidget(harness());
+        await tester.pumpAndSettle();
+        expect(tester.widget<BgeNestedRowsBox>(box).focusable, isTrue);
+        expect(tester.state(box), same(state));
+        expect(inner().pixels, 40);
+      });
     });
   });
 
@@ -4521,6 +5711,22 @@ void main() {
           baseGames: bothBases,
         ),
       ], onOpen: (_, _) {});
+      // Both unfolded (#1048): Azul first, at the end, then Wingspan, at the
+      // top.
+      await scrollListToEnd(
+        tester,
+        find.byKey(GameCollectionListScreen.rowKey('azul-1')),
+      );
+      await unfold(
+        tester,
+        find.byKey(GameCollectionListScreen.rowKey('azul-1')),
+      );
+      _pagePosition(tester).jumpTo(0);
+      await tester.pumpAndSettle();
+      await unfold(tester, find.byKey(GameCollectionListScreen.rowKey('e-1')));
+      // Back to the top, where Catan's row is, for focus to go by way of it.
+      _pagePosition(tester).jumpTo(0);
+      await tester.pumpAndSettle();
       final near = find.byKey(
         GameCollectionListScreen.nestedRowKey('g-wingspan', 'x-1'),
         skipOffstage: false,
@@ -4669,12 +5875,18 @@ void main() {
     }
 
     /// Clicks [stack], then closes its picker with a click on the barrier.
+    /// First, with [unfolding], clicks the control at the end of that base
+    /// game's row, to show the stack under it (#1048).
     Future<void> clickAndClose(
       WidgetTester tester,
       Finder stack,
-      String firstEntry,
-    ) async {
+      String firstEntry, {
+      Finder? unfolding,
+    }) async {
       final click = await mouseClicker(tester);
+      if (unfolding != null) {
+        await click(tester.getCenter(controlOf(unfolding)));
+      }
       await click(tester.getCenter(stack));
       expect(pickerTile(firstEntry), findsOneWidget);
       await click(away);
@@ -4686,28 +5898,35 @@ void main() {
       await tester.pump();
     }
 
-    final stackRows = [
-      (
-        'a clicked stack row',
-        twice,
-        'e-1',
-        GameCollectionListScreen.stackKey('g-wingspan'),
-      ),
-      (
-        'a nested stack row',
-        [base, expansion('x-1', 'Tabletop'), expansion('x-2', 'Steam')],
-        'x-1',
-        GameCollectionListScreen.nestedStackKey('g-base', 'g-exp'),
-      ),
-    ];
+    final baseRow = find.byKey(GameCollectionListScreen.rowKey('base-1'));
 
-    for (final (what, rows, first, key) in stackRows) {
+    // With the row of the base game to unfold first, for a nested one
+    // (#1048).
+    final stackRows =
+        <(String, List<GameCollectionListItem>, String, Key, Finder?)>[
+          (
+            'a clicked stack row',
+            twice,
+            'e-1',
+            GameCollectionListScreen.stackKey('g-wingspan'),
+            null,
+          ),
+          (
+            'a nested stack row',
+            [base, expansion('x-1', 'Tabletop'), expansion('x-2', 'Steam')],
+            'x-1',
+            GameCollectionListScreen.nestedStackKey('g-base', 'g-exp'),
+            baseRow,
+          ),
+        ];
+
+    for (final (what, rows, first, key, under) in stackRows) {
       final stack = find.byKey(key);
 
       testWidgets('$what shows its ring once a key is pressed after the '
           'picker closes', (tester) async {
         await show(tester, rows, onOpen: (_, _) {});
-        await clickAndClose(tester, stack, first);
+        await clickAndClose(tester, stack, first, unfolding: under);
 
         expect(_focusIsWithin(tester, stack), isTrue);
         await pressShift(tester);
@@ -4718,7 +5937,7 @@ void main() {
       testWidgets('$what focused by a click and never touched by the '
           'keyboard shows no ring', (tester) async {
         await show(tester, rows, onOpen: (_, _) {});
-        await clickAndClose(tester, stack, first);
+        await clickAndClose(tester, stack, first, unfolding: under);
 
         expect(_focusIsWithin(tester, stack), isTrue);
         expect(
@@ -4737,6 +5956,9 @@ void main() {
         base,
         expansion('x-1', 'Tabletop'),
       ], onOpen: (_, _) {});
+      await unfold(tester, baseRow);
+      // The unfold's tap was a touch's, which hides every ring until a key.
+      await pressShift(tester);
 
       for (final key in [
         GameCollectionListScreen.rowKey('e-1'),
@@ -4755,6 +5977,7 @@ void main() {
       tester,
     ) async {
       await show(tester, [...once, base, expansion('x-1', 'Tabletop')]);
+      await unfold(tester, baseRow);
 
       for (final key in [
         GameCollectionListScreen.rowKey('e-1'),
@@ -4792,6 +6015,7 @@ void main() {
       ) async {
         final handle = tester.ensureSemantics();
         await show(tester, [...once, base, expansion('x-1', 'Tabletop')]);
+        await unfold(tester, baseRow);
 
         for (final (key, indented) in [
           (GameCollectionListScreen.rowKey('e-1'), false),
@@ -4944,6 +6168,20 @@ void main() {
     }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
   });
 }
+
+/// The page's own scroll position: the first vertical scroll view, which
+/// holds any other, such as a box of nested rows' (#1048).
+ScrollPosition _pagePosition(WidgetTester tester) => tester
+    .state<ScrollableState>(
+      find
+          .byWidgetPredicate(
+            (widget) =>
+                widget is Scrollable &&
+                widget.axisDirection == AxisDirection.down,
+          )
+          .first,
+    )
+    .position;
 
 /// Whether the primary focus is on the widget [finder] finds, or inside it.
 bool _focusIsWithin(WidgetTester tester, Finder finder) {
