@@ -37,9 +37,12 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// the app bar: beside the back button, search and sort, it left the title a
 /// few letters on a 320dp phone.
 ///
-/// An expansion is shown under its base game (#711): its row under the base
-/// game's row, and its cover in a strip that a badge on the base game's cover
-/// opens under that cover's row.
+/// An expansion is shown under its base game (#711), folded away behind a
+/// badge until the user shows it (#1048). In the list, its row goes under
+/// the base game's, shown by the badge at the end of that row, and any
+/// number of base games can be open at once. In thumbnails, its cover goes
+/// in a strip that the badge on the base game's cover opens under that
+/// cover's row, one at a time.
 class GameBrowseScreen extends StatelessWidget {
   const GameBrowseScreen({
     required this.remote,
@@ -168,11 +171,7 @@ class GameBrowseScreen extends StatelessWidget {
         onError: _layoutFailed,
         builder: (context, onChanged, {required thumbnails}) =>
             BlocListener<GameBrowseBloc, GameBrowseState>(
-              listenWhen: (previous, current) => _landedNothingShown(
-                previous,
-                current,
-                thumbnails: thumbnails ?? false,
-              ),
+              listenWhen: _landedNothingShown,
               listener: (context, _) => context.read<GameBrowseBloc>().add(
                 const GameBrowseMoreRequested(),
               ),
@@ -189,7 +188,7 @@ class GameBrowseScreen extends StatelessWidget {
   }
 }
 
-class _GameBrowsePage extends StatelessWidget {
+class _GameBrowsePage extends StatefulWidget {
   const _GameBrowsePage({
     required this.thumbnails,
     required this.onLayoutChanged,
@@ -207,11 +206,42 @@ class _GameBrowsePage extends StatelessWidget {
   onQuickLook;
 
   @override
+  State<_GameBrowsePage> createState() => _GameBrowsePageState();
+}
+
+class _GameBrowsePageState extends State<_GameBrowsePage> {
+  /// The base games whose expansions the list shows under them (#1048).
+  ///
+  /// Every game starts folded, and any number can be open. The set outlives
+  /// new pages and a sync. A switch to thumbnails folds every game: the grid
+  /// opens one strip at a time, so the list's set has nothing there to map
+  /// to.
+  final _open = BgeOpenRows();
+
+  @override
+  void initState() {
+    super.initState();
+    _open.addListener(_onOpenChanged);
+  }
+
+  @override
+  void dispose() {
+    _open
+      ..removeListener(_onOpenChanged)
+      ..dispose();
+    super.dispose();
+  }
+
+  void _onOpenChanged() => setState(() {});
+
+  @override
   Widget build(BuildContext context) {
     final l10n = GameCatalogLocalizations.of(context);
     final tokens = BgeTokens.of(context);
-    final search = onSearch;
-    final thumbnails = this.thumbnails;
+    final search = widget.onSearch;
+    final thumbnails = widget.thumbnails;
+    // Back in the list after thumbnails, every game is folded again.
+    if (thumbnails ?? false) _open.foldAll();
     final loading = BgeStateSliver(
       child: BgeLoadingState(
         key: GameBrowseScreen.loadingKey,
@@ -234,14 +264,16 @@ class _GameBrowsePage extends StatelessWidget {
         };
         final rows = placed == null || thumbnails == true
             ? null
-            : _browseRows(placed);
+            : _browseRows(placed, open: _open);
 
         return BgePage.slivers(
           title: Text(l10n.catalogBrowseTitle),
           width: BgePageWidth.pane,
           // "Game 3 of 50": the items loaded so far, once they are built. In
-          // the list, a row for each nested expansion too; in the grid, the
-          // top-level covers, as a strip's are a row of their own (#711).
+          // the list, the rows shown: an open base game's expansions' too, and
+          // a box of them as one, whose rows count among themselves (#1048).
+          // In the grid, the top-level covers, as a strip's are a row of
+          // their own (#711).
           semanticChildCount: switch (state) {
             GameBrowseReady(:final games) when games.isNotEmpty =>
               rows?.length ?? placed?.length,
@@ -273,7 +305,7 @@ class _GameBrowsePage extends StatelessWidget {
                   child: BgeLayoutToggle(
                     key: GameBrowseScreen.layoutToggleKey,
                     thumbnails: thumbnails ?? false,
-                    onChanged: onLayoutChanged,
+                    onChanged: widget.onLayoutChanged,
                     listLabel: l10n.catalogLayoutList,
                     thumbnailsLabel: l10n.catalogLayoutThumbnails,
                   ),
@@ -337,32 +369,27 @@ class _GameBrowsePage extends StatelessWidget {
                     loading
                   else ...[
                     // One scope for the list and the grid, so a game's focus
-                    // follows its item between top level and under its base
-                    // game (#769, #711). It asks what was placed whether a
-                    // game is still in its place: a focused item that left
-                    // with no item built in its place, its game still there,
-                    // scrolled out of the lazy list, and hands its focus to
-                    // no other copy (#819).
+                    // follows its item between top level, under its base
+                    // game and in a box (#769, #711, #1048). It asks what
+                    // was placed whether a game is still in its place: a
+                    // focused item that left with no item built in its
+                    // place, its game still there, scrolled out of the lazy
+                    // list, and hands its focus to no other copy (#819).
                     BgeFocusHandoffScope(
-                      isShown: _isShownIn(placed!, rows: rows),
+                      isShown: _isShownIn(
+                        placed!,
+                        rows: rows,
+                        handoffs: _handoffs(inert: widget.onOpen == null),
+                      ),
                       child: thumbnails
                           ? _BrowseCovers(
                               placed: placed,
-                              onQuickLook: onQuickLook,
+                              onQuickLook: widget.onQuickLook,
                             )
-                          : BgeKeyedSliverList<_BrowseItem>(
-                              items: rows!,
-                              keyOf: (item) => item.parent == null
-                                  ? GameBrowseScreen.rowKey(item.game.id)
-                                  : GameBrowseScreen.nestedRowKey(
-                                      item.parent!.id,
-                                      item.game.id,
-                                    ),
-                              itemBuilder: (context, item) => BgeFocusHandoff(
-                                identity: item.game.id,
-                                place: item.parent?.id,
-                                child: _BrowseRow(item: item, onOpen: onOpen),
-                              ),
+                          : _BrowseList(
+                              rows: rows!,
+                              onToggle: _open.toggle,
+                              onOpen: widget.onOpen,
                             ),
                     ),
                     SliverToBoxAdapter(child: _MoreFooter(state: state)),
@@ -385,14 +412,12 @@ class _GameBrowsePage extends StatelessWidget {
 /// screen, or a "Show more games" press that shows nothing, until one lands
 /// that shows something or the list ends, when nothing is held.
 ///
-/// In [thumbnails], only a new cover counts: an expansion nested under a
-/// folded cover shows only as a higher count on its badge. One that lands
-/// in the open strip doesn't count either, so such a page reads one more.
-bool _landedNothingShown(
-  GameBrowseState previous,
-  GameBrowseState current, {
-  required bool thumbnails,
-}) {
+/// Only a new top-level game counts, a row or a cover: an expansion nested
+/// under a folded base game shows only as a higher count on its badge, at
+/// the end of its row as on its cover (#1048). One that lands under an open
+/// base game, or in the open strip, doesn't count either, so such a page
+/// reads one more.
+bool _landedNothingShown(GameBrowseState previous, GameBrowseState current) {
   if (current is! GameBrowseReady ||
       !current.hasMore ||
       current.loadingMore ||
@@ -400,8 +425,7 @@ bool _landedNothingShown(
       current.retrying) {
     return false;
   }
-  int shown(GameBrowseReady state) =>
-      _shownCount(state, thumbnails: thumbnails);
+  int shown(GameBrowseReady state) => _placeBrowse(state).length;
   return switch (previous) {
     // The first page, or a retry's: is anything shown at all?
     GameBrowseLoading() => shown(current) == 0,
@@ -410,19 +434,6 @@ bool _landedNothingShown(
     GameBrowseReady(loadingMore: true) => shown(current) <= shown(previous),
     _ => false,
   };
-}
-
-/// How many of [state]'s games are shown: the top-level covers in
-/// [thumbnails], else the rows, at top level or nested.
-int _shownCount(GameBrowseReady state, {required bool thumbnails}) {
-  final placed = _placeBrowse(state);
-  if (thumbnails) return placed.length;
-  return {
-    for (final top in placed) ...[
-      top.item.id,
-      for (final expansion in top.expansions) expansion.id,
-    ],
-  }.length;
 }
 
 /// Places the loaded games under their base games (#711).
@@ -452,26 +463,54 @@ class _BrowseItem {
   final bool missingBase;
 }
 
-/// [placed] as the rows drawn: each top-level game, then its expansions.
-List<_BrowseItem> _browseRows(List<PlacedGame<Game>> placed) => [
-  for (final top in placed) ...[
-    _BrowseItem(top.item, missingBase: top.missingBase),
-    for (final expansion in top.expansions)
-      _BrowseItem(expansion, parent: top.item),
-  ],
-];
+/// [placed] as the rows drawn (#711, #1048): each top-level game, then,
+/// for a base game [open] holds, its expansions, in the list or in a box
+/// ([foldNested]).
+///
+/// [open] keeps only the base games still placed with expansions, so one
+/// that goes, or loses its last expansion, comes back folded. [placed] is
+/// all of the list loaded, which nothing on this screen narrows, and a load
+/// or a sort's reload places nothing until its page lands, so a page
+/// arriving or a sync folds no other game.
+List<BgeFoldedRow<_BrowseItem>> _browseRows(
+  List<PlacedGame<Game>> placed, {
+  required BgeOpenRows open,
+}) {
+  open.retain([
+    for (final top in placed)
+      if (top.expansions.isNotEmpty) top.item.id,
+  ]);
+  return foldNested<_BrowseItem>(
+    groups: [
+      for (final top in placed)
+        (
+          _BrowseItem(top.item, missingBase: top.missingBase),
+          [
+            for (final expansion in top.expansions)
+              _BrowseItem(expansion, parent: top.item),
+          ],
+        ),
+    ],
+    open: open.open,
+    idOf: (item) => item.game.id,
+  );
+}
 
 /// The hand-off scope's lookup (#819): whether the screen shows a game at a
 /// place, its item built or not, by the place the game's `BgeFocusHandoff`
 /// names.
 ///
-/// In the list, [rows]: each game under its base game, or at top level. In
-/// thumbnails, with [rows] null, [placed]: each top-level cover, and the
-/// covers in each base game's strip. The scope asks only once a focused item
-/// has left, so the list's lookup builds its set then, as the grid's does.
+/// In the list, [rows], as [handoffs] names them: each game at top level,
+/// each expansion under a base game that shows it, in the list or in a box,
+/// and a box that is a stop of its own. One folded away is not shown there
+/// (#1048). In thumbnails, with [rows] null, [placed]: each top-level cover,
+/// and the covers in each base game's strip. The scope asks only once a
+/// focused item has left, so the list's lookup builds its set then, as the
+/// grid's does.
 bool Function(Object identity, Object? place) _isShownIn(
   List<PlacedGame<Game>> placed, {
-  List<_BrowseItem>? rows,
+  required BgeFoldedHandoffs<_BrowseItem> handoffs,
+  List<BgeFoldedRow<_BrowseItem>>? rows,
 }) {
   if (rows == null) {
     return BgeUnfoldingCovers.isShownIn(
@@ -482,11 +521,14 @@ bool Function(Object identity, Object? place) _isShownIn(
       ],
     );
   }
-  Set<(Object, Object?)>? shown;
-  return (identity, place) => (shown ??= {
-    for (final row in rows) (row.game.id, row.parent?.id),
-  }).contains((identity, place));
+  return handoffs.isShownIn(rows);
 }
+
+/// The hand-offs of the list's games (#1048): a box is a stop of its own,
+/// and an item of the hand-off, where its rows open nothing, [inert], and so
+/// take no focus. An expansion's row names its base game as its place.
+BgeFoldedHandoffs<_BrowseItem> _handoffs({required bool inert}) =>
+    BgeFoldedHandoffs(idOf: (item) => item.game.id, boxIsStop: inert);
 
 /// Which order to list the games in.
 ///
@@ -735,11 +777,135 @@ class _BrowseTile extends StatelessWidget {
   }
 }
 
+/// The games as rows (#42): each top-level game, and under a base game the
+/// rows of its expansions, which the badge at the end of its row shows and
+/// hides (#711, #1048). Up to [BgeNestedRowsBox.inlineLimit] of them are
+/// laid out in the list, and more in a box that scrolls inside the page.
+///
+/// Each row is in its game's [BgeFocusHandoff], so a game's focus follows it
+/// between top level, under its base game and in a box (#769, #711). While a
+/// base game is folded, its row names its expansions as folded behind its
+/// badge, so a focused one whose rows fold, in the list or in a box, or
+/// that moves under it, is handed to the badge, never to the top of the
+/// list (#813, #1048).
+///
+/// A base game's row carries its badge whether or not the rows open
+/// anything: an inert row's badge is the only way to its expansions. In a
+/// box, rows that open nothing take no focus, so the box takes it itself,
+/// for the keyboard to scroll them by. That box is an item of the hand-off
+/// too, so that focus on it goes to the badge when the rows fold, or when
+/// they drop to the few the list lays out itself ([BgeFoldedHandoffs]).
+class _BrowseList extends StatelessWidget {
+  const _BrowseList({required this.rows, required this.onToggle, this.onOpen});
+
+  final List<BgeFoldedRow<_BrowseItem>> rows;
+
+  /// Shows or hides the expansions of the base game with this id.
+  final ValueChanged<Object> onToggle;
+
+  final void Function(BuildContext context, String gameId)? onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final handoffs = _handoffs(inert: onOpen == null);
+    return BgeKeyedSliverList<BgeFoldedRow<_BrowseItem>>(
+      items: rows,
+      keyOf: (row) => switch (row) {
+        BgeNestedBox(:final parent) => _nestedBoxKey(parent.game.id),
+        _ => _rowKeyOf(row.items.single),
+      },
+      itemBuilder: (context, row) => switch (row) {
+        BgeTopRow(:final item) => handoffs.topRow(
+          row,
+          child: _BrowseRow(
+            item: item,
+            onOpen: onOpen,
+            expansions: _expansionsOf(context, row),
+          ),
+        ),
+        BgeNestedRow(:final item) => _nested(item),
+        BgeNestedBox(:final parent, :final items) => handoffs.box(
+          row,
+          child: _box(context, parent.game, items),
+        ),
+      },
+    );
+  }
+
+  /// What the badge at the end of [row] counts and toggles: its game's
+  /// expansions, or null for a game with none, and no badge.
+  BgeCoverExpansions? _expansionsOf(
+    BuildContext context,
+    BgeTopRow<_BrowseItem> row,
+  ) {
+    final count = row.nestedCount;
+    if (count == 0) return null;
+    final l10n = GameCatalogLocalizations.of(context);
+    final game = row.item.game;
+    return BgeCoverExpansions(
+      count: count,
+      expanded: row.open,
+      onToggle: () => onToggle(game.id),
+      label: l10n.catalogExpansionsBadge(
+        gameTitle(l10n, game.title, game.subtitle),
+        count,
+      ),
+      showLabel: l10n.catalogShowExpansions,
+      hideLabel: l10n.catalogHideExpansions,
+    );
+  }
+
+  /// An expansion's row under its base game's, in the list or in a box. In
+  /// a box the row carries its own key, which the list's wrapper holds
+  /// otherwise, so that a finder by it reaches the row either way.
+  Widget _nested(_BrowseItem item, {Key? key}) => BgeFocusHandoff(
+    key: key,
+    identity: item.game.id,
+    place: item.parent?.id,
+    child: _BrowseRow(item: item, onOpen: onOpen),
+  );
+
+  /// More expansions than the list lays out, in a box that scrolls inside
+  /// the page, named for its base game (#1048).
+  Widget _box(BuildContext context, Game parent, List<_BrowseItem> items) {
+    final l10n = GameCatalogLocalizations.of(context);
+    return BgeNestedRowsBox(
+      semanticLabel: l10n.catalogExpansionsStrip(
+        gameTitle(l10n, parent.title, parent.subtitle),
+      ),
+      // Rows that open nothing take no focus, and a keyboard would have
+      // nothing to scroll the box by (WCAG 2.1.1).
+      focusable: onOpen == null,
+      rows: [for (final item in items) _nested(item, key: _rowKeyOf(item))],
+    );
+  }
+}
+
+/// The key of [item]'s row: [GameBrowseScreen.rowKey] at top level, else
+/// [GameBrowseScreen.nestedRowKey].
+Key _rowKeyOf(_BrowseItem item) {
+  final parent = item.parent;
+  return parent == null
+      ? GameBrowseScreen.rowKey(item.game.id)
+      : GameBrowseScreen.nestedRowKey(parent.id, item.game.id);
+}
+
+/// The key of the box of base game [parentGameId]'s expansions, in the list.
+Key _nestedBoxKey(String parentGameId) =>
+    Key('catalog_browse.nested_box_$parentGameId');
+
+/// A game's row: at top level, with a badge at its end for a base game's
+/// [expansions] (#1048), or under its base game's, named as its expansion
+/// (#711).
 class _BrowseRow extends StatelessWidget {
-  const _BrowseRow({required this.item, this.onOpen});
+  const _BrowseRow({required this.item, this.onOpen, this.expansions});
 
   final _BrowseItem item;
   final void Function(BuildContext context, String gameId)? onOpen;
+
+  /// The game's expansions, which the badge at the row's end counts and
+  /// toggles, or null for no badge.
+  final BgeCoverExpansions? expansions;
 
   @override
   Widget build(BuildContext context) {
@@ -761,6 +927,7 @@ class _BrowseRow extends StatelessWidget {
       thumbnailUrl: game.thumbnail,
       facts: _gameFacts(GameFiltersLocalizations.of(context), game),
       onTap: open == null ? null : () => open(context, game.id),
+      expansions: expansions,
     );
   }
 }
