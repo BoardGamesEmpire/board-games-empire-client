@@ -1711,8 +1711,8 @@ void main() {
   // cached before it, seeded on its game and platform game, must come through
   // unchanged, and both new tables start empty because no earlier version
   // recorded a move or a refresh.
-  test('v19 to v20 creates collection_moves empty and keeps '
-      'game_collections rows', () async {
+  test('v19 to v20 creates collection_moves and collection_refresh_markers '
+      'empty and keeps game_collections rows', () async {
     const at = '2024-01-15T10:30:00.000Z';
 
     await verifier.testWithDataIntegrity(
@@ -1789,19 +1789,8 @@ void main() {
           ),
         ]);
         expect(await newDb.select(newDb.collectionMoves).get(), isEmpty);
-      },
-    );
-  });
-
-  test('v19 to v20 creates collection_refresh_markers empty', () async {
-    await verifier.testWithDataIntegrity(
-      oldVersion: 19,
-      newVersion: 20,
-      createOld: v19.DatabaseAtV19.new,
-      createNew: v20.DatabaseAtV20.new,
-      openTestedDatabase: ServerDatabase.new,
-      createItems: (batch, oldDb) {},
-      validateItems: (newDb) async {
+        // With a user's rows cached, so a step that backfilled a marker for
+        // each of them would show here.
         expect(
           await newDb.select(newDb.collectionRefreshMarkers).get(),
           isEmpty,

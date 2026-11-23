@@ -615,12 +615,12 @@ abstract class GameCollectionRepository {
   /// The move is stored with the write that makes it, so it is found whichever
   /// repository made it, another tab's over the same storage included, and
   /// after a reload. This answers from the moves this repository last
-  /// recorded or read: its own server writes, and the moves it reads before
-  /// delivering each [watchCollectionListItems] or [watchCollectionListItem]
-  /// emission. A subscriber that checks this on every emission therefore
+  /// recorded or read: its own server writes, and, before
+  /// [watchCollectionListItem] delivers a null for an id, that id's move.
+  /// A subscriber to that stream that checks this on each null therefore
   /// sees a move on the emission that drops the local id. Asked before
-  /// either stream has emitted, it may answer null for a move another
-  /// repository made.
+  /// then, it may answer null for a move another repository made.
+  /// [watchCollectionListItems] reads no moves.
   ///
   /// Never throws, including after disposal.
   String? reconciledCollectionEntryId(String localId);

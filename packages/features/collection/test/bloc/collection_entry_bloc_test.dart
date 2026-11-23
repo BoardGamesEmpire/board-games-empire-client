@@ -1445,6 +1445,35 @@ void main() {
     );
 
     blocTest<CollectionEntryBloc, CollectionEntryState>(
+      'a move back to an id it has been on is not followed: the null is '
+      'gone, and the local id is watched once',
+      setUp: watchServer,
+      build: build,
+      act: (bloc) async {
+        await show(bloc, row());
+        when(
+          () => repository.reconciledCollectionEntryId('gc_server'),
+        ).thenReturn('gc_1');
+        await reconcile(bloc);
+        expect(bloc.entryId, 'gc_server');
+
+        serverWatch.add(null);
+        await pumpEventQueue();
+        expect(bloc.entryId, 'gc_server');
+      },
+      expect: () => [
+        ready(row()),
+        CollectionEntryState(view: CollectionEntryView.gone, item: row()),
+      ],
+      verify: (_) {
+        verify(() => repository.watchCollectionListItem('gc_1')).called(1);
+        verify(
+          () => repository.watchCollectionListItem('gc_server'),
+        ).called(1);
+      },
+    );
+
+    blocTest<CollectionEntryBloc, CollectionEntryState>(
       'an edit sent after the move goes to the server id',
       setUp: () {
         watchServer();

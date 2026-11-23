@@ -1508,10 +1508,9 @@ class GameCollectionRepositoryImpl
             OrderingTerm.asc(_db.gameCollectionsTable.id),
           ]);
 
-        return query.watch().asyncMap((rows) async {
-          await _readMoves();
-          return [for (final row in rows) _mapListItemRow(row)];
-        });
+        return query.watch().map(
+          (rows) => [for (final row in rows) _mapListItemRow(row)],
+        );
       });
 
   @override
@@ -1521,8 +1520,9 @@ class GameCollectionRepositoryImpl
           ..where(_db.gameCollectionsTable.id.equals(id));
 
         return query.watchSingleOrNull().asyncMap((row) async {
-          await _readMoves();
-          return row == null ? null : _mapListItemRow(row);
+          if (row != null) return _mapListItemRow(row);
+          await _readMoveOf(id);
+          return null;
         });
       });
 
@@ -1555,27 +1555,26 @@ class GameCollectionRepositoryImpl
         );
   }
 
-  /// Refreshes [_moves] from `collection_moves`, between a list or list-item
-  /// read and the delivery of its rows (#693). Both, because the list and
-  /// an entry's screen each hold entries by id.
+  /// Reads where [id]'s entry moved, if it has, into [_moves] (#693): after
+  /// [watchCollectionListItem] finds no row for [id], and before it delivers
+  /// that null.
   ///
-  /// A subscriber that asks [reconciledCollectionEntryId] on an emission
-  /// then finds every move the rows reflect, whichever repository or tab
-  /// made it: a move commits with the deletion of its local row, is never
-  /// removed, and this read comes after the rows', so it sees at least what
-  /// they saw.
+  /// A subscriber that asks [reconciledCollectionEntryId] on the null then
+  /// finds the move, whichever repository or tab made it: a move commits
+  /// with the deletion of its local row, is never removed, and this read
+  /// comes after the row's, so it sees at least what that read saw.
   ///
-  /// It can also see more. A reconcile that commits between the two reads
-  /// delivers the local row with the move that deleted it, so a subscriber
-  /// that follows the move must still take that row as the entry. The
-  /// reconcile's write brings the server's row on the next emission.
-  Future<void> _readMoves() async {
-    final moves = await awaitedOnDispose(
-      _db.select(_db.collectionMovesTable).get(),
+  /// One row, by its key, and only on a null: the table is never pruned, and
+  /// only an entry's screen follows a move. The list holds no entry across
+  /// one; its next emission simply has the server's row in place of the
+  /// local one.
+  Future<void> _readMoveOf(String id) async {
+    final move = await awaitedOnDispose(
+      (_db.select(
+        _db.collectionMovesTable,
+      )..where((t) => t.localId.equals(id))).getSingleOrNull(),
     );
-    for (final move in moves) {
-      _moves[move.localId] = move.serverId;
-    }
+    if (move != null) _moves[move.localId] = move.serverId;
   }
 
   /// The join [watchCollectionListItems] and [watchCollectionListItem]

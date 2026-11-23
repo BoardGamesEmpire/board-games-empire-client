@@ -38,8 +38,10 @@ import 'package:observability/observability.dart';
 /// moved. If it did, [entryId] becomes the server's id and the bloc watches
 /// that instead. The entry on screen stays until the new watch answers, and
 /// whatever the old watch still reports is dropped. A bloc opened on a local
-/// id that has already moved (a restored route, a web reload) starts on the
-/// server's id.
+/// id that has already moved starts on the server's id when the repository
+/// already knows the move. Otherwise, as on a restored route or a web
+/// reload, it is `loading` until the local id's first null, and follows the
+/// move then.
 ///
 /// An edit or a removal sends [entryId] as it is when sent. The edit sheet
 /// and the removal confirm hold no id of their own, so one left open across
@@ -130,6 +132,7 @@ class CollectionEntryBloc
     on<CollectionEntryHydrationEnded>(_onHydrationEnded);
 
     _entryId = _repository.reconciledCollectionEntryId(entryId) ?? entryId;
+    _followed.addAll({entryId, _entryId});
     _watch = _watchEntry();
     _hasHydrationSource = hydration != null;
     _hydrationUpdates = hydration?.listen(
@@ -147,6 +150,10 @@ class CollectionEntryBloc
   /// id once an add's reconcile moved it there (#693).
   String get entryId => _entryId;
   late String _entryId;
+
+  /// Every id this bloc has been on, so a move back to one of them is not
+  /// followed. See [_followReconcile].
+  final Set<String> _followed = {};
 
   final GameCollectionRepository _repository;
   final SyncOperationSender _sender;
@@ -198,11 +205,16 @@ class CollectionEntryBloc
   /// one has, and watches that (#693). Whether it moved.
   ///
   /// Asked on the watch's null, which is how the move reaches this bloc: the
-  /// local row goes in the move, and the repository reads the moves before
-  /// it delivers that null, in whichever tab the reconcile ran.
+  /// local row goes in the move, and the repository reads the id's move
+  /// before it delivers that null, in whichever tab the reconcile ran.
+  ///
+  /// A move to an id the bloc has already been on is not followed, as the
+  /// repository's own lookup follows none: moves that loop would otherwise
+  /// swap the watch between their ids for as long as the page is open,
+  /// never settling. The null is then read as any other.
   bool _followReconcile() {
     final movedTo = _repository.reconciledCollectionEntryId(_entryId);
-    if (movedTo == null) return false;
+    if (movedTo == null || !_followed.add(movedTo)) return false;
     _entryId = movedTo;
     _absent = false;
     // As for a retry: no watch that [close] has already gone past.

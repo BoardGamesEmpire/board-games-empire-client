@@ -161,15 +161,31 @@ void main() {
       expect(seen.last, (id: null, answer: _kServerId));
     });
 
-    test('of the list watch, the one that drops the local id', () async {
+    test("the entry watch reads only its own id's move", () async {
+      final added = await add();
+      await reconcile(added);
+      await db
+          .into(db.collectionMovesTable)
+          .insert(
+            CollectionMovesTableCompanion.insert(
+              localId: 'gc-other-local',
+              serverId: 'gc-other-server',
+            ),
+          );
+      final other = otherTab();
+
+      await other.watchCollectionListItem(added.entry.id).first;
+
+      expect(other.reconciledCollectionEntryId(added.entry.id), _kServerId);
+      expect(other.reconciledCollectionEntryId('gc-other-local'), isNull);
+    });
+
+    test('not by the list watch, which reads no moves', () async {
       final added = await add();
       final other = otherTab();
-      final seen = <({List<String> ids, String? answer})>[];
+      final seen = <List<String>>[];
       final sub = other.watchCollectionListItems().listen(
-        (items) => seen.add((
-          ids: [for (final item in items) item.entry.id],
-          answer: other.reconciledCollectionEntryId(added.entry.id),
-        )),
+        (items) => seen.add([for (final item in items) item.entry.id]),
       );
       addTearDown(sub.cancel);
       await pumpEventQueue();
@@ -177,9 +193,9 @@ void main() {
       await reconcile(added);
       await pumpEventQueue();
 
-      final moved = seen.firstWhere((s) => !s.ids.contains(added.entry.id));
-      expect(moved.ids, [_kServerId]);
-      expect(moved.answer, _kServerId);
+      // The list has the server's row in place of the local one.
+      expect(seen.last, [_kServerId]);
+      expect(other.reconciledCollectionEntryId(added.entry.id), isNull);
     });
 
     test('of a repository opened after the reconcile, as on a '
@@ -289,7 +305,8 @@ void main() {
       currentUserId: _kUserId,
       clock: clock,
     );
-    final sub = heldRepo.watchCollectionListItems().listen((_) {});
+    // No row for the id, so the watch reads its move before answering.
+    final sub = heldRepo.watchCollectionListItem('gc-missing').listen((_) {});
     addTearDown(sub.cancel);
     await reads.started;
 
