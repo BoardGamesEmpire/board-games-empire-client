@@ -38,6 +38,11 @@ const _refreshFailedCopy =
 const _errorCopy = "We couldn't open your households.";
 const _retryCopy = 'Try again';
 const _refreshingCopy = 'Refreshing\u2026';
+const _refreshCopy = 'Refresh';
+
+/// The four surfaces the list can show (#269), each of which can be
+/// refreshed by hand (#314).
+enum _Surface { loading, error, empty, rows }
 
 /// Scrolls the list to its very end, checks the Create button leaves a 16dp
 /// gap under [lastRow], then taps [lastRow] where the button would reach over
@@ -164,6 +169,7 @@ void main() {
     Future<void> pumpUnderRegion(
       WidgetTester tester, {
       void Function(BuildContext context, String householdId)? onOpen,
+      Future<void> Function()? onRetry,
     }) async {
       useViewSize(tester, const Size(1280, 800));
       status.finished(HydrateOutcome.complete);
@@ -172,6 +178,7 @@ void main() {
           theme: pointerPlatformTheme(),
           builder: underSelectionRegion,
           onOpen: onOpen,
+          onRetry: onRetry,
         ),
       );
       households.add([
@@ -214,6 +221,36 @@ void main() {
         expect(copies, isEmpty);
       },
     );
+
+    testWidgets('a pull under the selection region refreshes', (
+      tester,
+    ) async {
+      // A touch pull, on the desktop platform the region is installed on:
+      // it has to reach the list as a scroll, not start a selection (#314).
+      final copies = captureClipboardCopies();
+      var calls = 0;
+      await pumpUnderRegion(tester, onRetry: () async => calls++);
+
+      // Further than the other groups pull. macOS scrolls with the desktop
+      // bouncing physics, whose fast deceleration rate gives an overscroll
+      // about a quarter of the finger's travel (friction about 0.26), so
+      // arming the indicator takes roughly 0.77 of the viewport plus the
+      // touch slop. iOS, at the normal rate, takes about 0.385 of it. 300dp
+      // in this 800dp window falls short; measured, 600dp arms it, with the
+      // region or without it.
+      await tester.fling(
+        find.byKey(HouseholdListScreen.rowKey('h-1')),
+        const Offset(0, 600),
+        1000,
+      );
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+
+      expect(calls, 1);
+      await tester.pumpAndSettle();
+      await sendCopyShortcut(tester);
+      expect(copies, isEmpty);
+    });
 
     for (final kind in [PointerDeviceKind.mouse, PointerDeviceKind.touch]) {
       testWidgets('a ${kind.name} tap on a row still opens it', (tester) async {
@@ -1396,6 +1433,311 @@ void main() {
     });
   });
 
+  group('refreshing by hand (#314)', () {
+    /// Pumps the screen on [surface], reached the way the groups above reach
+    /// it, and checks it is the one showing.
+    Future<void> pumpOn(
+      WidgetTester tester,
+      _Surface surface, {
+      Future<void> Function()? onRetry,
+      void Function(BuildContext context, String householdId)? onOpen,
+    }) async {
+      switch (surface) {
+        case _Surface.loading:
+          status.started();
+        case _Surface.error:
+          break;
+        case _Surface.empty || _Surface.rows:
+          status.finished(HydrateOutcome.complete);
+      }
+      await tester.pumpWidget(harness(onRetry: onRetry, onOpen: onOpen));
+      switch (surface) {
+        case _Surface.loading || _Surface.empty:
+          households.add(const []);
+        case _Surface.error:
+          households.addError(StateError('no authenticated user'));
+        case _Surface.rows:
+          households.add([
+            _household('h-1', name: 'Alpha'),
+            _household('h-2', name: 'Bravo'),
+          ]);
+      }
+      await tester.pump();
+      expect(
+        find.byKey(switch (surface) {
+          _Surface.loading => HouseholdListScreen.loadingKey,
+          _Surface.error => HouseholdListScreen.errorKey,
+          _Surface.empty => HouseholdListScreen.emptyKey,
+          _Surface.rows => HouseholdListScreen.rowKey('h-1'),
+        }),
+        findsOneWidget,
+      );
+    }
+
+    /// A touch pull down from the top of the list, held for the indicator to
+    /// snap into place and call for the refresh.
+    Future<void> pull(WidgetTester tester) async {
+      await tester.fling(
+        find.byType(CustomScrollView),
+        const Offset(0, 300),
+        1000,
+      );
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+    }
+
+    Finder button() => find.byKey(HouseholdListScreen.refreshButtonKey);
+
+    FocusNode buttonFocus(WidgetTester tester) =>
+        tester.widget<IconButton>(button()).focusNode!;
+
+    for (final surface in _Surface.values) {
+      testWidgets('the app bar has a refresh button: ${surface.name}', (
+        tester,
+      ) async {
+        await pumpOn(tester, surface, onRetry: () async {});
+
+        expect(
+          find.descendant(of: find.byType(AppBar), matching: button()),
+          findsOneWidget,
+        );
+      });
+
+      testWidgets('the button sends the retry: ${surface.name}', (
+        tester,
+      ) async {
+        var calls = 0;
+        await pumpOn(tester, surface, onRetry: () async => calls++);
+
+        await tester.tap(button());
+        await tester.pump();
+
+        expect(calls, 1);
+      });
+
+      testWidgets('no seam, no gesture and no button: ${surface.name}', (
+        tester,
+      ) async {
+        await pumpOn(tester, surface);
+
+        expect(button(), findsNothing);
+        expect(find.byType(RefreshIndicator), findsNothing);
+      });
+    }
+
+    testWidgets('a pull sends the retry and the spinner holds until the pass '
+        'ends', (tester) async {
+      final pass = Completer<void>();
+      var calls = 0;
+      await pumpOn(
+        tester,
+        _Surface.rows,
+        onRetry: () {
+          calls++;
+          return pass.future;
+        },
+      );
+
+      await pull(tester);
+
+      expect(calls, 1);
+      expect(find.byType(RefreshProgressIndicator), findsOneWidget);
+      // The banner narrates the same pass.
+      expect(find.byKey(HouseholdListScreen.refreshBannerKey), findsOneWidget);
+
+      await tester.pump(const Duration(seconds: 2));
+      expect(find.byType(RefreshProgressIndicator), findsOneWidget);
+
+      pass.complete();
+      await tester.pumpAndSettle();
+
+      expect(find.byType(RefreshProgressIndicator), findsNothing);
+      expect(find.byKey(HouseholdListScreen.refreshBannerKey), findsNothing);
+    });
+
+    testWidgets('a pull from the loading state refreshes', (tester) async {
+      var calls = 0;
+      await pumpOn(tester, _Surface.loading, onRetry: () async => calls++);
+
+      await pull(tester);
+
+      expect(calls, 1);
+    });
+
+    testWidgets('a pull from the empty state refreshes', (tester) async {
+      var calls = 0;
+      await pumpOn(tester, _Surface.empty, onRetry: () async => calls++);
+
+      await pull(tester);
+
+      expect(calls, 1);
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets('a pull from the error state refreshes', (tester) async {
+      var calls = 0;
+      await pumpOn(tester, _Surface.error, onRetry: () async => calls++);
+
+      await pull(tester);
+
+      expect(calls, 1);
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets('the button keeps focus through its own pass', (tester) async {
+      final handle = tester.ensureSemantics();
+      final pass = Completer<void>();
+      var calls = 0;
+      await pumpOn(
+        tester,
+        _Surface.rows,
+        onRetry: () {
+          calls++;
+          return pass.future;
+        },
+      );
+      buttonFocus(tester).requestFocus();
+      await tester.pump();
+      final node = FocusManager.instance.primaryFocus;
+      expect(node, same(buttonFocus(tester)));
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pump();
+      await tester.pump();
+
+      expect(calls, 1);
+      expect(
+        tester.getSemantics(find.byType(BgeRefreshButton)).label,
+        _refreshingCopy,
+      );
+      expect(FocusManager.instance.primaryFocus, same(node));
+      expect(buttonFocus(tester), same(node));
+
+      pass.complete();
+      await tester.pump();
+      await tester.pump();
+
+      expect(
+        tester.getSemantics(find.byType(BgeRefreshButton)).label,
+        _refreshCopy,
+      );
+      expect(FocusManager.instance.primaryFocus, same(node));
+      // In the body: the framework checks for a live handle before
+      // teardowns run, so `addTearDown(handle.dispose)` fails the test.
+      handle.dispose();
+    });
+
+    // The error surface has no banner and the loading one only a spinner, so
+    // the button's label is what says the press was taken (#314).
+    for (final surface in [_Surface.error, _Surface.loading]) {
+      testWidgets('on the ${surface.name} surface, the button says a pass is '
+          'running until it ends', (tester) async {
+        final handle = tester.ensureSemantics();
+        final pass = Completer<void>();
+        await pumpOn(tester, surface, onRetry: () => pass.future);
+        expect(
+          tester.getSemantics(find.byType(BgeRefreshButton)).label,
+          _refreshCopy,
+        );
+
+        await tester.tap(button());
+        await tester.pump();
+        await tester.pump();
+
+        expect(
+          tester.getSemantics(find.byType(BgeRefreshButton)).label,
+          _refreshingCopy,
+        );
+        expect(find.byTooltip(_refreshingCopy), findsOneWidget);
+
+        pass.complete();
+        await tester.pump();
+        await tester.pump();
+
+        expect(
+          tester.getSemantics(find.byType(BgeRefreshButton)).label,
+          _refreshCopy,
+        );
+        expect(find.byTooltip(_refreshCopy), findsOneWidget);
+        handle.dispose();
+      });
+    }
+
+    testWidgets('a pull during a pass the button started joins it', (
+      tester,
+    ) async {
+      final pass = Completer<void>();
+      var calls = 0;
+      await pumpOn(
+        tester,
+        _Surface.rows,
+        onRetry: () {
+          calls++;
+          return pass.future;
+        },
+      );
+      await tester.tap(button());
+      await tester.pump();
+      await tester.pump();
+      expect(calls, 1);
+
+      await pull(tester);
+
+      // No second pass, and the pull's spinner waits on the first.
+      expect(calls, 1);
+      expect(find.byType(RefreshProgressIndicator), findsOneWidget);
+      await tester.pump(const Duration(seconds: 2));
+      expect(find.byType(RefreshProgressIndicator), findsOneWidget);
+
+      pass.complete();
+      await tester.pumpAndSettle();
+
+      expect(calls, 1);
+      expect(find.byType(RefreshProgressIndicator), findsNothing);
+    });
+
+    testWidgets('a row keeps focus while the banner comes and goes', (
+      tester,
+    ) async {
+      final pass = Completer<void>();
+      await pumpOn(
+        tester,
+        _Surface.rows,
+        onRetry: () => pass.future,
+        onOpen: (_, _) {},
+      );
+      FocusNode rowFocus() => Focus.of(
+        tester.element(
+          find.descendant(
+            of: find.byKey(HouseholdListScreen.rowKey('h-1')),
+            matching: find.text('Alpha'),
+          ),
+        ),
+      );
+      rowFocus().requestFocus();
+      await tester.pump();
+      final row = rowFocus();
+      expect(row.hasPrimaryFocus, isTrue);
+
+      await tester.tap(button());
+      await tester.pump();
+      await tester.pump();
+
+      // The banner arrives above the rows, moving them one place down.
+      expect(find.byKey(HouseholdListScreen.refreshBannerKey), findsOneWidget);
+      expect(rowFocus(), same(row));
+      expect(row.hasPrimaryFocus, isTrue);
+
+      pass.complete();
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.byKey(HouseholdListScreen.refreshBannerKey), findsNothing);
+      expect(rowFocus(), same(row));
+      expect(row.hasPrimaryFocus, isTrue);
+    });
+  });
+
   testWidgets('surfaces a failed cache read as an error', (tester) async {
     await tester.pumpWidget(harness());
     households.addError(StateError('no authenticated user'));
@@ -1415,11 +1757,14 @@ void main() {
     /// The screen as the shell composes it: with `onOpen`, so each row is
     /// the button the app draws, held to the tap-target and label checks. An
     /// inert row is what a composition with no detail route gets, and the
-    /// shell always has one.
+    /// shell always has one. With a retry too, so the app bar's refresh
+    /// button is held to the same checks in every state (#314); the shell
+    /// passes one wherever it has a household client.
     Widget Function(ThemeData) screen({
       bool started = false,
       HydrateOutcome? finished,
       Future<void> Function()? onRetry,
+      bool seam = true,
     }) => (theme) {
       if (started) status.started();
       if (finished != null) status.finished(finished);
@@ -1427,9 +1772,18 @@ void main() {
         theme: theme,
         onCreate: (_) {},
         onOpen: (_, _) {},
-        onRetry: onRetry,
+        onRetry: seam ? onRetry ?? () async {} : null,
       );
     };
+
+    /// The app bar's refresh button, at rest or busy.
+    void expectRefreshButton({bool refreshing = false}) {
+      expect(find.byKey(HouseholdListScreen.refreshButtonKey), findsOneWidget);
+      expect(
+        find.byTooltip(refreshing ? _refreshingCopy : _refreshCopy),
+        findsOneWidget,
+      );
+    }
 
     auditScreen(
       'loading',
@@ -1439,6 +1793,7 @@ void main() {
         households.add(const []);
         await tester.pump();
         expect(find.byKey(HouseholdListScreen.loadingKey), findsOneWidget);
+        expectRefreshButton();
       },
     );
 
@@ -1449,6 +1804,7 @@ void main() {
         households.add(const []);
         await tester.pumpAndSettle();
         expect(find.byKey(HouseholdListScreen.emptyCreateKey), findsOneWidget);
+        expectRefreshButton();
       },
     );
 
@@ -1461,6 +1817,7 @@ void main() {
         expect(find.text('Sunday Crew'), findsOneWidget);
         expect(find.text(_notSyncedCopy), findsOneWidget);
         expect(find.byKey(HouseholdListScreen.createFabKey), findsOneWidget);
+        expectRefreshButton();
       },
     );
 
@@ -1480,6 +1837,21 @@ void main() {
               320,
         );
         expect(find.byKey(HouseholdListScreen.createFabKey), findsOneWidget);
+        expectRefreshButton();
+      },
+    );
+
+    auditScreen(
+      'ready, with no refresh seam',
+      build: screen(finished: HydrateOutcome.complete, seam: false),
+      arrange: (tester) async {
+        households.add(manyRows());
+        await tester.pumpAndSettle();
+        expect(find.text('Sunday Crew'), findsOneWidget);
+        expect(
+          find.byKey(HouseholdListScreen.refreshButtonKey),
+          findsNothing,
+        );
       },
     );
 
@@ -1490,6 +1862,7 @@ void main() {
         households.addError(StateError('no authenticated user'));
         await tester.pumpAndSettle();
         expect(find.byKey(HouseholdListScreen.errorKey), findsOneWidget);
+        expectRefreshButton();
       },
     );
 
@@ -1501,6 +1874,7 @@ void main() {
         await tester.pumpAndSettle();
         expect(find.text(_refreshFailedCopy), findsOneWidget);
         expect(find.byKey(HouseholdListScreen.refreshRetryKey), findsOneWidget);
+        expectRefreshButton();
       },
     );
 
@@ -1522,6 +1896,7 @@ void main() {
         status.started();
         await tester.pump();
         expect(find.text(_refreshingCopy), findsNWidgets(2));
+        expectRefreshButton(refreshing: true);
       },
     );
   });
