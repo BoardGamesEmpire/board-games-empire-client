@@ -239,6 +239,18 @@ class GameCollectionRepositoryImpl
   /// transactions on one database one at a time, so two never share it.
   Set<String>? _released;
 
+  /// Local id → server id, for every entry move this repository has
+  /// recorded or read from `collection_moves`
+  /// ([reconciledCollectionEntryId], #693). Never shrinks: a move is never
+  /// undone.
+  final Map<String, String> _moves = {};
+
+  /// The moves the open transaction has written, for [_purgingTransaction]
+  /// to add to [_moves] once it commits (#693). Open and closed with
+  /// [_released], and a field for the same reason: so the callers of
+  /// [_writeServerEntry] need not carry it.
+  Map<String, String>? _moving;
+
   /// Server-corrected time source (#12). Every consensus-relevant
   /// timestamp this repository produces — tombstone `deletedAt`,
   /// `updatedAt` (including resurrection), fresh-insert `createdAt` —
@@ -691,7 +703,8 @@ class GameCollectionRepositoryImpl
   /// When `serverEntry.deletedAt` is null, the local row is
   /// upserted with `isDirty: false, isLocalOnly: false`. If the
   /// local row had a different id, that stale row is dropped
-  /// before the upsert (after the remap). Then the ops still queued
+  /// before the upsert (after the remap), and the move is recorded for
+  /// [reconciledCollectionEntryId] (#693). Then the ops still queued
   /// for the entry are replayed over it, and the row stays dirty while
   /// any remain (#429) — see [_replayOutstanding].
   ///
@@ -1316,6 +1329,19 @@ class GameCollectionRepositoryImpl
         await (_db.delete(
           _db.gameCollectionsTable,
         )..where((t) => t.id.equals(local.id))).go();
+
+        // Where it went, committed with the deletion so no reader finds
+        // one without the other, in this tab or another (#693). A rollback
+        // takes it too. A second reconcile of the same local id replaces it.
+        await _db
+            .into(_db.collectionMovesTable)
+            .insertOnConflictUpdate(
+              CollectionMovesTableCompanion.insert(
+                localId: local.id,
+                serverId: serverEntry.id,
+              ),
+            );
+        _moving![local.id] = serverEntry.id;
       }
       await _db
           .into(_db.gameCollectionsTable)
@@ -1355,19 +1381,29 @@ class GameCollectionRepositoryImpl
   /// games it purges, and null again however [body] ends (#469). [body]
   /// releases them itself, with [_releasePurged], once its other writes are
   /// done.
-  Future<void> _purgingTransaction(Future<void> Function() body) =>
-      _db.transaction(() async {
-        _released = {};
-        try {
-          await body();
-          assert(
-            _released == null,
-            'A purging transaction ended without releasing what it purged',
-          );
-        } finally {
-          _released = null;
-        }
-      });
+  ///
+  /// [_moving] is open for the same span. The moves it collects reach
+  /// [_moves] only once the transaction commits (#693).
+  Future<void> _purgingTransaction(Future<void> Function() body) async {
+    final moved = <String, String>{};
+    await _db.transaction(() async {
+      _released = {};
+      _moving = moved;
+      try {
+        await body();
+        assert(
+          _released == null,
+          'A purging transaction ended without releasing what it purged',
+        );
+      } finally {
+        _released = null;
+        _moving = null;
+      }
+    });
+    // So a caller here can ask at once, without waiting on an emission to
+    // read the move back.
+    _moves.addAll(moved);
+  }
 
   /// Releases the platform games the open transaction purged (#469), and
   /// closes [_released]. Runs inside the caller's transaction, after its
@@ -1434,9 +1470,10 @@ class GameCollectionRepositoryImpl
             OrderingTerm.asc(_db.gameCollectionsTable.id),
           ]);
 
-        return query.watch().map(
-          (rows) => [for (final row in rows) _mapListItemRow(row)],
-        );
+        return query.watch().asyncMap((rows) async {
+          await _readMoves();
+          return [for (final row in rows) _mapListItemRow(row)];
+        });
       });
 
   @override
@@ -1445,10 +1482,37 @@ class GameCollectionRepositoryImpl
         final query = _listItemQuery()
           ..where(_db.gameCollectionsTable.id.equals(id));
 
-        return query.watchSingleOrNull().map(
-          (row) => row == null ? null : _mapListItemRow(row),
-        );
+        return query.watchSingleOrNull().asyncMap((row) async {
+          await _readMoves();
+          return row == null ? null : _mapListItemRow(row);
+        });
       });
+
+  @override
+  String? reconciledCollectionEntryId(String localId) => _moves[localId];
+
+  /// Refreshes [_moves] from `collection_moves`, between a list or list-item
+  /// read and the delivery of its rows (#693). Both, because the list and
+  /// an entry's screen each hold entries by id.
+  ///
+  /// A subscriber that asks [reconciledCollectionEntryId] on an emission
+  /// then finds every move the rows reflect, whichever repository or tab
+  /// made it: a move commits with the deletion of its local row, is never
+  /// removed, and this read comes after the rows', so it sees at least what
+  /// they saw.
+  ///
+  /// It can also see more. A reconcile that commits between the two reads
+  /// delivers the local row with the move that deleted it, so a subscriber
+  /// that follows the move must still take that row as the entry. The
+  /// reconcile's write brings the server's row on the next emission.
+  Future<void> _readMoves() async {
+    final moves = await awaitedOnDispose(
+      _db.select(_db.collectionMovesTable).get(),
+    );
+    for (final move in moves) {
+      _moves[move.localId] = move.serverId;
+    }
+  }
 
   /// The join [watchCollectionListItems] and [watchCollectionListItem]
   /// share (#46): the user's live entries with their platform game and

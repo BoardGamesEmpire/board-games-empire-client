@@ -583,6 +583,34 @@ abstract class GameCollectionRepository {
   /// Closes, rather than errors, when the repository is disposed.
   Stream<GameCollectionListItem?> watchCollectionListItem(String id);
 
+  /// The server id a triplet's entry moved to from [localId], or null if
+  /// it has not moved — including when the server kept the local id, and
+  /// when a reconcile rolled back.
+  ///
+  /// An entry moves when a live server copy of its triplet replaces the
+  /// local row under a different id: usually the reconcile of an add made
+  /// on this device, but also a merge or rebuild from the server, or a
+  /// reconcile over a removed local row, whose id differs.
+  ///
+  /// For a screen that holds an entry by id when the id changes under it
+  /// (#693): one open when the move commits, or one rebuilt on the old id
+  /// afterwards. The local row is gone by then, so
+  /// [watchCollectionListItem] on the local id emits null, as for an entry
+  /// that was removed.
+  ///
+  /// The move is stored with the write that makes it, so it is found whichever
+  /// repository made it, another tab's over the same storage included, and
+  /// after a reload. This answers from the moves this repository last
+  /// recorded or read: its own server writes, and the moves it reads before
+  /// delivering each [watchCollectionListItems] or [watchCollectionListItem]
+  /// emission. A subscriber that checks this on every emission therefore
+  /// sees a move on the emission that drops the local id. Asked before
+  /// either stream has emitted, it may answer null for a move another
+  /// repository made.
+  ///
+  /// Never throws, including after disposal.
+  String? reconciledCollectionEntryId(String localId);
+
   /// Watches a single entry. Emits null when removed.
   Stream<GameCollection?> watchEntry(String id);
 
