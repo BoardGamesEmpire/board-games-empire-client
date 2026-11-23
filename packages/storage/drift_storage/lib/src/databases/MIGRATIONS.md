@@ -7,7 +7,7 @@ bespoke migration registry.
 
 ## Current state
 
-`ServerDatabase` is at `schemaVersion == 19`; `MetaDatabase` is at
+`ServerDatabase` is at `schemaVersion == 20`; `MetaDatabase` is at
 `schemaVersion == 2`. Both databases have real forward migrations, so each has
 a generated `<name>_database.steps.dart` and a `test/drift/<name>/**` scaffold
 (schema helpers + migration tests), all **committed** — regenerate them with
@@ -161,6 +161,16 @@ Server schema history:
   another column, which `DROP COLUMN` would refuse; the flag's own boolean
   CHECK goes with it, as `event_access.roster_shown`'s does. No step between v7 and v18 rebuilds
   `event_policies`, so none needs to drop them.
+- **v19 → v20 (#693, #771):** adds `collection_moves` (`local_id` primary key,
+  `server_id`), the persisted record of where a reconciled collection entry
+  went, so every tab and a reload can follow an entry created on this device,
+  and `collection_refresh_markers` (`user_id` primary key, `confirmed_at`),
+  when each user's collection last finished a successful hydration pass, kept
+  per server and user and not cleared on sign-out. Two new, empty tables with
+  no FK edges and no indexes, each created by one `createTable`, so #54 stays
+  deferred. Nothing earlier recorded either, so nothing is backfilled: a user
+  with no marker reads as a collection not yet confirmed. Nothing earlier
+  references them, so no older step needs to drop anything.
 
 Meta schema history:
 
@@ -171,7 +181,7 @@ Meta schema history:
 
 Committed, generated artefacts (never hand-edited):
 
-- `drift_schemas/server/drift_schema_v1.json` … `drift_schema_v19.json`
+- `drift_schemas/server/drift_schema_v1.json` … `drift_schema_v20.json`
 - `drift_schemas/meta/drift_schema_v1.json`, `drift_schema_v2.json`
 
 CI fails if the latest snapshot of either database drifts from the live
