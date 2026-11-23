@@ -12,6 +12,11 @@ import 'package:ui_tokens/ui_tokens.dart';
 ///
 /// The collection row's shape (#44). Without [onTap] a row is inert content,
 /// not a focus stop: a tap that leads nowhere is worse than no tap (#269).
+///
+/// A base game's row in a list that folds its expansions carries
+/// [expansions]: the 🧩 control at the row's end, a button and a focus stop
+/// of its own after the row's, and the row's Show/Hide expansions custom
+/// action (#1048).
 class CatalogGameRow extends StatelessWidget {
   const CatalogGameRow({
     required this.title,
@@ -22,6 +27,7 @@ class CatalogGameRow extends StatelessWidget {
     this.spokenTitle,
     this.note,
     this.summary,
+    this.expansions,
     super.key,
   });
 
@@ -50,17 +56,27 @@ class CatalogGameRow extends StatelessWidget {
   /// text, cut to one line. Spoken after the facts, in the row's one node.
   final String? summary;
 
+  /// The game's expansions, which the control at the row's end counts, and
+  /// shows and hides under the row (#1048). Null for no control: a game with
+  /// none, or a list that doesn't fold them.
+  final BgeCoverExpansions? expansions;
+
   @override
   Widget build(BuildContext context) {
-    // MergeSemantics rather than a Semantics container: a tappable ListTile
-    // builds an InkWell with its own node, and merging keeps the tap action
-    // and the words on one node (the collection row's reasoning). It sits
-    // inside the outline, so the node's rect leaves out the gap below the
-    // row (#647).
+    // BgeExpansionsRow merges the tile's semantics, rather than a Semantics
+    // container: a tappable ListTile builds an InkWell with its own node, and
+    // merging keeps the tap action and the words on one node (the collection
+    // row's reasoning). It sits inside the outline, so the node's rect
+    // leaves out the gap below the row (#647). It places the expansions
+    // control beside the tile, outside that node, and is there with
+    // [expansions] or without, so the tile keeps its element and its focus
+    // as a base game's first expansion arrives or its last goes (#1048).
     final tokens = BgeTokens.of(context);
     final tile = BgeOutlinedRow(
-      child: MergeSemantics(
-        child: BgeRowFocusRing(
+      child: BgeExpansionsRow(
+        expansions: expansions,
+        builder: (context, focusNode) => BgeRowFocusRing(
+          focusNode: focusNode,
           builder: (context, row) => ListTile(
             titleAlignment: BgeThumbnail.titleAlignmentOf(context),
             minTileHeight: BgeThumbnail.minTileHeightOf(context),

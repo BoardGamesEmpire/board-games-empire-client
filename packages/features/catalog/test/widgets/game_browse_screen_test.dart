@@ -339,6 +339,22 @@ void main() {
     Finder nested(String parent, String id) =>
         find.byKey(GameBrowseScreen.nestedRowKey(parent, id));
 
+    /// The control at the end of base game [id]'s row, which folds and
+    /// unfolds its expansions (#1048).
+    Finder controlOf(String id) => find.descendant(
+      of: row(id),
+      matching: find.byType(BgeRowExpansionsControl),
+    );
+
+    /// Shows base game [id]'s expansions, from its row's control: every base
+    /// game starts folded (#1048).
+    Future<void> unfold(WidgetTester tester, String id) async {
+      await tester.ensureVisible(controlOf(id));
+      await tester.pumpAndSettle();
+      await tester.tap(controlOf(id));
+      await tester.pumpAndSettle();
+    }
+
     testWidgets("an expansion's row sits under its base game's, indented", (
       tester,
     ) async {
@@ -348,6 +364,7 @@ void main() {
       ]);
 
       await show(tester);
+      await unfold(tester, 'B');
 
       expect(row('B'), findsOneWidget);
       expect(nested('B', 'E'), findsOneWidget);
@@ -370,6 +387,7 @@ void main() {
       ]);
 
       await show(tester);
+      await unfold(tester, 'B');
 
       double outlineStart(Finder row) => tester
           .getTopLeft(
@@ -392,6 +410,7 @@ void main() {
       ]);
 
       await show(tester);
+      await unfold(tester, 'B');
 
       expect(
         tester
@@ -417,6 +436,8 @@ void main() {
       ]);
 
       await show(tester);
+      await unfold(tester, 'B');
+      await unfold(tester, 'C');
 
       expect(nested('B', 'E'), findsOneWidget);
       expect(nested('C', 'E'), findsOneWidget);
@@ -434,6 +455,12 @@ void main() {
         expansion('E', [under('B'), under('C')]),
       ]);
       await show(tester, onOpen: (_, _) {});
+      // Both unfolded: C first, at the end, then B, at the top.
+      await scrollListToEnd(tester, row('C'));
+      await unfold(tester, 'C');
+      _pagePosition(tester).jumpTo(0);
+      await tester.pumpAndSettle();
+      await unfold(tester, 'B');
       final near = find.byKey(
         GameBrowseScreen.nestedRowKey('B', 'E'),
         skipOffstage: false,
@@ -470,6 +497,7 @@ void main() {
       ]);
 
       await show(tester);
+      await unfold(tester, 'B');
 
       expect(nested('B', 'E'), findsOneWidget);
       expect(row('E'), findsOneWidget);
@@ -532,6 +560,7 @@ void main() {
         await show(tester);
         await tester.tap(find.byKey(GameBrowseScreen.moreKey));
         await tester.pumpAndSettle();
+        await unfold(tester, 'B');
 
         expect(nested('B', 'E'), findsOneWidget);
         expect(row('E'), findsNothing);
@@ -548,9 +577,10 @@ void main() {
             : pageOf([base], page: 2);
 
         await show(tester);
+        expect(remote.calls, hasLength(2));
+        await unfold(tester, 'B');
 
         expect(nested('B', 'E'), findsOneWidget);
-        expect(remote.calls, hasLength(2));
       },
     );
 
@@ -573,15 +603,18 @@ void main() {
       await tester.tap(find.byKey(GameBrowseScreen.moreKey));
       await tester.pumpAndSettle();
 
-      expect(nested('B', 'E'), findsOneWidget);
       expect(row('C'), findsOneWidget);
       // Page 3 showed something, so the list waits for the next press.
       expect(remote.calls, hasLength(3));
       expect(find.byKey(GameBrowseScreen.moreKey), findsOneWidget);
+      await unfold(tester, 'B');
+      expect(nested('B', 'E'), findsOneWidget);
     });
 
-    testWidgets('a next page of expansions under a shown base game shows '
-        'their rows, and reads no further', (tester) async {
+    // A folded base game shows a page's expansions only as a higher count
+    // on its control, as a folded cover does on its badge (#1048).
+    testWidgets('a next page that only adds expansions under a folded base '
+        'game reads on until a row shows', (tester) async {
       remote.onFetchPage = (page, _) async => switch (page) {
         1 => pageOf([base], hasMore: true),
         2 => pageOf(
@@ -591,6 +624,7 @@ void main() {
           page: 2,
           hasMore: true,
         ),
+        3 => pageOf([game('C')], page: 3, hasMore: true),
         _ => throw unreachable(),
       };
 
@@ -598,8 +632,15 @@ void main() {
       await tester.tap(find.byKey(GameBrowseScreen.moreKey));
       await tester.pumpAndSettle();
 
-      expect(nested('B', 'E'), findsOneWidget);
-      expect(remote.calls, hasLength(2));
+      expect(row('C'), findsOneWidget);
+      expect(
+        find.descendant(of: controlOf('B'), matching: find.text('1')),
+        findsOneWidget,
+      );
+      expect(nested('B', 'E'), findsNothing);
+      // Page 3 showed a row, so the list waits for the next press.
+      expect(remote.calls, hasLength(3));
+      expect(find.byKey(GameBrowseScreen.moreKey), findsOneWidget);
     });
 
     testWidgets('a failed read of the next page stops reading on', (
@@ -679,23 +720,626 @@ void main() {
       );
     });
 
-    testWidgets('the semantic child count counts every row, nested ones too', (
+    testWidgets('the semantic child count counts the rows shown: nested ones '
+        'while their base game is open, and a box once (#1048)', (
       tester,
     ) async {
       remote.onFetchPage = (_, _) async => pageOf([
         base,
         game('C'),
         expansion('E', [under('B'), under('C')]),
+        game('D'),
+        for (var i = 0; i < 6; i++) expansion('D$i', [under('D')]),
       ]);
+      int? count() => tester
+          .widget<CustomScrollView>(find.byType(CustomScrollView))
+          .semanticChildCount;
 
       await show(tester);
+      expect(count(), 3, reason: 'all folded');
 
-      expect(
-        tester
-            .widget<CustomScrollView>(find.byType(CustomScrollView))
-            .semanticChildCount,
-        4,
+      await unfold(tester, 'B');
+      await unfold(tester, 'C');
+      expect(count(), 5, reason: 'B and C open, a row under each');
+
+      await unfold(tester, 'D');
+      expect(find.byType(BgeNestedRowsBox), findsOneWidget);
+      expect(count(), 6, reason: "D's six in one box");
+    });
+
+    group('folded in the list (#1048)', () {
+      /// [count] expansions of base game [id]: `<id>0`, `<id>1`, and on.
+      List<Game> expansionsOf(String id, int count) => [
+        for (var i = 0; i < count; i++) expansion('$id$i', [under(id)]),
+      ];
+
+      /// Rows and controls found whether or not they are in view.
+      Finder anyRow(String id) =>
+          find.byKey(GameBrowseScreen.rowKey(id), skipOffstage: false);
+      Finder anyNested(String parent, String id) => find.byKey(
+        GameBrowseScreen.nestedRowKey(parent, id),
+        skipOffstage: false,
       );
+      Finder anyControlOf(String id) => find.descendant(
+        of: anyRow(id),
+        matching: find.byType(BgeRowExpansionsControl),
+        skipOffstage: false,
+      );
+      final box = find.byType(BgeNestedRowsBox, skipOffstage: false);
+
+      /// The control's own node: the ink inside it walks up to it.
+      SemanticsNode controlNode(WidgetTester tester, String id) =>
+          tester.getSemantics(
+            find.descendant(
+              of: anyControlOf(id),
+              matching: find.byType(InkWell),
+              skipOffstage: false,
+            ),
+          );
+
+      /// The row's merged node, which its tile walks up to.
+      SemanticsNode rowNode(WidgetTester tester, String id) =>
+          tester.getSemantics(
+            find.descendant(
+              of: anyRow(id),
+              matching: find.byType(ListTile),
+              skipOffstage: false,
+            ),
+          );
+
+      /// The focus of [row]'s tile.
+      FocusNode tileFocusOf(WidgetTester tester, Finder row) => tester
+          .widget<ListTile>(
+            find.descendant(
+              of: row,
+              matching: find.byType(ListTile),
+              skipOffstage: false,
+            ),
+          )
+          .focusNode!;
+
+      void performCustomAction(SemanticsNode node, String label) =>
+          node.owner!.performAction(
+            node.id,
+            SemanticsAction.customAction,
+            CustomSemanticsAction.getIdentifier(
+              CustomSemanticsAction(label: label),
+            ),
+          );
+
+      Matcher isControl(String label, {required bool expanded}) => isSemantics(
+        label: label,
+        isButton: true,
+        hasExpandedState: true,
+        isExpanded: expanded,
+        hasTapAction: true,
+        isFocusable: true,
+      );
+
+      testWidgets('list starts folded: a base game shows its control and no '
+          'nested rows', (tester) async {
+        final handle = tester.ensureSemantics();
+        remote.onFetchPage = (_, _) async =>
+            pageOf([base, ...expansionsOf('B', 2), game('C')]);
+
+        await show(tester, onOpen: (_, _) {});
+
+        expect(row('B'), findsOneWidget);
+        expect(row('C'), findsOneWidget);
+        expect(anyNested('B', 'B0'), findsNothing);
+        expect(anyNested('B', 'B1'), findsNothing);
+        expect(row('B0'), findsNothing);
+        expect(
+          find.descendant(of: controlOf('B'), matching: find.text('2')),
+          findsOneWidget,
+        );
+        expect(
+          controlNode(tester, 'B'),
+          isControl('Game B expansions, 2', expanded: false),
+        );
+        expect(controlOf('C'), findsNothing);
+        // The control is a node of its own, after the row's, and the row
+        // offers the cover's custom action.
+        expect(rowNode(tester, 'B').id, isNot(controlNode(tester, 'B').id));
+        expect(
+          rowNode(tester, 'B'),
+          isSemantics(
+            hasTapAction: true,
+            customActions: [
+              const CustomSemanticsAction(label: 'Show expansions'),
+            ],
+          ),
+        );
+        expect(
+          tester
+              .widget<CustomScrollView>(find.byType(CustomScrollView))
+              .semanticChildCount,
+          2,
+        );
+        handle.dispose();
+      });
+
+      testWidgets('unfolding 2 shows them inline; unfolding 6 shows a box of '
+          '6', (tester) async {
+        final handle = tester.ensureSemantics();
+        useViewSize(tester, const Size(400, 1600));
+        remote.onFetchPage = (_, _) async => pageOf([
+          base,
+          ...expansionsOf('B', 2),
+          game('C'),
+          ...expansionsOf('C', 6),
+        ]);
+        await show(tester, onOpen: (_, _) {});
+
+        await unfold(tester, 'B');
+
+        for (final id in ['B0', 'B1']) {
+          expect(nested('B', id), findsOneWidget, reason: id);
+        }
+        expect(box, findsNothing);
+        expect(
+          controlNode(tester, 'B'),
+          isControl('Game B expansions, 2', expanded: true),
+        );
+        expect(
+          rowNode(tester, 'B'),
+          isSemantics(
+            hasTapAction: true,
+            customActions: [
+              const CustomSemanticsAction(label: 'Hide expansions'),
+            ],
+          ),
+        );
+        // Under B's row, and above C's.
+        expect(
+          tester.getRect(nested('B', 'B1')).bottom,
+          lessThanOrEqualTo(tester.getRect(row('C')).top),
+        );
+
+        await unfold(tester, 'C');
+
+        expect(box, findsOneWidget);
+        expect(
+          tester.widget<BgeNestedRowsBox>(box).semanticLabel,
+          'Game C expansions',
+        );
+        for (var i = 0; i < 6; i++) {
+          expect(
+            find.descendant(of: box, matching: anyNested('C', 'C$i')),
+            findsOneWidget,
+            reason: 'C$i',
+          );
+        }
+        // B stays open.
+        expect(nested('B', 'B0'), findsOneWidget);
+        expect(
+          controlNode(tester, 'C'),
+          isControl('Game C expansions, 6', expanded: true),
+        );
+        handle.dispose();
+      });
+
+      testWidgets('two base games open at once', (tester) async {
+        remote.onFetchPage = (_, _) async => pageOf([
+          base,
+          ...expansionsOf('B', 1),
+          game('C'),
+          ...expansionsOf('C', 1),
+        ]);
+        await show(tester, onOpen: (_, _) {});
+
+        await unfold(tester, 'B');
+        await unfold(tester, 'C');
+
+        expect(nested('B', 'B0'), findsOneWidget);
+        expect(nested('C', 'C0'), findsOneWidget);
+
+        // Folding one leaves the other open.
+        await unfold(tester, 'B');
+        expect(nested('B', 'B0'), findsNothing);
+        expect(nested('C', 'C0'), findsOneWidget);
+      });
+
+      testWidgets('open stays open as the next page arrives', (tester) async {
+        final handle = tester.ensureSemantics();
+        remote.onFetchPage = (page, _) async => page == 1
+            ? pageOf([base, ...expansionsOf('B', 1)], hasMore: true)
+            : pageOf([
+                expansion('B1', [under('B')]),
+                game('C'),
+              ], page: 2);
+        await show(tester, onOpen: (_, _) {});
+        await unfold(tester, 'B');
+
+        await tester.ensureVisible(find.byKey(GameBrowseScreen.moreKey));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(GameBrowseScreen.moreKey));
+        await tester.pumpAndSettle();
+
+        expect(row('C'), findsOneWidget);
+        expect(anyNested('B', 'B0'), findsOneWidget);
+        expect(anyNested('B', 'B1'), findsOneWidget);
+        expect(
+          controlNode(tester, 'B'),
+          isControl('Game B expansions, 2', expanded: true),
+        );
+        handle.dispose();
+      });
+
+      testWidgets("a held expansion isn't counted until its base game's page "
+          'places it (#711)', (tester) async {
+        // H waits for C, on page 2. B's count grows there too, folded.
+        remote.onFetchPage = (page, _) async => page == 1
+            ? pageOf([
+                base,
+                ...expansionsOf('B', 1),
+                expansion('H', [under('C')]),
+              ], hasMore: true)
+            : pageOf([
+                game('C'),
+                expansion('B1', [under('B')]),
+              ], page: 2);
+        Finder countOn(String id, String count) =>
+            find.descendant(of: controlOf(id), matching: find.text(count));
+        await show(tester, onOpen: (_, _) {});
+
+        expect(countOn('B', '1'), findsOneWidget);
+        expect(find.text('Game H'), findsNothing);
+        expect(row('C'), findsNothing);
+
+        await tester.tap(find.byKey(GameBrowseScreen.moreKey));
+        await tester.pumpAndSettle();
+
+        expect(countOn('B', '2'), findsOneWidget);
+        expect(countOn('C', '1'), findsOneWidget);
+        // Both still folded.
+        expect(find.text('Game H'), findsNothing);
+        expect(anyNested('B', 'B0'), findsNothing);
+        expect(row('H'), findsNothing);
+      });
+
+      testWidgets('folding with focus on a nested row focuses the base '
+          "game's control", (tester) async {
+        final handle = tester.ensureSemantics();
+        remote.onFetchPage = (_, _) async =>
+            pageOf([base, ...expansionsOf('B', 2), game('C')]);
+        await show(tester, onOpen: (_, _) {});
+        await unfold(tester, 'B');
+        // By way of C's row, so the control the page focused before the
+        // nested row is that row, not B's control, which the unfold's tap
+        // focused, and where the framework would put focus anyway.
+        tileFocusOf(tester, row('C')).requestFocus();
+        await tester.pump();
+        final tile = tileFocusOf(tester, nested('B', 'B1'))..requestFocus();
+        await tester.pump();
+        expect(tile.hasPrimaryFocus, isTrue);
+
+        // A screen reader on the base game's row folds it, as its custom
+        // action.
+        performCustomAction(rowNode(tester, 'B'), 'Hide expansions');
+        await tester.pumpAndSettle();
+
+        expect(anyNested('B', 'B1'), findsNothing);
+        expect(_focusIsWithin(tester, controlOf('B')), isTrue);
+        expect(
+          controlNode(tester, 'B'),
+          isSemantics(
+            label: 'Game B expansions, 2',
+            isButton: true,
+            hasExpandedState: true,
+            isExpanded: false,
+            hasTapAction: true,
+            isFocusable: true,
+            isFocused: true,
+          ),
+        );
+        handle.dispose();
+      });
+
+      // Where the box is held to half the page: at 2.0 in landscape, a row
+      // is taller than that (#1048).
+      testWidgets('folding with focus inside the box focuses the base '
+          "game's control, at 320 dp × 2.0 in landscape, and the page still "
+          'drags', (tester) async {
+        final handle = tester.ensureSemantics();
+        useViewSize(tester, const Size(568, 320));
+        tester.platformDispatcher.textScaleFactorTestValue = 2;
+        addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+        remote.onFetchPage = (_, _) async => pageOf([
+          base,
+          ...expansionsOf('B', 6),
+          for (var i = 0; i < 4; i++) game('F$i'),
+        ]);
+        await show(tester, onOpen: (_, _) {});
+        await unfold(tester, 'B');
+
+        final page = _pagePosition(tester);
+        ScrollPosition rows() => tester
+            .state<ScrollableState>(
+              find
+                  .descendant(
+                    of: box,
+                    matching: find.byType(Scrollable),
+                    skipOffstage: false,
+                  )
+                  .first,
+            )
+            .position;
+        expect(
+          rows().viewportDimension,
+          lessThanOrEqualTo(page.viewportDimension / 2),
+        );
+        expect(rows().maxScrollExtent, greaterThan(0));
+
+        // Focus on a row deep in the box, from the keyboard, by way of the
+        // next game's row, so the control the page focused before it isn't
+        // B's control, where the framework would put focus anyway.
+        await tester.sendKeyEvent(LogicalKeyboardKey.shift);
+        tileFocusOf(tester, anyRow('F0')).requestFocus();
+        await tester.pump();
+        tileFocusOf(tester, anyNested('B', 'B4')).requestFocus();
+        await tester.pump();
+        await tester.pump();
+        expect(_focusIsWithin(tester, anyNested('B', 'B4')), isTrue);
+
+        performCustomAction(rowNode(tester, 'B'), 'Hide expansions');
+        await tester.pumpAndSettle();
+
+        expect(box, findsNothing);
+        expect(_focusIsWithin(tester, anyControlOf('B')), isTrue);
+        expect(
+          controlNode(tester, 'B'),
+          isSemantics(
+            label: 'Game B expansions, 6',
+            isButton: true,
+            hasExpandedState: true,
+            isExpanded: false,
+            hasTapAction: true,
+            isFocusable: true,
+            isFocused: true,
+          ),
+        );
+
+        final before = page.pixels;
+        await tester.drag(find.byType(CustomScrollView), const Offset(0, -80));
+        await tester.pumpAndSettle();
+        expect(page.pixels, greaterThan(before));
+        handle.dispose();
+      });
+
+      // A page that brings a fifth expansion moves the rows into the box
+      // (#1048).
+      testWidgets('a nested row with focus stays focused as the count '
+          'crosses 4 → 5, shown in the box', (tester) async {
+        remote.onFetchPage = (page, _) async => page == 1
+            ? pageOf([base, ...expansionsOf('B', 4), game('C')], hasMore: true)
+            : pageOf([
+                expansion('B4', [under('B')]),
+                game('D'),
+              ], page: 2);
+        await show(tester, onOpen: (_, _) {});
+        await unfold(tester, 'B');
+        expect(box, findsNothing);
+        // From the keyboard, so the focus is drawn, and a hidden row is
+        // brought into view.
+        await tester.sendKeyEvent(LogicalKeyboardKey.shift);
+        tileFocusOf(tester, nested('B', 'B3')).requestFocus();
+        await tester.pump();
+
+        tester
+            .element(row('B'))
+            .read<GameBrowseBloc>()
+            .add(const GameBrowseMoreRequested());
+        await tester.pump();
+        await tester.pump();
+        await tester.pumpAndSettle();
+
+        expect(box, findsOneWidget);
+        final inBox = find.descendant(
+          of: box,
+          matching: anyNested('B', 'B3'),
+        );
+        expect(inBox, findsOneWidget);
+        expect(_focusIsWithin(tester, inBox), isTrue);
+        // The fourth of five, half hidden in a box 3½ rows tall until the
+        // focus brings it into view.
+        final shown = FocusManager.instance.primaryFocus!.rect;
+        final rows = tester.getRect(
+          find
+              .descendant(
+                of: box,
+                matching: find.byType(Scrollable),
+                skipOffstage: false,
+              )
+              .first,
+        );
+        expect(shown.top, greaterThanOrEqualTo(rows.top - 0.5));
+        expect(shown.bottom, lessThanOrEqualTo(rows.bottom + 0.5));
+      });
+
+      testWidgets("a focused row in a box scrolled out of the list doesn't "
+          "move focus to its game's other copy (#819)", (tester) async {
+        // B at the top with six, in a box, and C at the end with one, E
+        // under both: more than a screen and the list's cache apart.
+        remote.onFetchPage = (_, _) async => pageOf([
+          base,
+          expansion('E', [under('B'), under('C')]),
+          ...expansionsOf('B', 5),
+          for (var i = 0; i < 30; i++) game('F$i'),
+          game('C'),
+        ]);
+        await show(tester, onOpen: (_, _) {});
+        await scrollListToEnd(tester, row('C'));
+        await unfold(tester, 'C');
+        _pagePosition(tester).jumpTo(0);
+        await tester.pumpAndSettle();
+        await unfold(tester, 'B');
+        final near = anyNested('B', 'E');
+        final far = anyNested('C', 'E');
+        expect(find.descendant(of: box, matching: near), findsOneWidget);
+        expect(far, findsNothing);
+        tileFocusOf(tester, near).requestFocus();
+        await tester.pump();
+        expect(_focusIsWithin(tester, near), isTrue);
+
+        await scrollListToEnd(tester, far);
+
+        expect(near, findsNothing);
+        expect(_focusIsWithin(tester, far), isFalse);
+      });
+
+      testWidgets("a base game's row keeps its focus as its first expansion "
+          'arrives with a page', (tester) async {
+        remote.onFetchPage = (page, _) async => page == 1
+            ? pageOf([base, game('C')], hasMore: true)
+            : pageOf([...expansionsOf('B', 1), game('D')], page: 2);
+        await show(tester, onOpen: (_, _) {});
+        expect(controlOf('B'), findsNothing);
+        final tile = tileFocusOf(tester, row('B'))..requestFocus();
+        await tester.pump();
+
+        tester
+            .element(row('B'))
+            .read<GameBrowseBloc>()
+            .add(const GameBrowseMoreRequested());
+        await tester.pumpAndSettle();
+
+        expect(controlOf('B'), findsOneWidget);
+        expect(tileFocusOf(tester, row('B')), same(tile));
+        expect(tile.hasPrimaryFocus, isTrue);
+      });
+
+      testWidgets("a stack-free standalone expansion's own top-level row is "
+          'unaffected', (tester) async {
+        remote.onFetchPage = (_, _) async => pageOf([
+          base,
+          expansion('E', [under('B', standalone: true)]),
+          ...expansionsOf('B', 1),
+        ]);
+        await show(tester, onOpen: (_, _) {});
+
+        // Its own row, with no control: only its copy under B folds.
+        expect(row('E'), findsOneWidget);
+        expect(controlOf('E'), findsNothing);
+        expect(nested('B', 'E'), findsNothing);
+        expect(
+          find.descendant(of: controlOf('B'), matching: find.text('2')),
+          findsOneWidget,
+        );
+
+        await unfold(tester, 'B');
+        expect(nested('B', 'E'), findsOneWidget);
+        expect(row('E'), findsOneWidget);
+
+        await unfold(tester, 'B');
+        expect(nested('B', 'E'), findsNothing);
+        expect(row('E'), findsOneWidget);
+      });
+
+      testWidgets("folding while an inert box's own stop has focus focuses "
+          "the base game's control", (tester) async {
+        useViewSize(tester, const Size(400, 1600));
+        remote.onFetchPage = (_, _) async => pageOf([
+          base,
+          ...expansionsOf('B', 6),
+          game('C'),
+          ...expansionsOf('C', 1),
+        ]);
+        // Nothing opens, so the rows take no focus and the box is a stop.
+        await show(tester);
+        await unfold(tester, 'B');
+        expect(tester.widget<BgeNestedRowsBox>(box).focusable, isTrue);
+        final boxFocus = tester
+            .widget<Focus>(
+              find.descendant(
+                of: box,
+                matching: find.byWidgetPredicate(
+                  (widget) =>
+                      widget is Focus &&
+                      widget.focusNode?.debugLabel == 'BgeNestedRowsBox',
+                ),
+              ),
+            )
+            .focusNode!;
+        // By way of C's control, so the control the page focused before the
+        // box isn't B's, where the framework would put focus anyway.
+        await tester.sendKeyEvent(LogicalKeyboardKey.shift);
+        Focus.of(
+          tester.element(
+            find.descendant(of: controlOf('C'), matching: find.byType(Icon)),
+          ),
+        ).requestFocus();
+        await tester.pump();
+        boxFocus.requestFocus();
+        await tester.pump();
+        expect(boxFocus.hasPrimaryFocus, isTrue);
+
+        final handle = tester.ensureSemantics();
+        performCustomAction(rowNode(tester, 'B'), 'Hide expansions');
+        await tester.pumpAndSettle();
+
+        expect(box, findsNothing);
+        expect(_focusIsWithin(tester, controlOf('B')), isTrue);
+        handle.dispose();
+      });
+
+      testWidgets('a sort change with an open base game still on the new '
+          'first page keeps it open', (tester) async {
+        final expansions = expansionsOf('B', 1);
+        // The new order's read is held, so the list draws the reload's
+        // loading state between the two: a placement with nothing in it.
+        final reload = Completer<PaginatedResult<Game>>();
+        remote.onFetchPage = (_, _) => remote.calls.last.endsWith('newest)')
+            ? reload.future
+            : Future.value(pageOf([base, ...expansions, game('C')]));
+        await show(tester, onOpen: (_, _) {});
+        await unfold(tester, 'B');
+        expect(nested('B', 'B0'), findsOneWidget);
+
+        await chooseSort(tester, 'Newest first');
+        expect(find.byKey(GameBrowseScreen.loadingKey), findsOneWidget);
+        reload.complete(pageOf([game('C'), base, ...expansions]));
+        await tester.pumpAndSettle();
+
+        expect(lastRead(), 'fetchPage(1, 50, newest)');
+        expect(
+          tester.getTopLeft(row('C')).dy,
+          lessThan(tester.getTopLeft(row('B')).dy),
+          reason: 'the new order',
+        );
+        expect(nested('B', 'B0'), findsOneWidget);
+        final handle = tester.ensureSemantics();
+        expect(
+          controlNode(tester, 'B'),
+          isControl('Game B expansions, 1', expanded: true),
+        );
+        handle.dispose();
+      });
+
+      testWidgets('switching to thumbnails and back starts folded', (
+        tester,
+      ) async {
+        final handle = tester.ensureSemantics();
+        remote.onFetchPage = (_, _) async =>
+            pageOf([base, ...expansionsOf('B', 1), game('C')]);
+        await show(tester, onOpen: (_, _) {}, layouts: _FakeLayouts());
+        await unfold(tester, 'B');
+        expect(nested('B', 'B0'), findsOneWidget);
+
+        await tester.tap(find.byTooltip('Thumbnails'));
+        await tester.pumpAndSettle();
+        expect(find.byKey(GameBrowseScreen.tileKey('B')), findsOneWidget);
+        await tester.tap(find.byTooltip('List'));
+        await tester.pumpAndSettle();
+
+        expect(row('B'), findsOneWidget);
+        expect(nested('B', 'B0'), findsNothing);
+        expect(
+          controlNode(tester, 'B'),
+          isControl('Game B expansions, 1', expanded: false),
+        );
+        handle.dispose();
+      });
     });
   });
 
@@ -1952,6 +2596,21 @@ void main() {
       matching: find.byKey(BgeCoverTile.expansionsBadgeKey),
     );
 
+    /// The control at the end of Azul's row, which folds and unfolds its
+    /// expansions (#1048).
+    final azulControl = find.descendant(
+      of: find.byKey(GameBrowseScreen.rowKey('g_azul')),
+      matching: find.byType(BgeRowExpansionsControl),
+    );
+
+    /// Shows Azul's expansions, from its row's control (#1048).
+    Future<void> unfoldAzul(WidgetTester tester) async {
+      await tester.ensureVisible(azulControl);
+      await tester.pumpAndSettle();
+      await tester.tap(azulControl);
+      await tester.pumpAndSettle();
+    }
+
     // The first page is still being read: the spinner never settles.
     auditScreen(
       'loading',
@@ -1991,12 +2650,19 @@ void main() {
         remote.onFetchPage = (_, _) async =>
             pageOf(withExpansions(1), hasMore: true);
         await showAudited(tester, theme);
+        await unfoldAzul(tester);
         expect(
           find.byKey(GameBrowseScreen.nestedRowKey('g_azul', 'x_0')),
           findsOneWidget,
         );
+        // Built, if below the window at 320dp and 2.0, where the control
+        // stands by Azul's title and its tap scrolls the page less: the
+        // audit after this one shows it.
         expect(
-          find.byKey(GameBrowseScreen.rowKey('g_seafarers')),
+          find.byKey(
+            GameBrowseScreen.rowKey('g_seafarers'),
+            skipOffstage: false,
+          ),
           findsOneWidget,
         );
         expect(find.byKey(GameBrowseScreen.rowKey('x_0')), findsNothing);
@@ -2012,10 +2678,64 @@ void main() {
         remote.onFetchPage = (_, _) async =>
             pageOf(withExpansions(1), hasMore: true);
         await showAudited(tester, theme);
+        await unfoldAzul(tester);
       },
       arrange: (tester) => tester.ensureVisible(
-        find.byKey(GameBrowseScreen.rowKey('g_seafarers')),
+        find.byKey(
+          GameBrowseScreen.rowKey('g_seafarers'),
+          skipOffstage: false,
+        ),
       ),
+    );
+
+    // Azul's five behind its control, with the marked row after it.
+    auditScreen(
+      'ready, with a folded base game (#1048)',
+      pump: (tester, theme) async {
+        remote.onFetchPage = (_, _) async =>
+            pageOf(withExpansions(5), hasMore: true);
+        await showAudited(tester, theme);
+        expect(azulControl, findsOneWidget);
+        expect(
+          find.byKey(
+            GameBrowseScreen.nestedRowKey('g_azul', 'x_0'),
+            skipOffstage: false,
+          ),
+          findsNothing,
+        );
+      },
+    );
+
+    auditScreen(
+      'ready, with a base game unfolded, 4 nested rows (#1048)',
+      pump: (tester, theme) async {
+        remote.onFetchPage = (_, _) async =>
+            pageOf(withExpansions(4), hasMore: true);
+        await showAudited(tester, theme);
+        await unfoldAzul(tester);
+        expect(
+          find.byKey(GameBrowseScreen.nestedRowKey('g_azul', 'x_0')),
+          findsOneWidget,
+        );
+        expect(find.byType(BgeNestedRowsBox), findsNothing);
+      },
+    );
+
+    // At 320dp and 2.0 the box is held to half the page, less than a row.
+    auditScreen(
+      'ready, with a base game unfolded, 6 nested rows in a box (#1048)',
+      pump: (tester, theme) async {
+        remote.onFetchPage = (_, _) async =>
+            pageOf(withExpansions(6), hasMore: true);
+        await showAudited(tester, theme);
+        await unfoldAzul(tester);
+        expect(find.byType(BgeNestedRowsBox), findsOneWidget);
+        expect(
+          find.byKey(GameBrowseScreen.nestedRowKey('g_azul', 'x_0')),
+          findsOneWidget,
+        );
+      },
+      arrange: (tester) => tester.ensureVisible(find.byType(BgeNestedRowsBox)),
     );
 
     auditScreen(
@@ -2108,6 +2828,20 @@ void main() {
     );
   });
 }
+
+/// The page's own scroll position: the first vertical scroll view, which
+/// holds any other, such as a box of nested rows' (#1048).
+ScrollPosition _pagePosition(WidgetTester tester) => tester
+    .state<ScrollableState>(
+      find
+          .byWidgetPredicate(
+            (widget) =>
+                widget is Scrollable &&
+                widget.axisDirection == AxisDirection.down,
+          )
+          .first,
+    )
+    .position;
 
 /// Whether the primary focus is on the widget [finder] finds, or inside it.
 bool _focusIsWithin(WidgetTester tester, Finder finder) {

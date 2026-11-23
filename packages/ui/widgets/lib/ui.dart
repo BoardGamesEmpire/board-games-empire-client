@@ -90,6 +90,15 @@
 /// which said nothing before. `BgeSyncMark` is part of them: `BgeCoverTile`
 /// draws it, for a cover in the Collection grid, which has no room for the
 /// badge's words.
+/// `BgeNestedRowsBox` came with #1048 for two call sites at once, the Games
+/// and Collection lists, which hold a base game's expansions in it once
+/// there are more than four.
+/// `BgeExpansionsRow` came with #1048 for three call sites at once, the
+/// Games list's row and the Collection list's entry and stack rows, which
+/// carry a base game's 🧩 control at their end. `foldNested`, `BgeOpenRows`
+/// and `BgeFoldedHandoffs` came with it for two call sites each, the Games
+/// and Collection lists, which lay out, hold open and hand focus across a
+/// base game's nested rows the same way.
 library;
 
 export 'src/banners/bge_inline_banner.dart';
@@ -127,8 +136,10 @@ export 'src/layout/bge_keyed_sliver_grid.dart';
 export 'src/layout/bge_keyed_sliver_list.dart';
 export 'src/layout/bge_layout_toggle.dart';
 export 'src/layout/bge_navigation_menu.dart';
+export 'src/layout/bge_nested_rows_box.dart';
 export 'src/layout/bge_outlined_row.dart';
 export 'src/layout/bge_page.dart';
+export 'src/layout/bge_row_expansions.dart';
 export 'src/layout/bge_shelf.dart';
 export 'src/layout/bge_unfolding_cover_grid.dart';
 export 'src/popups/bge_popup.dart';

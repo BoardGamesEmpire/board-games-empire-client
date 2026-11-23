@@ -42,7 +42,7 @@
   },
   "catalogExpansionsBadge": "{title} expansions, {count}",
   "@catalogExpansionsBadge": {
-    "description": "What a screen reader says for the badge on a base game's cover in the games grid, which counts the game's expansions and shows or hides them under the cover. The badge also says whether they are shown, so this doesn't. {title} is the base game's title, with its subtitle where it has one; {count} is how many expansions it has, at least one.",
+    "description": "What a screen reader says for the badge on a base game's cover in the games grid, or at the end of its row in the games list, which counts the game's expansions and shows or hides them under the cover or the row. The badge also says whether they are shown, so this doesn't. {title} is the base game's title, with its subtitle where it has one; {count} is how many expansions it has, at least one.",
     "placeholders": {
       "title": {"type": "String", "example": "Catan"},
       "count": {"type": "int", "example": "2"}
@@ -50,15 +50,15 @@
   },
   "catalogShowExpansions": "Show expansions",
   "@catalogShowExpansions": {
-    "description": "An action a screen reader offers on a base game's cover in the games grid while its expansions are hidden: it shows the expansions' covers in a row under the cover, as the cover's badge does."
+    "description": "An action a screen reader offers on a base game's cover in the games grid, or on its row in the games list, while its expansions are hidden: it shows them, as a row of their covers under the cover, or as rows of their own under the game's row, as the badge does."
   },
   "catalogHideExpansions": "Hide expansions",
   "@catalogHideExpansions": {
-    "description": "An action a screen reader offers on a base game's cover in the games grid while its expansions are shown under it: it hides them again. Replaces catalogShowExpansions."
+    "description": "An action a screen reader offers on a base game's cover in the games grid, or on its row in the games list, while its expansions are shown under the cover or the row: it hides them again. Replaces catalogShowExpansions."
   },
   "catalogExpansionsStrip": "{title} expansions",
   "@catalogExpansionsStrip": {
-    "description": "Heading of the row of expansion covers shown under a base game's cover in the games grid. Shown, and spoken as a heading. {title} is the base game's title, with its subtitle where it has one.",
+    "description": "Heading of the row of expansion covers shown under a base game's cover in the games grid. Shown, and spoken as a heading. Also what a screen reader calls the scrolling box of a base game's expansion rows under its row in the games list, when there are too many to show whole; not shown there. {title} is the base game's title, with its subtitle where it has one.",
     "placeholders": {
       "title": {"type": "String", "example": "Catan"}
     }
