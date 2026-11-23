@@ -36,6 +36,11 @@ const _refreshFailedCopy =
 const _errorCopy = "We couldn't open your collection.";
 const _retryCopy = 'Try again';
 const _refreshingCopy = 'Refreshing…';
+const _refreshCopy = 'Refresh';
+
+/// The surfaces the list can show (#44, #715), each of which can be
+/// refreshed by hand (#717).
+enum _Surface { loading, error, empty, noMatches, rows }
 
 /// Pins the #44 list against a mocked repository and a hand-driven
 /// hydration stream: the four surfaces, the row, the inert-row
@@ -1035,6 +1040,371 @@ void main() {
       await tester.pump();
 
       expect(retryFocus().hasPrimaryFocus, isTrue);
+    });
+  });
+
+  group('refreshing by hand (#717)', () {
+    GameCollectionListBloc listBloc(WidgetTester tester) =>
+        BlocProvider.of<GameCollectionListBloc>(
+          tester.element(find.byType(GameCollectionListSliver)),
+        );
+
+    /// Pumps the screen on [surface], reached the way the groups above reach
+    /// it, and checks it is the one showing.
+    Future<void> pumpOn(
+      WidgetTester tester,
+      _Surface surface, {
+      Future<void> Function()? onRetry,
+      void Function(BuildContext context, String entryId)? onOpen,
+      ListLayoutRepository? layouts,
+    }) async {
+      await tester.pumpWidget(
+        harness(onRetry: onRetry, onOpen: onOpen, layouts: layouts),
+      );
+      switch (surface) {
+        case _Surface.loading:
+          status.started();
+          items.add(const []);
+        case _Surface.error:
+          items.addError(StateError('no authenticated user'));
+        case _Surface.empty:
+          status.finished(CollectionHydrateOutcome.complete);
+          items.add(const []);
+        case _Surface.noMatches || _Surface.rows:
+          status.finished(CollectionHydrateOutcome.complete);
+          items.add([
+            listItem('e-1', title: 'Azul'),
+            listItem('e-2', title: 'Brass'),
+          ]);
+      }
+      await tester.pump();
+      if (surface == _Surface.noMatches) {
+        listBloc(tester).add(
+          const GameCollectionListFilterChanged(
+            CollectionFilter(query: 'nothing has this name'),
+          ),
+        );
+        await tester.pump();
+      }
+      expect(
+        find.byKey(switch (surface) {
+          _Surface.loading => GameCollectionListScreen.loadingKey,
+          _Surface.error => GameCollectionListScreen.errorKey,
+          _Surface.empty => GameCollectionListScreen.emptyKey,
+          _Surface.noMatches => GameCollectionListScreen.noMatchesKey,
+          _Surface.rows => GameCollectionListScreen.rowKey('e-1'),
+        }),
+        findsOneWidget,
+      );
+    }
+
+    /// A touch pull down the list, held for the indicator to snap into place
+    /// and call for the refresh.
+    Future<void> pull(WidgetTester tester) async {
+      await tester.fling(
+        find.byType(CustomScrollView),
+        const Offset(0, 300),
+        1000,
+      );
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+    }
+
+    Finder button() => find.byKey(GameCollectionListScreen.refreshButtonKey);
+
+    FocusNode buttonFocus(WidgetTester tester) =>
+        tester.widget<IconButton>(button()).focusNode!;
+
+    final banner = find.byKey(GameCollectionListScreen.refreshBannerKey);
+
+    for (final surface in _Surface.values) {
+      testWidgets('the app bar has a refresh button: ${surface.name}', (
+        tester,
+      ) async {
+        await pumpOn(tester, surface, onRetry: () async {});
+
+        expect(
+          find.descendant(of: find.byType(AppBar), matching: button()),
+          findsOneWidget,
+        );
+        expect(find.byTooltip(_refreshCopy), findsOneWidget);
+      });
+
+      testWidgets('the button sends the retry: ${surface.name}', (
+        tester,
+      ) async {
+        var calls = 0;
+        await pumpOn(tester, surface, onRetry: () async => calls++);
+
+        await tester.tap(button());
+        await tester.pump();
+
+        expect(calls, 1);
+      });
+
+      testWidgets('no seam, no gesture and no button: ${surface.name}', (
+        tester,
+      ) async {
+        await pumpOn(tester, surface);
+
+        expect(button(), findsNothing);
+        expect(find.byType(RefreshIndicator), findsNothing);
+      });
+    }
+
+    testWidgets('a pull sends the retry and the spinner holds until the pass '
+        'ends', (tester) async {
+      final pass = Completer<void>();
+      var calls = 0;
+      await pumpOn(
+        tester,
+        _Surface.rows,
+        onRetry: () {
+          calls++;
+          return pass.future;
+        },
+      );
+
+      await pull(tester);
+
+      expect(calls, 1);
+      expect(find.byType(RefreshProgressIndicator), findsOneWidget);
+      // The banner narrates the same pass.
+      expect(banner, findsOneWidget);
+
+      await tester.pump(const Duration(seconds: 2));
+      expect(find.byType(RefreshProgressIndicator), findsOneWidget);
+
+      pass.complete();
+      await tester.pumpAndSettle();
+
+      expect(find.byType(RefreshProgressIndicator), findsNothing);
+      expect(banner, findsNothing);
+    });
+
+    for (final surface in [
+      _Surface.loading,
+      _Surface.empty,
+      _Surface.error,
+      _Surface.noMatches,
+    ]) {
+      testWidgets('a pull from the ${surface.name} state refreshes', (
+        tester,
+      ) async {
+        var calls = 0;
+        await pumpOn(tester, surface, onRetry: () async => calls++);
+
+        await pull(tester);
+
+        expect(calls, 1);
+      });
+    }
+
+    // No banner over these, so the button alone says its pass is running.
+    for (final surface in [_Surface.loading, _Surface.error]) {
+      testWidgets('on the ${surface.name} surface the button says its pass '
+          'is running, then that it ended', (tester) async {
+        final handle = tester.ensureSemantics();
+        final pass = Completer<void>();
+        var calls = 0;
+        await pumpOn(
+          tester,
+          surface,
+          onRetry: () {
+            calls++;
+            return pass.future;
+          },
+        );
+        String label() =>
+            tester.getSemantics(find.byType(BgeRefreshButton)).label;
+        expect(label(), _refreshCopy);
+
+        await tester.tap(button());
+        await tester.pump();
+        await tester.pump();
+
+        expect(calls, 1);
+        expect(label(), _refreshingCopy);
+        expect(find.byTooltip(_refreshingCopy), findsOneWidget);
+        expect(banner, findsNothing);
+
+        pass.complete();
+        await tester.pump();
+        await tester.pump();
+
+        expect(label(), _refreshCopy);
+        expect(find.byTooltip(_refreshCopy), findsOneWidget);
+        handle.dispose();
+      });
+    }
+
+    testWidgets("a pull during the button's pass joins it, and its spinner "
+        'ends with it', (tester) async {
+      final pass = Completer<void>();
+      var calls = 0;
+      await pumpOn(
+        tester,
+        _Surface.rows,
+        onRetry: () {
+          calls++;
+          return pass.future;
+        },
+      );
+      await tester.tap(button());
+      await tester.pump();
+      await tester.pump();
+      expect(calls, 1);
+
+      await pull(tester);
+
+      expect(calls, 1);
+      expect(find.byType(RefreshProgressIndicator), findsOneWidget);
+      await tester.pump(const Duration(seconds: 2));
+      expect(find.byType(RefreshProgressIndicator), findsOneWidget);
+
+      pass.complete();
+      await tester.pumpAndSettle();
+
+      expect(calls, 1);
+      expect(find.byType(RefreshProgressIndicator), findsNothing);
+      expect(banner, findsNothing);
+    });
+
+    testWidgets('in thumbnails layout a pull refreshes', (tester) async {
+      var calls = 0;
+      await pumpOn(
+        tester,
+        _Surface.rows,
+        onRetry: () async => calls++,
+        layouts: _FakeLayouts(),
+      );
+      await tester.tap(find.byTooltip('Thumbnails'));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(GameCollectionListScreen.tileKey('e-1')),
+        findsOneWidget,
+      );
+
+      await pull(tester);
+
+      expect(calls, 1);
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets('the button keeps focus through its own pass', (tester) async {
+      final handle = tester.ensureSemantics();
+      final pass = Completer<void>();
+      var calls = 0;
+      await pumpOn(
+        tester,
+        _Surface.rows,
+        onRetry: () {
+          calls++;
+          return pass.future;
+        },
+      );
+      buttonFocus(tester).requestFocus();
+      await tester.pump();
+      final node = FocusManager.instance.primaryFocus;
+      expect(node, same(buttonFocus(tester)));
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pump();
+      await tester.pump();
+
+      expect(calls, 1);
+      expect(
+        tester.getSemantics(find.byType(BgeRefreshButton)).label,
+        _refreshingCopy,
+      );
+      expect(FocusManager.instance.primaryFocus, same(node));
+      expect(buttonFocus(tester), same(node));
+
+      // A press while it runs starts nothing.
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pump();
+      expect(calls, 1);
+
+      pass.complete();
+      await tester.pump();
+      await tester.pump();
+
+      expect(
+        tester.getSemantics(find.byType(BgeRefreshButton)).label,
+        _refreshCopy,
+      );
+      expect(FocusManager.instance.primaryFocus, same(node));
+      handle.dispose();
+    });
+
+    testWidgets('a row keeps focus while the banner comes and goes', (
+      tester,
+    ) async {
+      final pass = Completer<void>();
+      await pumpOn(
+        tester,
+        _Surface.rows,
+        onRetry: () => pass.future,
+        onOpen: (_, _) {},
+      );
+      FocusNode rowFocus() => Focus.of(
+        tester.element(
+          find.descendant(
+            of: find.byKey(GameCollectionListScreen.rowKey('e-1')),
+            matching: find.text('Azul'),
+          ),
+        ),
+      );
+      rowFocus().requestFocus();
+      await tester.pump();
+      final row = rowFocus();
+      expect(row.hasPrimaryFocus, isTrue);
+
+      await tester.tap(button());
+      await tester.pump();
+      await tester.pump();
+
+      // The banner arrives above the rows, moving them one place down.
+      expect(banner, findsOneWidget);
+      expect(rowFocus(), same(row));
+      expect(row.hasPrimaryFocus, isTrue);
+
+      pass.complete();
+      await tester.pump();
+      await tester.pump();
+
+      expect(banner, findsNothing);
+      expect(rowFocus(), same(row));
+      expect(row.hasPrimaryFocus, isTrue);
+    });
+
+    testWidgets("the header controls keep focus when a pull's banner "
+        'arrives', (tester) async {
+      // The banner comes in below the header, which keeps its place (#607).
+      final pass = Completer<void>();
+      final search = find.byKey(GameCollectionListScreen.searchKey);
+      FocusNode searchFocus() => tester.widget<TextField>(search).focusNode!;
+      await pumpOn(tester, _Surface.rows, onRetry: () => pass.future);
+      searchFocus().requestFocus();
+      await tester.pump();
+      final node = searchFocus();
+      expect(node.hasPrimaryFocus, isTrue);
+
+      await pull(tester);
+
+      expect(banner, findsOneWidget);
+      expect(
+        tester.getTopLeft(banner).dy,
+        greaterThanOrEqualTo(tester.getBottomLeft(search).dy),
+      );
+      expect(searchFocus(), same(node));
+      expect(node.hasPrimaryFocus, isTrue);
+
+      pass.complete();
+      await tester.pumpAndSettle();
+
+      expect(banner, findsNothing);
+      expect(node.hasPrimaryFocus, isTrue);
     });
   });
 
@@ -2522,9 +2892,15 @@ void main() {
 
     /// The screen in [theme], with a way to open an entry unless [open] is
     /// false: the composition offers one only to a user who may write the
-    /// collection.
+    /// collection. With a retry too, so the app bar's refresh button is held
+    /// to the same checks in every state (#717); the shell passes one
+    /// wherever it has a collection client.
+    ///
+    /// [seam] false is the composition with no refresh seam, which has
+    /// neither the button nor the gesture.
     Widget Function(ThemeData) screen({
       bool open = true,
+      bool seam = true,
       void Function(BuildContext context)? onBrowse,
       Future<void> Function()? onRetry,
       ListLayoutRepository? layouts,
@@ -2533,9 +2909,21 @@ void main() {
           theme: theme,
           onOpen: open ? (_, _) {} : null,
           onBrowse: onBrowse,
-          onRetry: onRetry,
+          onRetry: seam ? onRetry ?? () async {} : null,
           layouts: layouts,
         );
+
+    /// The app bar's refresh button, at rest or busy.
+    void expectRefreshButton({bool refreshing = false}) {
+      expect(
+        find.byKey(GameCollectionListScreen.refreshButtonKey),
+        findsOneWidget,
+      );
+      expect(
+        find.byTooltip(refreshing ? _refreshingCopy : _refreshCopy),
+        findsOneWidget,
+      );
+    }
 
     /// The hydrate settled and the cache answered [cached].
     Future<void> answer(
@@ -2568,6 +2956,7 @@ void main() {
         await tester.pump();
         expect(find.byKey(GameCollectionListScreen.loadingKey), findsOneWidget);
         expect(listState(tester), isA<GameCollectionListLoading>());
+        expectRefreshButton();
       },
     );
 
@@ -2587,6 +2976,7 @@ void main() {
           find.byKey(GameCollectionListScreen.rowKey('e-1')),
           findsNothing,
         );
+        expectRefreshButton();
       },
     );
 
@@ -2598,6 +2988,7 @@ void main() {
         await tester.pumpAndSettle();
         expect(find.byKey(GameCollectionListScreen.errorKey), findsOneWidget);
         expect(find.text(_errorCopy), findsOneWidget);
+        expectRefreshButton();
       },
     );
 
@@ -2607,6 +2998,7 @@ void main() {
       arrange: (tester) async {
         await answer(tester, const []);
         expect(find.byKey(GameCollectionListScreen.browseKey), findsOneWidget);
+        expectRefreshButton();
       },
     );
 
@@ -2624,6 +3016,26 @@ void main() {
           rowSemantics(tester, 'e-1'),
           isSemantics(isButton: true, hasTapAction: true),
         );
+        expectRefreshButton();
+      },
+    );
+
+    // A composition with no refresh seam: no button in the app bar, and no
+    // gesture (#717).
+    auditScreen(
+      'ready, list, with no refresh seam',
+      build: screen(seam: false),
+      arrange: (tester) async {
+        await answer(tester, rows());
+        expect(
+          find.byKey(GameCollectionListScreen.rowKey('e-1')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(GameCollectionListScreen.refreshButtonKey),
+          findsNothing,
+        );
+        expect(find.byType(RefreshIndicator), findsNothing);
       },
     );
 
@@ -2670,6 +3082,7 @@ void main() {
           find.byKey(GameCollectionListScreen.rowKey('e-1')),
           findsNothing,
         );
+        expectRefreshButton();
       },
     );
 
@@ -2751,6 +3164,7 @@ void main() {
           find.byKey(GameCollectionListScreen.refreshRetryKey),
           findsOneWidget,
         );
+        expectRefreshButton();
       },
     );
 
@@ -2899,6 +3313,7 @@ void main() {
             .jumpTo(0);
         await tester.pump();
         expect(find.text(_refreshingCopy), findsNWidgets(2));
+        expectRefreshButton(refreshing: true);
       },
     );
 
@@ -2968,6 +3383,7 @@ void main() {
           find.byKey(GameCollectionListScreen.clearFiltersKey),
           findsOneWidget,
         );
+        expectRefreshButton();
       },
     );
 

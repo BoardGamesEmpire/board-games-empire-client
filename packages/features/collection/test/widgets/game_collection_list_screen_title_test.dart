@@ -16,7 +16,7 @@ class _MockGameCollectionRepository extends Mock
     implements GameCollectionRepository {}
 
 /// The Collection title on the smallest phone, beside everything else its
-/// app bar carries (#710).
+/// app bar carries (#710): the back button, and the refresh button (#717).
 ///
 /// A file of its own because it loads the display typeface, which then draws
 /// every title in the file: measured in the test font, whose letters are each
@@ -51,11 +51,16 @@ void main() {
           builder: (_) => GameCollectionListScreen(
             repository: repository,
             layouts: _Thumbnails(),
+            onRetry: () async {},
           ),
         ),
       );
       await tester.pumpAndSettle();
       expect(find.byType(BackButton), findsOneWidget);
+      expect(
+        find.byKey(GameCollectionListScreen.refreshButtonKey),
+        findsOneWidget,
+      );
 
       final title = tester.renderObject<RenderParagraph>(
         find.descendant(

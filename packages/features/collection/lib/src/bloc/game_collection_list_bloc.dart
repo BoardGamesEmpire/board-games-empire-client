@@ -79,6 +79,12 @@ import 'package:observability/observability.dart';
 /// and saying one is running are the same event: the status stream reports
 /// every pass as `running`, whoever started it.
 ///
+/// Every state it emits carries `refreshing`, not only a ready one: the app
+/// bar's refresh button works on every surface, and says the pass it started
+/// is running on a loading or error surface too, where no banner does
+/// (#717). Which state is emitted is decided as before; the flag only rides
+/// along.
+///
 /// ## A filter and a sort
 ///
 /// The list is narrowed and ordered on the device (#715). The bloc holds a
@@ -178,7 +184,12 @@ class GameCollectionListBloc
   Hydration _hydration = const Hydration();
 
   /// Whether a pass this screen asked for is still running.
-  bool _retrying = false;
+  bool get _retrying => _inFlight != null;
+
+  /// Ends when the pass this screen asked for ends, or null when none is
+  /// running. Never completes with an error, so a request that joins it
+  /// only waits (#717).
+  Future<void>? _inFlight;
 
   void _onCacheUpdated(
     GameCollectionListCacheUpdated event,
@@ -195,7 +206,7 @@ class GameCollectionListBloc
     Emitter<GameCollectionListState> emit,
   ) {
     _readFailed = true;
-    emit(const GameCollectionListError());
+    emit(GameCollectionListError(refreshing: _retrying));
   }
 
   void _onCacheEnded(
@@ -207,7 +218,7 @@ class GameCollectionListBloc
     // Held like a failed read: a closed stream will never send the rows
     // that would clear it, so a later hydrate result must not lift it.
     _readFailed = true;
-    emit(const GameCollectionListError());
+    emit(GameCollectionListError(refreshing: _retrying));
   }
 
   void _onHydrationUpdated(
@@ -222,12 +233,33 @@ class GameCollectionListBloc
     GameCollectionListRetryRequested event,
     Emitter<GameCollectionListState> emit,
   ) async {
-    final retry = _onRetry;
-    // The pass would join a second call rather than duplicate the
-    // drain, but the button should not queue passes either.
-    if (retry == null || _retrying) return;
+    try {
+      await _retry(emit);
+    } finally {
+      // Never with an error: whatever the pass did, the spinner a pull
+      // handed this to must end with it (#717).
+      event.done?.complete();
+    }
+  }
 
-    _retrying = true;
+  Future<void> _retry(Emitter<GameCollectionListState> emit) async {
+    final retry = _onRetry;
+    if (retry == null) return;
+
+    // The pass would join a second call rather than duplicate the
+    // drain, but the button should not queue passes either. A request
+    // made now waits for the running pass instead of returning at once,
+    // so a pull's spinner ends with it (#717). This handler runs while the
+    // first is still awaiting because the event takes bloc's default,
+    // concurrent transformer. It is an exception to the rule that an
+    // operation handler takes `droppable()` (CONTRIBUTING.md): `droppable()`
+    // would drop a joining request unrun, so its `done` would never complete
+    // and the pull's spinner would hang.
+    final running = _inFlight;
+    if (running != null) return running;
+
+    final ended = Completer<void>();
+    _inFlight = ended.future;
     _emitDerived(emit);
 
     try {
@@ -235,15 +267,18 @@ class GameCollectionListBloc
     } on Object catch (error, stackTrace) {
       // Unreachable by contract: the pass reports failure through the
       // status. Caught anyway, because the cost of being wrong is a stuck
-      // "refreshing" the user cannot clear.
+      // "refreshing" the user cannot clear. Caught here, once, so a
+      // request waiting on [_inFlight] never sees it.
       _logger.warn(
         'Collection refresh escaped its own error handling',
         error: error,
         stackTrace: stackTrace,
       );
+    } finally {
+      _inFlight = null;
+      ended.complete();
     }
 
-    _retrying = false;
     if (!isClosed) _emitDerived(emit);
   }
 
@@ -275,17 +310,21 @@ class GameCollectionListBloc
 
   void _emitDerived(Emitter<GameCollectionListState> emit) {
     // Holds the error against everything except fresh rows.
-    if (_readFailed) return emit(const GameCollectionListError());
+    if (_readFailed) {
+      return emit(GameCollectionListError(refreshing: _retrying));
+    }
 
     final items = _items;
-    if (items == null) return emit(const GameCollectionListLoading());
+    if (items == null) {
+      return emit(GameCollectionListLoading(refreshing: _retrying));
+    }
 
     // Outranks [_retrying]: a retry over an unconfirmed empty list returns
     // to the spinner rather than annotating an emptiness no pass confirmed.
     final firstFill =
         _hydration.state == HydrationState.running && !_hydration.everRefreshed;
     if (items.isEmpty && firstFill) {
-      return emit(const GameCollectionListLoading());
+      return emit(GameCollectionListLoading(refreshing: _retrying));
     }
     // Every pass that ends either lands rows or fails, so this is "no pass
     // has ended in this session".

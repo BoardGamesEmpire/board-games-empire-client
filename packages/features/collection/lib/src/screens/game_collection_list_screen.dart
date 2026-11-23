@@ -28,6 +28,18 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// completes. Only a retry the user pressed is narrated; passes started by
 /// entry, reconnect or resume are not.
 ///
+/// ## Refreshing by hand, by pull or by button (#717)
+///
+/// A pull down on the list and the app bar's refresh button send the
+/// banner's own retry event, so a pass started either way is the one the
+/// banner reports, exactly as if its retry had been pressed. A pass already
+/// running is joined, not doubled, and the pull's spinner ends with it. The
+/// button is the route for a mouse, a keyboard and a screen reader, none of
+/// which can pull. Both work on every surface, and neither is offered where
+/// there is no [onRetry]. The button's label says a pass is running on every
+/// surface too, since the error and loading surfaces have no banner to say
+/// it; over the rows, the banner stays the one narrator.
+///
 /// ## The page is thin (#44)
 ///
 /// The list itself is [GameCollectionListSliver], and this screen is a
@@ -117,6 +129,9 @@ class GameCollectionListScreen extends StatelessWidget {
 
   /// Key on the banner's retry button.
   static const Key refreshRetryKey = Key('collection_list.refresh_retry');
+
+  /// Key on the app bar's refresh button (#717).
+  static const Key refreshButtonKey = Key('collection_list.refresh_button');
 
   /// Key on the failed-read surface.
   static const Key errorKey = Key('collection_list.error');
@@ -320,10 +335,24 @@ class _GameCollectionListPageState extends State<_GameCollectionListPage> {
   /// its search field empties and its Filters button takes focus (#715).
   final _controls = GlobalKey<CollectionListControlsState>();
 
+  /// Asks for a pass on a pull, and answers the pull's spinner when the pass
+  /// it started or joined ends (#717).
+  ///
+  /// A fresh completer each time: the bloc completes it, and a completer
+  /// completes once.
+  Future<void> _refresh(BuildContext context) {
+    final done = Completer<void>();
+    context.read<GameCollectionListBloc>().add(
+      GameCollectionListRetryRequested(done: done),
+    );
+    return done.future;
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = GameCollectionLocalizations.of(context);
     final thumbnails = widget.thumbnails;
+    final canRetry = context.read<GameCollectionListBloc>().canRetry;
     // The row count, for "item 3 of 9". The page owns the scroll view, so
     // the page passes it (#210). A row or a cover per game, as a game owned
     // more than once is one stack (#709). The list draws a row for each
@@ -351,6 +380,35 @@ class _GameCollectionListPageState extends State<_GameCollectionListPage> {
       width: BgePageWidth.pane,
       // Not while the choice is read, when no row is built.
       semanticChildCount: thumbnails == null ? null : rowCount,
+      // Set or not for the screen's whole life, as the bloc's `canRetry` is:
+      // a page that gains or loses it rebuilds its scroll view.
+      onRefresh: canRetry ? () => _refresh(context) : null,
+      // Where there is no pass to run, there is no button either: one that
+      // did nothing is worse than none (#717). The page is built outside the
+      // list's builder, so the button reads the pass on its own.
+      actions: canRetry
+          ? [
+              BlocSelector<
+                GameCollectionListBloc,
+                GameCollectionListState,
+                bool
+              >(
+                // From any state: the button says a pass it started is
+                // running on the loading and error surfaces too, where no
+                // banner does (#717).
+                selector: (state) => state.refreshing,
+                builder: (context, refreshing) => BgeRefreshButton(
+                  buttonKey: GameCollectionListScreen.refreshButtonKey,
+                  label: l10n.collectionRefreshAction,
+                  inProgressLabel: l10n.collectionRefreshInProgress,
+                  refreshing: refreshing,
+                  onPressed: () => context.read<GameCollectionListBloc>().add(
+                    const GameCollectionListRetryRequested(),
+                  ),
+                ),
+              ),
+            ]
+          : null,
       slivers: [
         // In every state, and first, above the refresh banner, so that it
         // keeps its place and its focus as the list below it changes (#607).
