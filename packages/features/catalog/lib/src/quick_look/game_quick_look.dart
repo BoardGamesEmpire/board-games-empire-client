@@ -36,6 +36,12 @@ import 'package:ui/ui.dart';
 /// app's navigation shell the page arrives beneath the quick look, which
 /// goes once it has (see `showBgePopup`).
 ///
+/// So it opens the page once, however often it is pressed while the page
+/// arrives (#978): later presses do nothing
+/// ([BgeRemoveWhenCovered.openPage]). A page popped before it has arrived
+/// leaves the quick look in place, and View full details opens the page
+/// again.
+///
 /// Null [onViewDetails] offers no View full details. [sections] and
 /// [actions] are [GameQuickLook]'s.
 Future<void> showGameQuickLook(
@@ -47,21 +53,39 @@ Future<void> showGameQuickLook(
   void Function(BuildContext context, String gameId)? onViewDetails,
   List<Widget> sections = const [],
   List<Widget> actions = const [],
-}) => showBgePopup<void>(
-  context,
-  semanticLabel: seed.title,
-  builder: (popup) => GameQuickLook(
-    seed: seed,
-    remote: remote,
-    cache: cache,
-    onGone: onGone,
-    onViewDetails: onViewDetails == null
-        ? null
-        : () => onViewDetails(popup, seed.id),
-    sections: sections,
-    actions: actions,
-  ),
-);
+}) {
+  return showBgePopup<void>(
+    context,
+    semanticLabel: seed.title,
+    builder: (popup) {
+      // The guard is the route's, not the builder's, so a rebuild of the
+      // pop-up doesn't reset it. And the route knows when the page has gone
+      // back without arriving, which leaves the quick look as it was.
+      final guard = switch (ModalRoute.of(popup)) {
+        final BgeRemoveWhenCovered<dynamic> route => route,
+        _ => null,
+      };
+      return GameQuickLook(
+        seed: seed,
+        remote: remote,
+        cache: cache,
+        onGone: onGone,
+        onViewDetails: onViewDetails == null
+            ? null
+            : () {
+                void view() => onViewDetails(popup, seed.id);
+                if (guard == null) {
+                  view();
+                } else {
+                  guard.openPage(view);
+                }
+              },
+        sections: sections,
+        actions: actions,
+      );
+    },
+  );
+}
 
 /// A game's important facts in a pop-up, without leaving the page (#707):
 /// its cover, title and publish year, its players, play time and age, the

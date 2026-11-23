@@ -530,6 +530,148 @@ void main() {
     expect(find.text('Details of g_wingspan'), findsOneWidget);
   });
 
+  testWidgets('View full details pressed twice while the page arrives pushes '
+      'one page', (tester) async {
+    final opened = <String>[];
+    await tester.pumpWidget(
+      catalogApp(
+        Scaffold(
+          body: Center(
+            child: opener(
+              GameQuickLookSeed.fromSummary(summary),
+              onViewDetails: (context, gameId) {
+                opened.add(gameId);
+                Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => Scaffold(body: Text('Details of $gameId')),
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+
+    // The second press lands while the page is still arriving. A tap would
+    // miss: the page's route already takes the pointer. A screen reader or a
+    // key press reaches the button's callback all the same, so call it.
+    final onPressed = tester
+        .widget<FilledButton>(find.byKey(GameQuickLook.viewDetailsKey))
+        .onPressed!;
+    onPressed();
+    await tester.pump();
+    onPressed();
+    await tester.pump();
+
+    expect(opened, ['g_wingspan']);
+
+    // Back lands where the quick look was opened, not on a second copy.
+    await tester.pumpAndSettle();
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(
+      find.text('Details of g_wingspan', skipOffstage: false),
+      findsNothing,
+    );
+    expect(find.byType(GameQuickLook), findsNothing);
+    expect(find.text('open'), findsOneWidget);
+  });
+
+  group('a page popped on its way leaves View full details working', () {
+    /// A page for [gameId], standing in for the game's detail page.
+    Route<void> detailsPage(String gameId) => MaterialPageRoute<void>(
+      builder: (_) => Scaffold(body: Text('Details of $gameId')),
+    );
+
+    /// Presses View full details, pops the page halfway through its
+    /// entrance, and presses it again: it opens the page again, and that one
+    /// takes the quick look away once it has arrived.
+    Future<void> popOnItsWayThenAgain(
+      WidgetTester tester,
+      List<String> opened,
+      NavigatorState Function() pagesNavigator,
+    ) async {
+      final viewDetails = find.byKey(GameQuickLook.viewDetailsKey);
+      await tester.ensureVisible(viewDetails);
+      await tester.tap(viewDetails);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(find.text('Details of g_wingspan'), findsOneWidget);
+
+      pagesNavigator().pop();
+      await tester.pumpAndSettle();
+      expect(find.text('Details of g_wingspan'), findsNothing);
+      // Never covered, so still there.
+      expect(find.byType(GameQuickLook), findsOneWidget);
+
+      await tester.ensureVisible(viewDetails);
+      await tester.tap(viewDetails);
+      await tester.pumpAndSettle();
+
+      expect(opened, ['g_wingspan', 'g_wingspan']);
+      expect(find.text('Details of g_wingspan'), findsOneWidget);
+      expect(find.byType(GameQuickLook, skipOffstage: false), findsNothing);
+    }
+
+    testWidgets("on the pop-up's own navigator", (tester) async {
+      final opened = <String>[];
+      late NavigatorState pages;
+      await tester.pumpWidget(
+        catalogApp(
+          Scaffold(
+            body: Center(
+              child: opener(
+                GameQuickLookSeed.fromSummary(summary),
+                onViewDetails: (context, gameId) {
+                  opened.add(gameId);
+                  pages = Navigator.of(context)..push(detailsPage(gameId));
+                },
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      await popOnItsWayThenAgain(tester, opened, () => pages);
+    });
+
+    testWidgets('on a nested navigator, beneath the pop-up', (tester) async {
+      final nested = GlobalKey<NavigatorState>();
+      final observer = BgePopupCoverObserver();
+      final opened = <String>[];
+      await tester.pumpWidget(
+        catalogApp(
+          Navigator(
+            key: nested,
+            observers: [observer],
+            onGenerateRoute: (_) => MaterialPageRoute<void>(
+              builder: (_) => Scaffold(
+                body: Center(
+                  child: opener(
+                    GameQuickLookSeed.fromSummary(summary),
+                    onViewDetails: (_, gameId) {
+                      opened.add(gameId);
+                      nested.currentState!.push(detailsPage(gameId));
+                    },
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      await popOnItsWayThenAgain(tester, opened, () => nested.currentState!);
+    });
+  });
+
   testWidgets("a caller's sections and actions are shown", (tester) async {
     await open(
       tester,
