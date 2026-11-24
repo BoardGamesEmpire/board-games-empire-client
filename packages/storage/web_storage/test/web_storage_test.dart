@@ -43,7 +43,15 @@ import 'dart:typed_data';
 
 import 'package:bge_test_support/domain.dart';
 import 'package:di/di.dart' show DependencyContainerImpl, LocalClockService;
-import 'package:drift/drift.dart' show Variable, driftRuntimeOptions;
+import 'package:drift/drift.dart'
+    show
+        ApplyInterceptorConnection,
+        BatchedStatements,
+        QueryExecutor,
+        QueryExecutorUser,
+        QueryInterceptor,
+        Variable,
+        driftRuntimeOptions;
 // The library is @experimental for its wire protocol; its API, this type
 // included, is documented stable. drift/isolate.dart, the other export,
 // needs dart:isolate.
@@ -924,6 +932,270 @@ void main() {
     });
   });
 
+  // ── #686: on unsafeIndexedDb, each tab works on its own copy ────────────
+  //
+  // Each tab reads the stored file once, when it opens, and writes its pages
+  // back over the other tabs'. So the tab that opens holds a Web Lock named for
+  // the database until it disposes it, and a second tab opens nothing. The
+  // installer tests fake only the storage mode the open reports, over a real
+  // executor, as `reports unsafeIndexedDb as unsafe` does above.
+  group('one tab at a time on unsafeIndexedDb (#686)', () {
+    group('WebLocksDatabaseExclusivity', () {
+      test(
+        'held elsewhere when another holder keeps it past the wait',
+        () async {
+          final name = WebWasmExecutorFactory.databaseName(_uniqueServerId());
+          await _holdLock(WebLocksDatabaseExclusivity.lockName(name));
+
+          final hold = await const WebLocksDatabaseExclusivity().acquire(
+            name,
+            wait: const Duration(milliseconds: 100),
+          );
+
+          expect(hold, isA<WebDatabaseHeldElsewhere>());
+        },
+      );
+
+      test('a request that gave up leaves nothing queued behind it', () async {
+        // A request left in the queue would be granted once the other holder
+        // lets go, and then hold the database for good: this tab's own Retry
+        // would find it held elsewhere.
+        final name = WebWasmExecutorFactory.databaseName(_uniqueServerId());
+        final release = await _holdLock(
+          WebLocksDatabaseExclusivity.lockName(name),
+        );
+        const exclusivity = WebLocksDatabaseExclusivity();
+        expect(
+          await exclusivity.acquire(
+            name,
+            wait: const Duration(milliseconds: 100),
+          ),
+          isA<WebDatabaseHeldElsewhere>(),
+        );
+
+        release();
+        final retry = await exclusivity.acquire(
+          name,
+          wait: const Duration(milliseconds: 500),
+        );
+
+        expect(retry, isA<WebDatabaseHeld>());
+        (retry as WebDatabaseHeld).release();
+      });
+
+      test('a hold released within the wait is granted', () async {
+        // A reload: the new page asks while the old one is still letting go.
+        final name = WebWasmExecutorFactory.databaseName(_uniqueServerId());
+        final release = await _holdLock(
+          WebLocksDatabaseExclusivity.lockName(name),
+        );
+        Timer(const Duration(milliseconds: 20), release);
+
+        final hold = await const WebLocksDatabaseExclusivity().acquire(
+          name,
+          wait: const Duration(milliseconds: 500),
+        );
+
+        expect(hold, isA<WebDatabaseHeld>());
+        (hold as WebDatabaseHeld).release();
+      });
+
+      test('release frees it for the next acquire', () async {
+        final name = WebWasmExecutorFactory.databaseName(_uniqueServerId());
+        const exclusivity = WebLocksDatabaseExclusivity();
+        const wait = Duration(milliseconds: 100);
+
+        final first = await exclusivity.acquire(name, wait: wait);
+        expect(first, isA<WebDatabaseHeld>());
+        expect(
+          await exclusivity.acquire(name, wait: wait),
+          isA<WebDatabaseHeldElsewhere>(),
+          reason: 'the first hold is exclusive while it lasts',
+        );
+
+        (first as WebDatabaseHeld).release();
+        final next = await exclusivity.acquire(name, wait: wait);
+
+        expect(next, isA<WebDatabaseHeld>());
+        (next as WebDatabaseHeld).release();
+      });
+
+      test('a lock request that fails for another reason is unavailable, '
+          'so the tab opens as before', () async {
+        // Only the wait running out means another tab holds the database.
+        final locks = _rejectingLocks(
+          web.DOMException('the lock manager is gone', 'InvalidStateError'),
+        );
+
+        final hold = await WebLocksDatabaseExclusivity(locks: locks).acquire(
+          WebWasmExecutorFactory.databaseName(_uniqueServerId()),
+          wait: const Duration(milliseconds: 100),
+        );
+
+        expect(hold, isA<WebDatabaseHoldUnavailable>());
+      });
+    });
+
+    group('WebStorageInstaller', () {
+      test('a second install while the first holds the database throws '
+          'WebDatabaseInUse and runs no statement', () async {
+        final serverId = _uniqueServerId();
+        final first = DependencyContainerImpl();
+        addTearDown(first.dispose);
+        await WebStorageInstaller(
+          factory: _opensAs(WasmStorageImplementation.unsafeIndexedDb),
+        ).install(first, _identity(serverId));
+
+        final counting = _CountingInterceptor();
+        final second = DependencyContainerImpl();
+        addTearDown(second.dispose);
+        await expectLater(
+          WebStorageInstaller(
+            factory: _opensAs(
+              WasmStorageImplementation.unsafeIndexedDb,
+              interceptor: counting,
+            ),
+            exclusiveWait: const Duration(milliseconds: 100),
+          ).install(second, _identity(serverId)),
+          throwsA(
+            isA<WebDatabaseInUse>().having(
+              (inUse) => inUse.databaseName,
+              'databaseName',
+              WebWasmExecutorFactory.databaseName(serverId),
+            ),
+          ),
+        );
+
+        // Nothing opened it, so nothing read the stored file, and nothing
+        // could write a stale copy back.
+        expect(counting.opens, 0);
+        expect(counting.statements, 0);
+        expect(counting.closes, 1, reason: 'the connection is closed unused');
+        expect(second.isRegistered<ServerDatabase>(), isFalse);
+      });
+
+      test('disposing the holder lets the next install open', () async {
+        final serverId = _uniqueServerId();
+        final first = DependencyContainerImpl();
+        await WebStorageInstaller(
+          factory: _opensAs(WasmStorageImplementation.unsafeIndexedDb),
+        ).install(first, _identity(serverId));
+        await first.dispose();
+
+        final second = DependencyContainerImpl();
+        addTearDown(second.dispose);
+        await WebStorageInstaller(
+          factory: _opensAs(WasmStorageImplementation.unsafeIndexedDb),
+          exclusiveWait: const Duration(milliseconds: 500),
+        ).install(second, _identity(serverId));
+
+        final db = second.get<ServerDatabase>();
+        expect(await db.customSelect('SELECT 1').get(), isNotEmpty);
+      });
+
+      test('the hold lasts until the scope is disposed', () async {
+        final serverId = _uniqueServerId();
+        final exclusivity = _FakeExclusivity();
+        final container = DependencyContainerImpl();
+        await WebStorageInstaller(
+          factory: _opensAs(WasmStorageImplementation.unsafeIndexedDb),
+          exclusivity: exclusivity,
+        ).install(container, _identity(serverId));
+
+        expect(exclusivity.acquired, [
+          WebWasmExecutorFactory.databaseName(serverId),
+        ]);
+        expect(exclusivity.releases, 0);
+
+        await container.dispose();
+
+        expect(exclusivity.releases, 1);
+      });
+
+      test('a failed open releases the hold', () async {
+        // Kept, the hold would lock this tab out of its own Retry, which
+        // would show "open in another tab" for good.
+        final exclusivity = _FakeExclusivity();
+        final container = DependencyContainerImpl();
+        addTearDown(container.dispose);
+
+        await expectLater(
+          WebStorageInstaller(
+            factory: _opensAs(
+              WasmStorageImplementation.unsafeIndexedDb,
+              engineUri: Uri.parse('missing-sqlite3.wasm'),
+            ),
+            exclusivity: exclusivity,
+          ).install(container, _identity(_uniqueServerId())),
+          throwsA(isA<DriftRemoteException>()),
+        );
+
+        expect(exclusivity.acquired, hasLength(1));
+        expect(exclusivity.releases, 1);
+        expect(container.isRegistered<ServerDatabase>(), isFalse);
+      });
+
+      test('a failed registration releases the hold', () async {
+        final exclusivity = _FakeExclusivity();
+        final container = DependencyContainerImpl();
+        await container.dispose();
+
+        await expectLater(
+          WebStorageInstaller(
+            factory: _opensAs(WasmStorageImplementation.unsafeIndexedDb),
+            exclusivity: exclusivity,
+          ).install(container, _identity(_uniqueServerId())),
+          throwsStateError,
+        );
+
+        expect(exclusivity.acquired, hasLength(1));
+        expect(exclusivity.releases, 1);
+      });
+
+      test('durable and in-memory storage take no hold', () async {
+        for (final implementation in [
+          WasmStorageImplementation.opfsShared,
+          WasmStorageImplementation.opfsLocks,
+          WasmStorageImplementation.sharedIndexedDb,
+          WasmStorageImplementation.inMemory,
+        ]) {
+          final exclusivity = _FakeExclusivity();
+          final container = DependencyContainerImpl();
+          addTearDown(container.dispose);
+
+          await WebStorageInstaller(
+            factory: _opensAs(implementation),
+            exclusivity: exclusivity,
+          ).install(container, _identity(_uniqueServerId()));
+
+          expect(
+            exclusivity.acquired,
+            isEmpty,
+            reason: '${implementation.name} took a hold',
+          );
+          expect(container.isRegistered<ServerDatabase>(), isTrue);
+          // One ServerDatabase open at a time, or drift warns of a second.
+          await container.dispose();
+        }
+      });
+
+      test('without Web Locks it opens as before', () async {
+        final exclusivity = _FakeExclusivity(available: false);
+        final container = DependencyContainerImpl();
+        addTearDown(container.dispose);
+
+        await WebStorageInstaller(
+          factory: _opensAs(WasmStorageImplementation.unsafeIndexedDb),
+          exclusivity: exclusivity,
+        ).install(container, _identity(_uniqueServerId()));
+
+        expect(exclusivity.acquired, hasLength(1));
+        final db = container.get<ServerDatabase>();
+        expect(await db.customSelect('SELECT 1').get(), isNotEmpty);
+      });
+    });
+  });
+
   // ── #442: what one tab writes, another tab's streams hear ───────────────
   //
   // Each tab holds its own connection to the server's database, and a screen
@@ -1025,5 +1297,184 @@ Future<void> _eventually(bool Function() condition) async {
   while (!condition()) {
     if (DateTime.now().isAfter(deadline)) fail('timed out waiting');
     await Future<void>.delayed(const Duration(milliseconds: 10));
+  }
+}
+
+/// Holds [lockName] through this page's own `navigator.locks`, as another tab
+/// would, from the grant until the returned function is called or the test
+/// ends.
+Future<void Function()> _holdLock(String lockName) async {
+  final granted = Completer<void>();
+  final released = Completer<void>();
+  void release() {
+    if (!released.isCompleted) released.complete();
+  }
+
+  web.window.navigator.locks.request(
+    lockName,
+    ((web.Lock? _) {
+      granted.complete();
+      return released.future.toJS;
+    }).toJS,
+  );
+  addTearDown(release);
+  await granted.future;
+  return release;
+}
+
+/// A `LockManager` whose every request fails with [error]. The real one
+/// fails only for names this code never asks for, so this is how a failure
+/// that isn't the wait running out is reached.
+web.LockManager _rejectingLocks(web.DOMException error) {
+  final promise = globalContext['Promise']! as JSObject;
+  final locks = JSObject()
+    ..['request'] = ((
+      JSString _,
+      JSObject _,
+      JSFunction _,
+    ) => promise.callMethod<JSPromise<JSAny?>>('reject'.toJS, error)).toJS;
+  return locks as web.LockManager;
+}
+
+/// A factory whose open reports [implementation] over a real executor for the
+/// database asked for. Which mode a real open lands on is the browser's call,
+/// so the installer's branches on it are reached by faking the report.
+///
+/// [interceptor] wraps the executor. [engineUri] replaces the `sqlite3.wasm`
+/// asset, so a missing one fails the forced open.
+WebWasmExecutorFactory _opensAs(
+  WasmStorageImplementation implementation, {
+  QueryInterceptor? interceptor,
+  Uri? engineUri,
+}) {
+  return WebWasmExecutorFactory(
+    open:
+        ({
+          required databaseName,
+          required sqlite3Uri,
+          required driftWorkerUri,
+        }) async {
+          final real = await WasmDatabase.open(
+            databaseName: databaseName,
+            sqlite3Uri: engineUri ?? sqlite3Uri,
+            driftWorkerUri: driftWorkerUri,
+          );
+          final executor = real.resolvedExecutor;
+          return WasmDatabaseResult(
+            interceptor == null
+                ? executor
+                : executor.interceptWith(interceptor),
+            implementation,
+            const {MissingBrowserFeature.sharedWorkers},
+          );
+        },
+  );
+}
+
+/// Counts what reaches the database through an executor.
+final class _CountingInterceptor extends QueryInterceptor {
+  /// Opens. The first is where the worker reads the stored file and runs the
+  /// migrations.
+  int opens = 0;
+
+  /// Statements of every kind, inside transactions too.
+  int statements = 0;
+
+  int closes = 0;
+
+  @override
+  Future<bool> ensureOpen(QueryExecutor executor, QueryExecutorUser user) {
+    opens++;
+    return super.ensureOpen(executor, user);
+  }
+
+  @override
+  Future<void> close(QueryExecutor inner) {
+    closes++;
+    return super.close(inner);
+  }
+
+  @override
+  Future<void> runBatched(
+    QueryExecutor executor,
+    BatchedStatements statements,
+  ) {
+    this.statements++;
+    return super.runBatched(executor, statements);
+  }
+
+  @override
+  Future<void> runCustom(
+    QueryExecutor executor,
+    String statement,
+    List<Object?> args,
+  ) {
+    statements++;
+    return super.runCustom(executor, statement, args);
+  }
+
+  @override
+  Future<int> runInsert(
+    QueryExecutor executor,
+    String statement,
+    List<Object?> args,
+  ) {
+    statements++;
+    return super.runInsert(executor, statement, args);
+  }
+
+  @override
+  Future<int> runUpdate(
+    QueryExecutor executor,
+    String statement,
+    List<Object?> args,
+  ) {
+    statements++;
+    return super.runUpdate(executor, statement, args);
+  }
+
+  @override
+  Future<int> runDelete(
+    QueryExecutor executor,
+    String statement,
+    List<Object?> args,
+  ) {
+    statements++;
+    return super.runDelete(executor, statement, args);
+  }
+
+  @override
+  Future<List<Map<String, Object?>>> runSelect(
+    QueryExecutor executor,
+    String statement,
+    List<Object?> args,
+  ) {
+    statements++;
+    return super.runSelect(executor, statement, args);
+  }
+}
+
+/// Grants every hold, or with [available] false answers that this browser
+/// context has no Web Locks, and records what was asked for and given back.
+final class _FakeExclusivity implements WebDatabaseExclusivity {
+  _FakeExclusivity({this.available = true});
+
+  final bool available;
+
+  /// The database names asked for, in order.
+  final acquired = <String>[];
+
+  /// How many times a hold this granted was given back.
+  int releases = 0;
+
+  @override
+  Future<WebDatabaseHold> acquire(
+    String databaseName, {
+    required Duration wait,
+  }) async {
+    acquired.add(databaseName);
+    return available
+        ? WebDatabaseHeld(() => releases++)
+        : const WebDatabaseHoldUnavailable();
   }
 }

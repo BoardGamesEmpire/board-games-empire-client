@@ -29,13 +29,20 @@ enum WebStoragePersistence {
   /// take deliberately rather than a detail to slip in here.
   durable,
 
-  /// Data survives a reload, but a second tab can overwrite it.
+  /// Data survives a reload, but only one tab at a time can have it open.
   ///
   /// `unsafeIndexedDb` — no shared worker is available to serialize access,
   /// so each tab runs its own copy of the database, read from IndexedDB once
   /// when it opened, and writes its changes back over the other tabs'. No
-  /// tab sees another's writes, and no lock can change that (#686). Drift
-  /// names it "unsafe" for that reason, and so does this.
+  /// tab sees another's writes, and no lock around the queries can change
+  /// that. Drift names it "unsafe" for that reason, and so does this.
+  ///
+  /// So the tab that opens it holds it until it closes it, and a second tab
+  /// opens nothing: `WebStorageInstaller` throws `WebDatabaseInUse` before
+  /// that tab's first query, so it reads and writes nothing, and the app
+  /// shows it as open in another tab (#686). A browser context without Web
+  /// Locks can't hold it, and there a second tab can still overwrite the
+  /// first one's writes.
   unsafe,
 
   /// Nothing is stored. A reload starts from empty.

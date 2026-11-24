@@ -20,8 +20,12 @@ any query.
 - **`WebStoragePersistence`** — classifies that choice as `durable`,
   `unsafe` or `ephemeral`, so a degraded browser is a fact the app can act on
   rather than a silent loss of persistence.
+- **`WebDatabaseExclusivity`** — the one-tab hold on a database that landed
+  on `unsafeIndexedDb`, taken through a Web Lock, so two tabs never write
+  separate copies of it (#686).
 - **`WebStorageInstaller`** — mirrors `StorageScopeInstaller`'s role on
-  native: opens the database and registers it into the web server scope.
+  native: takes that hold, opens the database and registers it into the web
+  server scope.
 
 ## No at-rest encryption on web (#63)
 
