@@ -16,6 +16,7 @@ import 'package:web_platform/src/device_info/web_device_info_reader.dart';
 import 'package:web_platform/src/feedback/indexed_db_feedback_sink.dart';
 import 'package:web_platform/src/session/web_provider_sign_in_bindings.dart';
 import 'package:web_platform/src/session/web_session_bindings.dart';
+import 'package:web_platform/src/storage/local_storage_persist_refusals.dart';
 import 'package:web_platform/src/storage/persistent_storage_request.dart';
 import 'package:web_platform/src/sync/web_cross_tab_lock.dart';
 import 'package:web_platform/src/web_platform_bootstrap.dart';
@@ -321,9 +322,17 @@ WebDeviceInfoReader _browserDeviceInfoReader() => WebDeviceInfoReader(
 ///
 /// Each call throws [StateError] when the browser has no `navigator.storage`
 /// (a non-secure context); the request logs that and carries on.
+///
+/// On Firefox a refusal pauses the asking across page loads. Firefox is the
+/// only browser that prompts, and a dismissed prompt reads as a refusal.
+/// Chrome and Safari decide silently and may grant later, so they ask on
+/// every page load.
 final _pageStorageRequest = PersistentStorageRequest(
   persisted: () => _storageManager().persisted().toDart.then((v) => v.toDart),
   persist: () => _storageManager().persist().toDart.then((v) => v.toDart),
+  refusals: ui_web.browser.browserEngine == ui_web.BrowserEngine.firefox
+      ? LocalStoragePersistRefusals()
+      : null,
 );
 
 web.StorageManager _storageManager() {

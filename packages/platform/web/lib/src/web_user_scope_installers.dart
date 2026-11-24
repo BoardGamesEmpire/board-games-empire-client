@@ -106,7 +106,9 @@ import 'package:web_platform/src/storage/persistent_storage_request.dart';
 /// and data the server does not have yet starts to build up, and Firefox
 /// prompts for the grant (#320). A session restored at startup starts one
 /// too, so a signed-in user is asked on each page load until the browser
-/// has answered for good. It never throws or waits.
+/// has answered for good. On Firefox a refusal, or a dismissed prompt,
+/// pauses that for 30 days (`PersistentStorageRequest.refusalPause`). It
+/// never throws or waits.
 /// [requestPersistentStorage] is the caller's once-per-page-load function, so
 /// a sign-out and a sign-in do not ask again.
 ///
