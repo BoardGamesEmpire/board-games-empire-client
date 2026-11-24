@@ -107,6 +107,17 @@ class _FakeLock implements CrossTabLock {
   }
 }
 
+/// A [CrossTabLock] whose [run] throws before it returns a future, as a
+/// non-async implementation could.
+class _SyncThrowingLock implements CrossTabLock {
+  @override
+  Future<bool> run(
+    String name,
+    Future<void> Function() body, {
+    Future<void>? abandon,
+  }) => throw StateError('locks are unavailable');
+}
+
 /// The drain over the real sender, the real repositories and fake remotes
 /// (#121): what one pass sends, where it stops, and what it holds back.
 void main() {
@@ -621,14 +632,21 @@ void main() {
 
   group('under a cross-tab lock (#447)', () {
     const name = 'bge.sync_drain.test';
+    // Short, so a pass that gives up on the lock (#954) costs little time.
+    const limit = Duration(milliseconds: 50);
     late _FakeLock lock;
 
-    SyncQueueDrain openLocked({BgeLogger? logger}) => SyncQueueDrain(
-      queue: h.queue,
+    SyncQueueDrain openLocked({
+      BgeLogger? logger,
+      SyncQueueRepository? queue,
+      Duration lockWaitLimit = SyncQueueDrain.defaultLockWaitLimit,
+    }) => SyncQueueDrain(
+      queue: queue ?? h.queue,
       sender: h.sender,
       collection: h.collection,
       now: h.deviceNow,
       exclusive: (lock: lock, name: name),
+      lockWaitLimit: lockWaitLimit,
       logger: logger,
     );
 
@@ -768,6 +786,37 @@ void main() {
       expect(drain.isStale, isFalse, reason: 'the unlocked pass settled');
     });
 
+    test('a lock that throws before returning a future leaves no limit '
+        'timer behind (#954)', () async {
+      await drain.close();
+      final open = SyncQueueDrain(
+        queue: h.queue,
+        sender: h.sender,
+        collection: h.collection,
+        now: h.deviceNow,
+        exclusive: (lock: _SyncThrowingLock(), name: name),
+        lockWaitLimit: limit,
+      );
+      addTearDown(open.close);
+      final queued = await h.queuedCreate();
+      final limitTimers = <Timer>[];
+
+      await runZoned(
+        open.drain,
+        zoneSpecification: ZoneSpecification(
+          createTimer: (self, parent, zone, duration, callback) {
+            final timer = parent.createTimer(zone, duration, callback);
+            if (duration == limit) limitTimers.add(timer);
+            return timer;
+          },
+        ),
+      );
+
+      expect((await entry(queued.id)).status, SyncStatus.completed);
+      expect(limitTimers, hasLength(1));
+      expect(limitTimers.single.isActive, isFalse);
+    });
+
     test('each pass gives the lock its own abandon', () async {
       // The lock may listen to it until it completes, so one shared by every
       // pass would keep each pass's listener until close.
@@ -837,6 +886,99 @@ void main() {
           stackTrace: any(named: 'stackTrace'),
         ),
       ).called(1);
+    });
+
+    test('a pass that waits past the limit withdraws its request and runs '
+        'unlocked (#954)', () async {
+      final logger = _MockLogger();
+      await drain.close();
+      drain = openLocked(logger: logger, lockWaitLimit: limit);
+      lock.hold(name);
+      final queued = await h.queuedCreate();
+
+      await drain.drain();
+
+      expect(h.householdRemote.creates, hasLength(1));
+      expect((await entry(queued.id)).status, SyncStatus.completed);
+      expect(lock.abandoned, [name]);
+      verify(
+        () => logger.warn(
+          'The cross-tab lock was not granted within 50 ms; this pass '
+          'runs without it',
+        ),
+      ).called(1);
+      await pumpEventQueue();
+      expect(drain.isStale, isFalse, reason: 'the unlocked pass settled');
+    });
+
+    test('a grant within the limit runs the pass under the lock, as '
+        'before', () async {
+      await drain.close();
+      drain = openLocked(lockWaitLimit: limit);
+      final release = lock.hold(name);
+      await h.queuedCreate();
+
+      final pass = drain.drain();
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      release();
+      await pass;
+
+      expect(h.householdRemote.creates, hasLength(1));
+      expect(lock.abandoned, isEmpty);
+    });
+
+    test('a grant that arrives after the limit sends nothing more', () async {
+      final counting = CountingQueue(h.queue);
+      await drain.close();
+      drain = openLocked(queue: counting, lockWaitLimit: limit);
+      lock.ignoreAbandon = true;
+      final release = lock.hold(name);
+      await h.queuedCreate();
+
+      await drain.drain();
+      expect(h.householdRemote.creates, hasLength(1));
+      final readsBefore = counting.reads;
+      release();
+      await pumpEventQueue();
+
+      expect(counting.reads, readsBefore);
+      expect(h.householdRemote.creates, hasLength(1));
+    });
+
+    test('close during the wait starts no unlocked pass', () async {
+      await drain.close();
+      drain = openLocked(lockWaitLimit: limit);
+      lock.hold(name);
+      await h.queuedCreate();
+
+      // The request goes in at once, so close lands well inside the limit.
+      final pass = drain.drain();
+      expect(lock.requested, [name]);
+      await drain.close();
+      await Future<void>.delayed(limit * 2);
+      await pass;
+
+      expect(h.householdRemote.creates, isEmpty);
+      expect(lock.abandoned, [name]);
+    });
+
+    test('a later pass waits afresh, with its own limit', () async {
+      await drain.close();
+      drain = openLocked(lockWaitLimit: limit);
+      final release = lock.hold(name);
+      await h.queuedCreate();
+      await drain.drain();
+      expect(lock.abandoned, [name]);
+      await h.queuedCreate(name: 'Second');
+
+      final second = drain.drain();
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      expect(h.householdRemote.creates, hasLength(1));
+      release();
+      await second;
+
+      expect(h.householdRemote.creates, hasLength(2));
+      expect(lock.abandoned, [name], reason: 'the second pass was granted');
     });
   });
 

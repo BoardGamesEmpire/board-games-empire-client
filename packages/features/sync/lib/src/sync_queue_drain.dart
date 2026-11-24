@@ -112,25 +112,41 @@ import 'package:observability/observability.dart';
 /// holder's pass may have read the queue before the change this one was
 /// asked about. The wait counts as the pass being in flight, so [drain]
 /// joins it and [isStale] is false. [close] abandons a request still
-/// waiting, and a grant that arrives after it sends nothing. A lock that
-/// fails before it grants is logged, and the pass runs without it, as it
-/// does where there is no lock at all: a browser context that refuses
-/// every request would otherwise never drain, and every op type is safe to
-/// deliver twice. Native has one process and passes no lock.
+/// waiting, and a grant that arrives after it sends nothing.
+///
+/// The wait is limited, to [defaultLockWaitLimit] unless the constructor
+/// says otherwise (#954). A browser can freeze a background tab while it
+/// holds the lock, and a lock held by a frozen tab is never released, so an
+/// unlimited wait would stop this tab's drain with nothing reported. A pass
+/// still waiting at the limit withdraws its request, logs a warning and
+/// runs without the lock; a grant that arrives after that sends nothing,
+/// and the next pass waits afresh. A lock that fails before it grants is
+/// logged, and the pass runs without it too, as it does where there is no
+/// lock at all: a browser context that refuses every request would
+/// otherwise never drain.
+///
+/// A pass without the lock can overlap another tab's. In a database the
+/// tabs share, the claim is atomic across them, so the two can't send the
+/// same op, and an entry's ops still go out in order through it. What the
+/// overlap costs is a pass that finds nothing to send, or at worst a
+/// request sent twice, which every op type tolerates. Native has one
+/// process and passes no lock.
 class SyncQueueDrain {
   /// `collection` says which entries the server has yet to confirm, which
   /// the ordering rules need. `revalidateSession` asks the auth layer
   /// whether the session still stands after a refused send; null skips the
   /// question. `exclusive`, when given, runs each pass holding the named
-  /// cross-tab lock; null runs it unlocked (#447). [now] is the device clock,
-  /// which stamps every attempt; a test drives it so a cooldown costs no real
-  /// time.
+  /// cross-tab lock; null runs it unlocked (#447). `lockWaitLimit` is how
+  /// long a pass waits for that lock before it runs without it (#954). [now]
+  /// is the device clock, which stamps every attempt; a test drives it so a
+  /// cooldown costs no real time.
   SyncQueueDrain({
     required this._queue,
     required this._sender,
     required this._collection,
     this._revalidateSession,
     this._exclusive,
+    this._lockWaitLimit = defaultLockWaitLimit,
     DateTime Function()? now,
     BgeLogger? logger,
   }) : _now = now ?? _deviceNow,
@@ -144,6 +160,14 @@ class SyncQueueDrain {
   }
 
   static DateTime _deviceNow() => DateTime.now().toUtc();
+
+  /// How long a pass waits for the cross-tab lock before it runs without it
+  /// (#954).
+  ///
+  /// Recorded as a guess. A pass that holds the lock normally lasts a
+  /// request or two, so a wait this long means the holder has stopped, and
+  /// the queue in the tab the user is looking at sits no longer than this.
+  static const Duration defaultLockWaitLimit = Duration(seconds: 30);
 
   /// How long an op waits after a counted failure, by its retry count.
   ///
@@ -179,6 +203,7 @@ class SyncQueueDrain {
   final GameCollectionRepository _collection;
   final Future<void> Function()? _revalidateSession;
   final ({CrossTabLock lock, String name})? _exclusive;
+  final Duration _lockWaitLimit;
   final DateTime Function() _now;
   final BgeLogger _log;
 
@@ -288,39 +313,71 @@ class SyncQueueDrain {
   /// [isStale] stays false. The last pass's schedule is dropped first, so a
   /// pass that ends without settling leaves the drain stale and the next
   /// trigger tries again. A lock that fails before it grants is logged and
-  /// the pass runs without it.
+  /// the pass runs without it, and so does one still waiting at the limit.
   Future<void> _pass() async {
     _settledAt = null;
     final exclusive = _exclusive;
     if (exclusive == null) return _passBody();
     final abandon = _abandon = Completer<void>();
+    // Completes when this pass gives up waiting for the lock.
+    final gaveUp = Completer<void>();
+    final limit = Timer(_lockWaitLimit, () {
+      // After close, the request is abandoned already and nothing runs.
+      if (abandon.isCompleted) return;
+      gaveUp.complete();
+      abandon.complete();
+    });
     var granted = false;
     try {
-      await exclusive.lock.run(exclusive.name, () {
-        granted = true;
-        return _passBody();
-      }, abandon: abandon.future);
+      // Doesn't wait for the withdrawn request to settle: a lock that is
+      // slow to give it up must not hold the pass after all.
+      await Future.any<void>([
+        exclusive.lock
+            .run(exclusive.name, () {
+              limit.cancel();
+              // A grant can arrive after this pass gave up on it, which has
+              // run without the lock by then, and it then sends nothing.
+              if (gaveUp.isCompleted) return Future<void>.value();
+              granted = true;
+              return _passBody();
+            }, abandon: abandon.future)
+            .whenComplete(limit.cancel),
+        gaveUp.future,
+      ]);
     } on Object catch (error, stackTrace) {
-      // A close that abandoned the request is no fault.
-      if (_closed) return;
-      if (granted) {
-        // The body catches its own faults and has settled, so this is the
-        // lock failing to release.
-        _log.error(
-          'Sync queue pass failed',
+      // A close that abandoned the request is no fault, and a pass that gave
+      // up on the request runs below, whatever became of it.
+      if (!_closed && !gaveUp.isCompleted) {
+        if (granted) {
+          // The body catches its own faults and has settled, so this is the
+          // lock failing to release.
+          _log.error(
+            'Sync queue pass failed',
+            error: error,
+            stackTrace: stackTrace,
+          );
+          return;
+        }
+        _log.warn(
+          'The cross-tab lock failed; this pass runs without it',
           error: error,
           stackTrace: stackTrace,
         );
+        await _passBody();
         return;
       }
+    } finally {
+      // A lock whose `run` throws before returning a future cancels nothing,
+      // and the timer would outlive the pass.
+      limit.cancel();
+      if (identical(_abandon, abandon)) _abandon = null;
+    }
+    if (gaveUp.isCompleted && !_closed) {
       _log.warn(
-        'The cross-tab lock failed; this pass runs without it',
-        error: error,
-        stackTrace: stackTrace,
+        'The cross-tab lock was not granted within '
+        '${_lockWaitLimit.inMilliseconds} ms; this pass runs without it',
       );
       await _passBody();
-    } finally {
-      if (identical(_abandon, abandon)) _abandon = null;
     }
   }
 
