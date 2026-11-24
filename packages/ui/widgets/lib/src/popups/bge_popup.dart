@@ -7,8 +7,9 @@ import 'package:flutter/scheduler.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
 /// Opens [builder]'s content as a pop-up over the page: a bottom sheet in a
-/// window narrower than [BgeTokens.breakpointMedium], and a dialog no wider
-/// than [BgeTokens.contentMaxWidth] from there up (#707).
+/// window narrower than [BgeTokens.breakpointMedium] (the one [context] is
+/// under), and a dialog no wider than [BgeTokens.contentMaxWidth] from there
+/// up (#707).
 ///
 /// A sheet at every width was the app's habit, but from 840dp up it is a wide
 /// strip along the bottom edge, where #707 asks for a dialog sized to its
@@ -60,6 +61,10 @@ Future<T?> showBgePopup<T>(
   // A Theme or IconTheme set between the root navigator and [context] would
   // not reach a route on the root navigator. Captured, the content keeps it.
   final themes = InheritedTheme.capture(from: context, to: navigator.context);
+  // The breakpoint is the opener's for the same reason. The page, the
+  // barrier and the transition are built where the root navigator's theme
+  // is, so they are given it rather than read it there.
+  final tokens = BgeTokens.of(context);
   // A node of its own in both forms (`container`). Left to merge upwards,
   // it joins a node of `Dialog`'s in dialog form, and is then a different
   // node in each form: see `_PopupPage` for what that costs in a browser.
@@ -76,7 +81,8 @@ Future<T?> showBgePopup<T>(
     BgePopupRoute<T>._(
       builder: named,
       themes: themes,
-      form: BgePopupForm._forWindow(context),
+      tokens: tokens,
+      form: BgePopupForm._forWindow(context, tokens),
       // Both forms' barrier colours and labels are settled here, from the
       // opener's theme and localizations, as `showModalBottomSheet` and
       // `showDialog` settle theirs. The barrier is built beside the page,
@@ -334,10 +340,14 @@ enum BgePopupForm {
   static BgePopupForm? maybeOf(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<_PopupFormScope>()?.form;
 
-  /// The form a pop-up takes in the window [context] is in. [context] is
-  /// rebuilt when the window's width changes.
-  static BgePopupForm _forWindow(BuildContext context) =>
-      BgeWindowClass.of(context) == BgeWindowClass.compact ? sheet : dialog;
+  /// The form a pop-up takes in the window [context] is in, against the
+  /// breakpoint in [tokens]. [context] is rebuilt when the window's width
+  /// changes.
+  static BgePopupForm _forWindow(BuildContext context, BgeTokens tokens) =>
+      BgeWindowClass.fromWidth(MediaQuery.sizeOf(context).width, tokens) ==
+          BgeWindowClass.compact
+      ? sheet
+      : dialog;
 }
 
 /// Tells a pop-up's content which form it is drawn in.
@@ -468,17 +478,19 @@ class _FormTraits {
 /// animate. The entrance and the exit are the ones of the form it has while
 /// they run: a sheet slides up and down, and a dialog fades.
 ///
-/// Everything that reads the form reads the window's class from its own
-/// place in the tree ([BgeWindowClass.of]): the page, the barrier and the
-/// transition. A route can't rebuild its barrier from inside its page's
-/// build, so the three don't pass the form to each other. They rebuild in
-/// the frame the window changes, and agree by reading the same window.
+/// Everything that reads the form reads the window's width from its own
+/// place in the tree, against the opener's breakpoint ([_formIn]): the page,
+/// the barrier and the transition. A route can't rebuild its barrier from
+/// inside its page's build, so the three don't pass the form to each other.
+/// They rebuild in the frame the window changes, and agree by reading the
+/// same window against the same breakpoint.
 ///
 /// Built by [showBgePopup] only.
 class BgePopupRoute<T> extends PopupRoute<T> with BgeRemoveWhenCovered<T> {
   BgePopupRoute._({
     required this._builder,
     required this._themes,
+    required this._tokens,
     required this._form,
     required this._sheetTraits,
     required this._dialogTraits,
@@ -487,6 +499,9 @@ class BgePopupRoute<T> extends PopupRoute<T> with BgeRemoveWhenCovered<T> {
 
   final WidgetBuilder _builder;
   final CapturedThemes _themes;
+
+  /// The opener's tokens, whose breakpoint decides the form.
+  final BgeTokens _tokens;
   final _FormTraits _sheetTraits;
   final _FormTraits _dialogTraits;
 
@@ -515,6 +530,11 @@ class BgePopupRoute<T> extends PopupRoute<T> with BgeRemoveWhenCovered<T> {
   @visibleForTesting
   BgePopupForm get form => _form;
   BgePopupForm _form;
+
+  /// The form for the window [context] is in, at the opener's breakpoint.
+  /// [context] is rebuilt when the window's width changes.
+  BgePopupForm _formIn(BuildContext context) =>
+      BgePopupForm._forWindow(context, _tokens);
 
   _FormTraits _traitsOf(BgePopupForm form) => switch (form) {
     BgePopupForm.sheet => _sheetTraits,
@@ -597,7 +617,7 @@ class BgePopupRoute<T> extends PopupRoute<T> with BgeRemoveWhenCovered<T> {
     Animation<double> secondaryAnimation,
     Widget child,
   ) => FadeTransition(
-    opacity: switch (BgePopupForm._forWindow(context)) {
+    opacity: switch (_formIn(context)) {
       BgePopupForm.sheet => kAlwaysCompleteAnimation,
       BgePopupForm.dialog => _fadeOf(animation),
     },
@@ -642,7 +662,7 @@ class _PopupBarrier<T> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final form = BgePopupForm._forWindow(context);
+    final form = route._formIn(context);
     final traits = route._traitsOf(form);
     final cover = switch (form) {
       BgePopupForm.sheet => route._sheetCover,
@@ -749,7 +769,7 @@ class _PopupPageState<T> extends State<_PopupPage<T>> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _form = BgePopupForm._forWindow(context);
+    _form = widget.route._formIn(context);
     // No dependency: the scope is the route's for the route's whole life,
     // and one would rebuild this page each time focus moves in it.
     widget.route._drawnAs(

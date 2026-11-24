@@ -1001,6 +1001,87 @@ void main() {
     }
   });
 
+  // The opener's breakpoint, not the root navigator's: the route is on the
+  // root navigator, where a theme above the opener doesn't reach.
+  group('a pop-up opened under a breakpoint of its own', () {
+    /// An entrance completes once its duration is passed, not when it is
+    /// reached.
+    const justPast = Duration(milliseconds: 1);
+
+    /// Opens a pop-up from under a theme whose [BgeTokens.breakpointMedium]
+    /// is [breakpoint], in a window [width] wide, and pumps its first frame.
+    Future<BgePopupRoute<Object?>> openUnder(
+      WidgetTester tester, {
+      required double breakpoint,
+      required double width,
+    }) async {
+      useViewSize(tester, Size(width, 800));
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: BgeTheme.light(),
+          home: Builder(
+            builder: (context) {
+              final theme = Theme.of(context);
+              final tokens = BgeTokens.of(
+                context,
+              ).copyWith(breakpointMedium: breakpoint);
+              return Theme(
+                data: theme.copyWith(
+                  extensions: [...theme.extensions.values, tokens],
+                ),
+                child: Builder(
+                  builder: (context) => Scaffold(
+                    body: Center(
+                      child: TextButton(
+                        key: _openKey,
+                        onPressed: () => unawaited(
+                          showBgePopup<Object>(
+                            context,
+                            semanticLabel: _label,
+                            builder: (_) =>
+                                const Text('content', key: _popupKey),
+                          ),
+                        ),
+                        child: const Text('open'),
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      );
+      await tester.tap(find.byKey(_openKey));
+      await tester.pump();
+      return _popupRoute(tester) as BgePopupRoute<Object?>;
+    }
+
+    testWidgets('above the window it opens a sheet, and arrives as one', (
+      tester,
+    ) async {
+      final route = await openUnder(tester, breakpoint: 700, width: 650);
+
+      _expectSheet();
+      expect(route.form, BgePopupForm.sheet);
+      await tester.pump(route.transitionDuration + justPast);
+      expect(route.animation!.isCompleted, isTrue);
+    });
+
+    testWidgets('below the window it opens a dialog, and arrives as one', (
+      tester,
+    ) async {
+      final route = await openUnder(tester, breakpoint: 500, width: 550);
+
+      _expectDialog();
+      expect(route.form, BgePopupForm.dialog);
+      // A sheet's entrance takes longer, so one that started as a sheet's
+      // is still under way here.
+      await tester.pump(route.transitionDuration + justPast);
+      expect(route.animation!.isCompleted, isTrue);
+    });
+  });
+
   // #733: one route, whose form follows the window while it is open.
   group('a pop-up across a resize', () {
     testWidgets('opened at 400 wide and widened to 800 it becomes a dialog '
