@@ -53,6 +53,19 @@ Future<void> _pumpSections(
   );
 }
 
+/// Whether a screen reader is offered the welcome line. With sections given,
+/// the line stays mounted beside them and is shown only while none of them
+/// draws (#1107), so being in the widget tree doesn't mean it shows. Needs
+/// `tester.ensureSemantics()`.
+bool _welcomeShown(WidgetTester tester) {
+  final context = tester.element(find.byType(HomeScreen));
+  final title = ShellLocalizations.of(context).homeEmptyStateTitle;
+  // The semantics tree itself, not `find.bySemanticsLabel`: that asks each
+  // widget's render object for the node it last had, which a hidden line
+  // keeps.
+  return find.semantics.byLabel(title).evaluate().isNotEmpty;
+}
+
 /// Counts how many times it has been mounted, and can take focus on a node of
 /// its own, as a section's own controls do. It draws [child], or a section of
 /// a fixed height without one.
@@ -176,18 +189,17 @@ void main() {
       );
     });
 
-    testWidgets('shows the welcome line only when every slot is null', (
-      tester,
-    ) async {
+    testWidgets('with every slot null, shows the welcome line and no '
+        'sections', (tester) async {
+      final semantics = tester.ensureSemantics();
       await _pumpSections(tester);
-      final context = tester.element(find.byType(HomeScreen));
-      final title = ShellLocalizations.of(context).homeEmptyStateTitle;
-      expect(find.text(title), findsOneWidget);
+      expect(_welcomeShown(tester), isTrue);
       expect(find.byKey(HomeScreen.sectionsKey), findsNothing);
 
       await _pumpSections(tester, somethingToPlay: _section(_toPlay));
-      expect(find.text(title), findsNothing);
+      expect(_welcomeShown(tester), isFalse);
       expect(find.byKey(HomeScreen.sectionsKey), findsOneWidget);
+      semantics.dispose();
     });
 
     testWidgets("a resized window keeps every section's state", (tester) async {
@@ -518,6 +530,161 @@ void main() {
     });
   });
 
+  group('every section drawing nothing shows the welcome line (#1107)', () {
+    const nothing = SizedBox.shrink();
+    // What holds the sections and, in their place, the welcome line.
+    RenderBox content(WidgetTester tester) =>
+        tester.renderObject(find.byKey(HomeScreen.sectionsKey)).parent!
+            as RenderBox;
+
+    testWidgets('shows the welcome line when no section draws', (
+      tester,
+    ) async {
+      final semantics = tester.ensureSemantics();
+      await _pumpSections(
+        tester,
+        stats: nothing,
+        newestGames: nothing,
+        somethingToPlay: nothing,
+      );
+
+      expect(_welcomeShown(tester), isTrue);
+      expect(content(tester), paints..paragraph());
+      expect(tester.getSize(find.byKey(HomeScreen.sectionsKey)).height, 0);
+      // A pointer on the line reaches it, as a text selection's would.
+      final title = find.text(
+        ShellLocalizations.of(
+          tester.element(find.byType(HomeScreen)),
+        ).homeEmptyStateTitle,
+      );
+      final hit = tester.hitTestOnBinding(tester.getCenter(title));
+      expect(
+        hit.path.map((entry) => entry.target),
+        contains(tester.renderObject(title)),
+      );
+      semantics.dispose();
+    });
+
+    testWidgets('hides the welcome line while a section draws', (
+      tester,
+    ) async {
+      final semantics = tester.ensureSemantics();
+      await _pumpSections(
+        tester,
+        stats: nothing,
+        newestGames: _section(_newest),
+        somethingToPlay: nothing,
+      );
+
+      expect(_welcomeShown(tester), isFalse);
+      expect(content(tester), isNot(paints..paragraph()));
+      expect(content(tester).size.height, 100);
+      semantics.dispose();
+    });
+
+    testWidgets('a section that starts drawing replaces the welcome line in '
+        'the same frame, and keeps its state', (tester) async {
+      final semantics = tester.ensureSemantics();
+      final drawing = ValueNotifier(false);
+      addTearDown(drawing.dispose);
+      var mounts = 0;
+
+      await _pumpSections(
+        tester,
+        stats: _CountsMounts(
+          onMount: () => mounts++,
+          child: ValueListenableBuilder(
+            valueListenable: drawing,
+            builder: (context, drawn, _) => drawn ? _section(_stats) : nothing,
+          ),
+        ),
+        newestGames: nothing,
+      );
+      expect(_welcomeShown(tester), isTrue);
+
+      drawing.value = true;
+      await tester.pump();
+      expect(_welcomeShown(tester), isFalse);
+      expect(content(tester), isNot(paints..paragraph()));
+      expect(
+        tester.getRect(find.byKey(_stats)),
+        tester.getRect(find.byKey(HomeScreen.sectionsKey)),
+      );
+
+      drawing.value = false;
+      await tester.pump();
+      expect(_welcomeShown(tester), isTrue);
+      expect(mounts, 1);
+      semantics.dispose();
+    });
+
+    testWidgets("a tap reaches a section's control over the welcome line's "
+        'place', (tester) async {
+      var tapped = 0;
+      await _pumpSections(
+        tester,
+        stats: nothing,
+        newestGames: TextButton(
+          onPressed: () => tapped++,
+          child: const Text('See all'),
+        ),
+      );
+
+      await tester.tap(find.text('See all'));
+      expect(tapped, 1);
+    });
+
+    for (final blank in [true, false]) {
+      testWidgets('intrinsic and dry layout agree with layout, '
+          '${blank ? 'showing' : 'hiding'} the welcome line', (tester) async {
+        await _pumpSections(
+          tester,
+          stats: nothing,
+          newestGames: blank ? nothing : _section(_newest),
+        );
+
+        final box = content(tester);
+        final width = box.size.width;
+        expect(box.size.height, greaterThan(0));
+        expect(box.getMinIntrinsicHeight(width), box.size.height);
+        expect(box.getMaxIntrinsicHeight(width), box.size.height);
+        expect(
+          box.getDryLayout(BoxConstraints.tightFor(width: width)).height,
+          box.size.height,
+        );
+      });
+
+      testWidgets('dry and laid-out baselines agree, '
+          '${blank ? 'showing' : 'hiding'} the welcome line', (tester) async {
+        await _pumpSections(
+          tester,
+          stats: nothing,
+          newestGames: blank ? nothing : const Text('Recently added'),
+        );
+
+        final box = content(tester);
+        const alphabetic = TextBaseline.alphabetic;
+        // Only a parent laying a box out may ask for its baseline; this lifts
+        // that check as the framework's own intrinsic checks do.
+        final double? baseline;
+        RenderObject.debugCheckingIntrinsics = true;
+        try {
+          baseline = box.getDistanceToBaseline(alphabetic);
+        } finally {
+          RenderObject.debugCheckingIntrinsics = false;
+        }
+        expect(baseline, isNotNull);
+        expect(
+          box.getDryBaseline(
+            BoxConstraints.tightFor(width: box.size.width),
+            alphabetic,
+          ),
+          baseline,
+        );
+      });
+    }
+  });
+
   // The sections themselves are composed in `BgeApp`, and each is audited in
   // its own package, beside its tests (`test/home/` in events, collection and
   // catalog); this group audits the page round them (#50). The menu has its
@@ -525,5 +692,19 @@ void main() {
   group('accessibility audit', () {
     // Every section slot null: the welcome line.
     auditScreen('empty', build: (theme) => _app(theme: theme));
+    // Every section given draws nothing: the welcome line in their place
+    // (#1107).
+    auditScreen(
+      'every section blank',
+      build: (theme) => MaterialApp(
+        theme: theme,
+        localizationsDelegates: ShellLocalizations.localizationsDelegates,
+        supportedLocales: ShellLocalizations.supportedLocales,
+        home: const HomeScreen(
+          newestGames: SizedBox.shrink(),
+          somethingToPlay: SizedBox.shrink(),
+        ),
+      ),
+    );
   });
 }
