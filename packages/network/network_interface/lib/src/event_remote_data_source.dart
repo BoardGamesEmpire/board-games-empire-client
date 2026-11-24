@@ -285,8 +285,9 @@ typedef CreatedEvent = ({EventSnapshot snapshot, DateTime? deletedAt});
 /// [EventRemoteNotFoundException].
 ///
 /// A call that cannot produce a valid request throws [ArgumentError]
-/// unwrapped: an out-of-range page or limit, an empty id, an update that
-/// changes nothing, a cancel reason past [maxCancelReasonLength], a vote of
+/// unwrapped: a page below 1 or starting past row 100000 (the server's depth
+/// ceiling), a limit out of range, an empty id, an update that changes nothing,
+/// a cancel reason past [maxCancelReasonLength], a vote of
 /// [AvailabilityResponse.unknown], a pool read narrowed to more than
 /// [maxPoolAttendeeIds] attendees, an offer of no games, of more than
 /// [maxOfferBatch] or of one entry twice, or a create that could not be sent
