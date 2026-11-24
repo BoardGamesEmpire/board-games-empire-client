@@ -918,8 +918,10 @@ void main() {
       final release = lock.hold(name);
       await h.queuedCreate();
 
+      // The request goes in at once, and the grant reaches the pass before
+      // any timer can fire, so the limit can't race it.
       final pass = drain.drain();
-      await Future<void>.delayed(const Duration(milliseconds: 10));
+      expect(lock.requested, [name]);
       release();
       await pass;
 
@@ -972,7 +974,7 @@ void main() {
       await h.queuedCreate(name: 'Second');
 
       final second = drain.drain();
-      await Future<void>.delayed(const Duration(milliseconds: 10));
+      expect(lock.requested, [name, name]);
       expect(h.householdRemote.creates, hasLength(1));
       release();
       await second;

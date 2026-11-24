@@ -90,13 +90,20 @@ const server = http.createServer((req, res) => {
       headers: req.headers,
     },
     (upstreamRes) => {
-      // Only the Flutter dev server's responses are isolated; the backend sets
+      // Only the Flutter dev server's responses are touched; the backend sets
       // its own headers. Node lower-cases incoming header names, so the merge
       // replaces any COOP/COEP the dev server sent rather than doubling it.
-      const headers =
-        CROSS_ORIGIN_ISOLATION && port === WEB_PORT
-          ? { ...upstreamRes.headers, ...ISOLATION_HEADERS }
-          : upstreamRes.headers;
+      // Switched off, they are stripped instead: the dev server sends them
+      // itself under `--wasm` or `--cross-origin-isolation`, and off means
+      // neither header reaches the browser.
+      const headers = { ...upstreamRes.headers };
+      if (port === WEB_PORT) {
+        if (CROSS_ORIGIN_ISOLATION) {
+          Object.assign(headers, ISOLATION_HEADERS);
+        } else {
+          for (const name of Object.keys(ISOLATION_HEADERS)) delete headers[name];
+        }
+      }
       res.writeHead(upstreamRes.statusCode ?? 502, headers);
       upstreamRes.pipe(res);
       // A reset AFTER the body starts streaming can't become a 502 — the

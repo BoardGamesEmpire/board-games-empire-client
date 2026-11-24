@@ -1111,6 +1111,30 @@ void main() {
         expect(exclusivity.releases, 1);
       });
 
+      test('the hold outlasts a write sent just before the dispose', () async {
+        // Closing only hangs up on the worker, which goes on to run what it
+        // was already sent. Released then, the hold would let the next tab
+        // read the stored file before that write lands in it.
+        final events = <String>[];
+        final exclusivity = _FakeExclusivity(
+          onRelease: () => events.add('released'),
+        );
+        final container = DependencyContainerImpl();
+        await WebStorageInstaller(
+          factory: _opensAs(WasmStorageImplementation.unsafeIndexedDb),
+          exclusivity: exclusivity,
+        ).install(container, _identity(_uniqueServerId()));
+        final db = container.get<ServerDatabase>();
+
+        final write = db
+            .customStatement('CREATE TABLE late_write (x INTEGER)')
+            .then((_) => events.add('written'));
+        await container.dispose();
+
+        await expectLater(write, completes);
+        expect(events, ['written', 'released']);
+      });
+
       test('a failed open releases the hold', () async {
         // Kept, the hold would lock this tab out of its own Retry, which
         // would show "open in another tab" for good.
@@ -1456,9 +1480,12 @@ final class _CountingInterceptor extends QueryInterceptor {
 /// Grants every hold, or with [available] false answers that this browser
 /// context has no Web Locks, and records what was asked for and given back.
 final class _FakeExclusivity implements WebDatabaseExclusivity {
-  _FakeExclusivity({this.available = true});
+  _FakeExclusivity({this.available = true, this.onRelease});
 
   final bool available;
+
+  /// Called each time a hold this granted is given back.
+  final void Function()? onRelease;
 
   /// The database names asked for, in order.
   final acquired = <String>[];
@@ -1473,7 +1500,10 @@ final class _FakeExclusivity implements WebDatabaseExclusivity {
   }) async {
     acquired.add(databaseName);
     return available
-        ? WebDatabaseHeld(() => releases++)
+        ? WebDatabaseHeld(() {
+            releases++;
+            onRelease?.call();
+          })
         : const WebDatabaseHoldUnavailable();
   }
 }

@@ -178,9 +178,14 @@ class WebStorageInstaller {
         ..registerSingleton<ServerDatabase>(
           db,
           // Released once the database is closed, so the next tab can't open
-          // it while this one may still write.
+          // it while this one may still write. Closing only hangs up on the
+          // worker, which goes on to run what it was already sent, so a held
+          // database first settles those statements.
           dispose: (database) async {
             try {
+              if (!identical(release, _releaseNothing)) {
+                await _settle(database);
+              }
               await database.close();
             } finally {
               release();
@@ -238,6 +243,25 @@ class WebStorageInstaller {
   }
 
   static void _releaseNothing() {}
+
+  /// How long a dispose waits for the statements already sent to settle
+  /// before it closes the database anyway.
+  static const Duration _settleLimit = Duration(seconds: 5);
+
+  /// Waits until the worker has run, and flushed to storage, every statement
+  /// [database] already sent it (#686).
+  ///
+  /// The worker runs statements one at a time, in the order they arrive, and
+  /// flushes each write before the next starts, so a query sent last finishes
+  /// last. Best-effort: a query that fails or outlasts [_settleLimit] still
+  /// lets the dispose close the database and give the hold back.
+  static Future<void> _settle(ServerDatabase database) async {
+    try {
+      await database.customSelect('SELECT 1').get().timeout(_settleLimit);
+    } on Object catch (_) {
+      // The close below and the release after it matter more.
+    }
+  }
 
   /// Closes the connection of an [opening] nothing has queried. Best-effort,
   /// like [_safeClose]: the in-use error is the one that matters.

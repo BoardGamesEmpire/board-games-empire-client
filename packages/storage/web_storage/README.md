@@ -21,8 +21,10 @@ any query.
   `unsafe` or `ephemeral`, so a degraded browser is a fact the app can act on
   rather than a silent loss of persistence.
 - **`WebDatabaseExclusivity`** — the one-tab hold on a database that landed
-  on `unsafeIndexedDb`, taken through a Web Lock, so two tabs never write
-  separate copies of it (#686).
+  on `unsafeIndexedDb`, taken through a Web Lock, so two tabs don't write
+  separate copies of it (#686). The hold is only as good as the lock: a
+  browser context without Web Locks, or one whose lock request fails, opens
+  without a hold, and two of its tabs can still write separate copies.
 - **`WebStorageInstaller`** — mirrors `StorageScopeInstaller`'s role on
   native: takes that hold, opens the database and registers it into the web
   server scope.
