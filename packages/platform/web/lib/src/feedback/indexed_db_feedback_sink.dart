@@ -118,9 +118,10 @@ import 'package:web/web.dart' as web;
 ///
 /// IndexedDB lives in the origin's storage bucket, which the browser may clear
 /// under storage pressure unless the origin holds a
-/// `navigator.storage.persist()` grant. Nothing requests one; #320 owns that
-/// decision, and it applies to this store and the `ServerDatabase` on
-/// identical terms.
+/// `navigator.storage.persist()` grant. The app asks for one after the first
+/// sign-in of a page load (#320), for this store and the `ServerDatabase` on
+/// identical terms. A grant or a refusal changes how likely eviction is, not
+/// what this store promises: `survivesRestart` answers `true` either way.
 class IndexedDbFeedbackSink implements FeedbackSink, Disposable {
   IndexedDbFeedbackSink._(this._database, this.databaseName);
 

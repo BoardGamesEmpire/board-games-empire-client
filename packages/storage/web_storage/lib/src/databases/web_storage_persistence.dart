@@ -22,11 +22,11 @@ enum WebStoragePersistence {
   /// origin's storage bucket, which a browser may clear under storage
   /// pressure unless the origin holds a `navigator.storage.persist()` grant
   /// — OPFS on exactly the same terms as IndexedDB, so this is not a reason
-  /// to rank one below the other. Nothing here requests that grant, which
-  /// means [durable] says the data is *stored*, not that the browser has
-  /// promised to keep it. Requesting it is a real improvement and a real
-  /// behaviour change (Firefox prompts the user), so it is a decision to
-  /// take deliberately rather than a detail to slip in here.
+  /// to rank one below the other. This store does not request that grant. The
+  /// app asks for it when the first user session of a page load starts
+  /// (#320), but a grant, or a refusal, changes how likely eviction is, not
+  /// what [durable] says: the data is *stored*, not promised to be kept by the
+  /// browser.
   durable,
 
   /// Data survives a reload, but only one tab at a time can have it open.

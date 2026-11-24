@@ -1,3 +1,4 @@
+import 'dart:js_interop';
 import 'dart:js_interop_unsafe';
 import 'dart:ui_web' as ui_web;
 
@@ -15,6 +16,7 @@ import 'package:web_platform/src/device_info/web_device_info_reader.dart';
 import 'package:web_platform/src/feedback/indexed_db_feedback_sink.dart';
 import 'package:web_platform/src/session/web_provider_sign_in_bindings.dart';
 import 'package:web_platform/src/session/web_session_bindings.dart';
+import 'package:web_platform/src/storage/persistent_storage_request.dart';
 import 'package:web_platform/src/sync/web_cross_tab_lock.dart';
 import 'package:web_platform/src/web_platform_bootstrap.dart';
 import 'package:web_platform/src/web_root_module.dart';
@@ -60,7 +62,9 @@ Future<ActiveServerScope> buildWebServerScope({
     // #137: the per-user tier, over the database registered above.
     // The list itself is VM-compilable and lives in `web.dart`, so what web
     // installs per user is assertable without a browser.
-    userInstallers: buildWebUserScopeInstallers(),
+    userInstallers: buildWebUserScopeInstallers(
+      requestPersistentStorage: _pageStorageRequest.requestOnce,
+    ),
     // #432: keeps this tab's session in step with the other tabs', and gates
     // the work that sends as the session on whose it is.
     sessionBindings: webSessionBindings,
@@ -309,6 +313,25 @@ WebDeviceInfoReader _browserDeviceInfoReader() => WebDeviceInfoReader(
   browserEngine: () => ui_web.browser.browserEngine.name,
   operatingSystem: () => ui_web.browser.operatingSystem.name,
 );
+
+/// This page load's ask for persistent storage (#320), bound to the browser's
+/// `navigator.storage`. Top-level so there is one per page load: a sign-out
+/// and a sign-in, or a second server scope, ask again of the same instance
+/// and get the first answer.
+///
+/// Each call throws [StateError] when the browser has no `navigator.storage`
+/// (a non-secure context); the request logs that and carries on.
+final _pageStorageRequest = PersistentStorageRequest(
+  persisted: () => _storageManager().persisted().toDart.then((v) => v.toDart),
+  persist: () => _storageManager().persist().toDart.then((v) => v.toDart),
+);
+
+web.StorageManager _storageManager() {
+  if (!web.window.navigator.has('storage')) {
+    throw StateError('this browser context has no navigator.storage');
+  }
+  return web.window.navigator.storage;
+}
 
 /// Logger for the storage report; named for the layer, matching
 /// `bge.platform.native_bootstrap`.

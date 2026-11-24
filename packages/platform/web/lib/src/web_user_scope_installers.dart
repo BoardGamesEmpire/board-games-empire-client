@@ -16,6 +16,7 @@ import 'package:server_settings/server_settings.dart'
     show serverSettingsResourceTypes;
 import 'package:sync_queue/sync_queue.dart'
     show SyncQueueDrainInstaller, SyncSenderInstaller;
+import 'package:web_platform/src/storage/persistent_storage_request.dart';
 
 /// The per-user session-scope installers for web (#137), run on every
 /// sign-in by `UserSessionScope.activate()` and disposed on any transition
@@ -97,18 +98,33 @@ import 'package:sync_queue/sync_queue.dart'
 /// The household, collection and event hydrates ask the same question before
 /// each pass (#432).
 ///
+/// [PersistentStorageRequestInstaller] is web's own and runs last. It
+/// resolves nothing and depends on nothing, so its place in the list is not
+/// structural. It starts [requestPersistentStorage], the browser's ask for
+/// `navigator.storage.persist()`, when a user session starts rather than
+/// before one, because by then the user has shown they mean to use the app
+/// and data the server does not have yet starts to build up, and Firefox
+/// prompts for the grant (#320). A session restored at startup starts one
+/// too, so a signed-in user is asked on each page load until the browser
+/// has answered for good. It never throws or waits.
+/// [requestPersistentStorage] is the caller's once-per-page-load function, so
+/// a sign-out and a sign-in do not ask again.
+///
 /// This lives on the VM-compilable side of the package split so its
 /// membership can be asserted without a browser, the way native's is.
 /// `buildWebServerScope` — which is browser-only, because it composes the
-/// wasm executor — passes it to `bootstrapWebServerScope`.
-List<UserScopeInstaller> buildWebUserScopeInstallers() => const [
-  SessionRehydratorInstaller(),
-  RealtimeInstaller(),
-  UserSessionScopeInstaller(),
-  HouseholdHydrateInstaller(),
-  GameCollectionHydrateInstaller(),
-  EventHydrateInstaller(),
-  CallerAccessInstaller(
+/// wasm executor — passes it to `bootstrapWebServerScope`, along with the
+/// browser call [requestPersistentStorage] stands for.
+List<UserScopeInstaller> buildWebUserScopeInstallers({
+  required Future<void> Function() requestPersistentStorage,
+}) => [
+  const SessionRehydratorInstaller(),
+  const RealtimeInstaller(),
+  const UserSessionScopeInstaller(),
+  const HouseholdHydrateInstaller(),
+  const GameCollectionHydrateInstaller(),
+  const EventHydrateInstaller(),
+  const CallerAccessInstaller(
     resourceTypes: {
       ...catalogResourceTypes,
       ...dataGatewayResourceTypes,
@@ -116,7 +132,8 @@ List<UserScopeInstaller> buildWebUserScopeInstallers() => const [
       ...serverSettingsResourceTypes,
     },
   ),
-  DataGatewaySearchGrantInstaller(),
-  SyncSenderInstaller(),
-  SyncQueueDrainInstaller(),
+  const DataGatewaySearchGrantInstaller(),
+  const SyncSenderInstaller(),
+  const SyncQueueDrainInstaller(),
+  PersistentStorageRequestInstaller(requestPersistentStorage),
 ];
