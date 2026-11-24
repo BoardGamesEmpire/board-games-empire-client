@@ -1,6 +1,16 @@
 import 'package:flutter/widgets.dart';
 import 'package:models/domain.dart';
 
+/// The user's live entries on these platform games, and again whenever they
+/// change. An entry awaiting removal counts as not owned.
+///
+/// The detail page has it as [GameDetailCollection.watchOwned]. A game's
+/// quick look takes it alone (#799), to show what the user owns without the
+/// page's add and open.
+typedef WatchOwnedEntries = Stream<List<GameCollection>> Function(
+  Set<String> platformGameIds,
+);
+
 /// What the detail page can do with the user's collection (#708). All or
 /// nothing: the shell builds one only where the session can write the
 /// collection.
@@ -25,8 +35,7 @@ final class GameDetailCollection {
   /// hands over, is not watched again. So the stream must follow the source
   /// for as long as the page is open, and the source must not be swapped
   /// under a live page; a page whose source changes is built anew.
-  final Stream<List<GameCollection>> Function(Set<String> platformGameIds)
-  watchOwned;
+  final WatchOwnedEntries watchOwned;
 
   /// Opens the add for `game`, offering `options`: the platforms the user
   /// can still add it on, as they stood at the press. `platformGameId` is

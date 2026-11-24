@@ -555,18 +555,6 @@
   "@catalogDetailDescription": {
     "description": "Heading over a game's description."
   },
-  "catalogDescriptionMore": "More",
-  "@catalogDescriptionMore": {
-    "description": "Button under a game's description, shown cut to its first few lines, that shows the whole description in place. A screen reader also hears that it is collapsed."
-  },
-  "catalogDescriptionLess": "Less",
-  "@catalogDescriptionLess": {
-    "description": "Button under a game's whole description, after catalogDescriptionMore was pressed, that cuts it back to its first few lines. A screen reader also hears that it is expanded."
-  },
-  "catalogQuickLookViewDetails": "View full details",
-  "@catalogQuickLookViewDetails": {
-    "description": "Button in a game's quick look, the pop-up a tapped cover opens over the page, that opens the game's own page with everything about it."
-  },
   "catalogQuickLookPartial": "Some details couldn't be loaded.",
   "@catalogQuickLookPartial": {
     "description": "Banner in a game's quick look when the server's copy of the game could not be loaded, for any reason. What the list already knew about the game stays shown, or the copy saved on this device. Names no cause. Beside it, catalogRetry asks the server again."
@@ -592,6 +580,26 @@
   "catalogDetailPlatformNotOwnedSpoken": "{platform}, not in your collection, add",
   "@catalogDetailPlatformNotOwnedSpoken": {
     "description": "What a screen reader says for a platform the user does not own the game on, in the list of platforms on a game's page. Pressing it opens a form to add the game to the user's collection on that platform. Shown on screen as the platform's name alone.",
+    "placeholders": {
+      "platform": {
+        "type": "String",
+        "example": "Android"
+      }
+    }
+  },
+  "catalogQuickLookPlatformOwnedSpoken": "{platform}, in your collection",
+  "@catalogQuickLookPlatformOwnedSpoken": {
+    "description": "What a screen reader says for a platform the user owns the game on, in the list of platforms in a game's quick look, the pop-up a tapped cover or search result opens over the page. The chip does nothing when pressed, so the name has no action words. Shown on screen as the platform's name with a check mark.",
+    "placeholders": {
+      "platform": {
+        "type": "String",
+        "example": "Tabletop"
+      }
+    }
+  },
+  "catalogQuickLookPlatformNotOwnedSpoken": "{platform}, not in your collection",
+  "@catalogQuickLookPlatformNotOwnedSpoken": {
+    "description": "What a screen reader says for a platform the user does not own the game on, in the list of platforms in a game's quick look, the pop-up a tapped cover or search result opens over the page. The chip does nothing when pressed, so the name has no action words. Shown on screen as the platform's name alone.",
     "placeholders": {
       "platform": {
         "type": "String",

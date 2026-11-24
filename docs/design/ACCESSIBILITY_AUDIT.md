@@ -57,6 +57,16 @@ household doesn't depend on, so household detail's audit hosts a stand-in, and
 the section is audited in
 `packages/features/events/test/household/household_events_section_test.dart`.
 
+The game quick look is no screen either: a cover on home's rows, the browse
+screen and game search's results open it (#803). Its own tests audit it in
+every state it draws, as a sheet and as a dialog at 840dp: loading, ready
+with owned and unowned platform chips, partial (the read failed, or answered
+from the cache), unavailable, ready with search's import section and its
+pinned Import, and the import's progress. Its long description, with search's
+checklist below it, is audited again as a whole page. A search result the
+server doesn't hold opens `SearchHitQuickLook`, audited alone and with the
+import pinned, in both forms.
+
 ### The coverage check
 
 `tool/check_a11y_audit.dart` (`melos run check:a11y-audit`, also in CI's
@@ -164,13 +174,16 @@ Know these limits before trusting a green run.
   (its Show and Sort menus and Restore's confirm dialog), the three
   DataGateway screens, event detail, game detail and the two collection
   screens audit every dialog, sheet and menu they open. Elsewhere only
-  home's drawer, game search's filter sheet, sent invites' filter menu and
-  stuck changes' discard dialog are audited. The rest are not: the confirm
-  dialogs of the invite inbox, the household's invite list and the
-  bootstrap error screen, and create event's date and time pickers, among
-  others. Nor is the game quick look, which a cover on home's rows or the
-  browse screen opens: it is no screen of its own, so the coverage check
-  doesn't ask for it (#803).
+  home's drawer, game search's filter sheet, sent invites' filter menu,
+  stuck changes' discard dialog and the game quick look are audited. The
+  rest are not: the confirm dialogs of the invite inbox, the household's
+  invite list and the bootstrap error screen, and create event's date and
+  time pickers, among others.
+- **A pop-up drawn at its own text scale or theme (#794).** The cell check
+  holds every `Scaffold` to the cell, and then needs only one piece of drawn
+  text anywhere at it. A pop-up has no `Scaffold`, and the page under it
+  draws at the cell, so a pop-up that set its own scale or theme would pass.
+  None is known to. The quick look's audit says so where it is declared.
 - **The offline notice** the shell draws isn't in the screen audits.
 - **The drawer entries** read "Tab n of m" (#763).
 - **Wrapped button labels at 200%.** The ring's builder makes Flutter clip
@@ -237,10 +250,14 @@ The same flows as the keyboard tests, plus the screens they don't reach:
 2. Home: the drawer, the sections, a destination.
 3. Create event, including the date and time pickers.
 4. Game search, with the filter sheet. Then open the quick look of a
-   DataGateway result this server doesn't hold, tick an expansion and press
-   Import (#713, #824): check the status ("Sending the import to the
-   server…") is read and focus lands on it, that by keyboard it is ringed
-   and Tab goes on from it rather than stopping on it again, and that the
+   DataGateway result this server doesn't hold, one with a long list of
+   expansions: check that Import stays in view under the list as it
+   scrolls and says how many are ticked, and that by keyboard Tab reaches
+   it after the last expansion and Shift+Tab goes back to that expansion
+   (#1037). Tick an expansion, scroll back to the top and press Import
+   (#713, #824): check the status ("Sending the import to the server…") is
+   scrolled into view, is read and focus lands on it, that by keyboard it is
+   ringed and Tab goes on from it rather than stopping on it again, and that the
    rows are read as one batch ("2 games in this import"), each saying its game
    and its state. Make an import fail or finish in part (stop a DataGateway,
    say): check the outcome is read once, as one banner, and that focus is
@@ -248,6 +265,13 @@ The same flows as the keyboard tests, plus the screens they don't reach:
    stopped it, open the quick look of another result this server doesn't
    hold, press Import, and close the quick look before the import ends:
    check that no game page opens once it would have ended.
+   Also close a result's quick look after opening it by a screen reader's
+   activation, and check that focus is back on that result's row, not on the
+   search field (#1038). Then open the quick look of a result this server
+   holds: check its title is read as the game's heading and as a link, that
+   Enter on it or a screen reader's activation opens the game's page, and
+   that back from the page lands on the search with no quick look, focus on
+   that result's row (#798).
 5. Settings, and the feedback flow with its review screen.
 6. The bootstrap error screen (stop the server, open the app).
 7. Event detail from Events: an answer, with its note and not-going dialogs,
@@ -447,6 +471,15 @@ The same flows as the keyboard tests, plus the screens they don't reach:
    announced as a dialog, and that its content and its drag handle's
    dismiss control can be reached. On the web a sheet's content is inside
    `role="dialog"` with `aria-modal="true"`, as a dialog's is, on purpose.
+   On iOS and Android the quick look's title is read as the game's heading
+   and as a link, in one stop. On the web it is a level-2 heading holding a
+   link to the game: check the screen reader names both, and that its
+   activation of the link opens the game's page. On a desktop it is read as
+   a link (the level isn't voiced there yet). By keyboard it is ringed, with
+   room between the ring and the words, and Enter on it opens the game's
+   page; a mouse click on it draws no ring. With the system's high contrast
+   on, its words are the body text's colour, still underlined. Back from the
+   page lands on home with no quick look, focus on the cover (#798).
 9. Collection: the list in both layouts, a stack's picker, and an entry with
    its edit sheet and remove dialog. Then the header: type in the search and
    check the count under the filters ("1 game of 3") is read as it changes;
@@ -813,9 +846,10 @@ no false finding.
 
 `dart run tool/check_a11y_audit.dart` checks every `*_screen.dart`, prints
 how many it checked, and fails on any that is neither audited nor exempt.
-A screen with more than one test file lists each file. Home's four sections
-and household detail's events section aren't `*_screen.dart`, so the check
-doesn't count them; they are listed after the audited screens.
+A screen with more than one test file lists each file. Home's four sections,
+household detail's events section and the two quick looks aren't
+`*_screen.dart`, so the check doesn't count them; they are listed after the
+audited screens.
 
 | Screen | Test file | Status |
 |---|---|---|
@@ -858,6 +892,8 @@ doesn't count them; they are listed after the audited screens.
 | `StatsCard` (home) | `packages/features/collection/test/home/stats_card_test.dart` | audited |
 | `NewestGamesSection` (home) | `packages/features/catalog/test/home/newest_games_section_test.dart` | audited |
 | `SomethingToPlaySection` (home) | `packages/features/catalog/test/home/something_to_play_section_test.dart` | audited |
+| `GameQuickLook` (pop-up, from home's rows, browse and search) | `packages/features/catalog/test/quick_look/game_quick_look_test.dart` | audited, sheet and dialog (#803; see #794) |
+| `SearchHitQuickLook` (pop-up, from search) | `packages/features/catalog/test/quick_look/search_hit_quick_look_test.dart` | audited, sheet and dialog (#803; see #794) |
 | `HouseholdEventsSection` (household detail) | `packages/features/events/test/household/household_events_section_test.dart` | audited |
 
 `_deferred` in `tool/check_a11y_audit.dart` is empty, so the run prints no

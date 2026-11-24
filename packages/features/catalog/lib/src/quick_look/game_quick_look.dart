@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:game_catalog/l10n/game_catalog_localizations.dart';
@@ -8,27 +9,30 @@ import 'package:game_catalog/src/bloc/game_detail_event.dart';
 import 'package:game_catalog/src/bloc/game_detail_state.dart';
 import 'package:game_catalog/src/quick_look/game_quick_look_seed.dart';
 import 'package:game_catalog/src/quick_look/quick_look_layout.dart';
+import 'package:game_catalog/src/screens/game_detail_collection.dart';
 import 'package:game_catalog/src/screens/game_detail_screen.dart';
 import 'package:game_catalog/src/widgets/catalog_facts.dart';
 import 'package:game_catalog/src/widgets/catalog_slivers.dart';
+import 'package:game_catalog/src/widgets/platform_ownership.dart';
 import 'package:game_filters/game_filters.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
+import 'package:observability/observability.dart';
 import 'package:ui/ui.dart';
 
 /// Opens [seed]'s [GameQuickLook] over the page (#707), through
 /// [showBgePopup]: a sheet on a phone and a dialog on a wider window, on the
 /// root navigator. The pop-up is named by the game's title.
 ///
-/// **View full details opens from the pop-up's own context, not [context].**
-/// The widget that opened the quick look can go while it is open: a read the
-/// server refuses takes the cover it was opened from down from the home
-/// shelves, and "Something to play" can draw new games under it. A push from
-/// a context that has gone asserts. The pop-up's context is there for as
-/// long as its button can be pressed, and is under the same router, so
-/// [onViewDetails] pushes the detail page from it just as it would from
-/// [context].
+/// **The title opens the page from the pop-up's own context, not
+/// [context]** (#798). The widget that opened the quick look can go while it
+/// is open: a read the server refuses takes the cover it was opened from
+/// down from the home shelves, and "Something to play" can draw new games
+/// under it. A push from a context that has gone asserts. The pop-up's
+/// context is there for as long as its title can be pressed, and is under
+/// the same router, so [onViewDetails] pushes the detail page from it just
+/// as it would from [context].
 ///
 /// It doesn't close the quick look either. The page it opens removes it
 /// once the page has arrived ([BgeRemoveWhenCovered]), so back from that
@@ -36,8 +40,13 @@ import 'package:ui/ui.dart';
 /// app's navigation shell the page arrives beneath the quick look, which
 /// goes once it has (see `showBgePopup`).
 ///
-/// Null [onViewDetails] offers no View full details. [sections] and
-/// [actions] are [GameQuickLook]'s.
+/// So it opens the page once, however often the title is pressed while the
+/// page arrives (#978): later presses do nothing
+/// ([BgeRemoveWhenCovered.openPage]). A page popped before it has arrived
+/// leaves the quick look in place, and its title opens the page again.
+///
+/// Null [onViewDetails] leaves the title plain text. [sections], [actions],
+/// [footer], [host] and [watchOwned] are [GameQuickLook]'s.
 Future<void> showGameQuickLook(
   BuildContext context, {
   required GameQuickLookSeed seed,
@@ -47,26 +56,54 @@ Future<void> showGameQuickLook(
   void Function(BuildContext context, String gameId)? onViewDetails,
   List<Widget> sections = const [],
   List<Widget> actions = const [],
-}) => showBgePopup<void>(
-  context,
-  semanticLabel: seed.title,
-  builder: (popup) => GameQuickLook(
-    seed: seed,
-    remote: remote,
-    cache: cache,
-    onGone: onGone,
-    onViewDetails: onViewDetails == null
-        ? null
-        : () => onViewDetails(popup, seed.id),
-    sections: sections,
-    actions: actions,
-  ),
-);
+  Widget? footer,
+  QuickLookHost? host,
+  WatchOwnedEntries? watchOwned,
+}) {
+  return showBgePopup<void>(
+    context,
+    semanticLabel: seed.title,
+    builder: (popup) {
+      // The guard is the route's, not the builder's, so a new run of the
+      // builder doesn't reset it. A plain push doesn't run it again, but the
+      // app's router does: it builds its navigators again on each push, and
+      // `Navigator.didUpdateWidget` calls each route's
+      // `changedExternalState`, so a second press can reach a callback from
+      // a new run. And the route knows when the page has gone back without
+      // arriving, which leaves the quick look and its title as they were.
+      final guard = switch (ModalRoute.of(popup)) {
+        final BgeRemoveWhenCovered<dynamic> route => route,
+        _ => null,
+      };
+      return GameQuickLook(
+        seed: seed,
+        remote: remote,
+        cache: cache,
+        onGone: onGone,
+        onViewDetails: onViewDetails == null
+            ? null
+            : () {
+                void view() => onViewDetails(popup, seed.id);
+                if (guard == null) {
+                  view();
+                } else {
+                  guard.openPage(view);
+                }
+              },
+        sections: sections,
+        actions: actions,
+        footer: footer,
+        host: host,
+        watchOwned: watchOwned,
+      );
+    },
+  );
+}
 
 /// A game's important facts in a pop-up, without leaving the page (#707):
 /// its cover, title and publish year, its players, play time and age, the
-/// platforms it is on, and its description folded to a few lines, with
-/// **View full details** to open its page.
+/// platforms it is on, and its whole description. Its title is the link to
+/// the game's page (#798).
 ///
 /// ## The seed shows at once
 ///
@@ -94,22 +131,41 @@ Future<void> showGameQuickLook(
 /// would only flash if swapped for the same picture, unless the seed had
 /// none.
 ///
+/// ## The platforms the user owns
+///
+/// Given [watchOwned], the platform chips say which of them the user owns
+/// the game on (#799), as the detail page's do: an owned chip is the page's,
+/// filled with a check, and every chip's spoken name says whether it is
+/// owned. It follows the collection while the quick look is open. Until the
+/// watch first answers, after it fails, and without it, the chips are plain
+/// and say nothing of ownership.
+///
 /// ## No add to the collection
 ///
 /// Nothing here adds the game to the collection, platform chips included,
-/// which have no action. Adding is the detail page's, behind View full
-/// details.
+/// which have no action. Adding is the detail page's, behind the title.
 ///
 /// ## Callers add to it
 ///
-/// [sections] sit below the description and [actions] beside View full
-/// details, so a caller with more to offer about a game, such as an import
-/// from search (#713), doesn't fork this.
+/// [sections] sit below the description and [actions] in a row at the foot,
+/// so a caller with more to offer about a game, such as an import from
+/// search (#713), doesn't fork this. [footer] is pinned under the scroll
+/// view, for an action that counts picks down a long section, as that
+/// import's button counts the expansions ticked (#1037): see
+/// `QuickLookLayout`.
+///
+/// [host] wraps all of it, for state a section and the footer share. It
+/// stays at one place in the tree from the seed through every answer, so
+/// what it holds, such as an import being followed, outlives each.
+///
+/// A game the server answers as unavailable draws the banner and none of
+/// the additions (#1040): what a caller adds is about a game that's there.
+/// The [host] stays, with nothing under it to draw what it holds.
 ///
 /// ## Opened through [showGameQuickLook]
 ///
 /// Host it through [showGameQuickLook], as #713's search results will, not
-/// in a layout of your own. It brings its own scroll view, and its header's
+/// in a layout of your own. It brings its own scroll view, and its layout's
 /// `LayoutBuilder` throws under intrinsic sizing, so it needs the bounded
 /// box the pop-up gives it.
 class GameQuickLook extends StatelessWidget {
@@ -121,13 +177,21 @@ class GameQuickLook extends StatelessWidget {
     this.onViewDetails,
     this.sections = const [],
     this.actions = const [],
+    this.footer,
+    this.host,
     this.openLink = GameDetailScreen.openLinkExternally,
+    this.watchOwned,
     super.key,
   });
 
-  static const Key viewDetailsKey = QuickLookLayout.viewDetailsKey;
+  /// The title, where it is the link to the game's page (#798).
+  static const Key titleLinkKey = QuickLookLayout.titleLinkKey;
   static const Key factsKey = QuickLookLayout.factsKey;
   static const Key platformsKey = QuickLookLayout.platformsKey;
+
+  /// The pinned footer's band: there with no height while nothing is
+  /// pinned.
+  static const Key footerKey = QuickLookLayout.footerKey;
 
   /// The banner over a read that didn't land, with its retry.
   static const Key partialKey = Key('catalog.quick_look.partial');
@@ -156,18 +220,31 @@ class GameQuickLook extends StatelessWidget {
   /// Told the game's id when it turns out to be gone. Null tells no one.
   final void Function(String gameId)? onGone;
 
-  /// Opens the game's detail page. Null offers no View full details: where
-  /// there is nowhere to open it, there never will be while this is open.
+  /// Opens the game's detail page, from the title. Null leaves the title
+  /// plain text: where there is nowhere to open it, there never will be
+  /// while this is open.
   final VoidCallback? onViewDetails;
 
   /// The caller's own sections, below the description.
   final List<Widget> sections;
 
-  /// The caller's own actions, before View full details.
+  /// The caller's own actions, in a row at the foot.
   final List<Widget> actions;
+
+  /// The caller's pinned action, under the scroll view (#1037). Null pins
+  /// nothing.
+  final Widget? footer;
+
+  /// Wraps what the quick look draws, in every state, for state the
+  /// [sections] and the [footer] share. Null wraps nothing.
+  final QuickLookHost? host;
 
   /// Opens a description link outside the app.
   final Future<void> Function(Uri uri) openLink;
+
+  /// What the user owns of the game's platforms (#799). Null, as where the
+  /// session can't write the collection, says nothing of ownership.
+  final WatchOwnedEntries? watchOwned;
 
   @override
   Widget build(BuildContext context) => BlocProvider<GameDetailBloc>(
@@ -183,7 +260,10 @@ class GameQuickLook extends StatelessWidget {
       onViewDetails: onViewDetails,
       sections: sections,
       actions: actions,
+      footer: footer,
+      host: host,
       openLink: openLink,
+      watchOwned: watchOwned,
     ),
   );
 }
@@ -194,20 +274,28 @@ class _QuickLookBody extends StatefulWidget {
     required this.onViewDetails,
     required this.sections,
     required this.actions,
+    required this.footer,
+    required this.host,
     required this.openLink,
+    required this.watchOwned,
   });
 
   final GameQuickLookSeed seed;
   final VoidCallback? onViewDetails;
   final List<Widget> sections;
   final List<Widget> actions;
+  final Widget? footer;
+  final QuickLookHost? host;
   final Future<void> Function(Uri uri) openLink;
+  final WatchOwnedEntries? watchOwned;
 
   @override
   State<_QuickLookBody> createState() => _QuickLookBodyState();
 }
 
 class _QuickLookBodyState extends State<_QuickLookBody> {
+  static final BgeLogger _log = BgeLogger('bge.catalog.quick_look.ownership');
+
   /// The read's last answer shown. A retry reads again from
   /// [GameDetailLoading], and this keeps what was shown on screen meanwhile.
   GameDetailState? _answer;
@@ -221,10 +309,63 @@ class _QuickLookBodyState extends State<_QuickLookBody> {
   /// An answer that came while [_dwell] ran, shown when it ends.
   GameDetailState? _held;
 
+  /// The platform games [_owned] watches: those of the answer shown.
+  Set<String> _watchedIds = const {};
+
+  StreamSubscription<List<GameCollection>>? _owned;
+
+  /// The user's entries on [_watchedIds], or null until the watch answers,
+  /// and once it fails.
+  List<GameCollection>? _entries;
+
+  @override
+  void didUpdateWidget(_QuickLookBody oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // The pop-up hands over the same watch on each rebuild. One given or
+    // taken away changes what is known.
+    if ((oldWidget.watchOwned == null) != (widget.watchOwned == null)) {
+      _watch(_watchedIds, force: true);
+    }
+  }
+
   @override
   void dispose() {
     _dwell?.cancel();
+    // The route stays mounted through its exit, and the watch can answer
+    // then; once it goes, nothing more is heard.
+    unawaited(_owned?.cancel());
     super.dispose();
+  }
+
+  /// The platform games [answer] shows: none until the read gives them.
+  static List<PlatformGame> _platformGamesOf(GameDetailState? answer) =>
+      answer is GameDetailReady ? answer.platformGames : const [];
+
+  /// Watches what the user owns of [ids], unless it already does: a new
+  /// answer with the same platforms is not watched again. A new platform
+  /// is, as the last answer says nothing of it. Called where a build
+  /// follows: inside a setState, or from [didUpdateWidget].
+  void _watch(Set<String> ids, {bool force = false}) {
+    if (!force && setEquals(ids, _watchedIds)) return;
+    unawaited(_owned?.cancel());
+    _owned = null;
+    _entries = null;
+    _watchedIds = ids;
+    final watchOwned = widget.watchOwned;
+    if (watchOwned == null || ids.isEmpty) return;
+    _owned = watchOwned(ids).listen(
+      (entries) {
+        if (mounted) setState(() => _entries = entries);
+      },
+      onError: (Object error, StackTrace stackTrace) {
+        _log.warn(
+          'Watching what the user owns of a game failed',
+          error: error,
+          stackTrace: stackTrace,
+        );
+        if (mounted) setState(() => _entries = null);
+      },
+    );
   }
 
   /// Each state the read goes through, one at a time. A builder would see
@@ -255,6 +396,9 @@ class _QuickLookBodyState extends State<_QuickLookBody> {
   void _show(GameDetailState answer) => setState(() {
     _answer = answer;
     _retrying = false;
+    _watch({
+      for (final platformGame in _platformGamesOf(answer)) platformGame.id,
+    });
   });
 
   @override
@@ -287,7 +431,16 @@ class _QuickLookBodyState extends State<_QuickLookBody> {
         },
       _ => ready?.game ?? seed.game,
     };
-    final platformGames = ready?.platformGames ?? const <PlatformGame>[];
+    final platformGames = _platformGamesOf(answer);
+    final entries = _entries;
+    final ownership = entries == null
+        ? null
+        : PlatformOwnership.of(platformGames: platformGames, entries: entries);
+    // What a caller adds is about a game that's there (#1040). A game the
+    // server won't show draws the banner and none of the caller's additions,
+    // whichever caller they came from. Every slot that draws one is gated
+    // here, so a new one joins this line. The host draws nothing, and stays.
+    final additions = answer is! GameDetailUnavailable;
     final banner = switch (answer) {
       GameDetailFailed() ||
       GameDetailReady(fromCache: true) => CatalogFromCacheBanner(
@@ -308,7 +461,7 @@ class _QuickLookBodyState extends State<_QuickLookBody> {
 
     // The title and subtitle are the read's once it lands, the seed's until
     // then; the cover stays the seed's, unless the seed had none.
-    return QuickLookLayout(
+    final layout = QuickLookLayout(
       title: game?.title ?? seed.title,
       subtitle: game == null ? seed.subtitle : game.subtitle,
       year: game?.publishYear,
@@ -321,14 +474,21 @@ class _QuickLookBodyState extends State<_QuickLookBody> {
           QuickLookPlatform(
             key: ValueKey(platformGame.id),
             name: platformGame.platformName,
+            owned: ownership?.owns(platformGame.id),
           ),
       ],
       banner: banner,
       description: game?.description,
-      sections: widget.sections,
-      actions: widget.actions,
+      sections: additions ? widget.sections : const [],
+      actions: additions ? widget.actions : const [],
+      footer: additions ? widget.footer : null,
       onViewDetails: widget.onViewDetails,
       openLink: widget.openLink,
     );
+    // Around the layout whatever the answer, an unavailable game's too, so
+    // the host is one element from the seed on and keeps what it holds
+    // (#1037). There it has no addition under it to draw any of it.
+    final host = widget.host;
+    return host == null ? layout : host(context, layout);
   }
 }

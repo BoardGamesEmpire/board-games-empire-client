@@ -597,7 +597,7 @@ void main() {
   });
 
   testWidgets('a thumbnail whose game is found gone leaves the grid, and '
-      'View full details still opens', (tester) async {
+      'the quick look title still opens the game', (tester) async {
     games.gone.add('g_catan');
     await pumpHome(
       tester,
@@ -614,7 +614,7 @@ void main() {
     // The tile the pop-up opened from has unmounted.
     expect(tile, findsNothing);
 
-    await tester.tap(find.byKey(GameQuickLook.viewDetailsKey));
+    await tester.tap(find.byKey(GameQuickLook.titleLinkKey));
     await tester.pumpAndSettle();
 
     expect(find.byType(GameDetailScreen), findsOneWidget);
@@ -626,8 +626,8 @@ void main() {
     expect(find.byType(GameQuickLook, skipOffstage: false), findsNothing);
   });
 
-  testWidgets('View full details from a Games thumbnail opens the game over '
-      'the quick look, and back lands on Games without it, on the tile', (
+  testWidgets('the quick look title from a Games thumbnail opens the game '
+      'over the quick look, and back lands on Games without it, on the tile', (
     tester,
   ) async {
     await pumpHome(
@@ -647,7 +647,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(GameQuickLook), findsOneWidget);
 
-    await tester.tap(find.byKey(GameQuickLook.viewDetailsKey));
+    await tester.tap(find.byKey(GameQuickLook.titleLinkKey));
     await tester.pumpAndSettle();
     expect(find.byType(GameDetailScreen), findsOneWidget);
     // Gone once the page has arrived, not just hidden under it.

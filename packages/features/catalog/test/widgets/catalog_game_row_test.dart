@@ -1,5 +1,7 @@
 import 'package:bge_test_support/widgets.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:game_catalog/src/widgets/catalog_game_row.dart';
 import 'package:ui/ui.dart';
@@ -55,5 +57,108 @@ void main() {
       await keyboardFocusShowsRing(tester, find.text('Wingspan')),
       isTrue,
     );
+  });
+
+  group('focus from a tap (#1038)', () {
+    /// The row's tile node: the nearest focus above its title.
+    FocusNode tileNode(WidgetTester tester) =>
+        Focus.of(tester.element(find.text('Wingspan')));
+
+    /// Whether the ring around the row is drawn.
+    bool ringDrawn(WidgetTester tester) {
+      final ring = find.ancestor(
+        of: find.text('Wingspan'),
+        matching: find.byType(BgeFocusRing),
+      );
+      final drawn = tester.widget<DecoratedBox>(
+        find.descendant(of: ring, matching: find.byType(DecoratedBox)).first,
+      );
+      return (drawn.decoration as BoxDecoration).border != null;
+    }
+
+    testWidgets("a screen reader's tap focuses the row before its onTap runs", (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      FocusNode? focusedWhenTapped;
+      await tester.pumpWidget(
+        catalogApp(
+          Scaffold(
+            body: CatalogGameRow(
+              title: 'Wingspan',
+              onTap: () =>
+                  focusedWhenTapped = FocusManager.instance.primaryFocus,
+            ),
+          ),
+        ),
+      );
+      FocusManager.instance.primaryFocus?.unfocus();
+      await tester.pump();
+
+      tester.semantics.tap(find.semantics.byLabel('Wingspan'));
+      await tester.pump();
+
+      expect(focusedWhenTapped, isNotNull);
+      expect(focusedWhenTapped, same(tileNode(tester)));
+      expect(tileNode(tester).hasPrimaryFocus, isTrue);
+      handle.dispose();
+    });
+
+    testWidgets(
+      'a mouse click on macOS focuses the row with no ring, and the next key '
+      'press shows it',
+      (tester) async {
+        await tester.pumpWidget(
+          catalogApp(
+            Scaffold(
+              body: CatalogGameRow(title: 'Wingspan', onTap: () {}),
+            ),
+          ),
+        );
+        final row = tester.getCenter(find.byType(CatalogGameRow));
+        const away = Offset(4, 590);
+        final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+        await mouse.addPointer(location: away);
+        addTearDown(mouse.removePointer);
+
+        await mouse.moveTo(row);
+        await mouse.down(row);
+        await tester.pump(const Duration(milliseconds: 50));
+        await mouse.up();
+        await mouse.moveTo(away);
+        await tester.pumpAndSettle();
+
+        expect(tileNode(tester).hasPrimaryFocus, isTrue);
+        expect(
+          FocusManager.instance.highlightMode,
+          FocusHighlightMode.traditional,
+        );
+        expect(ringDrawn(tester), isFalse, reason: 'clicked');
+
+        await tester.sendKeyDownEvent(LogicalKeyboardKey.keyA);
+        await tester.pump();
+        expect(ringDrawn(tester), isTrue, reason: 'a key press');
+        await tester.sendKeyUpEvent(LogicalKeyboardKey.keyA);
+      },
+      variant: TargetPlatformVariant.only(TargetPlatform.macOS),
+    );
+
+    testWidgets('a row with no onTap takes no focus from Tab or a tap', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        catalogApp(
+          const Scaffold(body: CatalogGameRow(title: 'Wingspan')),
+        ),
+      );
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pump();
+      expect(tileNode(tester).hasFocus, isFalse, reason: 'Tab');
+
+      await tester.tap(find.text('Wingspan'));
+      await tester.pump();
+      expect(tileNode(tester).hasFocus, isFalse, reason: 'a tap');
+    });
   });
 }

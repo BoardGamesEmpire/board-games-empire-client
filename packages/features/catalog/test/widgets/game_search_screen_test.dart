@@ -48,6 +48,7 @@ void main() {
     ThemeData? theme,
     DataGatewaySearchGrant? grant,
     GameSearchStreamSource? streamSource,
+    WatchOwnedEntries? watchOwned,
   }) async {
     await tester.pumpWidget(
       catalogApp(
@@ -62,6 +63,7 @@ void main() {
           onOpen: onOpen,
           access: access,
           onGone: onGone,
+          watchOwned: watchOwned,
         ),
         offline: offline,
       ),
@@ -367,11 +369,12 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    Future<void> pressViewDetails(WidgetTester tester) async {
-      final button = find.byKey(GameQuickLook.viewDetailsKey);
-      await tester.ensureVisible(button);
+    /// Presses the quick look's title, the link to the game's page (#798).
+    Future<void> pressTitle(WidgetTester tester) async {
+      final title = find.byKey(GameQuickLook.titleLinkKey);
+      await tester.ensureVisible(title);
       await tester.pumpAndSettle();
-      await tester.tap(button);
+      await tester.tap(title);
       await tester.pump();
     }
 
@@ -395,6 +398,17 @@ void main() {
       // Import waits in the quick look, with the hit's expansions read from
       // the DataGateway it came from, which the checklist names.
       expect(importLabel(tester), 'Import');
+      // Pinned under the quick look's scroll view, with the checklist it
+      // counts in the scroll view (#1037).
+      expect(
+        find.ancestor(
+          of: importButton,
+          matching: find.byKey(SearchHitQuickLook.footerKey),
+        ),
+        findsOneWidget,
+      );
+      expect(importButton.hitTestable(), findsOneWidget);
+      expect(find.byType(GameImportSection), findsOneWidget);
       final panel = tester.widget<GameImportPanel>(
         find.byType(GameImportPanel),
       );
@@ -427,8 +441,117 @@ void main() {
       // This server's own result came from no DataGateway to import from.
       expect(find.byType(GameImportPanel), findsNothing);
 
-      await pressViewDetails(tester);
+      await pressTitle(tester);
       expect(opened, ['g_catan']);
+    });
+
+    testWidgets("a held result's quick look marks an owned platform (#799)", (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      remote.onSearch = (_, _, _) async => results;
+      final platforms = [
+        for (final (id, name) in [('pg_1', 'Tabletop'), ('pg_2', 'Steam')])
+          PlatformGame(
+            id: id,
+            gameId: 'g_catan',
+            platformId: 'plat_$id',
+            platformName: name,
+            createdAt: DateTime.utc(2026),
+            updatedAt: DateTime.utc(2026),
+          ),
+      ];
+      remote.onFetchGame = (_) async =>
+          (game: game('g_catan', title: 'Catan'), platformGames: platforms);
+      final watched = <Set<String>>[];
+
+      await show(
+        tester,
+        onOpen: (_, _) {},
+        watchOwned: (ids) {
+          watched.add(ids);
+          return Stream.value([
+            GameCollection(
+              id: 'e_1',
+              userId: 'u_1',
+              platformGameId: 'pg_1',
+              medium: GameMedium.physical,
+              createdAt: DateTime.utc(2026),
+              updatedAt: DateTime.utc(2026),
+            ),
+          ]);
+        },
+      );
+      await search(tester, 'catan');
+      await openQuickLook(tester, serverRow('g_catan'));
+
+      expect(watched, [
+        {'pg_1', 'pg_2'},
+      ]);
+      expect(
+        find.bySemanticsLabel('Tabletop, in your collection'),
+        findsOneWidget,
+      );
+      expect(
+        find.bySemanticsLabel('Steam, not in your collection'),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(GameQuickLook.platformsKey),
+          matching: find.byIcon(Icons.check),
+        ),
+        findsOneWidget,
+      );
+
+      handle.dispose();
+    });
+
+    testWidgets("closing a result's quick look after a screen reader's tap "
+        'returns focus to the row, not the search field (#1038)', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      remote.onSearch = (_, _, _) async => results;
+      readsAs(game('g_catan', title: 'Catan'));
+
+      await show(tester, access: mayImport(), onOpen: (_, _) {});
+      await search(tester, 'catan');
+      // Typing left focus on the search field, where the bug keeps it.
+      final field = tester.widget<EditableText>(
+        find.descendant(
+          of: find.byKey(GameSearchScreen.fieldKey),
+          matching: find.byType(EditableText),
+        ),
+      );
+      expect(field.focusNode.hasPrimaryFocus, isTrue, reason: 'to begin with');
+
+      tester.semantics.tap(
+        find.semantics.byPredicate(
+          (node) =>
+              node.label == 'Catan' &&
+              node.getSemanticsData().hasAction(SemanticsAction.tap) &&
+              node.rect.height > 0,
+          describeMatch: (_) => 'the Catan result',
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(GameQuickLook), findsOneWidget);
+
+      await closeQuickLook(tester);
+      expect(find.byType(GameQuickLook), findsNothing);
+
+      final row = Focus.of(
+        tester.element(
+          find.descendant(
+            of: serverRow('g_catan'),
+            matching: find.text('Catan'),
+          ),
+        ),
+      );
+      expect(row.hasPrimaryFocus, isTrue, reason: 'the row has focus');
+      expect(field.focusNode.hasFocus, isFalse, reason: 'not the search field');
+      handle.dispose();
     });
 
     testWidgets('a DataGateway result on the server offers Re-import', (
@@ -451,6 +574,16 @@ void main() {
       expect(find.byType(SearchHitQuickLook), findsNothing);
       expect(remote.calls, contains('fetchGame(g_imported)'));
       expect(importLabel(tester), 'Re-import');
+      // Pinned here too (#1037).
+      expect(
+        find.ancestor(
+          of: importButton,
+          matching: find.byKey(GameQuickLook.footerKey),
+        ),
+        findsOneWidget,
+      );
+      expect(importButton.hitTestable(), findsOneWidget);
+      expect(find.byType(GameImportSection), findsOneWidget);
       expect(remote.expansionTargets, [
         const GameExpansionsTarget.dataGateway(
           gatewayId: 'dg_bgg',
@@ -465,8 +598,30 @@ void main() {
         isEmpty,
       );
 
-      await pressViewDetails(tester);
+      await pressTitle(tester);
       expect(opened, ['g_imported']);
+    });
+
+    testWidgets('a held DataGateway result whose read is refused offers no '
+        'Re-import (#1040)', (tester) async {
+      remote
+        ..onSearch = ((_, _, _) async => results)
+        ..onFetchGame = ((_) async =>
+            throw const GamesForbiddenException('403'));
+
+      await show(tester, access: mayImport(), onOpen: (_, _) {});
+      await search(tester, 'catan');
+      await openQuickLook(tester, sourceRow('1'));
+
+      expect(find.byKey(GameQuickLook.unavailableKey), findsOneWidget);
+      // Neither the pinned button nor the checklist. The import's host
+      // stays around the quick look, and draws nothing.
+      expect(importButton, findsNothing);
+      expect(find.byType(GameImportSection), findsNothing);
+      expect(
+        tester.getSize(find.byKey(GameQuickLook.footerKey)).height,
+        0,
+      );
     });
 
     testWidgets('without create on Game there is no Import', (tester) async {
@@ -649,8 +804,8 @@ void main() {
       );
     });
 
-    testWidgets("with no onOpen, a local result's quick look offers no View "
-        'full details', (tester) async {
+    testWidgets("with no onOpen, a local result's quick look title is no "
+        'link', (tester) async {
       remote.onSearch = (_, _, _) async => results;
       readsAs(game('g_catan', title: 'Catan'));
 
@@ -659,7 +814,15 @@ void main() {
       await openQuickLook(tester, serverRow('g_catan'));
 
       expect(find.byType(GameQuickLook), findsOneWidget);
-      expect(find.byKey(GameQuickLook.viewDetailsKey), findsNothing);
+      expect(find.byKey(GameQuickLook.titleLinkKey), findsNothing);
+      // The title is still there, as plain text.
+      expect(
+        find.descendant(
+          of: find.byType(GameQuickLook),
+          matching: find.text('Catan'),
+        ),
+        findsOneWidget,
+      );
     });
 
     for (final (name, onOpen)

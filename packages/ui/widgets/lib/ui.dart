@@ -104,6 +104,9 @@
 /// and `BgeFoldedHandoffs` came with it for two call sites each, the Games
 /// and Collection lists, which lay out, hold open and hand focus across a
 /// base game's nested rows the same way.
+/// `BgePinnedFooter` came out of `BgePage` with #1037, for its second call
+/// site: the catalog's quick look, a pop-up that pins a counting action
+/// under its own scroll view and holds its footer to the page's rules.
 library;
 
 export 'src/banners/bge_inline_banner.dart';
@@ -144,6 +147,7 @@ export 'src/layout/bge_navigation_menu.dart';
 export 'src/layout/bge_nested_rows_box.dart';
 export 'src/layout/bge_outlined_row.dart';
 export 'src/layout/bge_page.dart';
+export 'src/layout/bge_pinned_footer.dart';
 export 'src/layout/bge_row_expansions.dart';
 export 'src/layout/bge_shelf.dart';
 export 'src/layout/bge_unfolding_cover_grid.dart';

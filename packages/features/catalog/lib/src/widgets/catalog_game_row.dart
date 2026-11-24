@@ -13,6 +13,11 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// The collection row's shape (#44). Without [onTap] a row is inert content,
 /// not a focus stop: a tap that leads nowhere is worse than no tap (#269).
 ///
+/// A tap, a click or a screen reader's activation gives the row focus before
+/// [onTap] runs, so the quick look or page it opens hands focus back to the
+/// row when it closes, not to whatever the screen focused last (#1038). A
+/// mouse's focus draws no ring.
+///
 /// A base game's row in a list that folds its expansions carries
 /// [expansions]: the 🧩 control at the row's end, a button and a focus stop
 /// of its own after the row's, and the row's Show/Hide expansions custom
@@ -77,6 +82,7 @@ class CatalogGameRow extends StatelessWidget {
         expansions: expansions,
         builder: (context, focusNode) => BgeRowFocusRing(
           focusNode: focusNode,
+          focusOnTap: true,
           builder: (context, row) => ListTile(
             titleAlignment: BgeThumbnail.titleAlignmentOf(context),
             minTileHeight: BgeThumbnail.minTileHeightOf(context),

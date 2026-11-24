@@ -125,6 +125,16 @@ class BgePopupCoverObserver extends NavigatorObserver {
     if (newRoute != null) _covered(newRoute);
   }
 
+  /// A page removed outright ([NavigatorState.removeRoute], or a router
+  /// dropping it) runs no exit, so this is all that says it went.
+  @override
+  void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    super.didRemove(route, previousRoute);
+    for (final popup in [..._popups]) {
+      popup._removedBeneath(route);
+    }
+  }
+
   void _covered(Route<dynamic> route) {
     // A copy: a pop-up leaves the set as it is disposed, and nothing here
     // should depend on that never happening mid-loop.
@@ -196,6 +206,46 @@ mixin BgeRemoveWhenCovered<T> on TransitionRoute<T> {
   /// page under it still covers the pop-up once that page arrives.
   final List<_Entrance> _beneath = [];
 
+  /// Whether a page opened through [openPage] is on its way.
+  bool _opening = false;
+
+  /// Runs [open], which opens a page from this pop-up, unless a page it
+  /// opened is still on its way (#978). Returns whether [open] ran.
+  ///
+  /// So a pop-up opens its page once, however often what opens it is pressed
+  /// while the page arrives: on a nested navigator the page arrives beneath
+  /// the pop-up, which stays on top, pressable, until the page has. And a
+  /// page pushed through a router is pushed a frame after the press, so two
+  /// presses can land before there is any page to see.
+  ///
+  /// A page on its way stays so until it has arrived, which removes the
+  /// pop-up, or leaves before it arrives, popped or removed outright, which
+  /// leaves the pop-up in place and lets the next press open a page again.
+  bool openPage(VoidCallback open) {
+    if (_opening) return false;
+    _opening = true;
+    try {
+      open();
+    } catch (_) {
+      _opening = false;
+      rethrow;
+    }
+    return true;
+  }
+
+  /// A page this pop-up watched left before it arrived.
+  ///
+  /// It lifts the guard only once no watched page is still on its way. The
+  /// pop-up can't tell which page [openPage]'s callback pushed: a router
+  /// pushes it a frame later. Any page that comes and goes on the nested
+  /// navigator while that one arrives is watched too, and its leaving
+  /// mustn't let a second press open the page again.
+  void _pageLeft() {
+    if (_over?.onItsWay ?? false) return;
+    if (_beneath.any((entrance) => entrance.onItsWay)) return;
+    _opening = false;
+  }
+
   @override
   void install() {
     super.install();
@@ -205,8 +255,14 @@ mixin BgeRemoveWhenCovered<T> on TransitionRoute<T> {
   @override
   void didChangeNext(Route<dynamic>? nextRoute) {
     super.didChangeNext(nextRoute);
-    _over?.cancel();
+    final previous = _over;
     _over = _watch(nextRoute);
+    // A page still on its way that is no longer next was removed outright,
+    // which runs no exit, or replaced: told after [_over] is the page now
+    // next, which keeps the guard while it arrives.
+    previous
+      ?..left()
+      ..cancel();
   }
 
   @override
@@ -214,6 +270,9 @@ mixin BgeRemoveWhenCovered<T> on TransitionRoute<T> {
     super.didPopNext(nextRoute);
     _over?.cancel();
     _over = null;
+    // A page that had arrived would have removed this route, so this one
+    // was popped on its way.
+    _pageLeft();
   }
 
   @override
@@ -235,12 +294,19 @@ mixin BgeRemoveWhenCovered<T> on TransitionRoute<T> {
     if (entrance != null) _beneath.add(entrance);
   }
 
+  /// [coverObserver] saw [route] removed outright from its navigator.
+  void _removedBeneath(Route<dynamic> route) {
+    for (final entrance in [..._beneath]) {
+      if (identical(entrance.route, route)) entrance.left();
+    }
+  }
+
   /// Watches [route]'s entrance, if it is a route that covers this one.
   _Entrance? _watch(Route<dynamic>? route) {
     if (route is! TransitionRoute<dynamic> || !route.opaque) return null;
     final animation = route.animation;
     if (animation == null) return null;
-    return _Entrance(route, animation, _removeOnceArrived);
+    return _Entrance(route, animation, _removeOnceArrived, _pageLeft);
   }
 
   /// Removes this route after the current frame, if [entrance] is still
@@ -250,10 +316,17 @@ mixin BgeRemoveWhenCovered<T> on TransitionRoute<T> {
   /// its history, which is where [didChangeNext] and a navigator observer
   /// are called from. Every path waits for the frame to end, so none can land
   /// there.
+  ///
+  /// A page removed outright after it arrived but before the frame ended
+  /// never covered the pop-up, and [_Entrance.left] has nothing to tell of
+  /// a page that arrived, so the guard is lifted here.
   void _removeOnceArrived(_Entrance entrance) {
     SchedulerBinding.instance
       ..addPostFrameCallback((_) {
-        if (isActive && !entrance.cancelled && entrance.route.isActive) {
+        if (!isActive) return;
+        if (!entrance.route.isActive) {
+          _pageLeft();
+        } else if (!entrance.cancelled) {
           navigator!.removeRoute(this);
         }
       }, debugLabel: 'BgeRemoveWhenCovered.removeRoute')
@@ -265,10 +338,11 @@ mixin BgeRemoveWhenCovered<T> on TransitionRoute<T> {
 /// A page's entrance, watched for [BgeRemoveWhenCovered] until the page has
 /// arrived.
 class _Entrance {
-  _Entrance(this.route, this._animation, this._onArrived) {
+  _Entrance(this.route, this._animation, this._onArrived, this._onLeft) {
     if (_hasArrived) {
       // A page with no transition arrives before it is announced, so there
       // is no entrance left to wait for.
+      _ended = true;
       _onArrived(this);
     } else {
       _animation.addStatusListener(_changed);
@@ -284,10 +358,21 @@ class _Entrance {
   /// Told once the page has arrived.
   final void Function(_Entrance) _onArrived;
 
+  /// Told if the page leaves before it has arrived: see [left].
+  final VoidCallback _onLeft;
+
   /// Whether the pop-up has stopped watching this page: another took its
   /// place, or the pop-up is gone.
   bool get cancelled => _cancelled;
   bool _cancelled = false;
+
+  /// Whether the page has arrived or left.
+  bool _ended = false;
+
+  /// Whether the page is still arriving: watched, neither arrived nor left,
+  /// and still on its navigator. The last holds for a page removed outright
+  /// before [left] is told of it.
+  bool get onItsWay => !_cancelled && !_ended && route.isActive;
 
   /// Whether the entrance has completed with the page on stage.
   ///
@@ -306,13 +391,24 @@ class _Entrance {
       case AnimationStatus.completed:
         // Offstage for the hero frame: still listening for the real one.
         if (!_hasArrived) return;
+        _ended = true;
         _stopListening();
         _onArrived(this);
       case AnimationStatus.dismissed:
-        _stopListening();
+        left();
       case AnimationStatus.forward || AnimationStatus.reverse:
         break;
     }
+  }
+
+  /// The page left before it arrived: popped, when its exit ends, or
+  /// removed outright, which runs no exit, when its navigator says so. A
+  /// page that has arrived, or one no longer watched, has nothing to tell.
+  void left() {
+    if (_ended || _cancelled) return;
+    _ended = true;
+    _stopListening();
+    _onLeft();
   }
 
   /// Stops watching, and keeps a removal already asked for from happening.

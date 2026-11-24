@@ -2,13 +2,14 @@ import 'dart:async';
 
 import 'package:bge_test_support/widgets.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:game_catalog/game_catalog.dart';
-import 'package:game_catalog/src/widgets/folded_description.dart';
 import 'package:models/domain.dart';
 
 import '../support/catalog_app.dart';
+import '../support/fake_games_remote.dart';
 
 /// The quick look a DataGateway search hit opens (#713): drawn from the hit
 /// alone, with nothing read. The search screen's tests check that no read is
@@ -36,6 +37,8 @@ void main() {
     String? sourceName,
     List<Widget> sections = const [],
     List<Widget> actions = const [],
+    Widget? footer,
+    QuickLookHost? host,
   }) => Builder(
     builder: (context) => TextButton(
       onPressed: () => unawaited(
@@ -45,6 +48,8 @@ void main() {
           sourceName: sourceName,
           sections: sections,
           actions: actions,
+          footer: footer,
+          host: host,
         ),
       ),
       child: const Text('open'),
@@ -57,6 +62,8 @@ void main() {
     String? sourceName,
     List<Widget> sections = const [],
     List<Widget> actions = const [],
+    Widget? footer,
+    QuickLookHost? host,
   }) async {
     await tester.pumpWidget(
       catalogApp(
@@ -67,6 +74,8 @@ void main() {
               sourceName: sourceName,
               sections: sections,
               actions: actions,
+              footer: footer,
+              host: host,
             ),
           ),
         ),
@@ -100,24 +109,22 @@ void main() {
     expect(find.byType(GameQuickLook), findsNothing);
     // The year is in the header, not repeated in the facts.
     expect(factsShown(tester), '1–5 players');
-    expect(find.text('View full details'), findsNothing);
+    // The title is plain text: the game has no page here yet (#798).
+    expect(find.byKey(GameQuickLook.titleLinkKey), findsNothing);
   });
 
-  testWidgets('the summary is the description, folded', (tester) async {
+  testWidgets('the summary is the description, shown whole', (tester) async {
     await open(tester, hit);
 
-    expect(find.byType(FoldedDescription), findsOneWidget);
-    expect(find.text('More'), findsOneWidget);
-    await tester.tap(find.byKey(FoldedDescription.toggleKey));
-    await tester.pumpAndSettle();
-    expect(find.text('Less'), findsOneWidget);
+    expect(find.byType(GameDescription), findsOneWidget);
+    expect(find.text('More'), findsNothing);
+    expect(find.text('Less'), findsNothing);
   });
 
   testWidgets('a hit with no summary draws no description', (tester) async {
     await open(tester, hit.copyWith(summary: null));
 
-    expect(find.byType(FoldedDescription), findsNothing);
-    expect(find.text('More'), findsNothing);
+    expect(find.byType(GameDescription), findsNothing);
   });
 
   testWidgets("the platforms are the hit's", (tester) async {
@@ -161,8 +168,163 @@ void main() {
     expect(find.text('An action'), findsOneWidget);
     expect(
       tester.getTopLeft(section).dy,
-      greaterThan(tester.getBottomLeft(find.byType(FoldedDescription)).dy),
+      greaterThan(tester.getBottomLeft(find.byType(GameDescription)).dy),
     );
+  });
+
+  testWidgets('sections that draw nothing leave no gap below the '
+      'description', (tester) async {
+    // As an import's section with no checklist draws nothing until the
+    // import starts.
+    await open(tester, hit, sections: const [SizedBox.shrink()]);
+
+    final content = find
+        .descendant(
+          of: find.descendant(
+            of: find.byType(SearchHitQuickLook),
+            matching: find.byType(SingleChildScrollView),
+          ),
+          matching: find.byType(Column),
+        )
+        .first;
+    expect(
+      tester.getBottomLeft(content).dy,
+      tester.getBottomLeft(find.byType(GameDescription)).dy,
+    );
+  });
+
+  group('the pinned footer (#1037)', () {
+    final footer = find.byKey(SearchHitQuickLook.footerKey);
+
+    /// The quick look's own scroll view, which the footer is pinned under.
+    final body = find
+        .descendant(
+          of: find.byType(SearchHitQuickLook),
+          matching: find.byType(Scrollable),
+        )
+        .first;
+    final importButton = find.byKey(GameImportPanel.importKey);
+
+    testWidgets('a hit not on the server pins its Import', (tester) async {
+      useViewSize(tester, const Size(400, 500));
+      final remote = FakeGamesRemote();
+      await open(
+        tester,
+        hit,
+        host: (context, layout) => GameImportPanel(
+          remote: remote,
+          gatewayId: 'bgg',
+          hit: hit,
+          mayChooseExpansions: false,
+          onImported: (_, _) {},
+          child: layout,
+        ),
+        sections: const [GameImportSection()],
+        footer: const GameImportButton(),
+      );
+
+      // The host is the quick look's, around all it draws.
+      expect(
+        find.descendant(
+          of: find.byType(SearchHitQuickLook),
+          matching: find.byType(GameImportPanel),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byType(GameImportPanel),
+          matching: find.text('Wingspan'),
+        ),
+        findsOneWidget,
+      );
+      // Import is under the scroll view, not in it, and on screen wherever
+      // the long summary is scrolled to.
+      expect(find.ancestor(of: importButton, matching: footer), findsOneWidget);
+      expect(find.descendant(of: body, matching: importButton), findsNothing);
+      expect(
+        tester.getRect(footer).top,
+        moreOrLessEquals(tester.getRect(body).bottom),
+      );
+      final position = tester.state<ScrollableState>(body).position;
+      expect(position.maxScrollExtent, greaterThan(0));
+      expect(importButton.hitTestable(), findsOneWidget);
+      position.jumpTo(position.maxScrollExtent);
+      await tester.pump();
+      expect(importButton.hitTestable(), findsOneWidget);
+      // Nothing is read for a hit: not the game, and no expansions unasked.
+      expect(remote.calls, isEmpty);
+    });
+
+    testWidgets('with no footer the band takes no room', (tester) async {
+      await open(tester, hit);
+
+      expect(tester.getSize(footer).height, 0);
+    });
+
+    testWidgets("the keyboard's Page Down scrolls the body under a pinned "
+        'footer', (tester) async {
+      useViewSize(tester, const Size(400, 500));
+      await open(
+        tester,
+        hit,
+        footer: FilledButton(onPressed: () {}, child: const Text('Pinned')),
+      );
+      final position = tester.state<ScrollableState>(body).position;
+      expect(position.pixels, 0);
+      expect(position.maxScrollExtent, greaterThan(0));
+
+      // Focus is on the pop-up, not in it, as it is when it opens: the key
+      // goes to the route's primary scroll view, which is the body alone.
+      await tester.sendKeyEvent(LogicalKeyboardKey.pageDown);
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(position.pixels, greaterThan(0));
+    });
+
+    for (final (width, form) in [(500.0, 'a sheet'), (700.0, 'a dialog')]) {
+      testWidgets('in $form, a footer taller than half the pop-up is held to '
+          'half, and scrolls within it', (tester) async {
+        useViewSize(tester, Size(width, 600));
+        await open(
+          tester,
+          hit,
+          footer: Column(
+            children: [
+              for (var n = 1; n <= 12; n++)
+                FilledButton(onPressed: () {}, child: Text('Action $n')),
+            ],
+          ),
+        );
+        expect(tester.takeException(), isNull);
+        expect(
+          find.byType(width < 600 ? BottomSheet : Dialog),
+          findsOneWidget,
+        );
+
+        // Half each, of all the pop-up may be: the body is never starved.
+        final layout = tester.getSize(find.byType(SearchHitQuickLook));
+        final band = tester.getRect(footer);
+        final view = tester.getRect(body);
+        expect(band.height, moreOrLessEquals(layout.height / 2));
+        expect(view.height, moreOrLessEquals(layout.height / 2));
+        expect(band.top, moreOrLessEquals(view.bottom));
+        expect(
+          tester.state<ScrollableState>(body).position.maxScrollExtent,
+          greaterThan(0),
+        );
+
+        // The footer's last action is reached by scrolling the footer.
+        final last = find.widgetWithText(FilledButton, 'Action 12');
+        expect(last.hitTestable(), findsNothing);
+        await tester.ensureVisible(last);
+        await tester.pumpAndSettle();
+        expect(last.hitTestable(), findsOneWidget);
+        expect(tester.getRect(last).bottom, lessThanOrEqualTo(band.bottom));
+        expect(tester.takeException(), isNull);
+      });
+    }
   });
 
   for (final (width, label) in [(500.0, 'a sheet'), (700.0, 'a dialog')]) {
@@ -199,20 +361,114 @@ void main() {
     expect(seed.game, isNull);
   });
 
+  // see #794: the quick look captures its opener's themes, as every
+  // `showBgePopup` pop-up does, and the cell check holds only a Scaffold to
+  // the cell's text scale and theme, needing just one drawn piece anywhere
+  // at it. The page under the pop-up is that piece, so these cells can't
+  // catch a quick look drawn at its own scale or in its own theme.
   group('accessibility audit', () {
-    auditScreen(
-      'a hit',
-      build: (theme) => catalogApp(
-        Scaffold(
-          body: Center(child: opener(hit, sourceName: 'BoardGameGeek')),
+    const gateway = 'bgg';
+    final importButton = find.byKey(GameImportPanel.importKey);
+
+    /// Opens [hit]'s quick look in [theme], as a sheet, or as a dialog in an
+    /// 840 dp window with [dialog]. With [import], it has search's import:
+    /// the panel as the host, its checklist of two expansions among the
+    /// sections and its button pinned.
+    Future<void> openIn(
+      WidgetTester tester,
+      ThemeData theme, {
+      required bool dialog,
+      bool import = false,
+    }) async {
+      // 840 × 900 here: a cell keeps only its label's text scale and theme.
+      if (dialog) useViewSize(tester, const Size(840, 900));
+      final remote = FakeGamesRemote()
+        ..onFetchExpansions = (_) async => GameSearchResults(
+          byDataGateway: {
+            gateway: [
+              for (var n = 1; n <= 2; n++)
+                GameSearchHit(
+                  externalId: 'bgg-${266192 + n}',
+                  title: 'Wingspan expansion $n',
+                  contentType: ContentType.expansion,
+                ),
+            ],
+          },
+        );
+      await tester.pumpWidget(
+        catalogApp(
+          Scaffold(
+            body: Center(
+              child: opener(
+                hit,
+                sourceName: 'BoardGameGeek',
+                host: import
+                    ? (context, layout) => GameImportPanel(
+                        remote: remote,
+                        gatewayId: gateway,
+                        hit: hit,
+                        mayChooseExpansions: true,
+                        sourceNames: const {gateway: 'BoardGameGeek'},
+                        onImported: (_, _) {},
+                        child: layout,
+                      )
+                    : null,
+                sections: import ? const [GameImportSection()] : const [],
+                footer: import ? const GameImportButton() : null,
+              ),
+            ),
+          ),
+          theme: theme,
         ),
-        theme: theme,
-      ),
-      arrange: (tester) async {
-        await tester.tap(find.text('open'));
-        await tester.pumpAndSettle();
-        expect(find.byType(SearchHitQuickLook), findsOneWidget);
-      },
-    );
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+      expect(find.byType(SearchHitQuickLook), findsOneWidget);
+      expect(
+        find.byType(dialog ? Dialog : BottomSheet),
+        findsOneWidget,
+        reason: dialog ? 'a dialog at 840 dp' : 'a sheet on a phone',
+      );
+    }
+
+    for (final dialog in [false, true]) {
+      final form = dialog ? ' (dialog, 840 dp)' : '';
+
+      auditScreen(
+        'a hit$form',
+        pump: (tester, theme) => openIn(tester, theme, dialog: dialog),
+      );
+
+      auditScreen(
+        'a hit with the import pinned$form',
+        pump: (tester, theme) =>
+            openIn(tester, theme, dialog: dialog, import: true),
+        arrange: (tester) async {
+          expect(
+            find.descendant(
+              of: find.byKey(SearchHitQuickLook.footerKey),
+              matching: importButton,
+            ),
+            findsOneWidget,
+          );
+          expect(find.text('Wingspan expansion 1'), findsOneWidget);
+        },
+      );
+
+      // The guidelines measure only what is on screen, and at 320dp × 2.0
+      // the checklist runs below the fold: the long summary and all that
+      // follows it, in a view tall enough to hold them.
+      auditScreen(
+        'a hit with the import pinned, whole$form',
+        pump: (tester, theme) =>
+            openIn(tester, theme, dialog: dialog, import: true),
+        arrange: (tester) async {
+          await useWholePage(tester);
+          expectWholePage(tester, within: find.byType(SearchHitQuickLook));
+          expect(find.text('Wingspan expansion 2'), findsOneWidget);
+          expect(importButton, findsOneWidget);
+        },
+      );
+    }
   });
 }

@@ -2132,6 +2132,208 @@ void main() {
       expect(find.text('Home'), findsOneWidget);
       expect(find.text('Pop-up'), findsNothing);
     });
+
+    group('openPage', () {
+      /// Opens the pop-up from [app]'s nested navigator and returns it with
+      /// an opener that counts the pages it pushes there.
+      Future<(BgeRemoveWhenCovered<Object?>, VoidCallback, int Function())>
+      openFromNested(WidgetTester tester, _NestedApp app) async {
+        await app.pump(tester, _narrow);
+        final popup = await app.open(tester) as BgeRemoveWhenCovered<Object?>;
+        var opened = 0;
+        void open() {
+          opened++;
+          app.nested.push(
+            app.page = MaterialPageRoute<void>(builder: (_) => app._page()),
+          );
+        }
+
+        return (popup, open, () => opened);
+      }
+
+      testWidgets('opens one page while it arrives, though another comes '
+          'and goes beneath meanwhile (#978)', (tester) async {
+        final app = _NestedApp();
+        final (popup, open, opened) = await openFromNested(tester, app);
+
+        expect(popup.openPage(open), isTrue);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 30));
+
+        // Another page, pushed and popped by something other than the
+        // pop-up while the one it opened is still arriving.
+        app.nested.push(
+          MaterialPageRoute<void>(builder: (_) => const Text('another')),
+        );
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 30));
+        app.nested.pop();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 60));
+
+        expect(popup.isActive, isTrue, reason: 'the page is still arriving');
+        expect(popup.openPage(open), isFalse);
+        expect(opened(), 1);
+
+        await tester.pumpAndSettle();
+        expect(popup.isActive, isFalse);
+      });
+
+      testWidgets('opens a page again once the one it opened is popped on '
+          'its way, though another went beneath without an exit', (
+        tester,
+      ) async {
+        final app = _NestedApp();
+        final (popup, open, opened) = await openFromNested(tester, app);
+
+        // Another page arriving, then removed outright: it runs no exit, so
+        // nothing but its navigator says it went.
+        final another = MaterialPageRoute<void>(
+          builder: (_) => const Text('another'),
+        );
+        app.nested.push(another);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 30));
+        app.nested.removeRoute(another);
+        await tester.pump();
+
+        expect(popup.openPage(open), isTrue);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 30));
+        app.nested.pop();
+        await tester.pumpAndSettle();
+
+        expect(popup.isActive, isTrue, reason: 'it was never covered');
+        expect(popup.openPage(open), isTrue);
+        expect(opened(), 2);
+        await tester.pumpAndSettle();
+        expect(popup.isActive, isFalse);
+      });
+
+      testWidgets('opens a page again once the one it opened is removed '
+          'on its way beneath', (tester) async {
+        final app = _NestedApp();
+        final (popup, open, opened) = await openFromNested(tester, app);
+
+        expect(popup.openPage(open), isTrue);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 30));
+        // Removed outright, as a router drops a page: no exit runs.
+        app.nested.removeRoute(app.page!);
+        await tester.pumpAndSettle();
+
+        expect(popup.isActive, isTrue, reason: 'it was never covered');
+        expect(popup.openPage(open), isTrue);
+        expect(opened(), 2);
+        await tester.pumpAndSettle();
+        expect(popup.isActive, isFalse);
+      });
+
+      testWidgets('opens a page again once the one it opened is removed '
+          'on its way over it', (tester) async {
+        await tester.pumpWidget(
+          const MaterialApp(home: Scaffold(body: Text('Home'))),
+        );
+        final navigator = tester.state<NavigatorState>(
+          find.byType(Navigator),
+        );
+        final popup = _PlainPopupRoute(const Text('Pop-up'));
+        navigator.push(popup);
+        await tester.pumpAndSettle();
+
+        late Route<void> page;
+        var opened = 0;
+        void open() {
+          opened++;
+          navigator.push(
+            page = MaterialPageRoute<void>(builder: (_) => const Text('Page')),
+          );
+        }
+
+        expect(popup.openPage(open), isTrue);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 30));
+        navigator.removeRoute(page);
+        await tester.pumpAndSettle();
+
+        expect(popup.isActive, isTrue, reason: 'it was never covered');
+        expect(popup.openPage(open), isTrue);
+        expect(opened, 2);
+        await tester.pumpAndSettle();
+        expect(popup.isActive, isFalse);
+      });
+
+      // A page with no transition has arrived by the time it is announced,
+      // so removing it in the same turn lands before the pop-up's removal.
+      testWidgets('opens a page again once the one it opened over it is '
+          'removed after it arrived, before the frame ended', (tester) async {
+        await tester.pumpWidget(
+          const MaterialApp(home: Scaffold(body: Text('Home'))),
+        );
+        final navigator = tester.state<NavigatorState>(
+          find.byType(Navigator),
+        );
+        final popup = _PlainPopupRoute(const Text('Pop-up'));
+        navigator.push(popup);
+        await tester.pumpAndSettle();
+
+        late Route<void> page;
+        var opened = 0;
+        void open() {
+          opened++;
+          navigator.push(
+            page = PageRouteBuilder<void>(
+              transitionDuration: Duration.zero,
+              reverseTransitionDuration: Duration.zero,
+              pageBuilder: (_, _, _) => const Text('Page'),
+            ),
+          );
+        }
+
+        expect(popup.openPage(open), isTrue);
+        navigator.removeRoute(page);
+        await tester.pumpAndSettle();
+
+        expect(popup.isActive, isTrue, reason: 'it was never covered');
+        expect(
+          popup.openPage(open),
+          isTrue,
+          reason: 'the page never covered it',
+        );
+        expect(opened, 2);
+      });
+
+      testWidgets('opens a page again once the one it opened beneath is '
+          'removed after it arrived, before the frame ended', (tester) async {
+        final app = _NestedApp();
+        await app.pump(tester, _narrow);
+        final popup = await app.open(tester) as BgeRemoveWhenCovered<Object?>;
+        late Route<void> page;
+        var opened = 0;
+        void open() {
+          opened++;
+          app.nested.push(
+            page = PageRouteBuilder<void>(
+              transitionDuration: Duration.zero,
+              reverseTransitionDuration: Duration.zero,
+              pageBuilder: (_, _, _) => const Text('Page'),
+            ),
+          );
+        }
+
+        expect(popup.openPage(open), isTrue);
+        app.nested.removeRoute(page);
+        await tester.pumpAndSettle();
+
+        expect(popup.isActive, isTrue, reason: 'it was never covered');
+        expect(
+          popup.openPage(open),
+          isTrue,
+          reason: 'the page never covered it',
+        );
+        expect(opened, 2);
+      });
+    });
   });
 }
 
