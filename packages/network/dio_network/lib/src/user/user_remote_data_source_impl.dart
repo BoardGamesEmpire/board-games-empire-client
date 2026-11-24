@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import 'package:dio_network/src/network/remote_failure.dart';
+import 'package:dio_network/src/network/request_guards.dart';
 import 'package:dio_network/src/user/user_access_json.dart';
 import 'package:dio_network/src/user/user_summary_json.dart';
 import 'package:models/domain.dart';
@@ -43,10 +44,15 @@ class UserRemoteDataSourceImpl implements UserRemoteDataSource {
         'must be at least $minLength characters after trimming',
       );
     }
-    _checkPaging(page: page, limit: limit);
+    checkPage(
+      page: page,
+      limit: limit,
+      maxSize: UserRemoteDataSource.maxSearchPageSize,
+      maxDepth: serverMaxPageDepth,
+    );
 
     const action = 'User search';
-    final response = await sendForJson(
+    return sendForParsed(
       () => _dio.get<String>(
         _searchPath,
         options: _plainBody,
@@ -54,16 +60,11 @@ class UserRemoteDataSourceImpl implements UserRemoteDataSource {
       ),
       action: action,
       family: _failures,
-    );
-    return parseRemote(
-      _failures,
-      () => PaginatedResult.fromEnvelope(
-        response.body,
+      map: (body) => PaginatedResult.fromEnvelope(
+        body,
         key: 'users',
         item: userSummaryFromJson,
       ),
-      action: action,
-      status: response.status,
     );
   }
 
@@ -80,7 +81,7 @@ class UserRemoteDataSourceImpl implements UserRemoteDataSource {
     }
 
     const action = 'Caller access';
-    final response = await sendForJson(
+    return sendForParsed(
       () => _dio.get<String>(
         _accessPath,
         options: _plainBody,
@@ -90,30 +91,8 @@ class UserRemoteDataSourceImpl implements UserRemoteDataSource {
       ),
       action: action,
       family: _failures,
+      map: (body) => callerAccessFromJson(body, resourceTypes),
     );
-    return parseRemote(
-      _failures,
-      () => callerAccessFromJson(response.body, resourceTypes),
-      action: action,
-      status: response.status,
-    );
-  }
-
-  // ── Guards: requests the server is guaranteed to reject ─────────────
-
-  void _checkPaging({required int page, required int limit}) {
-    const maxPageSize = UserRemoteDataSource.maxSearchPageSize;
-    if (limit < 1 || limit > maxPageSize) {
-      throw ArgumentError.value(
-        limit,
-        'limit',
-        'must be between 1 and $maxPageSize (the server rejects a larger '
-            'page rather than clamping it)',
-      );
-    }
-    if (page < 1) {
-      throw ArgumentError.value(page, 'page', 'is 1-based');
-    }
   }
 }
 

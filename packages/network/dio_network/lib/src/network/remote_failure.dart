@@ -385,3 +385,25 @@ T parseRemote<E extends Exception, T>(
     );
   }
 }
+
+/// Sends [request] with [sendForJson], then maps its body with [parseRemote],
+/// under the same [action] and [family] and with the response's status.
+///
+/// A failure from the send passes through as [sendForJson] filed it, and
+/// [map] never runs. Anything [map] throws is [family]'s permanent failure,
+/// as [parseRemote] files it. For a send that branches on the status, reads
+/// no body, or does work before parsing, call the two directly.
+Future<T> sendForParsed<E extends Exception, T>(
+  Future<Response<String>> Function() request, {
+  required String action,
+  required RemoteFailureFamily<E> family,
+  required T Function(Map<String, dynamic> body) map,
+}) async {
+  final json = await sendForJson(request, action: action, family: family);
+  return parseRemote(
+    family,
+    () => map(json.body),
+    action: action,
+    status: json.status,
+  );
+}

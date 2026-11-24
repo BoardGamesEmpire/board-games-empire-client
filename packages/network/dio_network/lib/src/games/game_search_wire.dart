@@ -75,7 +75,7 @@ PlatformType _searchPlatformType(String wire) =>
 /// clamping it.
 ///
 /// Shared by the REST search and the `games/search` socket so both transports
-/// validate alike (#473), and by the REST page fetch.
+/// validate alike (#473).
 void checkPageLimit(int limit) {
   const maxPageSize = GamesRemoteDataSource.maxPageSize;
   if (limit < 1 || limit > maxPageSize) {

@@ -1,8 +1,9 @@
 import 'package:dio/dio.dart';
+import 'package:dio_network/src/event/event_json.dart';
 import 'package:dio_network/src/network/api_error_envelope.dart';
-import 'package:dio_network/src/network/non_empty_string.dart';
+import 'package:dio_network/src/network/json_reads.dart';
 import 'package:dio_network/src/network/remote_failure.dart';
-import 'package:dio_network/src/network/user_projection.dart';
+import 'package:dio_network/src/network/request_guards.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 
@@ -60,8 +61,8 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     String householdId, {
     int page = 1,
     int limit = EventRemoteDataSource.maxPageSize,
-  }) {
-    _checkId(householdId, name: 'householdId');
+  }) async {
+    checkPathId(householdId, name: 'householdId');
     return _fetchList(
       '/api/households/${Uri.encodeComponent(householdId)}/events',
       page: page,
@@ -80,10 +81,15 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     required _Route route,
     bool includeArchived = false,
   }) async {
-    _checkPaging(page: page, limit: limit);
+    checkPage(
+      page: page,
+      limit: limit,
+      maxSize: EventRemoteDataSource.maxPageSize,
+      maxDepth: serverMaxPageDepth,
+    );
 
     final failures = _EventFailures(route);
-    final response = await sendForJson(
+    return sendForParsed(
       () => _dio.get<String>(
         path,
         options: _plainBody,
@@ -100,39 +106,31 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
       // household's list is the exception: its path names the household, so
       // an enveloped 404 says the household is missing or deleted (#503).
       family: failures,
-    );
-
-    return parseRemote(
-      failures,
-      () => PaginatedResult.fromEnvelope(
-        response.body,
+      map: (body) => PaginatedResult.fromEnvelope(
+        body,
         key: 'events',
-        item: _mapListRow,
+        item: mapListRow,
       ),
-      action: action,
-      status: response.status,
     );
   }
 
   @override
   Future<EventSnapshot> fetchEvent(String id) async {
-    _checkId(id);
+    checkPathId(id);
 
     const action = 'Event fetch';
     const failures = _EventFailures(_Route.row);
-    final response = await sendForJson(
+    return sendForParsed(
       () => _dio.get<String>(_pathOf(id), options: _plainBody),
       action: action,
       // The path names one event, so an application 404 is the service saying
       // it is gone, or that the caller may not read it: the server answers
       // both alike.
       family: failures,
-    );
-    return parseRemote(
-      failures,
-      () => _mapDetail(_eventObject(response.body), servesDateRules: true),
-      action: action,
-      status: response.status,
+      map: (body) => mapDetail(
+        requireObject(body['event'], 'event'),
+        servesDateRules: true,
+      ),
     );
   }
 
@@ -141,39 +139,37 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     EventDraft draft, {
     required String clientRequestId,
   }) async {
-    _checkClientRequestId(clientRequestId);
+    checkClientRequestId(
+      clientRequestId,
+      maxLength: EventRemoteDataSource.maxClientRequestIdLength,
+    );
     draft.checkSendable();
 
     const action = 'Event create';
     const failures = _EventFailures(_Route.create);
-    final response = await sendForJson(
+    return sendForParsed(
       () => _dio.post<String>(
         _basePath,
         options: _plainBody,
-        data: _createBody(draft, clientRequestId),
+        data: eventCreateBody(draft, clientRequestId),
       ),
       action: action,
       family: failures,
-    );
-    return parseRemote(
-      failures,
-      () {
-        final event = _eventObject(response.body);
+      map: (body) {
+        final event = requireObject(body['event'], 'event');
         return (
-          snapshot: _mapDetail(event, servesDateRules: false),
+          snapshot: mapDetail(event, servesDateRules: false),
           // A repeat of a create whose event was deleted since still answers
           // with it, and says when.
-          deletedAt: _dateOrNull(event['deletedAt']),
+          deletedAt: dateOrNull(event['deletedAt']),
         );
       },
-      action: action,
-      status: response.status,
     );
   }
 
   @override
   Future<void> deleteEvent(String id) async {
-    _checkId(id);
+    checkPathId(id);
 
     await sendForJson(
       () => _dio.delete<String>(_pathOf(id), options: _plainBody),
@@ -191,7 +187,7 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
 
   @override
   Future<Event> cancelEvent(String id, {String? reason}) async {
-    _checkId(id);
+    checkPathId(id);
     final trimmed = _checkedReason(reason);
 
     return _writeEvent(
@@ -203,25 +199,25 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
 
   @override
   Future<Event> reopenEvent(String id) async {
-    _checkId(id);
+    checkPathId(id);
     return _writeEvent('Event reopen', '${_pathOf(id)}/reopen');
   }
 
   @override
   Future<Event> archiveEvent(String id) async {
-    _checkId(id);
+    checkPathId(id);
     return _writeEvent('Event archive', '${_pathOf(id)}/archive');
   }
 
   @override
   Future<Event> unarchiveEvent(String id) async {
-    _checkId(id);
+    checkPathId(id);
     return _writeEvent('Event unarchive', '${_pathOf(id)}/unarchive');
   }
 
   @override
   Future<Event> updateEvent(String id, EventUpdate update) async {
-    _checkId(id);
+    checkPathId(id);
     _checkNotEmpty(update.isEmpty, update);
 
     return _writeEvent(
@@ -251,12 +247,14 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     String id,
     EventPolicyUpdate update,
   ) async {
-    _checkId(id);
+    checkPathId(id);
     _checkNotEmpty(update.isEmpty, update);
 
     const action = 'Event policy update';
     const failures = _EventFailures(_Route.write);
-    final response = await sendForJson(
+    // Null for a caller who may change the rules but not read them: the
+    // rules are saved all the same.
+    return sendForParsed(
       () => _dio.patch<String>(
         '${_pathOf(id)}/policy',
         options: _plainBody,
@@ -274,14 +272,7 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
       ),
       action: action,
       family: failures,
-    );
-    // Null for a caller who may change the rules but not read them: the
-    // rules are saved all the same.
-    return parseRemote(
-      failures,
-      () => _mapPolicy(response.body['policy'], served: true),
-      action: action,
-      status: response.status,
+      map: (body) => mapPolicy(body['policy'], served: true),
     );
   }
 
@@ -302,19 +293,14 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     bool patch = false,
   }) async {
     const failures = _EventFailures(_Route.write);
-    final response = await sendForJson(
+    return sendForParsed(
       () => patch
           ? _dio.patch<String>(path, options: _plainBody, data: data)
           : _dio.post<String>(path, options: _plainBody, data: data),
       action: action,
       // The path names one event, and the call is a write to it.
       family: failures,
-    );
-    return parseRemote(
-      failures,
-      () => _mapEvent(_eventObject(response.body)),
-      action: action,
-      status: response.status,
+      map: (body) => mapEvent(requireObject(body['event'], 'event')),
     );
   }
 
@@ -342,7 +328,7 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     EventOccurrenceDraft draft, {
     required int sortOrder,
   }) async {
-    _checkId(eventId, name: 'eventId');
+    checkPathId(eventId, name: 'eventId');
 
     return _writeOccurrence(
       'Date add',
@@ -367,7 +353,8 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     String occurrenceId,
     OccurrenceUpdate update,
   ) async {
-    _checkOccurrenceIds(eventId, occurrenceId);
+    checkPathId(eventId, name: 'eventId');
+    checkPathId(occurrenceId, name: 'occurrenceId');
     if (update.isEmpty) {
       throw ArgumentError.value(update, 'update', 'must change something');
     }
@@ -413,7 +400,8 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     String occurrenceId, {
     String? reason,
   }) async {
-    _checkOccurrenceIds(eventId, occurrenceId);
+    checkPathId(eventId, name: 'eventId');
+    checkPathId(occurrenceId, name: 'occurrenceId');
     final trimmed = _checkedReason(reason);
 
     return _writeOccurrence(
@@ -429,7 +417,8 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
 
   @override
   Future<void> removeOccurrence(String eventId, String occurrenceId) async {
-    _checkOccurrenceIds(eventId, occurrenceId);
+    checkPathId(eventId, name: 'eventId');
+    checkPathId(occurrenceId, name: 'occurrenceId');
 
     await sendForJson(
       () => _dio.delete<String>(
@@ -450,7 +439,8 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     String occurrenceId,
     AvailabilityResponse response,
   ) async {
-    _checkOccurrenceIds(eventId, occurrenceId);
+    checkPathId(eventId, name: 'eventId');
+    checkPathId(occurrenceId, name: 'occurrenceId');
     if (response == AvailabilityResponse.unknown) {
       // It stands for a name this client could not read, and has none to send.
       throw ArgumentError.value(
@@ -462,7 +452,7 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
 
     const action = 'Availability vote';
     const failures = _EventFailures(_Route.write);
-    final result = await sendForJson(
+    return sendForParsed(
       () => _dio.post<String>(
         '${_occurrencePath(eventId, occurrenceId)}/availability',
         options: _plainBody,
@@ -471,12 +461,7 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
       action: action,
       // The path names one date of one event, and the call is a write to it.
       family: failures,
-    );
-    return parseRemote(
-      failures,
-      () => _mapVote(_voteObject(result.body)),
-      action: action,
-      status: result.status,
+      map: (body) => mapVote(requireObject(body['vote'], 'vote')),
     );
   }
 
@@ -487,8 +472,8 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     EventParticipationStatus status, {
     String? notes,
   }) async {
-    _checkId(eventId, name: 'eventId');
-    _checkId(attendeeId, name: 'attendeeId');
+    checkPathId(eventId, name: 'eventId');
+    checkPathId(attendeeId, name: 'attendeeId');
     if (status == EventParticipationStatus.unknown) {
       // It stands for a name this client could not read, and has none to send.
       throw ArgumentError.value(
@@ -500,7 +485,7 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
 
     const action = 'RSVP';
     const failures = _EventFailures(_Route.write);
-    final result = await sendForJson(
+    return sendForParsed(
       () => _dio.patch<String>(
         '${_pathOf(eventId)}/attendees/${Uri.encodeComponent(attendeeId)}'
         '/status',
@@ -510,12 +495,7 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
       ),
       action: action,
       family: failures,
-    );
-    return parseRemote(
-      failures,
-      () => _mapAttendee(_attendeeObject(result.body)),
-      action: action,
-      status: result.status,
+      map: (body) => mapAttendee(requireObject(body['attendee'], 'attendee')),
     );
   }
 
@@ -525,8 +505,8 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     required String userId,
     required EventRole role,
   }) async {
-    _checkId(eventId, name: 'eventId');
-    _checkId(userId, name: 'userId');
+    checkPathId(eventId, name: 'eventId');
+    checkIdNotEmpty(userId, name: 'userId');
     if (role == EventRole.host || role == EventRole.unknown) {
       // The host belongs to whoever created the event, and unknown has no
       // wire name.
@@ -535,7 +515,7 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
 
     const action = 'Add attendee';
     const failures = _EventFailures(_Route.attendeeAdd);
-    final result = await sendForJson(
+    return sendForParsed(
       () => _dio.post<String>(
         '${_pathOf(eventId)}/attendees',
         options: _plainBody,
@@ -543,12 +523,7 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
       ),
       action: action,
       family: failures,
-    );
-    return parseRemote(
-      failures,
-      () => _mapAttendee(_attendeeObject(result.body)),
-      action: action,
-      status: result.status,
+      map: (body) => mapAttendee(requireObject(body['attendee'], 'attendee')),
     );
   }
 
@@ -557,24 +532,19 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     String eventId,
     String attendeeId,
   ) async {
-    _checkId(eventId, name: 'eventId');
-    _checkId(attendeeId, name: 'attendeeId');
+    checkPathId(eventId, name: 'eventId');
+    checkPathId(attendeeId, name: 'attendeeId');
 
     const action = 'Remove attendee';
     const failures = _EventFailures(_Route.write);
-    final result = await sendForJson(
+    return sendForParsed(
       () => _dio.delete<String>(
         '${_pathOf(eventId)}/attendees/${Uri.encodeComponent(attendeeId)}',
         options: _plainBody,
       ),
       action: action,
       family: failures,
-    );
-    return parseRemote(
-      failures,
-      () => _mapAttendee(_attendeeObject(result.body)),
-      action: action,
-      status: result.status,
+      map: (body) => mapAttendee(requireObject(body['attendee'], 'attendee')),
     );
   }
 
@@ -584,7 +554,7 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     List<String>? attendeeIds,
     Future<void>? cancelled,
   }) async {
-    _checkId(eventId, name: 'eventId');
+    checkPathId(eventId, name: 'eventId');
     if (attendeeIds != null) {
       const most = EventRemoteDataSource.maxPoolAttendeeIds;
       if (attendeeIds.length > most) {
@@ -596,7 +566,7 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
         );
       }
       for (final attendeeId in attendeeIds) {
-        _checkId(attendeeId, name: 'attendeeIds');
+        checkIdNotEmpty(attendeeId, name: 'attendeeIds');
       }
       // The server refuses an empty list, and no attendees offer no games.
       if (attendeeIds.isEmpty) return const [];
@@ -620,7 +590,7 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
       action: 'Offered games',
       key: 'offeredGames',
       noun: 'game',
-      item: _mapOfferedGame,
+      item: mapOfferedGame,
       idOf: (game) => game.id,
       query: {
         if (attendeeIds != null) 'attendeeIds': attendeeIds.join(','),
@@ -709,8 +679,8 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     String attendeeId, {
     required List<String> collectionIds,
   }) async {
-    _checkId(eventId, name: 'eventId');
-    _checkId(attendeeId, name: 'attendeeId');
+    checkPathId(eventId, name: 'eventId');
+    checkPathId(attendeeId, name: 'attendeeId');
     const most = EventRemoteDataSource.maxOfferBatch;
     if (collectionIds.isEmpty || collectionIds.length > most) {
       throw ArgumentError.value(
@@ -720,7 +690,7 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
       );
     }
     for (final id in collectionIds) {
-      _checkId(id, name: 'collectionIds');
+      checkIdNotEmpty(id, name: 'collectionIds');
     }
     if (collectionIds.toSet().length != collectionIds.length) {
       throw ArgumentError.value(
@@ -732,7 +702,7 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
 
     const action = 'Offer games';
     const failures = _EventFailures(_Route.write);
-    final result = await sendForJson(
+    return sendForParsed(
       () => _dio.post<String>(
         '${_offeredGamesPath(eventId, attendeeId)}/batch',
         options: _plainBody,
@@ -744,16 +714,11 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
       ),
       action: action,
       family: failures,
-    );
-    return parseRemote(
-      failures,
-      () => _mapObjects(
-        result.body['results'],
+      map: (body) => mapObjects(
+        body['results'],
         field: 'results',
-        item: _mapGameOfferResult,
+        item: mapGameOfferResult,
       ),
-      action: action,
-      status: result.status,
     );
   }
 
@@ -763,9 +728,9 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     String attendeeId,
     String offeredGameId,
   ) async {
-    _checkId(eventId, name: 'eventId');
-    _checkId(attendeeId, name: 'attendeeId');
-    _checkId(offeredGameId, name: 'offeredGameId');
+    checkPathId(eventId, name: 'eventId');
+    checkPathId(attendeeId, name: 'attendeeId');
+    checkPathId(offeredGameId, name: 'offeredGameId');
 
     await sendForJson(
       () => _dio.delete<String>(
@@ -783,7 +748,7 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
 
   @override
   Future<List<EventNomination>> fetchNominations(String eventId) async {
-    _checkId(eventId, name: 'eventId');
+    checkPathId(eventId, name: 'eventId');
 
     // A nomination created mid-read shifts the offsets of a newest-first
     // list, so a later page can repeat a row an earlier one held: the first
@@ -794,14 +759,14 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
       action: 'Nominations',
       key: 'nominations',
       noun: 'nomination',
-      item: _mapNomination,
+      item: mapNomination,
       idOf: (nomination) => nomination.id,
     );
   }
 
   @override
   Future<List<LineupGame>> fetchLineup(String eventId) async {
-    _checkId(eventId, name: 'eventId');
+    checkPathId(eventId, name: 'eventId');
 
     // The list is ordered by date and then the host's order, and a page is an
     // offset into it. A game added or removed mid-read shifts the rows after
@@ -813,7 +778,7 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
       action: 'Lineup',
       key: 'lineup',
       noun: 'game',
-      item: _mapLineupGame,
+      item: mapLineupGame,
       idOf: (game) => game.id,
     );
   }
@@ -823,24 +788,21 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     String eventId,
     String nominationId,
   ) async {
-    _checkId(eventId, name: 'eventId');
-    _checkId(nominationId, name: 'nominationId');
+    checkPathId(eventId, name: 'eventId');
+    checkPathId(nominationId, name: 'nominationId');
 
     const action = 'Nomination';
     const failures = _EventFailures(_Route.row);
-    final response = await sendForJson(
+    return sendForParsed(
       () => _dio.get<String>(
         _nominationPath(eventId, nominationId),
         options: _plainBody,
       ),
       action: action,
       family: failures,
-    );
-    return parseRemote(
-      failures,
-      () => _mapNomination(_nominationObject(response.body)),
-      action: action,
-      status: response.status,
+      map: (body) => mapNomination(
+        requireObject(body['nomination'], 'nomination'),
+      ),
     );
   }
 
@@ -851,14 +813,16 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     required String suppliedFromId,
     String? occurrenceId,
   }) async {
-    _checkId(eventId, name: 'eventId');
-    _checkId(platformGameId, name: 'platformGameId');
-    _checkId(suppliedFromId, name: 'suppliedFromId');
-    if (occurrenceId != null) _checkId(occurrenceId, name: 'occurrenceId');
+    checkPathId(eventId, name: 'eventId');
+    checkIdNotEmpty(platformGameId, name: 'platformGameId');
+    checkIdNotEmpty(suppliedFromId, name: 'suppliedFromId');
+    if (occurrenceId != null) {
+      checkIdNotEmpty(occurrenceId, name: 'occurrenceId');
+    }
 
     const action = 'Nominate game';
     const failures = _EventFailures(_Route.nominate);
-    final result = await sendForJson(
+    return sendForParsed(
       () => _dio.post<String>(
         _nominationsPath(eventId),
         options: _plainBody,
@@ -870,12 +834,9 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
       ),
       action: action,
       family: failures,
-    );
-    return parseRemote(
-      failures,
-      () => _mapNomination(_nominationObject(result.body)),
-      action: action,
-      status: result.status,
+      map: (body) => mapNomination(
+        requireObject(body['nomination'], 'nomination'),
+      ),
     );
   }
 
@@ -889,10 +850,12 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     String? notes,
     int? maxPlayTime,
   }) async {
-    _checkId(eventId, name: 'eventId');
-    _checkId(platformGameId, name: 'platformGameId');
-    _checkId(suppliedById, name: 'suppliedById');
-    if (occurrenceId != null) _checkId(occurrenceId, name: 'occurrenceId');
+    checkPathId(eventId, name: 'eventId');
+    checkIdNotEmpty(platformGameId, name: 'platformGameId');
+    checkIdNotEmpty(suppliedById, name: 'suppliedById');
+    if (occurrenceId != null) {
+      checkIdNotEmpty(occurrenceId, name: 'occurrenceId');
+    }
     // Before anything is sent: an unknown role has no wire name.
     if (role == ScheduledGameRole.unknown) {
       throw ArgumentError.value(role, 'role', 'has no wire name');
@@ -908,7 +871,7 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
 
     const action = 'Add game to lineup';
     const failures = _EventFailures(_Route.lineupAdd);
-    final result = await sendForJson(
+    return sendForParsed(
       () => _dio.post<String>(
         '${_nominationsPath(eventId)}/direct-add',
         options: _plainBody,
@@ -925,13 +888,8 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
       ),
       action: action,
       family: failures,
-    );
-    return parseRemote(
-      failures,
-      () =>
-          _mapLineupGame(_nestedObject(result.body['eventGame'], 'eventGame')),
-      action: action,
-      status: result.status,
+      map: (body) =>
+          mapLineupGame(requireObject(body['eventGame'], 'eventGame')),
     );
   }
 
@@ -940,26 +898,21 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     String eventId,
     String lineupGameId,
   ) async {
-    _checkId(eventId, name: 'eventId');
-    _checkId(lineupGameId, name: 'lineupGameId');
+    checkPathId(eventId, name: 'eventId');
+    checkPathId(lineupGameId, name: 'lineupGameId');
 
     const action = 'Remove game from lineup';
     const failures = _EventFailures(_Route.lineupRemove);
-    final result = await sendForJson(
+    return sendForParsed(
       () => _dio.delete<String>(
         '${_lineupPath(eventId)}/${Uri.encodeComponent(lineupGameId)}',
         options: _plainBody,
       ),
       action: action,
       family: failures,
-    );
-    return parseRemote(
-      failures,
-      () => _mapLineupGame(
-        _nestedObject(result.body['lineupGame'], 'lineupGame'),
+      map: (body) => mapLineupGame(
+        requireObject(body['lineupGame'], 'lineupGame'),
       ),
-      action: action,
-      status: result.status,
     );
   }
 
@@ -970,8 +923,8 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     required VoteType voteType,
     String? comment,
   }) async {
-    _checkId(eventId, name: 'eventId');
-    _checkId(nominationId, name: 'nominationId');
+    checkPathId(eventId, name: 'eventId');
+    checkPathId(nominationId, name: 'nominationId');
     // Before anything is sent: an unknown vote has no wire name.
     if (voteType == VoteType.unknown) {
       throw ArgumentError.value(voteType, 'voteType', 'has no wire name');
@@ -996,24 +949,21 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     String eventId,
     String nominationId,
   ) async {
-    _checkId(eventId, name: 'eventId');
-    _checkId(nominationId, name: 'nominationId');
+    checkPathId(eventId, name: 'eventId');
+    checkPathId(nominationId, name: 'nominationId');
 
     const action = 'Withdraw nomination';
     const failures = _EventFailures(_Route.write);
-    final result = await sendForJson(
+    return sendForParsed(
       () => _dio.patch<String>(
         '${_nominationPath(eventId, nominationId)}/withdraw',
         options: _plainBody,
       ),
       action: action,
       family: failures,
-    );
-    return parseRemote(
-      failures,
-      () => _mapNomination(_nominationObject(result.body)),
-      action: action,
-      status: result.status,
+      map: (body) => mapNomination(
+        requireObject(body['nomination'], 'nomination'),
+      ),
     );
   }
 
@@ -1050,8 +1000,8 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     'Resolve nomination',
     (body) => (
       nomination: _decidedNomination(body),
-      resolution: _mapResolution(
-        _nestedObject(body['resolution'], 'resolution'),
+      resolution: mapResolution(
+        requireObject(body['resolution'], 'resolution'),
       ),
     ),
   );
@@ -1066,37 +1016,32 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     String action,
     T Function(Map<String, dynamic> body) parse,
   ) async {
-    _checkId(eventId, name: 'eventId');
-    _checkId(nominationId, name: 'nominationId');
+    checkPathId(eventId, name: 'eventId');
+    checkPathId(nominationId, name: 'nominationId');
 
     const failures = _EventFailures(_Route.write);
-    final result = await sendForJson(
+    return sendForParsed(
       () => _dio.post<String>(
         '${_nominationPath(eventId, nominationId)}/$verb',
         options: _plainBody,
       ),
       action: action,
       family: failures,
-    );
-    return parseRemote(
-      failures,
-      () => parse(result.body),
-      action: action,
-      status: result.status,
+      map: parse,
     );
   }
 
   /// The nomination a host's decision answers with.
   EventNomination _decidedNomination(Map<String, dynamic> body) =>
-      _mapNomination(_nominationObject(body));
+      mapNomination(requireObject(body['nomination'], 'nomination'));
 
   @override
   Future<AvailabilitySummary> fetchAvailabilitySummary(String eventId) async {
-    _checkId(eventId, name: 'eventId');
+    checkPathId(eventId, name: 'eventId');
 
     const action = 'Availability summary';
     const failures = _EventFailures(_Route.row);
-    final response = await sendForJson(
+    return sendForParsed(
       () => _dio.get<String>(
         '${_occurrencesPath(eventId)}/summary/availability',
         options: _plainBody,
@@ -1105,12 +1050,7 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
       // The path names one event, so an application 404 is the service saying
       // it is gone, as for the detail read.
       family: failures,
-    );
-    return parseRemote(
-      failures,
-      () => _mapSummary(_summaryObject(response.body)),
-      action: action,
-      status: response.status,
+      map: (body) => mapSummary(requireObject(body['summary'], 'summary')),
     );
   }
 
@@ -1120,7 +1060,8 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     String eventId,
     String occurrenceId,
   ) async {
-    _checkOccurrenceIds(eventId, occurrenceId);
+    checkPathId(eventId, name: 'eventId');
+    checkPathId(occurrenceId, name: 'occurrenceId');
 
     return _writeOccurrence(
       action,
@@ -1137,17 +1078,14 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     Future<Response<String>> Function(String path) request,
   ) async {
     const failures = _EventFailures(_Route.write);
-    final response = await sendForJson(
+    return sendForParsed(
       () => request(path),
       action: action,
       // The path names one date of one event, and the call is a write to it.
       family: failures,
-    );
-    return parseRemote(
-      failures,
-      () => _mapOccurrence(_occurrenceObject(response.body)),
-      action: action,
-      status: response.status,
+      map: (body) => mapOccurrence(
+        requireObject(body['occurrence'], 'occurrence'),
+      ),
     );
   }
 
@@ -1172,845 +1110,6 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
 
   static String _nominationPath(String eventId, String nominationId) =>
       '${_nominationsPath(eventId)}/${Uri.encodeComponent(nominationId)}';
-
-  // ── Mapping ─────────────────────────────────────────────────────────
-  //
-  // Field by field and not generated, so the mapping reads only what the
-  // models hold. The rows carry more: the cancellation, deletion and
-  // recurrence fields, and a guest's email address, none of which is read
-  // (#496).
-
-  /// Maps one row of the list: the event with the occurrences and policy the
-  /// list embeds.
-  ///
-  /// No `attendees` key is read. The list serves no roster, so the snapshot
-  /// says it was not asked, whatever a row carries. The caller's own
-  /// `attendance` is read (#667).
-  static EventSnapshot _mapListRow(Map<String, dynamic> json) => EventSnapshot(
-    event: _mapEvent(json),
-    occurrences: _mapOccurrences(json['occurrences']),
-    policy: _mapPolicy(json['policy'], served: false),
-    attendance: _mapAttendance(json['attendance']),
-  );
-
-  /// Maps the detail's event: the parts of a list row, and the roster.
-  ///
-  /// `occurrencePolicies` is the dates' own rules (#1009). The detail read
-  /// always serves them, `[]` when the caller may not read the policy, so with
-  /// [servesDateRules] a missing one is a contract break: read as null, it
-  /// would leave the cached rules standing. The create's answer has none, so
-  /// there a missing key is null; a present one must be a list.
-  ///
-  /// The roster must be a list. An empty one is a caller who may not read the
-  /// roster, and a missing or mistyped one is a contract breach: reading it as
-  /// "nobody" would pass a payload this client failed to read off as an event
-  /// with no one on it.
-  static EventSnapshot _mapDetail(
-    Map<String, dynamic> json, {
-    required bool servesDateRules,
-  }) => EventSnapshot(
-    event: _mapEvent(json),
-    occurrences: _mapOccurrences(json['occurrences']),
-    policy: _mapPolicy(json['policy'], served: true),
-    occurrencePolicies: servesDateRules || json['occurrencePolicies'] != null
-        ? _mapObjects(
-            json['occurrencePolicies'],
-            field: 'occurrencePolicies',
-            item: _mapOccurrencePolicy,
-          )
-        : null,
-    attendees: _mapObjects(
-      json['attendees'],
-      field: 'attendees',
-      item: _mapAttendee,
-    ),
-    attendance: _mapAttendance(json['attendance']),
-  );
-
-  /// Reads the event out of a detail body, `{ "event": { ... } }`.
-  static Map<String, dynamic> _eventObject(Map<String, dynamic> body) {
-    final event = body['event'];
-    if (event is! Map<String, dynamic>) {
-      throw const FormatException('response is missing an "event" object');
-    }
-    return event;
-  }
-
-  /// Reads the date out of a date write's body, `{ "occurrence": { ... } }`.
-  static Map<String, dynamic> _occurrenceObject(Map<String, dynamic> body) {
-    final occurrence = body['occurrence'];
-    if (occurrence is! Map<String, dynamic>) {
-      throw const FormatException('response is missing an "occurrence" object');
-    }
-    return occurrence;
-  }
-
-  /// Reads the attendee out of an RSVP's body, `{ "attendee": { ... } }`.
-  static Map<String, dynamic> _attendeeObject(Map<String, dynamic> body) {
-    final attendee = body['attendee'];
-    if (attendee is! Map<String, dynamic>) {
-      throw const FormatException('response is missing an "attendee" object');
-    }
-    return attendee;
-  }
-
-  /// Reads the vote out of a vote's body, `{ "vote": { ... } }`.
-  static Map<String, dynamic> _voteObject(Map<String, dynamic> body) {
-    final vote = body['vote'];
-    if (vote is! Map<String, dynamic>) {
-      throw const FormatException('response is missing a "vote" object');
-    }
-    return vote;
-  }
-
-  /// Reads the summary out of its body, `{ "summary": { ... } }`.
-  static Map<String, dynamic> _summaryObject(Map<String, dynamic> body) {
-    final summary = body['summary'];
-    if (summary is! Map<String, dynamic>) {
-      throw const FormatException('response is missing a "summary" object');
-    }
-    return summary;
-  }
-
-  /// Reads the nomination out of a body, `{ "nomination": { ... } }`.
-  static Map<String, dynamic> _nominationObject(Map<String, dynamic> body) =>
-      _nestedObject(body['nomination'], 'nomination');
-
-  /// One nomination as the server serves it (#517).
-  ///
-  /// The game's title, thumbnail and platform come from the nested
-  /// `platformGame`; the supplying pool row's id is the `suppliedFromId`
-  /// column. A nominator who is a guest has no `user`, so no username. An
-  /// empty thumbnail is none. The `priority` the votes carry is not read. A
-  /// vote with no `eligible` fails its cast, a [TypeError] that [parseRemote]
-  /// turns into a contract break, as it does any field this can't read: the
-  /// server marks every vote, so a missing mark is not a vote that counts.
-  static EventNomination _mapNomination(Map<String, dynamic> json) {
-    final platformGame = _nestedObject(json['platformGame'], 'platformGame');
-    final game = _nestedObject(platformGame['game'], 'platformGame.game');
-    final platform = _nestedObject(
-      platformGame['platform'],
-      'platformGame.platform',
-    );
-    final nominatedBy = json['nominatedBy'];
-    final user = nominatedBy is Map<String, dynamic>
-        ? nominatedBy['user']
-        : null;
-    final username = user is Map<String, dynamic>
-        ? user['username'] as String?
-        : null;
-    final thumbnail = game['thumbnail'] as String?;
-    final pausedFrom = json['pausedFrom'] as String?;
-    final elevatedTo = json['elevatedTo'];
-    return EventNomination(
-      id: json['id'] as String,
-      eventId: json['eventId'] as String,
-      occurrenceId: json['occurrenceId'] as String?,
-      platformGameId: json['platformGameId'] as String,
-      gameId: game['id'] as String,
-      title: game['title'] as String,
-      platformName: platform['name'] as String,
-      thumbnail: thumbnail == null || thumbnail.isEmpty ? null : thumbnail,
-      subtitle: game['subtitle'] as String?,
-      elevatedTo: elevatedTo == null
-          ? null
-          : _mapLineupLink(_nestedObject(elevatedTo, 'elevatedTo')),
-      status: NominationStatus.fromWire(json['status'] as String),
-      pausedFrom: pausedFrom == null
-          ? null
-          : NominationStatus.fromWire(pausedFrom),
-      votingDeadline: _dateOrNull(json['votingDeadline']),
-      nominatedById: json['nominatedById'] as String,
-      nominatedByUsername: username,
-      suppliedFromId: json['suppliedFromId'] as String,
-      createdAt: DateTime.parse(json['createdAt'] as String),
-      votes: _mapObjects(
-        json['votes'],
-        field: 'votes',
-        item: _mapNominationVote,
-      ),
-    );
-  }
-
-  static LineupLink _mapLineupLink(Map<String, dynamic> json) =>
-      (id: json['id'] as String, occurrenceId: json['occurrenceId'] as String?);
-
-  /// One lineup game as the server serves it (#519, #920).
-  ///
-  /// The game's title, subtitle, thumbnail and platform come from the nested
-  /// `platformGame`; an empty thumbnail is none. `suppliedBy` is the pool
-  /// row, `{ id, attendeeId, attendee }`. The supplier's name comes from its
-  /// `attendee` as the roster reads an attendee's: display name, else
-  /// username, else the guest's name. The attendee is null for a caller who
-  /// cannot read them, and so is the name.
-  static LineupGame _mapLineupGame(Map<String, dynamic> json) {
-    final platformGame = _nestedObject(json['platformGame'], 'platformGame');
-    final game = _nestedObject(platformGame['game'], 'platformGame.game');
-    final platform = _nestedObject(
-      platformGame['platform'],
-      'platformGame.platform',
-    );
-    final suppliedBy = _nestedObject(json['suppliedBy'], 'suppliedBy');
-    final attendee = suppliedBy['attendee'];
-    final thumbnail = game['thumbnail'] as String?;
-    return LineupGame(
-      id: json['id'] as String,
-      occurrenceId: json['occurrenceId'] as String?,
-      platformGameId: json['platformGameId'] as String,
-      gameId: game['id'] as String,
-      title: game['title'] as String,
-      subtitle: game['subtitle'] as String?,
-      platformName: platform['name'] as String,
-      thumbnail: thumbnail == null || thumbnail.isEmpty ? null : thumbnail,
-      role: ScheduledGameRole.fromWire(json['role'] as String),
-      sortOrder: json['sortOrder'] as int,
-      notes: json['notes'] as String?,
-      maxPlayTime: json['maxPlayTime'] as int?,
-      nominationId: json['nominationId'] as String?,
-      addedById: json['addedById'] as String?,
-      suppliedById: suppliedBy['id'] as String,
-      supplierAttendeeId: suppliedBy['attendeeId'] as String,
-      supplierName: attendee == null
-          ? null
-          : _attendeeName(_nestedObject(attendee, 'suppliedBy.attendee')),
-    );
-  }
-
-  /// The name to show for an attendee summary, as [EventAttendee.name] decides
-  /// it.
-  static String? _attendeeName(Map<String, dynamic> json) {
-    final user = readUserProjection(json['user'], row: 'attendee');
-    return personName(
-          displayName: user.displayName,
-          username: user.username,
-        ) ??
-        personName(username: json['guestName'] as String?);
-  }
-
-  static EventNominationVote _mapNominationVote(Map<String, dynamic> json) =>
-      EventNominationVote(
-        id: json['id'] as String,
-        attendeeId: json['attendeeId'] as String,
-        voteType: VoteType.fromWire(json['voteType'] as String),
-        eligible: json['eligible'] as bool,
-        comment: json['comment'] as String?,
-      );
-
-  /// A resolve's `resolution` (#518). Its status goes through
-  /// [NominationStatus.fromWire], so a name this client does not know is
-  /// [NominationStatus.unknown].
-  static NominationResolution _mapResolution(Map<String, dynamic> json) {
-    final tally = _nestedObject(json['tally'], 'resolution.tally');
-    return NominationResolution(
-      status: NominationStatus.fromWire(json['status'] as String),
-      forCount: tally['forCount'] as int,
-      againstCount: tally['againstCount'] as int,
-      interestedCount: tally['interestedCount'] as int,
-      totalVotes: tally['totalVotes'] as int,
-      quorumMet: json['quorumMet'] as bool,
-      thresholdMet: json['thresholdMet'] as bool,
-      eligibleVoterCount: json['eligibleVoterCount'] as int,
-    );
-  }
-
-  /// [raw] as an object, or a [FormatException] naming [field].
-  static Map<String, dynamic> _nestedObject(Object? raw, String field) {
-    if (raw is! Map<String, dynamic>) {
-      throw FormatException(
-        '"$field" is ${raw.runtimeType}, expected an object',
-      );
-    }
-    return raw;
-  }
-
-  static Event _mapEvent(Map<String, dynamic> json) => Event(
-    id: json['id'] as String,
-    title: json['title'] as String,
-    createdById: json['createdById'] as String,
-    householdId: json['householdId'] as String?,
-    description: json['description'] as String?,
-    image: json['image'] as String?,
-    location: json['location'] as String?,
-    url: json['url'] as String?,
-    type: EventType.fromWire(json['type'] as String),
-    reach: Reach.fromWire(json['reach'] as String),
-    status: EventStatus.fromWire(json['status'] as String),
-    schedulingMode: EventSchedulingMode.fromWire(
-      json['schedulingMode'] as String,
-    ),
-    cancelReason: json['cancelReason'] as String?,
-    cancelledAt: _dateOrNull(json['cancelledAt']),
-    createdAt: DateTime.parse(json['createdAt'] as String),
-    updatedAt: DateTime.parse(json['updatedAt'] as String),
-  );
-
-  static List<EventOccurrence> _mapOccurrences(Object? raw) =>
-      _mapObjects(raw, field: 'occurrences', item: _mapOccurrence);
-
-  /// Maps one result of a batch offer (#851).
-  ///
-  /// `added` and `alreadyOffered` are offered. Their `entry` row goes unread:
-  /// the caller reads the pool again after a run, and a row this client
-  /// can't read would otherwise fail a batch the server has written. Any
-  /// other outcome is a refusal, so an outcome a newer server adds is not a
-  /// failure of the whole answer. Its reason is [GameOfferRefusal.unknown]
-  /// when missing or not known, and its message is empty when missing.
-  static GameOfferResult _mapGameOfferResult(Map<String, dynamic> json) {
-    final collectionId = json['collectionId'] as String;
-    final outcome = json['outcome'];
-    if (outcome == 'added' || outcome == 'alreadyOffered') {
-      return GameOfferResult.offered(
-        collectionId: collectionId,
-        alreadyOffered: outcome == 'alreadyOffered',
-      );
-    }
-    final reason = json['reason'];
-    final message = json['message'];
-    return GameOfferResult.refused(
-      collectionId: collectionId,
-      reason: reason is String
-          ? GameOfferRefusal.fromWire(reason)
-          : GameOfferRefusal.unknown,
-      message: message is String ? message : '',
-    );
-  }
-
-  static EventOccurrence _mapOccurrence(Map<String, dynamic> json) =>
-      EventOccurrence(
-        id: json['id'] as String,
-        eventId: json['eventId'] as String,
-        label: json['label'] as String?,
-        startDate: _dateOrNull(json['startDate']),
-        endDate: _dateOrNull(json['endDate']),
-        location: json['location'] as String?,
-        status: OccurrenceStatus.fromWire(json['status'] as String),
-        sortOrder: json['sortOrder'] as int,
-        confirmedAt: _dateOrNull(json['confirmedAt']),
-        declinedAt: _dateOrNull(json['declinedAt']),
-        cancelledAt: _dateOrNull(json['cancelledAt']),
-        cancelReason: json['cancelReason'] as String?,
-        createdAt: DateTime.parse(json['createdAt'] as String),
-        updatedAt: DateTime.parse(json['updatedAt'] as String),
-      );
-
-  /// Maps the embedded policy. Null is an event with none, or a detail read by
-  /// a caller who may not read it (backend#560); either way the model carries
-  /// no policy.
-  ///
-  /// [served] is the backend's policy view, which the detail read, the create
-  /// and the policy update answer with: its three rule lists are always there,
-  /// never null, so a missing or null one is a contract break rather than a
-  /// read that didn't carry it, which would keep the cached lists (#1009). A
-  /// list row's policy is the bare row, without them, and reads as not
-  /// carried.
-  static EventPolicy? _mapPolicy(Object? raw, {required bool served}) {
-    if (raw == null) return null;
-    if (raw is! Map<String, dynamic>) {
-      throw FormatException(
-        'event "policy" is ${raw.runtimeType}, expected an object or null',
-      );
-    }
-    return EventPolicy(
-      id: raw['id'] as String,
-      eventId: raw['eventId'] as String,
-      allowMemberInvites: raw['allowMemberInvites'] as bool,
-      allowGuestInvites: raw['allowGuestInvites'] as bool,
-      maxAttendees: raw['maxAttendees'] as int?,
-      restrictToGameCategories: raw['restrictToGameCategories'] as bool,
-      requireHostApprovalToJoin: raw['requireHostApprovalToJoin'] as bool,
-      allowSpectators: raw['allowSpectators'] as bool,
-      maxTotalParticipants: raw['maxTotalParticipants'] as int?,
-      strictCapacity: raw['strictCapacity'] as bool,
-      gameAdditionMode: GameAdditionMode.fromWire(
-        raw['gameAdditionMode'] as String,
-      ),
-      restrictToAttendeePool: raw['restrictToAttendeePool'] as bool,
-      fillerMaxPlayTime: raw['fillerMaxPlayTime'] as int?,
-      voteThresholdType: VoteThresholdType.fromWire(
-        raw['voteThresholdType'] as String,
-      ),
-      voteThresholdValue: raw['voteThresholdValue'] as int?,
-      voteQuorumType: VoteQuorumType.fromWire(raw['voteQuorumType'] as String),
-      voteQuorumValue: raw['voteQuorumValue'] as int?,
-      voteEligibility: VoteEligibility.fromWire(
-        raw['voteEligibility'] as String,
-      ),
-      interestedWeight: InterestedWeight.fromWire(
-        raw['interestedWeight'] as String,
-      ),
-      votingWindowHours: raw['votingWindowHours'] as int?,
-      allowedPlatformTypes: _policyList(
-        raw,
-        'allowedPlatformTypes',
-        served: served,
-      )?.map(PlatformType.fromWire).toList(growable: false),
-      allowedPlatformIds: _policyList(
-        raw,
-        'allowedPlatformIds',
-        served: served,
-      ),
-      allowedCategoryIds: _policyList(
-        raw,
-        'allowedCategoryIds',
-        served: served,
-      ),
-      // A column of the row, so every read that serves a policy carries it,
-      // the list read's included.
-      occurrenceOverrideScope: OccurrenceOverrideScope.fromWire(
-        raw['occurrenceOverrideScope'] as String,
-      ),
-      createdAt: DateTime.parse(raw['createdAt'] as String),
-      updatedAt: DateTime.parse(raw['updatedAt'] as String),
-    );
-  }
-
-  /// Maps one date's own rules (#1009). The nullable fields are overrides, and
-  /// null means the event's. The lists and `*Unrestricted` flags are never null
-  /// on the wire, so a missing or mistyped one throws.
-  static EventOccurrencePolicy _mapOccurrencePolicy(
-    Map<String, dynamic> json,
-  ) => EventOccurrencePolicy(
-    id: json['id'] as String,
-    occurrenceId: json['occurrenceId'] as String,
-    allowedCategoryIds: _stringList(
-      json['allowedCategoryIds'],
-      field: 'allowedCategoryIds',
-    ),
-    allowedPlatformIds: _stringList(
-      json['allowedPlatformIds'],
-      field: 'allowedPlatformIds',
-    ),
-    allowedPlatformTypes: _stringList(
-      json['allowedPlatformTypes'],
-      field: 'allowedPlatformTypes',
-    ).map(PlatformType.fromWire).toList(growable: false),
-    platformTypesUnrestricted: json['platformTypesUnrestricted'] as bool,
-    platformsUnrestricted: json['platformsUnrestricted'] as bool,
-    capacityUnrestricted: json['capacityUnrestricted'] as bool,
-    createdAt: DateTime.parse(json['createdAt'] as String),
-    updatedAt: DateTime.parse(json['updatedAt'] as String),
-    restrictToGameCategories: json['restrictToGameCategories'] as bool?,
-    strictCapacity: json['strictCapacity'] as bool?,
-    requireHostApprovalToJoin: json['requireHostApprovalToJoin'] as bool?,
-    allowSpectators: json['allowSpectators'] as bool?,
-    restrictToAttendeePool: json['restrictToAttendeePool'] as bool?,
-    maxAttendees: json['maxAttendees'] as int?,
-    maxTotalParticipants: json['maxTotalParticipants'] as int?,
-    fillerMaxPlayTime: json['fillerMaxPlayTime'] as int?,
-    voteThresholdValue: json['voteThresholdValue'] as int?,
-    voteQuorumValue: json['voteQuorumValue'] as int?,
-    votingWindowHours: json['votingWindowHours'] as int?,
-    gameAdditionMode: _wireOrNull(
-      json['gameAdditionMode'],
-      GameAdditionMode.fromWire,
-    ),
-    voteThresholdType: _wireOrNull(
-      json['voteThresholdType'],
-      VoteThresholdType.fromWire,
-    ),
-    voteQuorumType: _wireOrNull(
-      json['voteQuorumType'],
-      VoteQuorumType.fromWire,
-    ),
-    voteEligibility: _wireOrNull(
-      json['voteEligibility'],
-      VoteEligibility.fromWire,
-    ),
-    interestedWeight: _wireOrNull(
-      json['interestedWeight'],
-      InterestedWeight.fromWire,
-    ),
-  );
-
-  static T? _wireOrNull<T>(Object? value, T Function(String) fromWire) =>
-      value == null ? null : fromWire(value as String);
-
-  static EventAttendee _mapAttendee(Map<String, dynamic> json) {
-    final user = readUserProjection(json['user'], row: 'attendee');
-    return EventAttendee(
-      id: json['id'] as String,
-      eventId: json['eventId'] as String,
-      userId: json['userId'] as String?,
-      guestName: json['guestName'] as String?,
-      username: user.username,
-      displayName: user.displayName,
-      avatarUrl: user.avatarUrl,
-      notes: json['notes'] as String?,
-      status: EventParticipationStatus.fromWire(json['status'] as String),
-      role: _mapRole(json['role']),
-      rsvpDate: _dateOrNull(json['rsvpDate']),
-      createdAt: DateTime.parse(json['createdAt'] as String),
-      updatedAt: DateTime.parse(json['updatedAt'] as String),
-    );
-  }
-
-  /// Reads the caller's own answer off a list or detail row, `{ attendeeId,
-  /// status, role, rsvpDate }`.
-  ///
-  /// Null, or a missing key, is a caller with no attendee row, and so is every
-  /// browse row. `role` here is the role's name, a string, not the roster's
-  /// nested projection that [_mapRole] reads. A shape that is wrong is a
-  /// contract breach and throws, rather than passing for "no answer".
-  static EventAttendance? _mapAttendance(Object? raw) {
-    if (raw == null) return null;
-    if (raw is! Map<String, dynamic>) {
-      throw FormatException(
-        'event "attendance" is ${raw.runtimeType}, expected an object or null',
-      );
-    }
-    final role = raw['role'];
-    if (role != null && role is! String) {
-      throw FormatException(
-        'attendance "role" is ${role.runtimeType}, '
-        'expected a role name or null',
-      );
-    }
-    return EventAttendance(
-      attendeeId: raw['attendeeId'] as String,
-      status: EventParticipationStatus.fromWire(raw['status'] as String),
-      role: role == null ? null : EventRole.fromWire(role as String),
-      rsvpDate: _dateOrNull(raw['rsvpDate']),
-    );
-  }
-
-  /// Reads the role name out of the embedded join projection,
-  /// `{ ..., role: { id, name } }`.
-  ///
-  /// A null projection is an attendee with no role binding, which the model
-  /// represents as a null role. A projection whose shape is wrong is a contract
-  /// breach and throws: it must not be laundered into [EventRole.unknown],
-  /// which would make a parsing failure indistinguishable from a custom server
-  /// role.
-  static EventRole? _mapRole(Object? projection) {
-    if (projection == null) return null;
-    if (projection is! Map<String, dynamic>) {
-      throw FormatException(
-        'attendee "role" is ${projection.runtimeType}, expected the embedded '
-        'role projection',
-      );
-    }
-    final role = projection['role'];
-    if (role is! Map<String, dynamic>) {
-      throw FormatException(
-        'attendee "role" projection is missing its nested "role" object, got '
-        '${role.runtimeType}',
-      );
-    }
-    final name = role['name'];
-    if (name is! String) {
-      throw FormatException(
-        'attendee role is missing a "name", got ${name.runtimeType}',
-      );
-    }
-    return EventRole.fromWire(name);
-  }
-
-  static AvailabilityVote _mapVote(Map<String, dynamic> json) =>
-      AvailabilityVote(
-        id: json['id'] as String,
-        occurrenceId: json['occurrenceId'] as String,
-        attendeeId: json['attendeeId'] as String,
-        response: AvailabilityResponse.fromWire(json['response'] as String),
-        createdAt: DateTime.parse(json['createdAt'] as String),
-        updatedAt: DateTime.parse(json['updatedAt'] as String),
-      );
-
-  /// Maps the summary's dates. Its `attendees` and `eligibleVoters` are not
-  /// read (backend#759), and neither is anything a date carries beyond its
-  /// tallies and voters.
-  static AvailabilitySummary _mapSummary(Map<String, dynamic> json) =>
-      AvailabilitySummary(
-        occurrences: _mapObjects(
-          json['occurrences'],
-          field: 'occurrences',
-          item: _mapOccurrenceAvailability,
-        ),
-        rosterVisible: switch (json['attendees']) {
-          {'total': final int total} => total > 0,
-          _ => true,
-        },
-      );
-
-  static OccurrenceAvailability _mapOccurrenceAvailability(
-    Map<String, dynamic> json,
-  ) => OccurrenceAvailability(
-    occurrenceId: json['occurrenceId'] as String,
-    available: json['available'] as int,
-    maybe: json['maybe'] as int,
-    unavailable: json['unavailable'] as int,
-    voters: _mapObjects(json['voters'], field: 'voters', item: _mapVoter),
-  );
-
-  static AvailabilityVoter _mapVoter(Map<String, dynamic> json) =>
-      AvailabilityVoter(
-        attendeeId: json['attendeeId'] as String,
-        response: AvailabilityResponse.fromWire(json['response'] as String),
-        eligible: json['eligible'] as bool,
-      );
-
-  /// An offered game's medium, or null when [raw] is not a medium this client
-  /// knows: absent, null, not a string, or a name a newer server added
-  /// (#516).
-  ///
-  /// Lenient where the user's own collection rows are strict: the pool is
-  /// other people's rows, and one unknown medium must not fail every event's
-  /// pool read. Only `fromWire`'s own refusal of a name is caught.
-  static GameMedium? _offeredMediumOrNull(Object? raw) {
-    if (raw is! String) return null;
-    try {
-      return GameMedium.fromWire(raw);
-    } on FormatException {
-      return null;
-    }
-  }
-
-  /// Maps one offered game (#516, #851), a row of the pool read or an add's
-  /// `entry`: the row's ids, its collection entry's id and medium, the
-  /// platform game and game under it, and what the entry supplies.
-  ///
-  /// - The players and play time are the platform game's own pair when either
-  ///   of its two is set, otherwise the game's pair, as a collection row's
-  ///   are (#715).
-  /// - The thumbnail is the platform game's own picture when it has one,
-  ///   otherwise the game's: each one's thumbnail, else its full image, as a
-  ///   collection row's is (#709). An empty string is none.
-  /// - A medium this client does not know is none (see
-  ///   [_offeredMediumOrNull]).
-  /// - A content type or platform type that is missing is null, and a name
-  ///   this client does not know is that type's `unknown`.
-  /// - Each `supplies` count is null where the server says null, for a viewer
-  ///   who can't read that kind of row. A row with no `supplies` reads both
-  ///   as null: not known, which is not none.
-  ///
-  /// The row's `attendee` and the game's `baseGames` are not read.
-  static OfferedGame _mapOfferedGame(Map<String, dynamic> json) {
-    final collection = _nestedObject(json['collection'], 'collection');
-    final platformGame = _nestedObject(
-      collection['platformGame'],
-      'collection.platformGame',
-    );
-    final game = _nestedObject(
-      platformGame['game'],
-      'collection.platformGame.game',
-    );
-    final platform = _nestedObject(
-      platformGame['platform'],
-      'collection.platformGame.platform',
-    );
-    final ownPlayers =
-        platformGame['minPlayers'] != null ||
-        platformGame['maxPlayers'] != null;
-    final ownPlayTime =
-        platformGame['minPlayTime'] != null ||
-        platformGame['maxPlayTime'] != null;
-    final players = ownPlayers ? platformGame : game;
-    final playTime = ownPlayTime ? platformGame : game;
-    final supplies = json['supplies'];
-    final supplied = supplies is Map<String, dynamic>
-        ? supplies
-        : const <String, dynamic>{};
-    final contentType = game['contentType'];
-    final platformType = platform['platformType'];
-    return OfferedGame(
-      id: json['id'] as String,
-      attendeeId: json['attendeeId'] as String,
-      collectionId: collection['id'] as String,
-      platformGameId: platformGame['id'] as String,
-      gameId: game['id'] as String,
-      title: game['title'] as String,
-      subtitle: game['subtitle'] as String?,
-      platformName: platform['name'] as String,
-      platformType: platformType is String
-          ? PlatformType.fromWire(platformType)
-          : null,
-      thumbnail:
-          nonEmptyString(platformGame['thumbnail']) ??
-          nonEmptyString(platformGame['image']) ??
-          nonEmptyString(game['thumbnail']) ??
-          nonEmptyString(game['image']),
-      medium: _offeredMediumOrNull(collection['medium']),
-      contentType: contentType is String
-          ? ContentType.fromWire(contentType)
-          : null,
-      publishYear: game['publishYear'] as int?,
-      minPlayers: players['minPlayers'] as int?,
-      maxPlayers: players['maxPlayers'] as int?,
-      minPlayTime: playTime['minPlayTime'] as int?,
-      maxPlayTime: playTime['maxPlayTime'] as int?,
-      suppliedNominations: supplied['nominations'] as int?,
-      suppliedLineup: supplied['lineup'] as int?,
-    );
-  }
-
-  /// Maps each object in the list [raw]. A list that is missing or of the
-  /// wrong type throws, because reading it as empty would pass off a payload
-  /// this client failed to read as one with none of them. [field] names it in
-  /// the error.
-  static List<T> _mapObjects<T>(
-    Object? raw, {
-    required String field,
-    required T Function(Map<String, dynamic> json) item,
-  }) {
-    if (raw is! List) {
-      throw FormatException(
-        raw == null
-            ? '"$field" is missing, expected a list'
-            : '"$field" is ${raw.runtimeType}, expected a list',
-      );
-    }
-    return raw
-        .map((entry) {
-          if (entry is! Map<String, dynamic>) {
-            throw FormatException(
-              'an entry in "$field" is ${entry.runtimeType}, expected an '
-              'object',
-            );
-          }
-          return item(entry);
-        })
-        .toList(growable: false);
-  }
-
-  /// One of a policy's rule lists, as [_mapPolicy] reads it: required when
-  /// the policy is [served] as the view, null when a list row's bare policy
-  /// leaves it out. Present, it must be a list of strings, or the payload is
-  /// a contract break rather than an empty list.
-  static List<String>? _policyList(
-    Map<String, dynamic> policy,
-    String field, {
-    required bool served,
-  }) => served || policy[field] != null
-      ? _stringList(policy[field], field: field)
-      : null;
-
-  /// Reads [raw], the payload's [field], as a list of strings, which it
-  /// must carry: absent, not a list, or holding anything but strings, it is
-  /// a contract break, a [FormatException] naming [field].
-  static List<String> _stringList(Object? raw, {required String field}) {
-    if (raw is! List) {
-      throw FormatException(
-        raw == null
-            ? '"$field" is missing, expected a list'
-            : '"$field" is ${raw.runtimeType}, expected a list',
-      );
-    }
-    return raw
-        .map((entry) {
-          if (entry is! String) {
-            throw FormatException(
-              'an entry in "$field" is ${entry.runtimeType}, expected a '
-              'string',
-            );
-          }
-          return entry;
-        })
-        .toList(growable: false);
-  }
-
-  static DateTime? _dateOrNull(Object? value) =>
-      value == null ? null : DateTime.parse(value as String);
-
-  // ── Request body ────────────────────────────────────────────────────
-
-  /// The create's body. A field the draft leaves null is left out, and so is an
-  /// empty list, so the server's defaults apply.
-  ///
-  /// Runs after [EventDraft.checkSendable], which is what keeps `toWire` from
-  /// throwing on an `unknown` value.
-  static Map<String, Object?> _createBody(
-    EventDraft draft,
-    String clientRequestId,
-  ) => {
-    'title': draft.title,
-    // Sent as given: the server trims it before it stores or matches it.
-    'clientRequestId': clientRequestId,
-    'schedulingMode': draft.schedulingMode.toWire(),
-    'householdId': ?draft.householdId,
-    'description': ?draft.description,
-    'location': ?draft.location,
-    'url': ?draft.url,
-    'type': ?draft.type?.toWire(),
-    'reach': ?draft.reach?.toWire(),
-    if (draft.occurrences.isNotEmpty)
-      'occurrences': [
-        for (final (index, occurrence) in draft.occurrences.indexed)
-          {
-            'label': ?occurrence.label,
-            'startDate': ?occurrence.startDate?.toUtc().toIso8601String(),
-            'endDate': ?occurrence.endDate?.toUtc().toIso8601String(),
-            'location': ?occurrence.location,
-            'sortOrder': index,
-          },
-      ],
-    if (draft.policy case final policy?)
-      'policy': {
-        'gameAdditionMode': ?policy.gameAdditionMode?.toWire(),
-        'voteThresholdType': ?policy.voteThresholdType?.toWire(),
-        'voteThresholdValue': ?policy.voteThresholdValue,
-        'voteQuorumType': ?policy.voteQuorumType?.toWire(),
-        'voteQuorumValue': ?policy.voteQuorumValue,
-        'votingWindowHours': ?policy.votingWindowHours,
-      },
-    if (draft.inviteUserIds.isNotEmpty) 'inviteUserIds': draft.inviteUserIds,
-  };
-
-  // ── Guards: requests the server is guaranteed to reject ─────────────
-
-  void _checkPaging({required int page, required int limit}) {
-    const maxPageSize = EventRemoteDataSource.maxPageSize;
-    if (limit < 1 || limit > maxPageSize) {
-      throw ArgumentError.value(
-        limit,
-        'limit',
-        'must be between 1 and $maxPageSize (the server rejects a larger '
-            'page rather than clamping it)',
-      );
-    }
-    if (page < 1) {
-      throw ArgumentError.value(page, 'page', 'is 1-based');
-    }
-  }
-
-  /// The server trims `clientRequestId`, then requires 1 to
-  /// [EventRemoteDataSource.maxClientRequestIdLength] characters, and answers a
-  /// violation with a 400. That is permanent, and a permanent create is parked
-  /// on its first attempt, so a key the caller got wrong is refused here with
-  /// an error outside the transient and permanent split (#499), as the
-  /// household create does.
-  ///
-  /// This matches the server exactly for ASCII keys, which every key this
-  /// client mints is. Past ASCII the two can disagree at the edges: Dart's
-  /// `trim` also strips U+0085, which the server's does not, and the server
-  /// counts a surrogate pair as one character where `length` counts two.
-  void _checkClientRequestId(String clientRequestId) {
-    const maxLength = EventRemoteDataSource.maxClientRequestIdLength;
-    final length = clientRequestId.trim().length;
-    if (length == 0 || length > maxLength) {
-      throw ArgumentError.value(
-        clientRequestId,
-        'clientRequestId',
-        'must be 1 to $maxLength characters after trimming (the server '
-            'rejects anything else with a 400)',
-      );
-    }
-  }
-
-  /// An empty id would send `GET /api/events/`, which the server routes to
-  /// the list, so its 200 would fail to parse and read as the server breaking
-  /// the contract rather than the caller's mistake. A `DELETE /api/events/`
-  /// has no route, and its 404 would read as the event being gone.
-  void _checkId(String id, {String name = 'id'}) {
-    if (id.isEmpty) {
-      throw ArgumentError.value(id, name, 'must not be empty');
-    }
-  }
-
-  /// An empty occurrence id would send the request to the event's dates
-  /// route, and read the answer as if it were about one date.
-  void _checkOccurrenceIds(String eventId, String occurrenceId) {
-    _checkId(eventId, name: 'eventId');
-    _checkId(occurrenceId, name: 'occurrenceId');
-  }
 }
 
 /// How the event source builds its failures for the shared classifier.

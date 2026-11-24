@@ -209,6 +209,9 @@ void main() {
             'page 0': (r) => r.fetchPage(page: 0),
             'limit 101': (r) => r.fetchPage(limit: 101),
             'limit 0': (r) => r.fetchPage(limit: 0),
+            // (page - 1) * limit must not exceed 100000.
+            'page 1002 at limit 100': (r) =>
+                r.fetchPage(page: 1002, limit: 100),
           };
       for (final entry in calls.entries) {
         test(entry.key, () async {
@@ -218,6 +221,14 @@ void main() {
           expect(adapter.sent, isEmpty);
         });
       }
+    });
+
+    test('sends the last page inside the depth ceiling', () async {
+      final remote = answering(_page([]));
+
+      await remote.fetchPage(page: 1001, limit: 100);
+
+      expect(adapter.sent.single.query['page'], 1001);
     });
 
     test('sends a 100-character ASCII query', () async {
@@ -423,5 +434,29 @@ void main() {
         );
       });
     }
+  });
+
+  group('path ids (#881)', () {
+    test(
+      'every id route refuses an id that would leave its route, before sending',
+      () async {
+        final remote = answering('{}');
+        List<(String, Future<Object?> Function())> calls(String id) => [
+          ('id', () => remote.fetchDetail(id)),
+          ('id', () => remote.restore(id)),
+        ];
+
+        for (final id in ['', '.', '..']) {
+          for (final (name, call) in calls(id)) {
+            await expectLater(
+              call(),
+              throwsA(isA<ArgumentError>().having((e) => e.name, 'name', name)),
+              reason: '$name "$id"',
+            );
+          }
+        }
+        expect(adapter.sent, isEmpty);
+      },
+    );
   });
 }

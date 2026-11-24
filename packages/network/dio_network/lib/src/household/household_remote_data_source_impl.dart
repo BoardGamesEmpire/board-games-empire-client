@@ -1,7 +1,9 @@
 import 'package:dio/dio.dart';
 import 'package:dio_network/src/games/game_summary_json.dart';
 import 'package:dio_network/src/household/household_member_json.dart';
+import 'package:dio_network/src/network/json_reads.dart';
 import 'package:dio_network/src/network/remote_failure.dart';
+import 'package:dio_network/src/network/request_guards.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 
@@ -50,11 +52,16 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
     int page = 1,
     int limit = HouseholdRemoteDataSource.maxPageSize,
   }) async {
-    _checkPaging(page: page, limit: limit);
+    checkPage(
+      page: page,
+      limit: limit,
+      maxSize: HouseholdRemoteDataSource.maxPageSize,
+      maxDepth: HouseholdRemoteDataSource.maxPageDepth,
+    );
 
     const action = 'Household list';
     const failures = _HouseholdFailures();
-    final (:body, :status) = await sendForJson(
+    return sendForParsed(
       () => _dio.get<String>(
         _basePath,
         options: _plainBody,
@@ -62,17 +69,11 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
       ),
       action: action,
       family: failures,
-    );
-
-    return parseRemote(
-      failures,
-      () => PaginatedResult.fromEnvelope(
+      map: (body) => PaginatedResult.fromEnvelope(
         body,
         key: 'households',
         item: _mapHouseholdWithMembers,
       ),
-      action: action,
-      status: status,
     );
   }
 
@@ -84,7 +85,7 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
 
     const action = 'Household game pool sample';
     const failures = _HouseholdFailures();
-    final (:body, :status) = await sendForJson(
+    return sendForParsed(
       () => _dio.get<String>(
         '$_basePath/game-pool/random',
         options: _plainBody,
@@ -92,11 +93,7 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
       ),
       action: action,
       family: failures,
-    );
-
-    return parseRemote(
-      failures,
-      () {
+      map: (body) {
         final games = body['games'];
         final gameCount = body['gameCount'];
         if (games is! List) {
@@ -117,8 +114,6 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
           gameCount: gameCount,
         );
       },
-      action: action,
-      status: status,
     );
   }
 
@@ -131,7 +126,10 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
     String? language,
     String? visibility,
   }) async {
-    _checkClientRequestId(clientRequestId);
+    checkClientRequestId(
+      clientRequestId,
+      maxLength: HouseholdRemoteDataSource.maxClientRequestIdLength,
+    );
     return _sendForHousehold(
       () => _dio.post<String>(
         '/api/households',
@@ -154,9 +152,7 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
     String householdId,
     HouseholdUpdate update,
   ) async {
-    if (householdId.isEmpty) {
-      throw ArgumentError.value(householdId, 'householdId', 'is empty');
-    }
+    checkPathId(householdId, name: 'householdId');
     if (update.isEmpty) {
       throw ArgumentError.value(
         update,
@@ -231,7 +227,7 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
     description: json['description'] as String?,
     image: json['image'] as String?,
     settings: _mapSettings(json['settings']),
-    deletedAt: _dateOrNull(json['deletedAt']),
+    deletedAt: dateOrNull(json['deletedAt']),
     createdAt: DateTime.parse(json['createdAt'] as String),
     updatedAt: DateTime.parse(json['updatedAt'] as String),
   );
@@ -288,70 +284,6 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
     return HouseholdSettings(
       memberInvitePolicy: MemberInvitePolicy.fromWire(policy),
     );
-  }
-
-  static DateTime? _dateOrNull(Object? value) =>
-      value == null ? null : DateTime.parse(value as String);
-
-  /// `page` is 1-based and `limit` is capped at
-  /// [HouseholdRemoteDataSource.maxPageSize]; the server **rejects** a
-  /// violation with a 400 rather than clamping it. A 400 mid-hydrate
-  /// classifies as permanent, so an out-of-range page would fail the whole
-  /// sync for a reason the caller could have known locally.
-  void _checkPaging({required int page, required int limit}) {
-    const maxPageSize = HouseholdRemoteDataSource.maxPageSize;
-    const maxPageDepth = HouseholdRemoteDataSource.maxPageDepth;
-    if (limit < 1 || limit > maxPageSize) {
-      throw ArgumentError.value(
-        limit,
-        'limit',
-        'must be between 1 and $maxPageSize (the server rejects a larger '
-            'page rather than clamping it)',
-      );
-    }
-    if (page < 1) {
-      throw ArgumentError.value(page, 'page', 'is 1-based');
-    }
-    // Divided rather than multiplied: `(page - 1) * limit` wraps on the VM for
-    // a large enough page and would land back under the ceiling. For integers,
-    // `x * limit > depth` holds exactly when `x > depth ~/ limit`, and `limit`
-    // is at least 1 by now.
-    if (page - 1 > maxPageDepth ~/ limit) {
-      throw ArgumentError.value(
-        page,
-        'page',
-        '(page - 1) * limit must not exceed $maxPageDepth',
-      );
-    }
-  }
-
-  /// The server trims `clientRequestId`, then requires 1 to
-  /// [HouseholdRemoteDataSource.maxClientRequestIdLength] characters, and
-  /// answers a violation with a 400. That is permanent, and a permanent
-  /// create is parked on its first attempt (#121), so a key the caller got
-  /// wrong is refused here instead, with an error outside the
-  /// transient/permanent split: the sender counts it as a client fault
-  /// rather than parking it as the server's verdict.
-  ///
-  /// This matches the server exactly for ASCII keys, and every key this
-  /// client mints is a cuid2, which is ASCII. Past ASCII the two can
-  /// disagree at the edges: Dart's `trim` also strips U+0085, which the
-  /// server's does not, and the server counts a surrogate pair as one
-  /// character where `length` counts two.
-  ///
-  /// The key is still sent untrimmed: the server trims it before storing or
-  /// matching it, so the two forms are one key.
-  void _checkClientRequestId(String clientRequestId) {
-    const maxLength = HouseholdRemoteDataSource.maxClientRequestIdLength;
-    final length = clientRequestId.trim().length;
-    if (length == 0 || length > maxLength) {
-      throw ArgumentError.value(
-        clientRequestId,
-        'clientRequestId',
-        'must be 1 to $maxLength characters after trimming (the server '
-            'rejects anything else with a 400)',
-      );
-    }
   }
 }
 

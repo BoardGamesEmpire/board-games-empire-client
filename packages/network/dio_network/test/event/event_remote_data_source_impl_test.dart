@@ -972,6 +972,30 @@ void main() {
       expect(adapter.sent, isEmpty);
     });
 
+    test("refuses a page past the server's depth ceiling before sending, on "
+        'every list', () async {
+      // The server rejects (page - 1) * limit above 100000 with a 400, which
+      // a sync would file as permanent.
+      final remote = answering(_listBody([]));
+
+      await expectLater(
+        remote.fetchEvents(page: 1002),
+        throwsA(isA<ArgumentError>().having((e) => e.name, 'name', 'page')),
+      );
+      await expectLater(
+        remote.browseEvents(page: 1002),
+        throwsArgumentError,
+      );
+      await expectLater(
+        remote.fetchHouseholdEvents('h1', page: 1002),
+        throwsArgumentError,
+      );
+      expect(adapter.sent, isEmpty);
+
+      await remote.fetchEvents(page: 1001);
+      expect(adapter.sent.single.query, {'page': 1001, 'limit': 100});
+    });
+
     test('a 404 on the list route is transient, even from the API', () async {
       // Nest answers a route that is not deployed with this same envelope. A
       // list route is never absent for a caller who reached it, so on a
@@ -3039,6 +3063,13 @@ void main() {
         () => remote.cancelOccurrence('e1', ''),
         () => remote.removeOccurrence('', 'o1'),
         () => remote.removeOccurrence('e1', ''),
+        // A dot segment resolves to another route as surely as an empty one
+        // (#881).
+        for (final id in ['.', '..']) ...[
+          () => remote.addOccurrence(id, draft, sortOrder: 0),
+          () => remote.updateOccurrence(id, 'o1', update),
+          () => remote.updateOccurrence('e1', id, update),
+        ],
       ];
 
       for (final (index, call) in calls.indexed) {
@@ -5939,5 +5970,169 @@ void main() {
         throwsA(isA<EventRemoteTransientException>()),
       );
     });
+  });
+
+  group('path ids (#881)', () {
+    test('every id refuses an empty or dot segment before sending', () async {
+      // Each of the three resolves the request to another route.
+      final remote = answering('{}');
+      const draft = EventOccurrenceDraft(label: 'x');
+      final update = OccurrenceUpdate(clearLabel: true);
+      List<(String, Future<Object?> Function())> calls(String id) => [
+        ('householdId', () => remote.fetchHouseholdEvents(id)),
+        ('id', () => remote.fetchEvent(id)),
+        ('id', () => remote.deleteEvent(id)),
+        ('id', () => remote.cancelEvent(id)),
+        ('id', () => remote.reopenEvent(id)),
+        ('id', () => remote.archiveEvent(id)),
+        ('id', () => remote.unarchiveEvent(id)),
+        ('id', () => remote.updateEvent(id, EventUpdate(clearUrl: true))),
+        (
+          'id',
+          () => remote.updateEventPolicy(
+            id,
+            EventPolicyUpdate(votingWindowHours: 2),
+          ),
+        ),
+        ('eventId', () => remote.addOccurrence(id, draft, sortOrder: 0)),
+        ('eventId', () => remote.updateOccurrence(id, 'o1', update)),
+        ('occurrenceId', () => remote.updateOccurrence('e1', id, update)),
+        ('eventId', () => remote.confirmOccurrence(id, 'o1')),
+        ('occurrenceId', () => remote.confirmOccurrence('e1', id)),
+        ('eventId', () => remote.declineOccurrence(id, 'o1')),
+        ('occurrenceId', () => remote.declineOccurrence('e1', id)),
+        ('eventId', () => remote.cancelOccurrence(id, 'o1')),
+        ('occurrenceId', () => remote.cancelOccurrence('e1', id)),
+        ('eventId', () => remote.removeOccurrence(id, 'o1')),
+        ('occurrenceId', () => remote.removeOccurrence('e1', id)),
+        (
+          'eventId',
+          () => remote.submitAvailability(id, 'o1', AvailabilityResponse.maybe),
+        ),
+        (
+          'occurrenceId',
+          () => remote.submitAvailability('e1', id, AvailabilityResponse.maybe),
+        ),
+        (
+          'eventId',
+          () => remote.updateAttendeeStatus(
+            id,
+            'a1',
+            EventParticipationStatus.maybe,
+          ),
+        ),
+        (
+          'attendeeId',
+          () => remote.updateAttendeeStatus(
+            'e1',
+            id,
+            EventParticipationStatus.maybe,
+          ),
+        ),
+        (
+          'eventId',
+          () =>
+              remote.addAttendee(id, userId: 'u1', role: EventRole.participant),
+        ),
+        ('eventId', () => remote.removeAttendee(id, 'a1')),
+        ('attendeeId', () => remote.removeAttendee('e1', id)),
+        ('eventId', () => remote.fetchGamesPool(id)),
+        ('eventId', () => remote.offerGames(id, 'a1', collectionIds: ['c1'])),
+        (
+          'attendeeId',
+          () => remote.offerGames('e1', id, collectionIds: ['c1']),
+        ),
+        ('eventId', () => remote.takeBackGame(id, 'a1', 'og_1')),
+        ('attendeeId', () => remote.takeBackGame('e1', id, 'og_1')),
+        ('offeredGameId', () => remote.takeBackGame('e1', 'a1', id)),
+        ('eventId', () => remote.fetchNominations(id)),
+        ('eventId', () => remote.fetchLineup(id)),
+        ('eventId', () => remote.fetchNomination(id, 'n1')),
+        ('nominationId', () => remote.fetchNomination('e1', id)),
+        (
+          'eventId',
+          () => remote.nominate(
+            id,
+            platformGameId: 'pg1',
+            suppliedFromId: 'og_1',
+          ),
+        ),
+        (
+          'eventId',
+          () => remote.directAddGame(
+            id,
+            platformGameId: 'pg1',
+            suppliedById: 'a1',
+          ),
+        ),
+        ('eventId', () => remote.removeLineupGame(id, 'lg1')),
+        ('lineupGameId', () => remote.removeLineupGame('e1', id)),
+        (
+          'eventId',
+          () => remote.castVote(id, 'n1', voteType: VoteType.forGame),
+        ),
+        (
+          'nominationId',
+          () => remote.castVote('e1', id, voteType: VoteType.forGame),
+        ),
+        ('eventId', () => remote.withdrawNomination(id, 'n1')),
+        ('nominationId', () => remote.withdrawNomination('e1', id)),
+        ('eventId', () => remote.approveNomination(id, 'n1')),
+        ('nominationId', () => remote.approveNomination('e1', id)),
+        ('eventId', () => remote.rejectNomination(id, 'n1')),
+        ('nominationId', () => remote.rejectNomination('e1', id)),
+        ('eventId', () => remote.resolveNomination(id, 'n1')),
+        ('nominationId', () => remote.resolveNomination('e1', id)),
+        ('eventId', () => remote.fetchAvailabilitySummary(id)),
+      ];
+
+      for (final id in ['', '.', '..']) {
+        for (final (name, call) in calls(id)) {
+          // Called bare, not through Future.sync: the refusal must arrive
+          // through the returned Future, so a call that throws synchronously
+          // fails here.
+          await expectLater(
+            call(),
+            throwsA(isA<ArgumentError>().having((e) => e.name, 'name', name)),
+            reason: '$name "$id"',
+          );
+        }
+      }
+      expect(adapter.sent, isEmpty);
+    });
+
+    test(
+      'an id sent in the body or query may be a dot: it is only a value',
+      () async {
+        final remote = answering('{}');
+        final calls = <Future<Object?> Function()>[
+          () => remote.addAttendee(
+            'e1',
+            userId: '.',
+            role: EventRole.participant,
+          ),
+          () => remote.fetchGamesPool('e1', attendeeIds: ['..']),
+          () => remote.offerGames('e1', 'a1', collectionIds: ['.']),
+          () => remote.nominate(
+            'e1',
+            platformGameId: '.',
+            suppliedFromId: '..',
+            occurrenceId: '.',
+          ),
+          () => remote.directAddGame(
+            'e1',
+            platformGameId: '.',
+            suppliedById: '..',
+            occurrenceId: '.',
+          ),
+        ];
+
+        for (final call in calls) {
+          // The canned `{}` fails to parse; only the send matters here.
+          await expectLater(call(), throwsA(isNot(isA<ArgumentError>())));
+        }
+        expect(adapter.sent, hasLength(calls.length));
+      },
+    );
   });
 }

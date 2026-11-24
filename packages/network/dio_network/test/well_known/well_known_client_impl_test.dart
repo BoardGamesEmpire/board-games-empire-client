@@ -509,7 +509,7 @@ void main() {
         );
       });
 
-      // The `Response<String>` switch bypasses dio's BackgroundTransformer,
+      // The `Response<String>` switch bypasses dio's FusedTransformer,
       // which offloads jsonDecode above 50 KB. This client reproduces that
       // threshold itself, and the URL here is user-typed during onboarding —
       // an unbounded body from a server we have not yet identified as ours.

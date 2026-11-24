@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:dio_network/src/household/household_member_json.dart';
 import 'package:dio_network/src/network/remote_failure.dart';
+import 'package:dio_network/src/network/request_guards.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 
@@ -36,17 +37,12 @@ class AdminHouseholdRemoteDataSourceImpl
     int page = 1,
     int limit = AdminHouseholdRemoteDataSource.pageSize,
   }) async {
-    if (limit < 1 || limit > AdminHouseholdRemoteDataSource.maxPageSize) {
-      throw ArgumentError.value(
-        limit,
-        'limit',
-        'must be between 1 and ${AdminHouseholdRemoteDataSource.maxPageSize} '
-            '(the server rejects a larger page rather than clamping it)',
-      );
-    }
-    if (page < 1) {
-      throw ArgumentError.value(page, 'page', 'is 1-based');
-    }
+    checkPage(
+      page: page,
+      limit: limit,
+      maxSize: AdminHouseholdRemoteDataSource.maxPageSize,
+      maxDepth: serverMaxPageDepth,
+    );
     if (!sort.allowedWith(status)) {
       throw ArgumentError.value(
         sort,
@@ -73,7 +69,7 @@ class AdminHouseholdRemoteDataSourceImpl
     // A list route is never absent for a caller who reached it, so even an
     // application 404 here means the route is not deployed.
     const failures = _AdminHouseholdFailures(rowRoute: false);
-    final response = await sendForJson(
+    return sendForParsed(
       () => _dio.get<String>(
         _listPath,
         options: _plainBody,
@@ -87,39 +83,32 @@ class AdminHouseholdRemoteDataSourceImpl
       ),
       action: action,
       family: failures,
-    );
-
-    return parseRemote(
-      failures,
-      () => PaginatedResult.fromEnvelope(
-        response.body,
+      map: (body) => PaginatedResult.fromEnvelope(
+        body,
         key: 'households',
         item: _mapRow,
       ),
-      action: action,
-      status: response.status,
     );
   }
 
   @override
   Future<AdminHouseholdDetail> fetchDetail(String id) async {
+    checkPathId(id);
+
     const action = 'Staff household fetch';
     const failures = _AdminHouseholdFailures(rowRoute: true);
-    final response = await sendForJson(
+    return sendForParsed(
       () => _dio.get<String>(_pathOf(id), options: _plainBody),
       action: action,
       family: failures,
-    );
-    return parseRemote(
-      failures,
-      () => _mapDetail(response.body),
-      action: action,
-      status: response.status,
+      map: _mapDetail,
     );
   }
 
   @override
   Future<void> restore(String id) async {
+    checkPathId(id);
+
     const action = 'Staff household restore';
     await sendForJson(
       () => _dio.post<String>('${_pathOf(id)}/restore', options: _plainBody),

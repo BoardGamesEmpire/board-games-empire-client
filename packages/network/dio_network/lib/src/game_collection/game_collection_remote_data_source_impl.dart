@@ -1,7 +1,9 @@
 import 'package:dio/dio.dart';
 import 'package:dio_network/src/games/game_summary_json.dart';
+import 'package:dio_network/src/network/json_reads.dart';
 import 'package:dio_network/src/network/non_empty_string.dart';
 import 'package:dio_network/src/network/remote_failure.dart';
+import 'package:dio_network/src/network/request_guards.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 
@@ -80,12 +82,21 @@ class GameCollectionRemoteDataSourceImpl
     bool? favorite,
     DateTime? updatedSince,
   }) async {
-    _checkPaging(page: page, limit: limit);
+    checkPage(
+      page: page,
+      limit: limit,
+      maxSize: GameCollectionRemoteDataSource.maxPageSize,
+      maxDepth: GameCollectionRemoteDataSource.maxPageDepth,
+    );
 
     const action = 'Collection list';
     // A list route that 404s was never reached — see _NotFoundMeaning.
     const failures = _CollectionFailures(_NotFoundMeaning.unreachableEndpoint);
-    final response = await sendForJson(
+    // The envelope parse and the row mapping share one permanent
+    // classification: a missing array, a missing or partial `pagination`, and
+    // a row the mapper cannot read — its summary included (#259) — are all a
+    // 2xx this source cannot map.
+    return sendForParsed(
       () => _dio.get<String>(
         _basePath,
         options: _plainBody,
@@ -103,21 +114,11 @@ class GameCollectionRemoteDataSourceImpl
       ),
       action: action,
       family: failures,
-    );
-
-    // The envelope parse and the row mapping share one permanent
-    // classification: a missing array, a missing or partial `pagination`, and
-    // a row the mapper cannot read — its summary included (#259) — are all a
-    // 2xx this source cannot map.
-    return parseRemote(
-      failures,
-      () => PaginatedResult.fromEnvelope(
-        response.body,
+      map: (body) => PaginatedResult.fromEnvelope(
+        body,
         key: 'collections',
         item: _mapEntryWithSummary,
       ),
-      action: action,
-      status: response.status,
     );
   }
 
@@ -369,50 +370,14 @@ class GameCollectionRemoteDataSourceImpl
     playAgain: json['playAgain'] as bool?,
     favorite: json['favorite'] as bool?,
     comment: json['comment'] as String?,
-    lastPlayed: _dateOrNull(json['lastPlayed']),
-    lastUpdated: _dateOrNull(json['lastUpdated']),
-    deletedAt: _dateOrNull(json['deletedAt']),
+    lastPlayed: dateOrNull(json['lastPlayed']),
+    lastUpdated: dateOrNull(json['lastUpdated']),
+    deletedAt: dateOrNull(json['deletedAt']),
     createdAt: DateTime.parse(json['createdAt'] as String),
     updatedAt: DateTime.parse(json['updatedAt'] as String),
   );
 
-  static DateTime? _dateOrNull(Object? value) =>
-      value == null ? null : DateTime.parse(value as String);
-
   // ── Guards: requests the server is guaranteed to reject ─────────────
-
-  /// `page` is 1-based, `limit` is capped at
-  /// [GameCollectionRemoteDataSource.maxPageSize], and `(page - 1) * limit`
-  /// may not exceed [GameCollectionRemoteDataSource.maxPageDepth]. The server
-  /// **rejects** each violation with a 400 rather than clamping it. A 400
-  /// mid-hydrate classifies as permanent, so an out-of-range page would fail
-  /// the whole sync for a reason the caller could have known locally.
-  void _checkPaging({required int page, required int limit}) {
-    const maxPageSize = GameCollectionRemoteDataSource.maxPageSize;
-    const maxPageDepth = GameCollectionRemoteDataSource.maxPageDepth;
-    if (limit < 1 || limit > maxPageSize) {
-      throw ArgumentError.value(
-        limit,
-        'limit',
-        'must be between 1 and $maxPageSize (the server rejects a larger '
-            'page rather than clamping it)',
-      );
-    }
-    if (page < 1) {
-      throw ArgumentError.value(page, 'page', 'is 1-based');
-    }
-    // Divided rather than multiplied: `(page - 1) * limit` wraps on the VM for
-    // a large enough page and would land back under the ceiling. For integers,
-    // `x * limit > depth` holds exactly when `x > depth ~/ limit`, and `limit`
-    // is at least 1 by now.
-    if (page - 1 > maxPageDepth ~/ limit) {
-      throw ArgumentError.value(
-        page,
-        'page',
-        '(page - 1) * limit must not exceed $maxPageDepth',
-      );
-    }
-  }
 
   /// The server validates `quantity` as positive. Zero is not "remove" — the
   /// repository contract says the same thing about its own add path.

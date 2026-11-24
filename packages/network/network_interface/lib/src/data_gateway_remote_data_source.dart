@@ -91,7 +91,8 @@ import 'package:network_interface/src/paginated_result.dart';
 /// caller's role or about a row.
 ///
 /// A call that cannot produce a valid request throws [ArgumentError]
-/// unwrapped: an out-of-range page or limit, a port outside 1–65535, an empty
+/// unwrapped: a page below 1 or starting past row 100000 (the server's depth
+/// ceiling), a limit out of range, a port outside 1–65535, an empty
 /// [DataGatewayChanges], or an empty set of link statuses.
 abstract class DataGatewayRemoteDataSource {
   /// The backend's `limit` ceiling (`DEFAULT_MAX_PAGE_SIZE`). A larger limit is

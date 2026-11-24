@@ -896,7 +896,7 @@ void main() {
     });
   });
 
-  // Asking Dio for `Response<String>` bypasses its `BackgroundTransformer`,
+  // Asking Dio for `Response<String>` bypasses its `FusedTransformer`,
   // which offloads jsonDecode above 50 KB. The data source reproduces that
   // threshold itself, so a page large enough to cross it must still decode.
   group('a large page still decodes (off-isolate path)', () {

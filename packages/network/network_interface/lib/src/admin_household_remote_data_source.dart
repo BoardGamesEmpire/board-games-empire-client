@@ -33,8 +33,9 @@ import 'package:network_interface/src/server_string_length.dart';
 /// - [AdminHouseholdTransientException] and
 ///   [AdminHouseholdPermanentException]: the shared rules, including a 404 on
 ///   the list route (not deployed) and a retryable 409.
-/// - [ArgumentError], unwrapped: `page < 1`, `limit` outside `1..maxPageSize`,
-///   a `sort` that is not [AdminHouseholdSort.allowedWith] the `status`, or a
+/// - [ArgumentError], unwrapped: `page < 1`, a page starting past row 100000
+///   (the server's depth ceiling), `limit` outside `1..maxPageSize`, a
+///   `sort` that is not [AdminHouseholdSort.allowedWith] the `status`, or a
 ///   non-null `query` whose trimmed [queryLength] is outside
 ///   `minQueryLength..maxQueryLength`.
 abstract class AdminHouseholdRemoteDataSource {

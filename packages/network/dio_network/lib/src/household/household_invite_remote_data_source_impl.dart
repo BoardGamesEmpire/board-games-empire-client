@@ -1,6 +1,8 @@
 import 'package:dio/dio.dart';
 import 'package:dio_network/src/network/api_error_envelope.dart';
+import 'package:dio_network/src/network/json_reads.dart';
 import 'package:dio_network/src/network/remote_failure.dart';
+import 'package:dio_network/src/network/request_guards.dart';
 import 'package:dio_network/src/user/user_summary_json.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
@@ -33,9 +35,11 @@ class HouseholdInviteRemoteDataSourceImpl
     String householdId,
     HouseholdInviteDraft draft,
   ) async {
+    checkPathId(householdId, name: 'householdId');
+
     const action = 'Household invite send';
     const failures = _InviteFailures(rowRoute: true);
-    final response = await sendForJson(
+    return sendForParsed(
       () => _dio.post<String>(
         _householdInvites(householdId),
         options: _plainBody,
@@ -55,12 +59,7 @@ class HouseholdInviteRemoteDataSourceImpl
       // the same way, but the list on the screen before this one would have
       // failed first.
       family: failures,
-    );
-    return parseRemote(
-      failures,
-      () => _mapInvite(_inviteObject(response.body)),
-      action: action,
-      status: response.status,
+      map: (body) => _mapInvite(requireObject(body['invite'], 'invite')),
     );
   }
 
@@ -70,16 +69,18 @@ class HouseholdInviteRemoteDataSourceImpl
     HouseholdInviteStatus? status,
     int page = 1,
     int limit = HouseholdInviteRemoteDataSource.defaultPageSize,
-  }) =>
-      // A deleted household and a server without the route both answer an
-      // enveloped 404 here, and they cannot be told apart. See the contract.
-      _fetchPage(
-        _householdInvites(householdId),
-        action: 'Household invite list',
-        status: status,
-        page: page,
-        limit: limit,
-      );
+  }) async {
+    checkPathId(householdId, name: 'householdId');
+    // A deleted household and a server without the route both answer an
+    // enveloped 404 here, and they cannot be told apart. See the contract.
+    return _fetchPage(
+      _householdInvites(householdId),
+      action: 'Household invite list',
+      status: status,
+      page: page,
+      limit: limit,
+    );
+  }
 
   @override
   Future<PaginatedResult<HouseholdInvite>> fetchInbox({
@@ -116,17 +117,18 @@ class HouseholdInviteRemoteDataSourceImpl
     required int limit,
     HouseholdInviteStatus? status,
   }) async {
-    _checkPaging(
+    checkPage(
       page: page,
       limit: limit,
-      max: HouseholdInviteRemoteDataSource.maxPageSize,
+      maxSize: HouseholdInviteRemoteDataSource.maxPageSize,
+      maxDepth: serverMaxPageDepth,
     );
     if (status == HouseholdInviteStatus.unknown) {
       throw ArgumentError.value(status, 'status', 'has no wire name');
     }
 
     const failures = _InviteFailures();
-    final response = await sendForJson(
+    return sendForParsed(
       () => _dio.get<String>(
         path,
         options: _plainBody,
@@ -138,69 +140,71 @@ class HouseholdInviteRemoteDataSourceImpl
       ),
       action: action,
       family: failures,
-    );
-    return parseRemote(
-      failures,
-      () => PaginatedResult.fromEnvelope(
-        response.body,
+      map: (body) => PaginatedResult.fromEnvelope(
+        body,
         key: 'invites',
         item: _mapInvite,
       ),
-      action: action,
-      status: response.status,
     );
   }
 
   @override
   Future<AcceptedHouseholdInvite> accept(String inviteId) async {
+    checkPathId(inviteId, name: 'inviteId');
+
     const action = 'Household invite accept';
     const failures = _InviteFailures(rowRoute: true);
-    final response = await sendForJson(
+    return sendForParsed(
       () =>
           _dio.post<String>('${_invite(inviteId)}/accept', options: _plainBody),
       action: action,
       family: failures,
-    );
-    return parseRemote(
-      failures,
-      () {
-        final member = response.body['member'];
-        if (member is! Map<String, dynamic>) {
-          throw const FormatException('response is missing a "member" object');
-        }
+      map: (body) {
+        final member = requireObject(body['member'], 'member');
         return (
-          invite: _mapInvite(_inviteObject(response.body)),
+          invite: _mapInvite(requireObject(body['invite'], 'invite')),
           householdId: member['householdId'] as String,
         );
       },
-      action: action,
-      status: response.status,
     );
   }
 
   @override
-  Future<HouseholdInvite> decline(String inviteId) =>
-      _change('${_invite(inviteId)}/decline', 'Household invite decline');
+  Future<HouseholdInvite> decline(String inviteId) async {
+    checkPathId(inviteId, name: 'inviteId');
+    return _change('${_invite(inviteId)}/decline', 'Household invite decline');
+  }
 
   @override
-  Future<HouseholdInvite> withdraw(String inviteId) =>
-      _change('${_invite(inviteId)}/withdraw', 'Household invite withdraw');
+  Future<HouseholdInvite> withdraw(String inviteId) async {
+    checkPathId(inviteId, name: 'inviteId');
+    return _change(
+      '${_invite(inviteId)}/withdraw',
+      'Household invite withdraw',
+    );
+  }
 
   @override
-  Future<HouseholdInvite> revoke(String householdId, String inviteId) =>
-      _change(
-        '${_householdInvites(householdId)}/'
-            '${Uri.encodeComponent(inviteId)}/revoke',
-        'Household invite revoke',
-      );
+  Future<HouseholdInvite> revoke(String householdId, String inviteId) async {
+    checkPathId(householdId, name: 'householdId');
+    checkPathId(inviteId, name: 'inviteId');
+    return _change(
+      '${_householdInvites(householdId)}/'
+          '${Uri.encodeComponent(inviteId)}/revoke',
+      'Household invite revoke',
+    );
+  }
 
   @override
-  Future<HouseholdInvite> approve(String householdId, String inviteId) =>
-      _change(
-        '${_householdInvites(householdId)}/'
-            '${Uri.encodeComponent(inviteId)}/approve',
-        'Household invite approve',
-      );
+  Future<HouseholdInvite> approve(String householdId, String inviteId) async {
+    checkPathId(householdId, name: 'householdId');
+    checkPathId(inviteId, name: 'inviteId');
+    return _change(
+      '${_householdInvites(householdId)}/'
+          '${Uri.encodeComponent(inviteId)}/approve',
+      'Household invite approve',
+    );
+  }
 
   static String _householdInvites(String householdId) =>
       '/api/households/${Uri.encodeComponent(householdId)}/invites';
@@ -211,28 +215,15 @@ class HouseholdInviteRemoteDataSourceImpl
   /// A POST to [path] answered by `{ message, invite }`.
   Future<HouseholdInvite> _change(String path, String action) async {
     const failures = _InviteFailures(rowRoute: true);
-    final response = await sendForJson(
+    return sendForParsed(
       () => _dio.post<String>(path, options: _plainBody),
       action: action,
       family: failures,
-    );
-    return parseRemote(
-      failures,
-      () => _mapInvite(_inviteObject(response.body)),
-      action: action,
-      status: response.status,
+      map: (body) => _mapInvite(requireObject(body['invite'], 'invite')),
     );
   }
 
   // ── Mapping ─────────────────────────────────────────────────────────
-
-  static Map<String, dynamic> _inviteObject(Map<String, dynamic> body) {
-    final row = body['invite'];
-    if (row is! Map<String, dynamic>) {
-      throw const FormatException('response is missing an "invite" object');
-    }
-    return row;
-  }
 
   /// Maps a server invite row to [HouseholdInvite], field by field.
   ///
@@ -257,22 +248,6 @@ class HouseholdInviteRemoteDataSourceImpl
       expiresAt: DateTime.parse(json['expiresAt'] as String),
       createdAt: DateTime.parse(json['createdAt'] as String),
     );
-  }
-
-  // ── Guards: requests the server is guaranteed to reject ─────────────
-
-  void _checkPaging({required int page, required int limit, required int max}) {
-    if (limit < 1 || limit > max) {
-      throw ArgumentError.value(
-        limit,
-        'limit',
-        'must be between 1 and $max (the server rejects a larger page '
-            'rather than clamping it)',
-      );
-    }
-    if (page < 1) {
-      throw ArgumentError.value(page, 'page', 'is 1-based');
-    }
   }
 
   /// The limit a 402 hit, or null when its body does not say.

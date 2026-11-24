@@ -535,4 +535,41 @@ void main() {
       expect(answering('{"invites": []}').fetchInbox(), permanent);
     });
   });
+
+  group('path ids (#881)', () {
+    test(
+      'every id route refuses an id that would leave its route, before sending',
+      () async {
+        final remote = answering('{}');
+        List<(String, Future<Object?> Function())> calls(String id) => [
+          (
+            'householdId',
+            () => remote.send(
+              id,
+              HouseholdInviteDraft(invitee: const InviteeUser('u_2')),
+            ),
+          ),
+          ('householdId', () => remote.fetchHouseholdInvites(id)),
+          ('inviteId', () => remote.accept(id)),
+          ('inviteId', () => remote.decline(id)),
+          ('inviteId', () => remote.withdraw(id)),
+          ('householdId', () => remote.revoke(id, 'i1')),
+          ('inviteId', () => remote.revoke('h1', id)),
+          ('householdId', () => remote.approve(id, 'i1')),
+          ('inviteId', () => remote.approve('h1', id)),
+        ];
+
+        for (final id in ['', '.', '..']) {
+          for (final (name, call) in calls(id)) {
+            await expectLater(
+              call(),
+              throwsA(isA<ArgumentError>().having((e) => e.name, 'name', name)),
+              reason: '$name "$id"',
+            );
+          }
+        }
+        expect(adapter.sent, isEmpty);
+      },
+    );
+  });
 }

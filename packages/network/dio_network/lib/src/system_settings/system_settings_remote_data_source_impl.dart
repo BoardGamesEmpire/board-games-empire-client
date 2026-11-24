@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:dio_network/src/network/api_error_envelope.dart';
 import 'package:dio_network/src/network/remote_failure.dart';
+import 'package:dio_network/src/network/request_guards.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 
@@ -32,27 +33,23 @@ class SystemSettingsRemoteDataSourceImpl
   @override
   Future<SystemSettings> fetch() async {
     const action = 'Server settings fetch';
-    final response = await sendForJson(
+    return sendForParsed(
       () => _dio.get<String>(_path, options: _plainBody),
       action: action,
       family: _failures,
-    );
-    return parseRemote(
-      _failures,
-      () => _mapSettings(response.body),
-      action: action,
-      status: response.status,
+      map: _mapSettings,
     );
   }
 
   @override
   Future<SystemSettings> update(String id, SystemSettingsPatch patch) async {
+    checkPathId(id);
     // Every check runs before the first `wireName`, so an unknown enum is an
     // ArgumentError and never the StateError its wire name throws.
     _validate(patch);
 
     const action = 'Server settings update';
-    final response = await sendForJson(
+    return sendForParsed(
       () => _dio.patch<String>(
         '$_path/${Uri.encodeComponent(id)}',
         data: _bodyOf(patch),
@@ -60,12 +57,7 @@ class SystemSettingsRemoteDataSourceImpl
       ),
       action: action,
       family: _failures,
-    );
-    return parseRemote(
-      _failures,
-      () => _mapSettings(response.body),
-      action: action,
-      status: response.status,
+      map: _mapSettings,
     );
   }
 

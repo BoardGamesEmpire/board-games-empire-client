@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:dio_network/src/household/household_member_json.dart';
 import 'package:dio_network/src/network/remote_failure.dart';
+import 'package:dio_network/src/network/request_guards.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 
@@ -36,6 +37,8 @@ class HouseholdMemberRemoteDataSourceImpl
     String memberId,
     HouseholdRole role,
   ) async {
+    checkPathId(householdId, name: 'householdId');
+    checkPathId(memberId, name: 'memberId');
     if (!HouseholdMemberRemoteDataSource.assignableRoles.contains(role)) {
       throw ArgumentError.value(
         role,
@@ -54,36 +57,58 @@ class HouseholdMemberRemoteDataSourceImpl
   }
 
   @override
-  Future<HouseholdMember> remove(String householdId, String memberId) =>
-      _sendForMember(
-        () => _dio.delete<String>(
-          _member(householdId, memberId),
-          options: _plainBody,
-        ),
-        action: 'Household member remove',
+  Future<HouseholdMember> remove(String householdId, String memberId) async {
+    checkPathId(householdId, name: 'householdId');
+    checkPathId(memberId, name: 'memberId');
+    if (memberId == 'me') {
+      // `DELETE .../members/me` is the leave route, so this would remove the
+      // caller rather than refuse the id.
+      throw ArgumentError.value(
+        memberId,
+        'memberId',
+        'must not be "me" (that path is the leave route)',
       );
+    }
+    return _sendForMember(
+      () => _dio.delete<String>(
+        _member(householdId, memberId),
+        options: _plainBody,
+      ),
+      action: 'Household member remove',
+    );
+  }
 
   @override
-  Future<HouseholdMember> leave(String householdId) => _sendForMember(
-    () => _dio.delete<String>(_member(householdId, 'me'), options: _plainBody),
-    action: 'Household leave',
-  );
+  Future<HouseholdMember> leave(String householdId) async {
+    // Only the household is checked: the `me` segment is a constant.
+    checkPathId(householdId, name: 'householdId');
+    return _sendForMember(
+      () =>
+          _dio.delete<String>(_member(householdId, 'me'), options: _plainBody),
+      action: 'Household leave',
+    );
+  }
 
   @override
   Future<HouseholdOwnershipTransfer> transferOwnership(
     String householdId,
     String memberId,
-  ) => _send(
-    () => _dio.post<String>(
-      '${_member(householdId, memberId)}/transfer-ownership',
-      options: _plainBody,
-    ),
-    action: 'Household ownership transfer',
-    parse: (body) => (
-      owner: _memberAt(body, 'owner'),
-      previousOwner: _memberAt(body, 'previousOwner'),
-    ),
-  );
+  ) async {
+    checkPathId(householdId, name: 'householdId');
+    checkPathId(memberId, name: 'memberId');
+    return sendForParsed(
+      () => _dio.post<String>(
+        '${_member(householdId, memberId)}/transfer-ownership',
+        options: _plainBody,
+      ),
+      action: 'Household ownership transfer',
+      family: const _MemberFailures(),
+      map: (body) => (
+        owner: _memberAt(body, 'owner'),
+        previousOwner: _memberAt(body, 'previousOwner'),
+      ),
+    );
+  }
 
   static String _member(String householdId, String memberId) =>
       '/api/households/${Uri.encodeComponent(householdId)}'
@@ -94,33 +119,12 @@ class HouseholdMemberRemoteDataSourceImpl
   Future<HouseholdMember> _sendForMember(
     Future<Response<String>> Function() request, {
     required String action,
-  }) => _send(
+  }) => sendForParsed(
     request,
     action: action,
-    parse: (body) => _memberAt(body, 'member'),
+    family: const _MemberFailures(),
+    map: (body) => _memberAt(body, 'member'),
   );
-
-  /// Sends [request], classifying a failure through [_MemberFailures], and
-  /// reads its answer with [parse]. A [FormatException] from [parse] is a
-  /// body that cannot be read as the contract.
-  Future<T> _send<T>(
-    Future<Response<String>> Function() request, {
-    required String action,
-    required T Function(Map<String, dynamic> body) parse,
-  }) async {
-    const failures = _MemberFailures();
-    final response = await sendForJson(
-      request,
-      action: action,
-      family: failures,
-    );
-    return parseRemote(
-      failures,
-      () => parse(response.body),
-      action: action,
-      status: response.status,
-    );
-  }
 
   /// The member object under [key] in [body].
   static HouseholdMember _memberAt(Map<String, dynamic> body, String key) {

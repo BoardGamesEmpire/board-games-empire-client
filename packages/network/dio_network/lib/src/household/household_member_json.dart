@@ -44,33 +44,10 @@ HouseholdMember mapHouseholdMember(Map<String, dynamic> json) {
   );
 }
 
-/// Reads the role name out of the embedded join projection.
-///
-/// A null projection is a member with no role binding, which the model
-/// represents as a null role. A projection whose shape is wrong is a
-/// contract breach and throws — it must not be laundered into
-/// [HouseholdRole.unknown], which would make a parsing failure
-/// indistinguishable from a custom server role.
+/// The member's role, read by [readRoleName]: null for a member with no
+/// role binding, and a [FormatException] for a projection whose shape is
+/// wrong.
 HouseholdRole? mapHouseholdRole(Object? projection) {
-  if (projection == null) return null;
-  if (projection is! Map<String, dynamic>) {
-    throw FormatException(
-      'member "role" is ${projection.runtimeType}, expected the embedded '
-      'role projection',
-    );
-  }
-  final role = projection['role'];
-  if (role is! Map<String, dynamic>) {
-    throw FormatException(
-      'member "role" projection is missing its nested "role" object, got '
-      '${role.runtimeType}',
-    );
-  }
-  final name = role['name'];
-  if (name is! String) {
-    throw FormatException(
-      'member role is missing a "name", got ${name.runtimeType}',
-    );
-  }
-  return HouseholdRole.fromWire(name);
+  final name = readRoleName(projection, row: 'member');
+  return name == null ? null : HouseholdRole.fromWire(name);
 }

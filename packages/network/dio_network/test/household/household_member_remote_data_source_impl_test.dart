@@ -418,4 +418,48 @@ void main() {
       expect(answering('[]').remove('h1', 'm1'), permanent);
     });
   });
+
+  group('path ids (#881)', () {
+    test(
+      'every id route refuses an id that would leave its route, before sending',
+      () async {
+        final remote = answering('{}');
+        List<(String, Future<Object?> Function())> calls(String id) => [
+          (
+            'householdId',
+            () => remote.changeRole(id, 'm1', HouseholdRole.householdMember),
+          ),
+          (
+            'memberId',
+            () => remote.changeRole('h1', id, HouseholdRole.householdMember),
+          ),
+          ('householdId', () => remote.remove(id, 'm1')),
+          ('memberId', () => remote.remove('h1', id)),
+          ('householdId', () => remote.transferOwnership(id, 'm1')),
+          ('memberId', () => remote.transferOwnership('h1', id)),
+          ('householdId', () => remote.leave(id)),
+        ];
+
+        for (final id in ['', '.', '..']) {
+          for (final (name, call) in calls(id)) {
+            await expectLater(
+              call(),
+              throwsA(isA<ArgumentError>().having((e) => e.name, 'name', name)),
+              reason: '$name "$id"',
+            );
+          }
+        }
+        expect(adapter.sent, isEmpty);
+      },
+    );
+
+    test('remove refuses "me", which is the leave route', () async {
+      // `DELETE .../members/me` would remove the caller.
+      await expectLater(
+        answering('{}').remove('h1', 'me'),
+        throwsA(isA<ArgumentError>().having((e) => e.name, 'name', 'memberId')),
+      );
+      expect(adapter.sent, isEmpty);
+    });
+  });
 }

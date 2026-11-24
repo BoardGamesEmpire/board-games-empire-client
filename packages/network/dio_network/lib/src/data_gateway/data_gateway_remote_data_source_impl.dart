@@ -1,5 +1,7 @@
 import 'package:dio/dio.dart';
+import 'package:dio_network/src/network/json_reads.dart';
 import 'package:dio_network/src/network/remote_failure.dart';
+import 'package:dio_network/src/network/request_guards.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
@@ -48,10 +50,11 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
     int page = 1,
     int limit = DataGatewayRemoteDataSource.maxPageSize,
   }) async {
-    _checkPaging(
+    checkPage(
       page: page,
       limit: limit,
-      ceiling: DataGatewayRemoteDataSource.maxPageSize,
+      maxSize: DataGatewayRemoteDataSource.maxPageSize,
+      maxDepth: serverMaxPageDepth,
     );
 
     const action = 'DataGateway list';
@@ -59,7 +62,7 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
     // is a 200. So a 404 here means the route is not deployed, such as a
     // server older than backend#710's rename.
     const failures = _GatewayFailures(rowRoute: false);
-    final response = await sendForJson(
+    return sendForParsed(
       () => _dio.get<String>(
         _basePath,
         options: _plainBody,
@@ -67,34 +70,27 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
       ),
       action: action,
       family: failures,
-    );
-
-    return parseRemote(
-      failures,
-      () => PaginatedResult.fromEnvelope(
-        response.body,
+      map: (body) => PaginatedResult.fromEnvelope(
+        body,
         key: 'dataGateways',
         item: _mapDataGateway,
       ),
-      action: action,
-      status: response.status,
     );
   }
 
   @override
   Future<DataGateway> fetchOne(String id) async {
+    checkPathId(id);
+
     const action = 'DataGateway fetch';
     const failures = _GatewayFailures(rowRoute: true);
-    final response = await sendForJson(
+    return sendForParsed(
       () => _dio.get<String>(_pathOf(id), options: _plainBody),
       action: action,
       family: failures,
-    );
-    return parseRemote(
-      failures,
-      () => _mapDataGateway(_dataGatewayObject(response.body)),
-      action: action,
-      status: response.status,
+      map: (body) => _mapDataGateway(
+        requireObject(body['dataGateway'], 'dataGateway'),
+      ),
     );
   }
 
@@ -104,7 +100,7 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
 
     const action = 'DataGateway create';
     const failures = _GatewayFailures(rowRoute: false, conflictIsName: true);
-    final response = await sendForJson(
+    return sendForParsed(
       () => _dio.post<String>(
         _basePath,
         options: _plainBody,
@@ -121,8 +117,8 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
       ),
       action: action,
       family: failures,
+      map: _mapChangeResult,
     );
-    return _changeResult(response, action: action, family: failures);
   }
 
   @override
@@ -130,6 +126,7 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
     String id,
     DataGatewayChanges changes,
   ) async {
+    checkPathId(id);
     if (changes.isEmpty) {
       throw ArgumentError.value(
         changes,
@@ -154,12 +151,12 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
 
     const action = 'DataGateway update';
     const failures = _GatewayFailures(rowRoute: true, conflictIsName: true);
-    final response = await sendForJson(
+    return sendForParsed(
       () => _dio.patch<String>(_pathOf(id), options: _plainBody, data: body),
       action: action,
       family: failures,
+      map: _mapChangeResult,
     );
-    return _changeResult(response, action: action, family: failures);
   }
 
   @override
@@ -167,9 +164,11 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
     String id,
     List<String> disabled,
   ) async {
+    checkPathId(id);
+
     const action = 'DataGateway capability update';
     const failures = _GatewayFailures(rowRoute: true);
-    final response = await sendForJson(
+    return sendForParsed(
       () => _dio.patch<String>(
         _pathOf(id),
         options: _plainBody,
@@ -180,48 +179,56 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
       ),
       action: action,
       family: failures,
+      map: _mapChangeResult,
     );
-    return _changeResult(response, action: action, family: failures);
   }
 
   @override
   Future<DataGatewayChangeResult> delete(String id) async {
+    checkPathId(id);
+
     const action = 'DataGateway delete';
     const failures = _GatewayFailures(rowRoute: true);
-    final response = await sendForJson(
+    return sendForParsed(
       () => _dio.delete<String>(_pathOf(id), options: _plainBody),
       action: action,
       family: failures,
+      map: _mapChangeResult,
     );
-    return _changeResult(response, action: action, family: failures);
   }
 
   @override
   Future<DataGatewayChangeResult> connect(String id) async {
+    checkPathId(id);
+
     const action = 'DataGateway connect';
     const failures = _GatewayFailures(rowRoute: true);
-    final response = await sendForJson(
+    return sendForParsed(
       () => _dio.post<String>('${_pathOf(id)}/connect', options: _plainBody),
       action: action,
       family: failures,
+      map: _mapChangeResult,
     );
-    return _changeResult(response, action: action, family: failures);
   }
 
   @override
   Future<DataGatewayChangeResult> disconnect(String id) async {
+    checkPathId(id);
+
     const action = 'DataGateway disconnect';
     const failures = _GatewayFailures(rowRoute: true);
-    final response = await sendForJson(
+    return sendForParsed(
       () => _dio.post<String>('${_pathOf(id)}/disconnect', options: _plainBody),
       action: action,
       family: failures,
+      map: _mapChangeResult,
     );
-    return _changeResult(response, action: action, family: failures);
   }
 
   @override
   Future<DataGatewayInterviewResult> interview(String id) async {
+    checkPathId(id);
+
     const action = 'DataGateway interview';
     // The server may keep interviewing after the caller stops waiting.
     final failures = _GatewayFailures(
@@ -229,7 +236,7 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
       timeoutIsUnknown: true,
       browser: _browser,
     );
-    final response = await sendForJson(
+    return sendForParsed(
       () => _dio.post<String>(
         '${_pathOf(id)}/interview',
         options: _plainBody.copyWith(
@@ -239,8 +246,8 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
       ),
       action: action,
       family: failures,
+      map: _mapInterviewResult,
     );
-    return _interviewResult(response, action: action, family: failures);
   }
 
   @override
@@ -250,10 +257,12 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
     int page = 1,
     int limit = DataGatewayRemoteDataSource.languageLinkPageSize,
   }) async {
-    _checkPaging(
+    checkPathId(id);
+    checkPage(
       page: page,
       limit: limit,
-      ceiling: DataGatewayRemoteDataSource.maxPageSize,
+      maxSize: DataGatewayRemoteDataSource.maxPageSize,
+      maxDepth: serverMaxPageDepth,
     );
     if (statuses != null && statuses.isEmpty) {
       throw ArgumentError.value(
@@ -269,7 +278,7 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
 
     const action = 'Language link list';
     const failures = _GatewayFailures(rowRoute: true);
-    final response = await sendForJson(
+    return sendForParsed(
       () => _dio.get<String>(
         _languageLinksPath(id),
         options: _plainBody,
@@ -283,17 +292,11 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
       ),
       action: action,
       family: failures,
-    );
-
-    return parseRemote(
-      failures,
-      () => PaginatedResult.fromEnvelope(
-        response.body,
+      map: (body) => PaginatedResult.fromEnvelope(
+        body,
         key: 'languageLinks',
         item: _mapLanguageLink,
       ),
-      action: action,
-      status: response.status,
     );
   }
 
@@ -303,9 +306,12 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
     String linkId,
     String tagId,
   ) async {
+    checkPathId(id);
+    checkPathId(linkId, name: 'linkId');
+
     const action = 'Language link to tag';
     const failures = _GatewayFailures(rowRoute: true);
-    final response = await sendForJson(
+    return sendForParsed(
       () => _dio.post<String>(
         '${_languageLinkPath(id, linkId)}/link',
         options: _plainBody,
@@ -313,38 +319,44 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
       ),
       action: action,
       family: failures,
+      map: _mapLanguageLinkResult,
     );
-    return _languageLinkResult(response, action: action, family: failures);
   }
 
   @override
   Future<LanguageLink> ignoreLanguageLink(String id, String linkId) async {
+    checkPathId(id);
+    checkPathId(linkId, name: 'linkId');
+
     const action = 'Language link ignore';
     const failures = _GatewayFailures(rowRoute: true);
-    final response = await sendForJson(
+    return sendForParsed(
       () => _dio.post<String>(
         '${_languageLinkPath(id, linkId)}/ignore',
         options: _plainBody,
       ),
       action: action,
       family: failures,
+      map: _mapLanguageLinkResult,
     );
-    return _languageLinkResult(response, action: action, family: failures);
   }
 
   @override
   Future<LanguageLink> acceptLanguageLink(String id, String linkId) async {
+    checkPathId(id);
+    checkPathId(linkId, name: 'linkId');
+
     const action = 'Language link accept';
     const failures = _GatewayFailures(rowRoute: true);
-    final response = await sendForJson(
+    return sendForParsed(
       () => _dio.post<String>(
         '${_languageLinkPath(id, linkId)}/accept',
         options: _plainBody,
       ),
       action: action,
       family: failures,
+      map: _mapLanguageLinkResult,
     );
-    return _languageLinkResult(response, action: action, family: failures);
   }
 
   @override
@@ -353,10 +365,11 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
     int page = 1,
     int limit = DataGatewayRemoteDataSource.languageTagPageSize,
   }) async {
-    _checkPaging(
+    checkPage(
       page: page,
       limit: limit,
-      ceiling: DataGatewayRemoteDataSource.languageTagPageSize,
+      maxSize: DataGatewayRemoteDataSource.languageTagPageSize,
+      maxDepth: serverMaxPageDepth,
     );
     // The server matches the text as sent, so a stray space would match
     // nothing. A blank name filters nothing, so it is left out.
@@ -367,7 +380,7 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
     // absent for a caller who reached it, so a 404 here means the route is
     // not deployed.
     const failures = _GatewayFailures(rowRoute: false);
-    final response = await sendForJson(
+    return sendForParsed(
       () => _dio.get<String>(
         _languagesPath,
         options: _plainBody,
@@ -379,15 +392,11 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
       ),
       action: action,
       family: failures,
-    );
-
-    return parseRemote(
-      failures,
-      () {
+      map: (body) {
         // The server pages languages, so the page is read as one, and its
         // tags are flattened afterwards. `meta` stays the languages'.
         final languages = PaginatedResult.fromEnvelope(
-          response.body,
+          body,
           key: 'languages',
           item: _languageTags,
         );
@@ -396,8 +405,6 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
           meta: languages.meta,
         );
       },
-      action: action,
-      status: response.status,
     );
   }
 
@@ -411,16 +418,11 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
 
   /// Reads `{ dataGateway, connection_* | disconnection_* }`, the body every
   /// change route answers with.
-  DataGatewayChangeResult _changeResult(
-    RemoteJson response, {
-    required String action,
-    required _GatewayFailures family,
-  }) => parseRemote(
-    family,
-    () {
-      final body = response.body;
-      return DataGatewayChangeResult(
-        dataGateway: _mapDataGateway(_dataGatewayObject(body)),
+  static DataGatewayChangeResult _mapChangeResult(Map<String, dynamic> body) =>
+      DataGatewayChangeResult(
+        dataGateway: _mapDataGateway(
+          requireObject(body['dataGateway'], 'dataGateway'),
+        ),
         connectionAttempt:
             _attempt(
               body,
@@ -435,67 +437,31 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
               action: DataGatewayConnectionAction.disconnect,
             ),
       );
-    },
-    action: action,
-    status: response.status,
-  );
 
   /// Reads `{ dataGateway, interview_attempt, interview_response }`, the body
   /// the interview route answers with.
   ///
   /// `interview_attempt` is always true there, so it says nothing and is not
   /// read.
-  DataGatewayInterviewResult _interviewResult(
-    RemoteJson response, {
-    required String action,
-    required _GatewayFailures family,
-  }) => parseRemote(
-    family,
-    () {
-      final body = response.body;
-      final answer = body['interview_response'];
-      if (answer is! Map<String, dynamic>) {
-        throw const FormatException(
-          'response is missing an "interview_response" object',
-        );
-      }
-      return DataGatewayInterviewResult(
-        dataGateway: _mapDataGateway(_dataGatewayObject(body)),
-        succeeded: answer['success'] as bool,
-      );
-    },
-    action: action,
-    status: response.status,
-  );
+  static DataGatewayInterviewResult _mapInterviewResult(
+    Map<String, dynamic> body,
+  ) {
+    final answer = requireObject(
+      body['interview_response'],
+      'interview_response',
+    );
+    return DataGatewayInterviewResult(
+      dataGateway: _mapDataGateway(
+        requireObject(body['dataGateway'], 'dataGateway'),
+      ),
+      succeeded: answer['success'] as bool,
+    );
+  }
 
   /// Reads `{ languageLink }`, the body every language link action answers
   /// with: the link as it stands afterwards.
-  LanguageLink _languageLinkResult(
-    RemoteJson response, {
-    required String action,
-    required _GatewayFailures family,
-  }) => parseRemote(
-    family,
-    () {
-      final row = response.body['languageLink'];
-      if (row is! Map<String, dynamic>) {
-        throw const FormatException(
-          'response is missing a "languageLink" object',
-        );
-      }
-      return _mapLanguageLink(row);
-    },
-    action: action,
-    status: response.status,
-  );
-
-  static Map<String, dynamic> _dataGatewayObject(Map<String, dynamic> body) {
-    final row = body['dataGateway'];
-    if (row is! Map<String, dynamic>) {
-      throw const FormatException('response is missing a "dataGateway" object');
-    }
-    return row;
-  }
+  static LanguageLink _mapLanguageLinkResult(Map<String, dynamic> body) =>
+      _mapLanguageLink(requireObject(body['languageLink'], 'languageLink'));
 
   /// The attempt [attemptKey] reports, or null when the server made none.
   ///
@@ -553,8 +519,8 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
     final failure = json['failure'] as Map<String, dynamic>?;
     return DataGatewayInterviewStatus(
       interviewed: json['interviewed'] as bool,
-      firstInterviewedAt: _dateOrNull(json['firstInterviewedAt']),
-      lastInterviewedAt: _dateOrNull(json['lastInterviewedAt']),
+      firstInterviewedAt: dateOrNull(json['firstInterviewedAt']),
+      lastInterviewedAt: dateOrNull(json['lastInterviewedAt']),
       failure: failure == null
           ? null
           : DataGatewayInterviewFailure(
@@ -570,7 +536,7 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
     final failure = json['failure'] as Map<String, dynamic>?;
     return DataGatewaySection(
       capability: json['capability'] as String,
-      lastLoadedAt: _dateOrNull(json['lastLoadedAt']),
+      lastLoadedAt: dateOrNull(json['lastLoadedAt']),
       failure: failure == null
           ? null
           : DataGatewaySectionFailure(
@@ -585,9 +551,6 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
   /// Capability names, kept as the server sent them (#457). Copied here, so a
   /// name that is not a string fails the parse rather than a later read.
   static List<String> _names(Object? wire) => List<String>.from(wire! as List);
-
-  static DateTime? _dateOrNull(Object? wire) =>
-      wire == null ? null : DateTime.parse(wire as String);
 
   /// Maps a server row to [LanguageLink], field by field. Of the columns the
   /// server sends, it reads only the ones the model holds.
@@ -623,26 +586,6 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
   ];
 
   // ── Guards: requests the server is guaranteed to reject ─────────────
-
-  /// [ceiling] is the route's own: the catalogue allows smaller pages than the
-  /// DataGateway routes do.
-  void _checkPaging({
-    required int page,
-    required int limit,
-    required int ceiling,
-  }) {
-    if (limit < 1 || limit > ceiling) {
-      throw ArgumentError.value(
-        limit,
-        'limit',
-        'must be between 1 and $ceiling (the server rejects a larger page '
-            'rather than clamping it)',
-      );
-    }
-    if (page < 1) {
-      throw ArgumentError.value(page, 'page', 'is 1-based');
-    }
-  }
 
   void _checkPort(int port) {
     if (port < 1 || port > 65535) {
