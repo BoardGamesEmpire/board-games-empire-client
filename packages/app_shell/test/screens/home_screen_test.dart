@@ -54,12 +54,18 @@ Future<void> _pumpSections(
 }
 
 /// Counts how many times it has been mounted, and can take focus on a node of
-/// its own, as a section's own controls do.
+/// its own, as a section's own controls do. It draws [child], or a section of
+/// a fixed height without one.
 class _CountsMounts extends StatefulWidget {
-  const _CountsMounts({required this.onMount, this.autofocus = false});
+  const _CountsMounts({
+    required this.onMount,
+    this.autofocus = false,
+    this.child,
+  });
 
   final VoidCallback onMount;
   final bool autofocus;
+  final Widget? child;
 
   @override
   State<_CountsMounts> createState() => _CountsMountsState();
@@ -73,8 +79,10 @@ class _CountsMountsState extends State<_CountsMounts> {
   }
 
   @override
-  Widget build(BuildContext context) =>
-      Focus(autofocus: widget.autofocus, child: const SizedBox(height: 100));
+  Widget build(BuildContext context) => Focus(
+    autofocus: widget.autofocus,
+    child: widget.child ?? const SizedBox(height: 100),
+  );
 }
 
 void main() {
@@ -293,6 +301,221 @@ void main() {
         expect(tester.takeException(), isNull);
       });
     }
+  });
+
+  group('a section that draws nothing takes no gap (#674)', () {
+    const nothing = SizedBox.shrink();
+    double xl(WidgetTester tester) =>
+        BgeTokens.of(tester.element(find.byKey(HomeScreen.sectionsKey)))
+            .spaceXl;
+    Rect rect(WidgetTester tester, Key key) => tester.getRect(find.byKey(key));
+    // The space from the bottom of [above] to the top of [below].
+    double gap(WidgetTester tester, Key above, Key below) =>
+        rect(tester, below).top - rect(tester, above).bottom;
+
+    testWidgets('drawn sections are one xl gap apart', (tester) async {
+      await _pumpSections(
+        tester,
+        upcomingEvents: _section(_events),
+        stats: _section(_stats),
+        newestGames: _section(_newest),
+        somethingToPlay: _section(_toPlay),
+      );
+
+      final pairs = [(_events, _stats), (_stats, _newest), (_newest, _toPlay)];
+      for (final (previous, next) in pairs) {
+        expect(
+          gap(tester, previous, next),
+          xl(tester),
+          reason: '$previous to $next',
+        );
+      }
+    });
+
+    testWidgets('a blank stats card leaves one gap between events and the '
+        'shelf', (tester) async {
+      await _pumpSections(
+        tester,
+        upcomingEvents: _section(_events),
+        stats: nothing,
+        newestGames: _section(_newest),
+        somethingToPlay: _section(_toPlay),
+      );
+
+      expect(gap(tester, _events, _newest), xl(tester));
+    });
+
+    testWidgets('a refused shelf leaves one gap between stats and something '
+        'to play', (tester) async {
+      await _pumpSections(
+        tester,
+        upcomingEvents: _section(_events),
+        stats: _section(_stats),
+        newestGames: nothing,
+        somethingToPlay: _section(_toPlay),
+      );
+
+      expect(gap(tester, _stats, _toPlay), xl(tester));
+    });
+
+    testWidgets('a last section that draws nothing leaves no gap at the end', (
+      tester,
+    ) async {
+      await _pumpSections(
+        tester,
+        upcomingEvents: _section(_events),
+        stats: _section(_stats),
+        newestGames: _section(_newest),
+        somethingToPlay: nothing,
+      );
+
+      expect(
+        rect(tester, HomeScreen.sectionsKey).bottom,
+        rect(tester, _newest).bottom,
+      );
+    });
+
+    testWidgets('a first section that draws nothing leaves no gap at the top', (
+      tester,
+    ) async {
+      await _pumpSections(
+        tester,
+        upcomingEvents: nothing,
+        stats: _section(_stats),
+        newestGames: _section(_newest),
+      );
+
+      expect(
+        rect(tester, _stats).top,
+        rect(tester, HomeScreen.sectionsKey).top,
+      );
+    });
+
+    testWidgets('a section that starts drawing gains its gap in the same '
+        'frame, and keeps its state', (tester) async {
+      final drawing = ValueNotifier(false);
+      addTearDown(drawing.dispose);
+      var mounts = 0;
+
+      await _pumpSections(
+        tester,
+        upcomingEvents: _section(_events),
+        stats: _CountsMounts(
+          onMount: () => mounts++,
+          child: ValueListenableBuilder(
+            valueListenable: drawing,
+            builder: (context, drawn, _) => drawn ? _section(_stats) : nothing,
+          ),
+        ),
+        newestGames: _section(_newest),
+      );
+      expect(gap(tester, _events, _newest), xl(tester));
+
+      drawing.value = true;
+      await tester.pump();
+      expect(gap(tester, _events, _stats), xl(tester));
+      expect(gap(tester, _stats, _newest), xl(tester));
+
+      drawing.value = false;
+      await tester.pump();
+      expect(gap(tester, _events, _newest), xl(tester));
+      expect(mounts, 1);
+    });
+
+    testWidgets('paints its sections', (tester) async {
+      const colour = Color(0xFF00FF00);
+      await _pumpSections(
+        tester,
+        upcomingEvents: _section(_events),
+        stats: nothing,
+        newestGames: const ColoredBox(
+          color: colour,
+          child: SizedBox(height: 100),
+        ),
+      );
+
+      expect(
+        tester.renderObject(find.byKey(HomeScreen.sectionsKey)),
+        paints..rect(color: colour),
+      );
+    });
+
+    testWidgets("a tap reaches a section's control", (tester) async {
+      var tapped = 0;
+      await _pumpSections(
+        tester,
+        upcomingEvents: _section(_events),
+        stats: nothing,
+        newestGames: TextButton(
+          onPressed: () => tapped++,
+          child: const Text('See all'),
+        ),
+      );
+
+      await tester.tap(find.text('See all'));
+      expect(tapped, 1);
+    });
+
+    testWidgets('intrinsic and dry layout agree with layout', (tester) async {
+      await _pumpSections(
+        tester,
+        upcomingEvents: _section(_events),
+        stats: nothing,
+        newestGames: _section(_newest),
+      );
+
+      final box = tester.renderObject<RenderBox>(
+        find.byKey(HomeScreen.sectionsKey),
+      );
+      final width = box.size.width;
+      expect(box.size.height, 200 + xl(tester));
+      expect(box.getMinIntrinsicHeight(width), box.size.height);
+      expect(box.getMaxIntrinsicHeight(width), box.size.height);
+      expect(
+        box.getDryLayout(BoxConstraints(maxWidth: width)).height,
+        box.size.height,
+      );
+    });
+
+    testWidgets('dry and laid-out baselines agree', (tester) async {
+      await _pumpSections(
+        tester,
+        upcomingEvents: _section(_events),
+        stats: nothing,
+        newestGames: const Text('Recently added'),
+        // A section that can't be dry laid out, as the shelves can't: the
+        // dry baseline must stop at the text and never ask it.
+        somethingToPlay: LayoutBuilder(
+          builder: (context, constraints) => const SizedBox(height: 100),
+        ),
+      );
+
+      final box = tester.renderObject<RenderBox>(
+        find.byKey(HomeScreen.sectionsKey),
+      );
+      final text = tester.renderObject<RenderBox>(find.text('Recently added'));
+      const alphabetic = TextBaseline.alphabetic;
+      // Only a parent laying a box out may ask for its baseline; this lifts
+      // that check as the framework's own intrinsic checks do.
+      final double? baseline;
+      final double textBaseline;
+      RenderObject.debugCheckingIntrinsics = true;
+      try {
+        baseline = box.getDistanceToBaseline(alphabetic);
+        textBaseline = text.getDistanceToBaseline(alphabetic)!;
+      } finally {
+        RenderObject.debugCheckingIntrinsics = false;
+      }
+      // The first section with a baseline is the text, one gap below events.
+      expect(baseline, 100 + xl(tester) + textBaseline);
+      expect(
+        box.getDryBaseline(
+          BoxConstraints(maxWidth: box.size.width),
+          alphabetic,
+        ),
+        baseline,
+      );
+    });
   });
 
   // The sections themselves are composed in `BgeApp`, and each is audited in
