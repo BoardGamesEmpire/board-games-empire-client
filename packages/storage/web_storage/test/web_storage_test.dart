@@ -17,22 +17,21 @@
 // to simulate, which is why the assertion below is on `missingFeatures` being
 // non-empty while persistence stays real.
 //
-// Nothing covers the OPFS path — not here and not elsewhere — and that is the
-// state of the deployment rather than a gap in this file:
+// Nothing covers the OPFS path in this file, and that is a property of the
+// harness rather than a gap in it:
 //
 //   * `opfsShared` needs a shared worker that can spawn a dedicated one,
 //     which only Firefox implements today (Chrome: crbug.com/1088481; Safari
-//     likewise). Firefox users get OPFS; nobody else does.
+//     likewise).
 //   * `opfsLocks` needs `SharedArrayBuffer`, which needs cross-origin
-//     isolation. Nothing in this repo sends `Cross-Origin-Opener-Policy` or
-//     `Cross-Origin-Embedder-Policy` — `tool/dev_proxy/dev_proxy.mjs`
-//     forwards upstream response headers untouched, and `flutter run
-//     -d web-server` sends neither — so this mode is unreachable in
-//     production as it stands, not merely in the test harness.
+//     isolation. The app is served isolated by local runs through
+//     `tool/dev_proxy/dev_proxy.mjs` (#320), and production is to get the same
+//     headers from the API server (backend#1502), so Chromium reaches
+//     `opfsLocks` there. This harness is still not
+//     isolated, so it never does.
 //
-// Serving those two headers is what would unlock `opfsLocks`, the better of
-// the two storage mechanisms. Until that is decided, IndexedDB is the real
-// production path on Chrome and Safari, and it is what this file exercises.
+// So IndexedDB is the path this file exercises, even though it is no longer
+// the only one the app takes on Chrome.
 @TestOn('browser')
 library;
 

@@ -14,6 +14,22 @@
 // never the Flutter dev server directly. No client code changes are required —
 // this is purely local tooling.
 //
+// Cross-origin isolation (#320): everything forwarded from the Flutter dev
+// server also carries
+//   Cross-Origin-Opener-Policy:   same-origin
+//   Cross-Origin-Embedder-Policy: credentialless
+// so a local run reaches the storage mode production is to get (OPFS on
+// Chromium). Production is to get the same headers from the API server
+// (backend#1502), which serves the bundled client. It is `credentialless` rather than
+// `require-corp` because cover images load from hosts that send no
+// Cross-Origin-Resource-Policy, and `require-corp` would blank them.
+// Backend responses are left alone. Set BGE_CROSS_ORIGIN_ISOLATION=off to send
+// neither header, to reproduce `unsafeIndexedDb` or Safari-like storage on a
+// device. Note that a browser profile that opened its database under isolation
+// moves it to OPFS, and serving without isolation afterwards opens a new,
+// empty IndexedDB database: the OPFS data is still there but unreachable until
+// isolation is back. Use a throwaway profile to flip the switch.
+//
 // Requires Node 18+ (built-in modules only; nothing to install).
 
 import http from 'node:http';
@@ -22,6 +38,13 @@ import net from 'node:net';
 const PROXY_PORT = Number(process.env.BGE_PROXY_PORT ?? 8080);
 const WEB_PORT = Number(process.env.BGE_WEB_PORT ?? 5000); // flutter dev server
 const BACKEND_PORT = Number(process.env.BGE_BACKEND_PORT ?? 33_333); // bge backend default port
+
+// Cross-origin isolation (#320). On unless explicitly switched off.
+const CROSS_ORIGIN_ISOLATION = process.env.BGE_CROSS_ORIGIN_ISOLATION !== 'off';
+const ISOLATION_HEADERS = {
+  'cross-origin-opener-policy': 'same-origin',
+  'cross-origin-embedder-policy': 'credentialless',
+};
 
 // Path prefixes routed to the backend. Extend if the backend serves auth or
 // other API surface outside these. '/socket.io' is the realtime socket the
@@ -67,7 +90,14 @@ const server = http.createServer((req, res) => {
       headers: req.headers,
     },
     (upstreamRes) => {
-      res.writeHead(upstreamRes.statusCode ?? 502, upstreamRes.headers);
+      // Only the Flutter dev server's responses are isolated; the backend sets
+      // its own headers. Node lower-cases incoming header names, so the merge
+      // replaces any COOP/COEP the dev server sent rather than doubling it.
+      const headers =
+        CROSS_ORIGIN_ISOLATION && port === WEB_PORT
+          ? { ...upstreamRes.headers, ...ISOLATION_HEADERS }
+          : upstreamRes.headers;
+      res.writeHead(upstreamRes.statusCode ?? 502, headers);
       upstreamRes.pipe(res);
       // A reset AFTER the body starts streaming can't become a 502 — the
       // status line is already on the wire — so just tear the response down.
@@ -132,6 +162,8 @@ server.listen(PROXY_PORT, 'localhost', () => {
     `[bge dev proxy] http://localhost:${PROXY_PORT}  ->  ` +
     `web:${WEB_PORT}  api:${BACKEND_PORT}\n` +
     `[bge dev proxy] backend paths: ${BACKEND_PREFIXES.join(', ')}\n` +
+    `[bge dev proxy] cross-origin isolation (COOP same-origin, COEP credentialless) on web responses: ` +
+    `${CROSS_ORIGIN_ISOLATION ? 'on' : 'OFF (BGE_CROSS_ORIGIN_ISOLATION=off)'}\n` +
     `[bge dev proxy] open the browser at http://localhost:${PROXY_PORT} ` +
     `(NOT :${WEB_PORT})\n`,
   );
