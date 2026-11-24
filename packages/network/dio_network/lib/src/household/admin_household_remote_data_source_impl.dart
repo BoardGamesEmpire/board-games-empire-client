@@ -37,17 +37,12 @@ class AdminHouseholdRemoteDataSourceImpl
     int page = 1,
     int limit = AdminHouseholdRemoteDataSource.pageSize,
   }) async {
-    if (limit < 1 || limit > AdminHouseholdRemoteDataSource.maxPageSize) {
-      throw ArgumentError.value(
-        limit,
-        'limit',
-        'must be between 1 and ${AdminHouseholdRemoteDataSource.maxPageSize} '
-            '(the server rejects a larger page rather than clamping it)',
-      );
-    }
-    if (page < 1) {
-      throw ArgumentError.value(page, 'page', 'is 1-based');
-    }
+    checkPage(
+      page: page,
+      limit: limit,
+      maxSize: AdminHouseholdRemoteDataSource.maxPageSize,
+      maxDepth: serverMaxPageDepth,
+    );
     if (!sort.allowedWith(status)) {
       throw ArgumentError.value(
         sort,

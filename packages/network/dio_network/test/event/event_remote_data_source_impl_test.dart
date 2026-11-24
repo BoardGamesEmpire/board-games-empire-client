@@ -5973,9 +5973,8 @@ void main() {
   });
 
   group('path ids (#881)', () {
-    test('every id refuses a dot segment before sending', () async {
-      // The empty id is covered route by route above; "." and ".." resolve
-      // to another route just as surely.
+    test('every id refuses an empty or dot segment before sending', () async {
+      // Each of the three resolves the request to another route.
       final remote = answering('{}');
       const draft = EventOccurrenceDraft(label: 'x');
       final update = OccurrenceUpdate(clearLabel: true);
@@ -6082,10 +6081,12 @@ void main() {
         ('nominationId', () => remote.approveNomination('e1', id)),
         ('eventId', () => remote.rejectNomination(id, 'n1')),
         ('nominationId', () => remote.rejectNomination('e1', id)),
+        ('eventId', () => remote.resolveNomination(id, 'n1')),
+        ('nominationId', () => remote.resolveNomination('e1', id)),
         ('eventId', () => remote.fetchAvailabilitySummary(id)),
       ];
 
-      for (final id in ['.', '..']) {
+      for (final id in ['', '.', '..']) {
         for (final (name, call) in calls(id)) {
           // Called bare, not through Future.sync: the refusal must arrive
           // through the returned Future, so a call that throws synchronously

@@ -209,6 +209,9 @@ void main() {
             'page 0': (r) => r.fetchPage(page: 0),
             'limit 101': (r) => r.fetchPage(limit: 101),
             'limit 0': (r) => r.fetchPage(limit: 0),
+            // (page - 1) * limit must not exceed 100000.
+            'page 1002 at limit 100': (r) =>
+                r.fetchPage(page: 1002, limit: 100),
           };
       for (final entry in calls.entries) {
         test(entry.key, () async {
@@ -218,6 +221,14 @@ void main() {
           expect(adapter.sent, isEmpty);
         });
       }
+    });
+
+    test('sends the last page inside the depth ceiling', () async {
+      final remote = answering(_page([]));
+
+      await remote.fetchPage(page: 1001, limit: 100);
+
+      expect(adapter.sent.single.query['page'], 1001);
     });
 
     test('sends a 100-character ASCII query', () async {
