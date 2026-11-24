@@ -77,6 +77,11 @@ Future<T?> showBgePopup<T>(
       builder: named,
       themes: themes,
       form: BgePopupForm._forWindow(context),
+      // Both forms' barrier colours and labels are settled here, from the
+      // opener's theme and localizations, as `showModalBottomSheet` and
+      // `showDialog` settle theirs. The barrier is built beside the page,
+      // outside [themes], so read there it would miss a theme the opener
+      // is under.
       sheetTraits: _FormTraits.sheet(context),
       dialogTraits: _FormTraits.dialog(context),
       coverObserver: coverObserver,
