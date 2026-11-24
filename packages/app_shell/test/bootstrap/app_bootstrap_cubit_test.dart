@@ -579,6 +579,28 @@ void main() {
         },
       );
 
+      test('a bootstrap that fails with LocalDataInUseError never offers the '
+          'reset (#686)', () async {
+        // Web counts a failure toward the offer when the platform says so,
+        // and says so of anything here. The in-use failure is the cubit's
+        // own exception: closing the other tab fixes it, deleting the data
+        // doesn't.
+        final bootstrap = FakePlatformBootstrap(
+          outcomes: [const LocalDataInUseError()],
+          countsTowardResetWhen: (_) => true,
+        );
+        final cubit = buildCubit(bootstrap: bootstrap, resetOfferThreshold: 2);
+        addTearDown(cubit.close);
+
+        await cubit.initialize();
+        await cubit.retry();
+        await cubit.retry();
+
+        expect(failedOf(cubit).attemptCount, 3);
+        expect(failedOf(cubit).error, isA<LocalDataInUseError>());
+        expect(failedOf(cubit).canOfferReset, isFalse);
+      });
+
       test(
         'a reset blocked by other tabs fails with the in-use message',
         () async {

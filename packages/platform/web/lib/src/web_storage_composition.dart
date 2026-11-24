@@ -2,6 +2,7 @@ import 'dart:js_interop_unsafe';
 import 'dart:ui_web' as ui_web;
 
 import 'package:app_shell/app_shell.dart' show LocalDataInUseError;
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/sync.dart' show CrossTabLock;
 import 'package:models/domain.dart' show ServerIdentity;
@@ -78,13 +79,65 @@ Future<ActiveServerScope> buildWebServerScope({
 /// Named, not inline in [buildWebServerScope], so that a test can run it over
 /// a real container and see that the lock is registered along with the
 /// database.
+///
+/// Throws [LocalDataInUseError] when the database is on `unsafeIndexedDb`
+/// and another tab holds it (#686): the bootstrap's in-use screen shows it,
+/// asks to close the other tabs, and never offers the reset for it. Nothing
+/// is registered then, the [CrossTabLock] included.
+///
+/// [installer] replaces the production [WebStorageInstaller], for a test to
+/// open a database that lands on `unsafeIndexedDb` with another tab holding
+/// it. The production one takes its hold through
+/// [WarnedWebDatabaseExclusivity].
 Future<void> installWebStorage(
   DependencyContainer container,
-  ServerIdentity identity,
-) async {
-  await const WebStorageInstaller(onReport: reportWebStorage)
-      .install(container, identity);
+  ServerIdentity identity, {
+  @visibleForTesting
+  WebStorageInstaller installer = const WebStorageInstaller(
+    onReport: reportWebStorage,
+    exclusivity: WarnedWebDatabaseExclusivity(),
+  ),
+}) async {
+  try {
+    await installer.install(container, identity);
+  } on WebDatabaseInUse catch (_, stackTrace) {
+    Error.throwWithStackTrace(const LocalDataInUseError(), stackTrace);
+  }
   registerWebCrossTabLock(container);
+}
+
+/// The browser's Web Locks as a [WebDatabaseExclusivity] that says so when it
+/// cannot take the hold (#686).
+///
+/// A tab with no hold to take (no `navigator.locks`, or a lock request that
+/// failed for a reason other than the wait running out) opens the database as
+/// it did before #686, and nothing else shows it. `web_storage` has no logger,
+/// by design, so the warning is made here, on the logger [reportWebStorage]
+/// uses. Every answer, the unavailable one included, passes through unchanged.
+@visibleForTesting
+final class WarnedWebDatabaseExclusivity implements WebDatabaseExclusivity {
+  /// Wraps [_inner], the browser's Web Locks unless a test passes another.
+  const WarnedWebDatabaseExclusivity([
+    this._inner = const WebLocksDatabaseExclusivity(),
+  ]);
+
+  final WebDatabaseExclusivity _inner;
+
+  @override
+  Future<WebDatabaseHold> acquire(
+    String databaseName, {
+    required Duration wait,
+  }) async {
+    final hold = await _inner.acquire(databaseName, wait: wait);
+    if (hold is WebDatabaseHoldUnavailable) {
+      _logger.warn(
+        'this tab opened $databaseName without the one-tab hold (no Web '
+        'Locks in this browser context, or the lock request failed), so '
+        'another tab can open it too',
+      );
+    }
+    return hold;
+  }
 }
 
 /// Registers the browser's Web Lock in [container] as the [CrossTabLock] the
@@ -272,10 +325,13 @@ final _logger = BgeLogger('bge.platform.web_storage');
 ///     mechanisms was chosen is still worth recording: it is the first thing
 ///     to want when a report says "my data vanished".
 ///   * [WebStoragePersistence.unsafe] → `warn`. Data persists, but each tab
-///     works on its own copy and writes it back over the others', and no
-///     lock can change that. With a second tab open, the sync queue can
-///     deliver an op twice or out of order, and leave a row marked clean
-///     that disagrees with the server (#447, #686).
+///     works on its own copy and writes it back over the others'. Where the
+///     browser grants this tab its Web Lock, the installer lets one tab at a
+///     time open the database, so a second tab shows as in use instead
+///     (#686). Where it cannot, [WarnedWebDatabaseExclusivity] warns
+///     separately, and nothing keeps a second tab out: the sync queue can
+///     deliver an op twice or out of order, and leave a row marked clean that
+///     disagrees with the server (#447, #686).
 ///   * [WebStoragePersistence.ephemeral] → `error`. Nothing is stored at all.
 ///     Not thrown, deliberately: a browser this limited can still run the
 ///     app against the server (web's server is the serving origin and is
@@ -294,9 +350,11 @@ void reportWebStorage(WebDatabaseOpening opening) {
       _logger.info(message, context: context);
     case WebStoragePersistence.unsafe:
       _logger.warn(
-        '$message — each tab works on its own copy of this database, so a '
-        "second tab overwrites this one's writes, and the sync queue can "
-        'deliver an op twice or out of order',
+        '$message — only one tab at a time opens this database when the '
+        'browser grants this tab its Web Lock; otherwise a separate warning '
+        'says so, and each tab works on its own copy, so a second tab '
+        "overwrites this one's writes, and the sync queue can deliver an op "
+        'twice or out of order',
         context: context,
       );
     case WebStoragePersistence.ephemeral:
