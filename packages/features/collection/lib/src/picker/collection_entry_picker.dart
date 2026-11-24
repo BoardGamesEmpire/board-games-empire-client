@@ -156,8 +156,9 @@ abstract final class CollectionEntryPicker {
 /// Capped, the dialog is as wide as its content. A sheet would be too, as
 /// Flutter lays a bottom sheet out, and float off a phone's edges, so in a
 /// sheet the content fills the width and centres itself. Which of the two it
-/// is in comes from its route, not the window's width, so it agrees with the
-/// form the pop-up opened in.
+/// is in comes from the pop-up ([BgePopupForm.maybeOf]), not the window's
+/// width, so it agrees with the form the pop-up is drawn in, and changes
+/// with it when the window is resized (#733).
 class _CollectionEntryPickerContent extends StatefulWidget {
   const _CollectionEntryPickerContent({
     required this.title,
@@ -237,7 +238,7 @@ class _CollectionEntryPickerContentState
 
     final maxWidth =
         2 * _CollectionEntryPickerContent._maxCoverExtent + tokens.spaceMd;
-    final inDialog = ModalRoute.of(context) is BgePopupDialogRoute;
+    final inDialog = BgePopupForm.maybeOf(context) == BgePopupForm.dialog;
 
     return SingleChildScrollView(
       padding: EdgeInsets.fromLTRB(

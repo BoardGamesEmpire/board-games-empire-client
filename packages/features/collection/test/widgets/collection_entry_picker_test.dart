@@ -258,7 +258,14 @@ void main() {
     final tile = tester.element(_tile('e-1'));
     final focus = FocusManager.instance.primaryFocus!;
     expect(focus, same(FocusScope.of(tile)));
-    expect(ModalRoute.of(focus.context!), isA<BgePopupSheetRoute<void>>());
+    expect(
+      ModalRoute.of(focus.context!),
+      isA<BgePopupRoute<void>>().having(
+        (route) => route.form,
+        'form',
+        BgePopupForm.sheet,
+      ),
+    );
     expect(ModalRoute.of(focus.context!), same(ModalRoute.of(tile)));
 
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
@@ -359,6 +366,41 @@ void main() {
     final second = tester.getRect(_tile('e-3'));
     expect(sheet.width, 400);
     expect(first.left - sheet.left, sheet.right - second.right);
+  });
+
+  // The pop-up changes form with the window while it is open, and the
+  // picker's width follows the form it is in then (#733).
+  testWidgets('resized while open, it is as wide as its tiles in the dialog '
+      'and spans the window in the sheet', (tester) async {
+    final host = _Host();
+    await host.pump(tester, [_switchPhysical, _steam]);
+    await host.open(tester);
+    Rect surface(Type chrome) => tester.getRect(
+      find
+          .descendant(of: find.byType(chrome), matching: find.byType(Material))
+          .first,
+    );
+    final padding = BgeTokens.standard.spaceMd;
+
+    tester.view.physicalSize = const Size(800, 600);
+    await tester.pump();
+
+    final dialog = surface(Dialog);
+    expect(find.byType(BottomSheet), findsNothing);
+    expect(dialog.width, lessThan(BgeTokens.standard.contentMaxWidth));
+    expect(tester.getRect(_tile('e-1')).left, dialog.left + padding);
+    expect(tester.getRect(_tile('e-3')).right, dialog.right - padding);
+
+    tester.view.physicalSize = const Size(400, 800);
+    await tester.pump();
+
+    final sheet = surface(BottomSheet);
+    expect(find.byType(Dialog), findsNothing);
+    expect(sheet.width, 400);
+    expect(
+      tester.getRect(_tile('e-1')).left - sheet.left,
+      sheet.right - tester.getRect(_tile('e-3')).right,
+    );
   });
 
   testWidgets('at 320 dp and 2.0 text a long platform label grows its row '
@@ -690,10 +732,8 @@ void main() {
 
             expect(tester.takeException(), isNull);
             expect(
-              ModalRoute.of(tester.element(_tile('e-1'))),
-              form == 'sheet'
-                  ? isA<BgePopupSheetRoute<void>>()
-                  : isA<BgePopupDialogRoute<void>>(),
+              BgePopupForm.maybeOf(tester.element(_tile('e-1'))),
+              form == 'sheet' ? BgePopupForm.sheet : BgePopupForm.dialog,
             );
             // The badge's words are drawn text with no node of their own, so
             // the guideline, which reads nodes whose label is one Text, can't

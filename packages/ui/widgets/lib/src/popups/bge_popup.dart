@@ -1,14 +1,36 @@
+import 'dart:ui' show SemanticsHitTestBehavior;
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
 /// Opens [builder]'s content as a pop-up over the page: a bottom sheet in a
-/// window narrower than [BgeTokens.breakpointMedium], and a dialog no wider
-/// than [BgeTokens.contentMaxWidth] from there up (#707).
+/// window narrower than [BgeTokens.breakpointMedium] (the one [context] is
+/// under), and a dialog no wider than [BgeTokens.contentMaxWidth] from there
+/// up (#707).
 ///
 /// A sheet at every width was the app's habit, but from 840dp up it is a wide
 /// strip along the bottom edge, where #707 asks for a dialog sized to its
 /// content.
+///
+/// **The form follows the window for as long as the pop-up is open** (#733).
+/// A sheet whose window is widened past the breakpoint, or rotated to
+/// landscape, is redrawn as a dialog, and a dialog whose window is narrowed
+/// as a sheet. It is one route throughout ([BgePopupRoute]) and [builder]'s
+/// content is one subtree, so what the content holds survives the change:
+/// its state, its scroll position and the focus in it. Content that lays
+/// out differently in each form reads [BgePopupForm.maybeOf].
+///
+/// **The change of form is instant**: a resize is not animated. The
+/// entrance and the exit animate in the form the pop-up has when they run,
+/// so a sheet slides and a dialog fades. Only the sheet form can be dragged
+/// down to close.
+///
+/// For content authors: across a change of form the content's subtree is
+/// moved to a new parent under a [GlobalKey], so its [State]s are kept, but
+/// their [State.didChangeDependencies] runs again.
 ///
 /// **It goes on the root navigator, whatever [context] is under**, so its
 /// barrier covers everything drawn around the page as well as the page: the
@@ -39,8 +61,15 @@ Future<T?> showBgePopup<T>(
   // A Theme or IconTheme set between the root navigator and [context] would
   // not reach a route on the root navigator. Captured, the content keeps it.
   final themes = InheritedTheme.capture(from: context, to: navigator.context);
-  final localizations = MaterialLocalizations.of(context);
+  // The breakpoint is the opener's for the same reason. The page, the
+  // barrier and the transition are built where the root navigator's theme
+  // is, so they are given it rather than read it there.
+  final tokens = BgeTokens.of(context);
+  // A node of its own in both forms (`container`). Left to merge upwards,
+  // it joins a node of `Dialog`'s in dialog form, and is then a different
+  // node in each form: see `_PopupPage` for what that costs in a browser.
   Widget named(BuildContext context) => Semantics(
+    container: true,
     scopesRoute: true,
     namesRoute: true,
     explicitChildNodes: true,
@@ -48,28 +77,21 @@ Future<T?> showBgePopup<T>(
     child: builder(context),
   );
 
-  final narrow = BgeWindowClass.of(context) == BgeWindowClass.compact;
   return navigator.push<T>(
-    narrow
-        // The barrier as `showModalBottomSheet` gives it.
-        ? BgePopupSheetRoute<T>(
-            builder: named,
-            capturedThemes: themes,
-            barrierLabel: localizations.scrimLabel,
-            barrierOnTapHint: localizations.scrimOnTapHint(
-              localizations.bottomSheetLabel,
-            ),
-            modalBarrierColor: Theme.of(context)
-                .bottomSheetTheme
-                .modalBarrierColor,
-            coverObserver: coverObserver,
-          )
-        : BgePopupDialogRoute<T>(
-            context: context,
-            builder: named,
-            themes: themes,
-            coverObserver: coverObserver,
-          ),
+    BgePopupRoute<T>._(
+      builder: named,
+      themes: themes,
+      tokens: tokens,
+      form: BgePopupForm._forWindow(context, tokens),
+      // Both forms' barrier colours and labels are settled here, from the
+      // opener's theme and localizations, as `showModalBottomSheet` and
+      // `showDialog` settle theirs. The barrier is built beside the page,
+      // outside [themes], so read there it would miss a theme the opener
+      // is under.
+      sheetTraits: _FormTraits.sheet(context),
+      dialogTraits: _FormTraits.dialog(context),
+      coverObserver: coverObserver,
+    ),
   );
 }
 
@@ -302,65 +324,725 @@ class _Entrance {
   void _stopListening() => _animation.removeStatusListener(_changed);
 }
 
-/// [showBgePopup]'s bottom sheet, for a narrow window (#707).
-///
-/// It grows with its content up to the safe area, and has a drag handle.
-///
-/// The sheet's own safe area keeps it clear of the top and the sides only,
-/// so its surface reaches the bottom edge. Its content stops above the
-/// system navigation or the home indicator there, so the last action is
-/// never under it.
-class BgePopupSheetRoute<T> extends ModalBottomSheetRoute<T>
-    with BgeRemoveWhenCovered<T> {
-  /// A sheet showing [builder]'s content.
-  BgePopupSheetRoute({
-    required WidgetBuilder builder,
-    super.capturedThemes,
-    super.barrierLabel,
-    super.barrierOnTapHint,
-    super.modalBarrierColor,
-    super.settings,
-    this.coverObserver,
-  }) : super(
-         builder: (context) => SafeArea(top: false, child: builder(context)),
-         isScrollControlled: true,
-         showDragHandle: true,
-         useSafeArea: true,
-       );
+/// The form a [showBgePopup] pop-up is drawn in (#733).
+enum BgePopupForm {
+  /// A bottom sheet, in a window narrower than [BgeTokens.breakpointMedium].
+  sheet,
 
-  @override
-  final BgePopupCoverObserver? coverObserver;
+  /// A dialog, in a window from [BgeTokens.breakpointMedium] up.
+  dialog;
+
+  /// The form of the pop-up [context] is in, or null outside one.
+  ///
+  /// [context] is rebuilt when the pop-up changes form. `ModalRoute.of`
+  /// can't say which form it is in, and rebuilds nothing on a change: the
+  /// route is the same one in both.
+  static BgePopupForm? maybeOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<_PopupFormScope>()?.form;
+
+  /// The form a pop-up takes in the window [context] is in, against the
+  /// breakpoint in [tokens]. [context] is rebuilt when the window's width
+  /// changes.
+  static BgePopupForm _forWindow(BuildContext context, BgeTokens tokens) =>
+      BgeWindowClass.fromWidth(MediaQuery.sizeOf(context).width, tokens) ==
+          BgeWindowClass.compact
+      ? sheet
+      : dialog;
 }
 
-/// [showBgePopup]'s dialog, for a window from
-/// [BgeTokens.breakpointMedium] up (#707).
-///
-/// As wide as its content, up to the cap the app's dialog theme sets at
-/// [BgeTokens.contentMaxWidth], as for every other dialog.
-class BgePopupDialogRoute<T> extends DialogRoute<T>
-    with BgeRemoveWhenCovered<T> {
-  /// A dialog showing [builder]'s content.
-  BgePopupDialogRoute({
-    required super.context,
-    required WidgetBuilder builder,
-    super.themes,
-    super.barrierLabel,
-    super.settings,
-    this.coverObserver,
-  }) : _themedBarrierColor = DialogTheme.of(context).barrierColor,
-       super(
-         builder: (context) => Dialog(child: Builder(builder: builder)),
-         // As `showDialog` has it: Tab stays inside the dialog.
-         traversalEdgeBehavior: TraversalEdgeBehavior.closedLoop,
-       );
+/// Tells a pop-up's content which form it is drawn in.
+class _PopupFormScope extends InheritedWidget {
+  const _PopupFormScope({required this.form, required super.child});
 
-  final Color? _themedBarrierColor;
+  final BgePopupForm form;
+
+  @override
+  bool updateShouldNotify(_PopupFormScope oldWidget) => form != oldWidget.form;
+}
+
+/// What the pop-up's route answers in one of its forms: the barrier under
+/// it, how long it takes to arrive and to leave, and where Tab goes from
+/// its last control.
+///
+/// Each answer is the one Flutter's own route for that form gives, so the
+/// pop-up matches every other sheet and dialog in the app, which
+/// `showModalBottomSheet` and `showDialog` open. Flutter keeps a sheet's and
+/// a dialog's default barrier colour and their durations inside those
+/// routes, with no constant to read, so each is asked of a route that is
+/// never pushed.
+@immutable
+class _FormTraits {
+  const _FormTraits._({
+    required this.barrierColor,
+    required this.barrierLabel,
+    required this.barrierOnTapHint,
+    required this.transitionDuration,
+    required this.reverseTransitionDuration,
+    required this.traversalEdgeBehavior,
+  });
+
+  /// A sheet's, as `showModalBottomSheet` gives them under [context]'s
+  /// theme.
+  factory _FormTraits.sheet(BuildContext context) {
+    final localizations = MaterialLocalizations.of(context);
+    return _FormTraits._of(
+      ModalBottomSheetRoute<void>(
+        builder: _nothing,
+        isScrollControlled: true,
+        barrierLabel: localizations.scrimLabel,
+        modalBarrierColor: Theme.of(context).bottomSheetTheme.modalBarrierColor,
+      ),
+      barrierOnTapHint: localizations.scrimOnTapHint(
+        localizations.bottomSheetLabel,
+      ),
+    );
+  }
+
+  /// A dialog's, as `showDialog` gives them under [context]'s theme.
+  factory _FormTraits.dialog(BuildContext context) => _FormTraits._of(
+    DialogRoute<void>(
+      context: context,
+      builder: _nothing,
+      // As `showDialog` has it: Tab stays inside the dialog.
+      traversalEdgeBehavior: TraversalEdgeBehavior.closedLoop,
+    ),
+    // The dialog theme's barrier, as `showDialog` takes it, or else
+    // [DialogRoute]'s own.
+    barrierColor: DialogTheme.of(context).barrierColor,
+  );
+
+  /// [route]'s answers, with [barrierColor] in place of its own where one
+  /// is given. [route] is disposed of: it was made to be asked.
+  factory _FormTraits._of(
+    ModalRoute<void> route, {
+    Color? barrierColor,
+    String? barrierOnTapHint,
+  }) {
+    final traits = _FormTraits._(
+      barrierColor: barrierColor ?? route.barrierColor,
+      barrierLabel: route.barrierLabel,
+      barrierOnTapHint: barrierOnTapHint,
+      transitionDuration: route.transitionDuration,
+      reverseTransitionDuration: route.reverseTransitionDuration,
+      traversalEdgeBehavior: route.traversalEdgeBehavior,
+    );
+    route.dispose();
+    return traits;
+  }
+
+  static Widget _nothing(BuildContext context) => const SizedBox.shrink();
+
+  /// The colour the page under the pop-up is dimmed with.
+  final Color? barrierColor;
+
+  /// What a screen reader calls the barrier.
+  final String? barrierLabel;
+
+  /// What a screen reader says a tap on the barrier does, where the form
+  /// says so.
+  final String? barrierOnTapHint;
+
+  /// How long the entrance takes.
+  final Duration transitionDuration;
+
+  /// How long the exit takes.
+  final Duration reverseTransitionDuration;
+
+  /// Where Tab goes from the last control; null for the navigator's own.
+  final TraversalEdgeBehavior? traversalEdgeBehavior;
+}
+
+/// [showBgePopup]'s route: one route whose page is drawn as a bottom sheet
+/// in a window narrower than [BgeTokens.breakpointMedium] and as a dialog
+/// from there up, and redrawn as the other when the window crosses that
+/// width while it is open (#707, #733).
+///
+/// A route's kind can't change once it is pushed, and replacing a sheet's
+/// route with a dialog's would build the content again: an import being
+/// followed, a ticked checklist and the focus would go with the old one.
+/// So this is neither a `ModalBottomSheetRoute` nor a `DialogRoute`. It
+/// draws what each of them draws, and answers what each of them answers
+/// (see [form]), and holds the content under one global key, so the same
+/// elements move from the sheet into the dialog and back.
+///
+/// - **As a sheet** it grows with its content up to the safe area, has a
+///   drag handle, and can be dragged down to close. Its own safe area keeps
+///   it clear of the top and the sides only, so its surface reaches the
+///   bottom edge. Its content stops above the system navigation or the home
+///   indicator there, so the last action is never under it.
+/// - **As a dialog** it is as wide as its content, up to the cap the app's
+///   dialog theme sets at [BgeTokens.contentMaxWidth], as for every other
+///   dialog, and Tab stays inside it.
+///
+/// **The change of form takes no time.** A resize is not something to
+/// animate. The entrance and the exit are the ones of the form it has while
+/// they run: a sheet slides up and down, and a dialog fades.
+///
+/// Everything that reads the form reads the window's width from its own
+/// place in the tree, against the opener's breakpoint ([_formIn]): the page,
+/// the barrier and the transition. A route can't rebuild its barrier from
+/// inside its page's build, so the three don't pass the form to each other.
+/// They rebuild in the frame the window changes, and agree by reading the
+/// same window against the same breakpoint.
+///
+/// Built by [showBgePopup] only.
+class BgePopupRoute<T> extends PopupRoute<T> with BgeRemoveWhenCovered<T> {
+  BgePopupRoute._({
+    required this._builder,
+    required this._themes,
+    required this._tokens,
+    required this._form,
+    required this._sheetTraits,
+    required this._dialogTraits,
+    this.coverObserver,
+  });
+
+  final WidgetBuilder _builder;
+  final CapturedThemes _themes;
+
+  /// The opener's tokens, whose breakpoint decides the form.
+  final BgeTokens _tokens;
+  final _FormTraits _sheetTraits;
+  final _FormTraits _dialogTraits;
 
   @override
   final BgePopupCoverObserver? coverObserver;
 
-  /// The dialog theme's barrier, as `showDialog` takes it, or else
-  /// [DialogRoute]'s own.
+  /// The caller's content. One element for as long as the route lives: a
+  /// change of form moves it from one form's surface to the other's.
+  final GlobalKey _contentKey = GlobalKey(debugLabel: 'BgePopupRoute content');
+
+  /// How much of the barrier the sheet covers, from the bottom edge up. A
+  /// screen reader's focus on the barrier leaves that part out, as
+  /// [ModalBottomSheetRoute]'s does.
+  final ValueNotifier<EdgeInsets> _sheetCover = ValueNotifier(EdgeInsets.zero);
+
+  /// The dialog's fade, eased as [DialogRoute]'s is.
+  CurvedAnimation? _dialogFade;
+
+  /// The form the pop-up is drawn in.
+  ///
+  /// The form it was opened in until its page is first built, and from then
+  /// on the form its page was last built in. The route's own answers follow
+  /// it: [barrierColor], [barrierLabel], [transitionDuration],
+  /// [reverseTransitionDuration] and [traversalEdgeBehavior] are a sheet's
+  /// while it is a sheet and a dialog's while it is a dialog.
+  @visibleForTesting
+  BgePopupForm get form => _form;
+  BgePopupForm _form;
+
+  /// The form for the window [context] is in, at the opener's breakpoint.
+  /// [context] is rebuilt when the window's width changes.
+  BgePopupForm _formIn(BuildContext context) =>
+      BgePopupForm._forWindow(context, _tokens);
+
+  _FormTraits _traitsOf(BgePopupForm form) => switch (form) {
+    BgePopupForm.sheet => _sheetTraits,
+    BgePopupForm.dialog => _dialogTraits,
+  };
+
+  AnimationController get _controller => controller!;
+
   @override
-  Color? get barrierColor => _themedBarrierColor ?? super.barrierColor;
+  Color? get barrierColor => _traitsOf(_form).barrierColor;
+
+  @override
+  String? get barrierLabel => _traitsOf(_form).barrierLabel;
+
+  @override
+  bool get barrierDismissible => true;
+
+  @override
+  Duration get transitionDuration => _traitsOf(_form).transitionDuration;
+
+  @override
+  Duration get reverseTransitionDuration =>
+      _traitsOf(_form).reverseTransitionDuration;
+
+  @override
+  TraversalEdgeBehavior? get traversalEdgeBehavior =>
+      _traitsOf(_form).traversalEdgeBehavior;
+
+  /// The page is drawn in [form] from this frame on, under [scope], the
+  /// route's focus scope.
+  ///
+  /// Called from the page's build phase, where the route can mark nothing
+  /// outside the page for a rebuild. It changes only what no widget is built
+  /// from.
+  void _drawnAs(BgePopupForm form, FocusScopeNode scope) {
+    if (form == _form) return;
+    _form = form;
+    // The exit, and an entrance not yet started, take as long as this
+    // form's do. One under way keeps the time it started with.
+    _controller
+      ..duration = transitionDuration
+      ..reverseDuration = reverseTransitionDuration;
+    // What the route's scope was given when it was built, for the form it
+    // had then.
+    scope.traversalEdgeBehavior =
+        traversalEdgeBehavior ?? navigator!.widget.routeTraversalEdgeBehavior;
+    // A finger dragging the sheet holds the entrance part of the way, and
+    // only the sheet hears that finger lift. The dialog would stay as faint
+    // as the sheet was low, so the entrance is finished from where it was
+    // held. A back gesture holds it too, and finishes it itself.
+    if (isActive &&
+        !navigator!.userGestureInProgress &&
+        !_controller.isAnimating &&
+        !_controller.isCompleted) {
+      _controller.forward();
+    }
+  }
+
+  /// The sheet was laid out [size] tall.
+  void _sheetSized(Size size) =>
+      _sheetCover.value = EdgeInsets.only(bottom: size.height);
+
+  @override
+  Widget buildPage(
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+  ) => _PopupPage<T>(route: this);
+
+  /// A dialog fades in and out, as [DialogRoute] has it. A sheet slides
+  /// inside its page, where its height is known, so it is not faded here.
+  ///
+  /// The [FadeTransition] is there in both forms, opaque for a sheet. With
+  /// it gone for a sheet, each change of form would move the whole page to
+  /// a new place in the tree.
+  @override
+  Widget buildTransitions(
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) => FadeTransition(
+    opacity: switch (_formIn(context)) {
+      BgePopupForm.sheet => kAlwaysCompleteAnimation,
+      BgePopupForm.dialog => _fadeOf(animation),
+    },
+    child: child,
+  );
+
+  CurvedAnimation _fadeOf(Animation<double> animation) {
+    final fade = _dialogFade;
+    if (fade != null && fade.parent == animation) return fade;
+    fade?.dispose();
+    return _dialogFade = CurvedAnimation(
+      parent: animation,
+      curve: Curves.easeOut,
+      reverseCurve: Curves.easeOut,
+    );
+  }
+
+  @override
+  Widget buildModalBarrier() => _PopupBarrier<T>(route: this);
+
+  @override
+  void dispose() {
+    _dialogFade?.dispose();
+    _sheetCover.dispose();
+    super.dispose();
+  }
+}
+
+/// [BgePopupRoute]'s barrier: the one `showModalBottomSheet` puts under a
+/// sheet while the window is compact, and the one `showDialog` puts under a
+/// dialog otherwise.
+///
+/// A sheet's barrier has its own label and tap hint, and its screen-reader
+/// focus stops at the sheet's top edge. Built as [ModalRoute] and
+/// [ModalBottomSheetRoute] build theirs, which read the route's colour once
+/// per build: this one is built again when the window changes class,
+/// because it reads the class itself.
+class _PopupBarrier<T> extends StatelessWidget {
+  const _PopupBarrier({required this.route});
+
+  final BgePopupRoute<T> route;
+
+  @override
+  Widget build(BuildContext context) {
+    final form = route._formIn(context);
+    final traits = route._traitsOf(form);
+    final cover = switch (form) {
+      BgePopupForm.sheet => route._sheetCover,
+      BgePopupForm.dialog => null,
+    };
+    final color = traits.barrierColor;
+    if (color == null || color.a == 0 || route.offstage) {
+      return ModalBarrier(
+        dismissible: route.barrierDismissible,
+        semanticsLabel: traits.barrierLabel,
+        barrierSemanticsDismissible: route.semanticsDismissible,
+        clipDetailsNotifier: cover,
+        semanticsOnTapHint: traits.barrierOnTapHint,
+      );
+    }
+    return AnimatedModalBarrier(
+      color: route.animation!.drive(
+        ColorTween(
+          begin: color.withValues(alpha: 0),
+          end: color,
+        ).chain(CurveTween(curve: route.barrierCurve)),
+      ),
+      dismissible: route.barrierDismissible,
+      semanticsLabel: traits.barrierLabel,
+      barrierSemanticsDismissible: route.semanticsDismissible,
+      clipDetailsNotifier: cover,
+      semanticsOnTapHint: traits.barrierOnTapHint,
+    );
+  }
+}
+
+/// [BgePopupRoute]'s page: the caller's content on a sheet's surface or a
+/// dialog's, by the window's class.
+///
+/// **What is around the surface is the same widgets in both forms, and only
+/// what they are told differs.** A browser's screen reader reads elements the
+/// web engine builds from the semantics tree, one for each node. A node that
+/// gets a new parent has its element moved, and one whose role changes has
+/// it rebuilt, and the browser takes focus off anything inside an element as
+/// it moves. Drawn as each form's own route draws it
+/// ([ModalBottomSheetRoute], and [DialogRoute] over `RawDialogRoute`), the
+/// content's node had the sheet's route node above it in one form and the
+/// dialog's nodes in the other, and a change of form put keyboard focus out
+/// of the pop-up in a browser with a screen reader on (#733).
+///
+/// So the three nodes over the content stay, whichever form is drawn:
+///
+/// 1. **The route's.** In sheet form it is named as a modal sheet's is. In
+///    dialog form it has no name, as a dialog's has none.
+/// 2. **The one that keeps a click on the pop-up from reaching the
+///    barrier.**
+/// 3. **The dialog role's**, which [Dialog] would give itself. A modal sheet
+///    is a modal dialog to a browser too, and only the web engine reads the
+///    role. It is a node of its own (`container`), so what [Dialog] still
+///    annotates joins it and adds none between it and the content.
+///
+/// The dialog form's nodes are [DialogRoute]'s, in its order. The sheet
+/// form's are [ModalBottomSheetRoute]'s with the first two the other way
+/// round, and the third added.
+///
+/// Each form's safe area and hinge handling are in its own route's order: a
+/// sheet keeps clear of the top and the sides before it picks a side of a
+/// hinge, and a dialog after. One of the two [SafeArea]s here is switched
+/// off in each form, and stays in the tree for the reason the nodes do.
+class _PopupPage<T> extends StatefulWidget {
+  const _PopupPage({required this.route});
+
+  final BgePopupRoute<T> route;
+
+  @override
+  State<_PopupPage<T>> createState() => _PopupPageState<T>();
+}
+
+class _PopupPageState<T> extends State<_PopupPage<T>> {
+  late BgePopupForm _form;
+
+  /// The caller's content, under the route's key.
+  ///
+  /// Made once for each page the route asks for, not once a build. A resize
+  /// builds this page again, and the same widget keeps the content from
+  /// being built again with it, as neither a sheet's route nor a dialog's
+  /// builds its content on a resize.
+  late Widget _content;
+
+  Widget _keyedContent() => KeyedSubtree(
+    key: widget.route._contentKey,
+    child: Builder(builder: widget.route._builder),
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    _content = _keyedContent();
+  }
+
+  @override
+  void didUpdateWidget(_PopupPage<T> oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // The route asked for its page again, as it does when what the
+    // caller's builder reads from outside may have changed.
+    _content = _keyedContent();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _form = widget.route._formIn(context);
+    // No dependency: the scope is the route's for the route's whole life,
+    // and one would rebuild this page each time focus moves in it.
+    widget.route._drawnAs(
+      _form,
+      FocusScope.of(context, createDependency: false),
+    );
+  }
+
+  /// What a modal sheet's route is called to a screen reader, as
+  /// `showModalBottomSheet` has it. The pop-up's own name is on its content.
+  String _sheetRouteLabel(MaterialLocalizations localizations) =>
+      switch (defaultTargetPlatform) {
+        TargetPlatform.iOS || TargetPlatform.macOS => '',
+        TargetPlatform.android ||
+        TargetPlatform.fuchsia ||
+        TargetPlatform.linux ||
+        TargetPlatform.windows => localizations.dialogLabel,
+      };
+
+  @override
+  Widget build(BuildContext context) {
+    final route = widget.route;
+    final sheet = _form == BgePopupForm.sheet;
+    final content = _PopupFormScope(form: _form, child: _content);
+    return route._themes.wrap(
+      Semantics(
+        scopesRoute: true,
+        explicitChildNodes: true,
+        namesRoute: sheet,
+        label: sheet
+            ? _sheetRouteLabel(MaterialLocalizations.of(context))
+            : null,
+        // The sheet's: its surface reaches the bottom edge.
+        child: SafeArea(
+          left: sheet,
+          top: sheet,
+          right: sheet,
+          bottom: false,
+          child: DisplayFeatureSubScreen(
+            child: Semantics(
+              hitTestBehavior: SemanticsHitTestBehavior.opaque,
+              // The dialog's.
+              child: SafeArea(
+                left: !sheet,
+                top: !sheet,
+                right: !sheet,
+                bottom: !sheet,
+                child: Semantics(
+                  container: true,
+                  role: SemanticsRole.dialog,
+                  child: switch (_form) {
+                    BgePopupForm.sheet => _PopupSheet<T>(
+                      route: route,
+                      child: SafeArea(top: false, child: content),
+                    ),
+                    BgePopupForm.dialog => Dialog(
+                      semanticsRole: SemanticsRole.none,
+                      child: content,
+                    ),
+                  },
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The sheet form of [BgePopupRoute]'s page: a [BottomSheet] with a drag
+/// handle, resting on the bottom edge, that slides up as the route arrives
+/// and down as it leaves, and follows a finger dragging it down to close.
+///
+/// What `showModalBottomSheet`'s route puts around a [BottomSheet], which
+/// Flutter keeps private to that route, but for the route's semantics node:
+/// that one is [_PopupPage]'s, where both forms share it. The drag is
+/// [BottomSheet]'s own: it moves the route's animation directly, and pops
+/// the route when let go far enough down or fast enough.
+class _PopupSheet<T> extends StatefulWidget {
+  const _PopupSheet({required this.route, required this.child});
+
+  final BgePopupRoute<T> route;
+  final Widget child;
+
+  @override
+  State<_PopupSheet<T>> createState() => _PopupSheetState<T>();
+}
+
+class _PopupSheetState<T> extends State<_PopupSheet<T>> {
+  /// The curve a modal sheet arrives and leaves on.
+  static const Curve _curve = Easing.legacyDecelerate;
+
+  /// How far up the sheet is, from 0 (below the bottom edge) to 1 (at
+  /// rest): the route's animation, eased, except around a drag.
+  late final ProxyAnimation _position;
+
+  /// The route's animation eased from end to end, which [_position] follows
+  /// until the first drag.
+  late final CurvedAnimation _eased;
+
+  /// The route's animation eased from where the last drag let go, which
+  /// [_position] follows after it.
+  CurvedAnimation? _easedFromRelease;
+
+  @override
+  void initState() {
+    super.initState();
+    _eased = CurvedAnimation(
+      parent: widget.route.animation!,
+      curve: _curve,
+      reverseCurve: _curve,
+    );
+    _position = ProxyAnimation(_eased);
+  }
+
+  @override
+  void dispose() {
+    // Detached, so nothing is left listening to the route's animation.
+    _position.parent = kAlwaysDismissedAnimation;
+    _eased.dispose();
+    _easedFromRelease?.dispose();
+    super.dispose();
+  }
+
+  /// Under a finger the sheet follows the animation as it is, with no
+  /// easing, so it stays under the finger.
+  void _onDragStart(DragStartDetails details) =>
+      _position.parent = widget.route.animation;
+
+  /// Let go, the sheet eases the rest of the way from where it was, up or
+  /// down, with no jump.
+  void _onDragEnd(DragEndDetails details, {required bool isClosing}) {
+    final animation = widget.route.animation!;
+    final released = Split(animation.value, endCurve: _curve);
+    final eased = CurvedAnimation(
+      parent: animation,
+      curve: released,
+      reverseCurve: released,
+    );
+    _position.parent = eased;
+    _easedFromRelease?.dispose();
+    _easedFromRelease = eased;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final route = widget.route;
+    final theme = Theme.of(context).bottomSheetTheme;
+    return AnimatedBuilder(
+      animation: _position,
+      builder: (context, child) => ClipRect(
+        child: _SheetLayout(
+          position: _position.value,
+          onSized: route._sheetSized,
+          child: child,
+        ),
+      ),
+      child: BottomSheet(
+        animationController: route._controller,
+        onClosing: () {
+          if (route.isCurrent) Navigator.pop(context);
+        },
+        builder: (_) => widget.child,
+        // A modal sheet's colour and elevation, where the theme names
+        // them: [BottomSheet] falls back as the modal route does.
+        backgroundColor: theme.modalBackgroundColor,
+        elevation: theme.modalElevation,
+        showDragHandle: true,
+        onDragStart: _onDragStart,
+        onDragEnd: _onDragEnd,
+      ),
+    );
+  }
+}
+
+/// Lays the sheet out as wide as the window and as tall as its content, up
+/// to the window's height, with [position] of it above the bottom edge.
+///
+/// [onSized] hears the sheet's size whenever it changes, during layout.
+class _SheetLayout extends SingleChildRenderObjectWidget {
+  const _SheetLayout({
+    required this.position,
+    required this.onSized,
+    super.child,
+  });
+
+  final double position;
+  final ValueChanged<Size> onSized;
+
+  @override
+  _RenderSheetLayout createRenderObject(BuildContext context) =>
+      _RenderSheetLayout(position: position, onSized: onSized);
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderSheetLayout renderObject,
+  ) => renderObject
+    ..position = position
+    ..onSized = onSized;
+}
+
+class _RenderSheetLayout extends RenderShiftedBox {
+  _RenderSheetLayout({required this._position, required this.onSized})
+    : super(null);
+
+  ValueChanged<Size> onSized;
+
+  Size? _sized;
+
+  double get position => _position;
+  double _position;
+  set position(double value) {
+    if (_position == value) return;
+    _position = value;
+    markNeedsLayout();
+  }
+
+  /// As wide as the window, and no taller than it.
+  BoxConstraints _childConstraints(BoxConstraints constraints) =>
+      BoxConstraints(
+        minWidth: constraints.maxWidth,
+        maxWidth: constraints.maxWidth,
+        maxHeight: constraints.maxHeight,
+      );
+
+  Offset _childOffset(Size size, Size childSize) =>
+      Offset(0, size.height - childSize.height * position);
+
+  // It fills what it is given, whatever its child would like.
+  @override
+  double computeMinIntrinsicWidth(double height) => 0;
+
+  @override
+  double computeMaxIntrinsicWidth(double height) => 0;
+
+  @override
+  double computeMinIntrinsicHeight(double width) => 0;
+
+  @override
+  double computeMaxIntrinsicHeight(double width) => 0;
+
+  @override
+  Size computeDryLayout(BoxConstraints constraints) => constraints.biggest;
+
+  @override
+  double? computeDryBaseline(
+    BoxConstraints constraints,
+    TextBaseline baseline,
+  ) {
+    final child = this.child;
+    if (child == null) return null;
+    final childConstraints = _childConstraints(constraints);
+    final result = child.getDryBaseline(childConstraints, baseline);
+    if (result == null) return null;
+    final childSize = child.getDryLayout(childConstraints);
+    return result + _childOffset(constraints.biggest, childSize).dy;
+  }
+
+  @override
+  void performLayout() {
+    size = constraints.biggest;
+    final child = this.child;
+    if (child == null) return;
+    child.layout(_childConstraints(constraints), parentUsesSize: true);
+    (child.parentData! as BoxParentData).offset = _childOffset(
+      size,
+      child.size,
+    );
+    if (_sized != child.size) {
+      _sized = child.size;
+      onSized(child.size);
+    }
+  }
 }
