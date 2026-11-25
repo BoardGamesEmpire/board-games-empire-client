@@ -269,16 +269,29 @@ void main() {
   ) async {
     answerPage(remote, [apiKey('k_1')], hasMore: true);
     answerPage(remote, [apiKey('k_2', name: 'Backup')], page: 2);
-    final page = Completer<void>();
+    late NavigatorState navigator;
     await tester.pumpWidget(
       screen(
+        // As the app opens a key: its page is pushed over the list, and the
+        // open completes when that page is popped.
         openKey: (id) {
           opened.add(id);
-          return page.future;
+          return navigator.push(
+            MaterialPageRoute<void>(
+              builder: (context) => Scaffold(
+                body: TextButton(
+                  autofocus: true,
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Close'),
+                ),
+              ),
+            ),
+          );
         },
       ),
     );
     await tester.pumpAndSettle();
+    navigator = tester.state(find.byType(Navigator));
     await tester.ensureVisible(find.byKey(ApiKeyListScreen.moreKey));
     await tester.tap(find.byKey(ApiKeyListScreen.moreKey));
     await tester.pumpAndSettle();
@@ -286,14 +299,15 @@ void main() {
     final row = Focus.of(tester.element(find.text('Backup')))..requestFocus();
     await tester.pump();
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
-    await tester.pump();
+    await tester.pumpAndSettle();
     expect(opened, ['k_2']);
+    expect(row.hasFocus, isFalse);
 
     // The key was disabled on its own page.
     answerPage(remote, [
       apiKey('k_2', name: 'Backup', enabled: false),
     ], page: 2);
-    page.complete();
+    await tester.tap(find.text('Close'));
     await tester.pumpAndSettle();
 
     verify(

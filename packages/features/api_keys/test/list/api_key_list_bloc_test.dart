@@ -61,16 +61,21 @@ void main() {
   blocTest<ApiKeyListBloc, ApiKeyListState>(
     'grantable is read alongside page 1, not after it',
     build: build,
-    setUp: () {
+    act: (bloc) async {
       final page = Completer<PaginatedResult<ApiKey>>();
       when(
         () => remote.fetchPage(limit: any(named: 'limit')),
       ).thenAnswer((_) => page.future);
-      addTearDown(() => page.complete(pageOf([a])));
+      bloc.add(const ApiKeyListRequested());
+      await pumpEventQueue();
+      // Page 1 has not answered, and both were asked for.
+      verify(() => remote.fetchPage(limit: any(named: 'limit'))).called(1);
+      verify(remote.fetchGrantable).called(1);
+      page.complete(pageOf([a]));
     },
-    act: (bloc) => bloc.add(const ApiKeyListRequested()),
-    // Page 1 has not answered, and grantable was asked for anyway.
-    verify: (_) => verify(remote.fetchGrantable).called(1),
+    expect: () => [
+      loaded([a]),
+    ],
   );
 
   blocTest<ApiKeyListBloc, ApiKeyListState>(
