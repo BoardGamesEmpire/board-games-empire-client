@@ -12,6 +12,16 @@ act as you, each holding only the permissions you gave it.
 - `ApiKeyListBloc`: the paged read, the filter, and the grantable
   permissions by slug. A failed grantable read never fails the list: the rows
   then give a count of permissions without a risk level.
+- `ApiKeyDetailScreen`: one key's own page, by id. It reads the key and the
+  grantable permissions when it opens, and lists every permission the key
+  holds with its risk in words (`ApiKeyScopeList`). An Enabled switch and
+  Delete, which asks first (`DeleteKeyDialog`), write straight to the server.
+  A delete that goes through says so and pops the page. It owns its bloc
+  past the route, and says a write the user walked away from only while the
+  session it was opened in is live.
+- `ApiKeyDetailBloc`: the read, the toggle and the delete, one write at a
+  time. A 404 is gone; a failed grantable read never fails the page, whose
+  permissions then show their codes.
 - `scopeSummary`: a key's permissions in words, "3 permissions, highest risk
   High", for its row.
 - `apiKeyFailureOf` and `apiKeyFailureMessage`: every `ApiKeyRemoteException`

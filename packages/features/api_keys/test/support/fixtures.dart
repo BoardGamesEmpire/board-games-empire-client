@@ -60,6 +60,10 @@ void answerGrantable(
   List<GrantablePermission> permissions = const [],
 ]) => when(remote.fetchGrantable).thenAnswer((_) async => permissions);
 
+/// Answers [MockApiKeyRemoteDataSource.fetch] for [key]'s id with [key].
+void answerKey(MockApiKeyRemoteDataSource remote, ApiKey key) =>
+    when(() => remote.fetch(key.id)).thenAnswer((_) async => key);
+
 /// Answers page [page] with [keys]. The list always names the page it asks
 /// for.
 void answerPage(

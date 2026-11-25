@@ -174,6 +174,198 @@
   "@apiKeyNeverUsed": {
     "description": "Shown in place of a last-used date for an API key that hasn't been used yet."
   },
+  "apiKeyDetailTitle": "API key",
+  "@apiKeyDetailTitle": {
+    "description": "Title of an API key's own page while the key itself isn't shown: as it loads, when it couldn't be loaded, and when it no longer exists. Once the key is shown, its name is the title."
+  },
+  "apiKeyDetailLoading": "Loading this key…",
+  "@apiKeyDetailLoading": {
+    "description": "Shown beside a spinner, and read out by screen readers, while one API key is being read from the server."
+  },
+  "apiKeyDetailLoadFailed": "Couldn't load this key",
+  "@apiKeyDetailLoadFailed": {
+    "description": "Title of the message shown in place of an API key's page when the key could not be read from the server."
+  },
+  "apiKeyDetailLoadFailedBody": "Check your connection, then try again.",
+  "@apiKeyDetailLoadFailedBody": {
+    "description": "Body under the title when an API key could not be read from the server."
+  },
+  "apiKeyDetailRetry": "Try again",
+  "@apiKeyDetailRetry": {
+    "description": "Button that reads the API key from the server again after it failed."
+  },
+  "apiKeyGoneTitle": "This key no longer exists",
+  "@apiKeyGoneTitle": {
+    "description": "Shown in place of an API key's page when the server has no such key: it was deleted, perhaps from another device, or it expired, which deletes it."
+  },
+  "apiKeyGoneBody": "It was deleted, or it expired.",
+  "@apiKeyGoneBody": {
+    "description": "Body under 'This key no longer exists'. An API key that expires is deleted by the server."
+  },
+  "apiKeyGoneBack": "Back to your API keys",
+  "@apiKeyGoneBack": {
+    "description": "Button under 'This key no longer exists' that goes back to the list of the user's API keys."
+  },
+  "apiKeyCreated": "Created {date}",
+  "@apiKeyCreated": {
+    "description": "When an API key was made, on its own page.",
+    "placeholders": {
+      "date": {
+        "type": "DateTime",
+        "format": "yMMMd"
+      }
+    }
+  },
+  "apiKeyEnabledSwitch": "Enabled",
+  "@apiKeyEnabledSwitch": {
+    "description": "Label of the switch on an API key's own page that turns the key on or off. A disabled key is kept, but doesn't work until it is enabled again."
+  },
+  "apiKeyEnabledOn": "Programs can use this key.",
+  "@apiKeyEnabledOn": {
+    "description": "Under the 'Enabled' switch while the API key is enabled."
+  },
+  "apiKeyEnabledOff": "Programs using this key are refused until you enable it again.",
+  "@apiKeyEnabledOff": {
+    "description": "Under the 'Enabled' switch while the API key is disabled."
+  },
+  "apiKeySaving": "Saving…",
+  "@apiKeySaving": {
+    "description": "Read out by screen readers, beside a progress bar, while turning an API key on or off is on its way to the server."
+  },
+  "apiKeyDisableFailed": "Couldn't disable {name}",
+  "@apiKeyDisableFailed": {
+    "description": "Title of the message shown above the 'Enabled' switch when turning the API key off failed. {name} is the key's name, or 'Unnamed key'.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "CI deploy"
+      }
+    }
+  },
+  "apiKeyEnableFailed": "Couldn't enable {name}",
+  "@apiKeyEnableFailed": {
+    "description": "Title of the message shown above the 'Enabled' switch when turning the API key on failed. {name} is the key's name, or 'Unnamed key'.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "CI deploy"
+      }
+    }
+  },
+  "apiKeyDisabledDone": "Disabled {name}",
+  "@apiKeyDisabledDone": {
+    "description": "Said once the user has left an API key's page, when turning the key off they started there went through. {name} is the key's name, or 'Unnamed key'.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "CI deploy"
+      }
+    }
+  },
+  "apiKeyEnabledDone": "Enabled {name}",
+  "@apiKeyEnabledDone": {
+    "description": "Said once the user has left an API key's page, when turning the key on they started there went through. {name} is the key's name, or 'Unnamed key'.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "CI deploy"
+      }
+    }
+  },
+  "apiKeyPermissionsHeading": "Permissions",
+  "@apiKeyPermissionsHeading": {
+    "description": "Heading over the list of what an API key may do, on the key's own page."
+  },
+  "apiKeyScopeRisk": "Risk: {level}",
+  "@apiKeyScopeRisk": {
+    "description": "Under one permission an API key holds: how much harm it can do if the key leaks. {level} is one of the risk level names: Low, Medium, High, Critical or Unknown.",
+    "placeholders": {
+      "level": {
+        "type": "String",
+        "example": "Critical"
+      }
+    }
+  },
+  "apiKeyScopeNoLongerAvailable": "No longer available",
+  "@apiKeyScopeNoLongerAvailable": {
+    "description": "Under a permission an API key holds that the user may no longer give a key. The permission is shown by its code, as there is no description for it."
+  },
+  "apiKeyScopePinned": "Limited to one record",
+  "@apiKeyScopePinned": {
+    "description": "Under a permission an API key holds that covers a single record rather than every record the user may reach."
+  },
+  "apiKeyScopesEmpty": "This key has no permissions, so it works nowhere until it is given some.",
+  "@apiKeyScopesEmpty": {
+    "description": "Shown in place of the permissions on the page of an API key that holds none."
+  },
+  "apiKeyScopesUndescribed": "Couldn't load what these permissions allow, so each is shown by its code.",
+  "@apiKeyScopesUndescribed": {
+    "description": "Shown above an API key's permissions when the descriptions of the permissions could not be read from the server. Each permission is then shown by its code, such as 'collection:read'."
+  },
+  "apiKeyDelete": "Delete key",
+  "@apiKeyDelete": {
+    "description": "Button at the end of an API key's page that deletes the key, after asking."
+  },
+  "apiKeyDeleting": "Deleting…",
+  "@apiKeyDeleting": {
+    "description": "The name of the 'Delete key' button while the key is being deleted. Read out by screen readers as the button's name."
+  },
+  "apiKeyDeleteConfirmTitle": "Delete {name}?",
+  "@apiKeyDeleteConfirmTitle": {
+    "description": "Title of the dialog that asks before deleting an API key. {name} is the key's name, or 'Unnamed key'.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "CI deploy"
+      }
+    }
+  },
+  "apiKeyDeleteConfirmBody": "Programs using it stop working at once. This can't be undone.",
+  "@apiKeyDeleteConfirmBody": {
+    "description": "Body of the dialog that asks before deleting an API key."
+  },
+  "apiKeyDeleteCancel": "Cancel",
+  "@apiKeyDeleteCancel": {
+    "description": "Button in the dialog that asks before deleting an API key: closes it and deletes nothing."
+  },
+  "apiKeyDeleteConfirm": "Delete",
+  "@apiKeyDeleteConfirm": {
+    "description": "Button in the dialog that asks before deleting an API key: deletes it."
+  },
+  "apiKeyDeleted": "Deleted {name}",
+  "@apiKeyDeleted": {
+    "description": "Said once an API key has been deleted, on the page the user goes back to. {name} is the key's name, or 'Unnamed key'.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "CI deploy"
+      }
+    }
+  },
+  "apiKeyDeleteFailed": "Couldn't delete {name}",
+  "@apiKeyDeleteFailed": {
+    "description": "Title of the message shown above 'Delete key' when deleting the API key failed. {name} is the key's name, or 'Unnamed key'.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "CI deploy"
+      }
+    }
+  },
+  "apiKeyFailedLate": "{what}: {why}",
+  "@apiKeyFailedLate": {
+    "description": "Said once the user has left an API key's page, when a change they started there failed. {what} says which change, as 'Couldn't delete CI deploy'; {why} is the reason, as 'Couldn't reach the server. Check your connection, then try again.'",
+    "placeholders": {
+      "what": {
+        "type": "String",
+        "example": "Couldn't delete CI deploy"
+      },
+      "why": {
+        "type": "String",
+        "example": "Couldn't reach the server. Check your connection, then try again."
+      }
+    }
+  },
   "apiKeyFailureNeedsRecentSignIn": "This needs a recent sign-in. Sign out, sign in again, then try once more.",
   "@apiKeyFailureNeedsRecentSignIn": {
     "description": "Shown when the server refused a change to an API key because the user signed in too long ago."

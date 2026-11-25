@@ -22,6 +22,33 @@ Widget hostScreen(Widget child, {ThemeData? theme, bool offline = false}) =>
       ),
     );
 
+/// The words on the page [hostOverPage] pushes a screen over.
+const pageBeneathCopy = 'The page beneath';
+
+/// [child] pushed over a plain page, as the app pushes a key's own page over
+/// the key list: a pop goes back to it, and a SnackBar said as the screen
+/// leaves shows on it.
+///
+/// The connectivity scope sits above the navigator, as the shell's does, so
+/// a dialog reads it too.
+Widget hostOverPage(Widget child, {ThemeData? theme, bool offline = false}) =>
+    MaterialApp(
+      theme: theme ?? BgeTheme.light(),
+      localizationsDelegates: ApiKeysLocalizations.localizationsDelegates,
+      supportedLocales: ApiKeysLocalizations.supportedLocales,
+      builder: (context, app) => BgeConnectivityScope(
+        offline: offline,
+        noticeShowing: offline,
+        onlineOnlyReason: onlineOnlyCopy,
+        child: app!,
+      ),
+      routes: {
+        '/': (_) => const Scaffold(body: Text(pageBeneathCopy)),
+        '/screen': (_) => child,
+      },
+      initialRoute: '/screen',
+    );
+
 /// Pumps [child] on a page, as a screen hosts it: under the app's theme,
 /// this feature's strings and a connectivity scope that is [offline] or not.
 ///
