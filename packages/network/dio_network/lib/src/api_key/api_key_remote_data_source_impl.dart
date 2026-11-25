@@ -84,7 +84,7 @@ class ApiKeyRemoteDataSourceImpl implements ApiKeyRemoteDataSource {
 
   @override
   Future<ApiKey> fetch(String id) async {
-    checkPathId(id, name: 'id');
+    checkPathId(id);
 
     const failures = _ApiKeyFailures();
     return sendForParsed(
@@ -139,7 +139,7 @@ class ApiKeyRemoteDataSourceImpl implements ApiKeyRemoteDataSource {
 
   @override
   Future<ApiKey> update(String id, ApiKeyPatch patch) async {
-    checkPathId(id, name: 'id');
+    checkPathId(id);
     if (patch.isEmpty) {
       throw ArgumentError.value(patch, 'patch', 'has nothing to change');
     }
@@ -175,7 +175,7 @@ class ApiKeyRemoteDataSourceImpl implements ApiKeyRemoteDataSource {
 
   @override
   Future<void> delete(String id) async {
-    checkPathId(id, name: 'id');
+    checkPathId(id);
 
     const failures = _ApiKeyFailures();
     await sendForJson(

@@ -256,7 +256,7 @@ void main() {
         ),
       );
 
-      final bodies = server.requests.map((r) => r.data as Map).toList();
+      final bodies = server.requests.map((r) => r.data! as Map).toList();
       expect(bodies[0].containsKey('confirmCritical'), isFalse);
       expect(bodies[1]['confirmCritical'], isTrue);
     });
@@ -624,7 +624,7 @@ void main() {
       expect((error as ApiKeyRemoteException).statusCode, 400);
     });
 
-    test('a 400 with a message list keeps the server\'s words', () async {
+    test("a 400 with a message list keeps the server's words", () async {
       final error = await create(400, {
         'statusCode': 400,
         'error': 'Bad Request',
