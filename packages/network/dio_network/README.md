@@ -17,9 +17,12 @@ live in `native_network`.
   (`mapAuthDioException`), the success and body checks, the email/password
   sign-in and sign-up requests, and the rate-limit and session-read rules.
   The native and web auth repositories each keep only their own grant
-  handling.
+  handling. Also `MergedSessionRevalidation`, the `SessionRejectionSignal`
+  that merges concurrent reports into one session re-read when the session
+  is gone, and two when it stands (#484).
 - **`network/`** — `DioFactory` and the interceptors (redaction-safe request
-  logging, clock-skew sampling), plus `redactUri`.
+  logging, clock-skew sampling, and `SessionRejectionInterceptor`, which
+  reports a data endpoint's 401 for #484), plus `redactUri`.
 - **`feedback/`** — `FeedbackDioTransport`, the authenticated feedback sender.
 - **`household/`** — `HouseholdRemoteDataSourceImpl` (see below).
 - **`well_known/`** — `WellKnownClientImpl`. The one client that builds its

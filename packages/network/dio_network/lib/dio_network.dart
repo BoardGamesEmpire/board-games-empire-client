@@ -1,5 +1,6 @@
 export 'src/auth/auth_wire_errors.dart';
 export 'src/auth/credential_grant_requests.dart';
+export 'src/auth/merged_session_revalidation.dart';
 export 'src/auth/rate_limited.dart';
 export 'src/auth/read_session_response.dart';
 export 'src/auth/session_read_status.dart';
@@ -27,6 +28,7 @@ export 'src/network/decode_json_body.dart';
 export 'src/network/dio_factory.dart';
 export 'src/network/network_log_interceptor.dart';
 export 'src/network/redact_uri.dart' show redactUri;
+export 'src/network/session_rejection_interceptor.dart';
 
 export 'src/notification/notification_remote_data_source_impl.dart';
 
