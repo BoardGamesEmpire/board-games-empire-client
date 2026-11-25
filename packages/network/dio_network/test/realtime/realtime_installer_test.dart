@@ -4,12 +4,23 @@ import 'package:dio_network/src/realtime/realtime_connection_impl.dart';
 import 'package:dio_network/src/realtime/realtime_endpoint.dart';
 import 'package:dio_network/src/realtime/realtime_installer.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:interfaces/services.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 
 import '../support/fake_socket_manager.dart';
 
 const _server = ScopedServer(serverId: 'bge-uuid-1', displayName: 'Server');
+
+/// Counts the rejected sessions reported to it (#484).
+class _FakeSessionRejectionSignal implements SessionRejectionSignal {
+  int reports = 0;
+
+  @override
+  Future<void> report() async {
+    reports += 1;
+  }
+}
 
 /// #473: the session's socket connection is the user scope's, built from the
 /// server scope's endpoint. Run through the real user-scope view, whose
@@ -83,6 +94,38 @@ void main() {
 
     expect(socket.disposed, isFalse, reason: 'the other lease still holds it');
   });
+
+  test(
+    'passes the registered SessionRejectionSignal to the search source',
+    () async {
+      // The server scope holds the signal; the source is the session's, and
+      // finds it through the user-scope view (#484).
+      final signal = _FakeSessionRejectionSignal();
+      serverScope
+        ..registerSingleton<RealtimeEndpoint>(
+          RealtimeEndpoint(server: Uri.parse('https://h.test')),
+        )
+        ..registerSingleton<SessionRejectionSignal>(signal);
+      await signIn();
+      final channel = session.maybeGet<GameSearchStreamSource>()!.open();
+      addTearDown(channel.close);
+      final errors = <Object>[];
+      channel.search('catan').listen(null, onError: errors.add);
+      final socket = factory.managers.single.sockets.single..accept();
+      await pumpEventQueue();
+
+      socket.hear('auth:error', {
+        'statusCode': 401,
+        'error': 'Unauthorized',
+        'message': 'Your session is invalid',
+        'pattern': 'search:start',
+      });
+      await pumpEventQueue();
+
+      expect(signal.reports, 1);
+      expect(errors.single, isA<GamesRemoteTransientException>());
+    },
+  );
 
   test('the session ending closes its connection', () async {
     serverScope.registerSingleton<RealtimeEndpoint>(

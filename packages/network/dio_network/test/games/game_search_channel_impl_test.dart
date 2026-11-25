@@ -220,10 +220,12 @@ void main() {
   GameSearchChannelImpl channelOver(
     RealtimeLease over, {
     String Function()? ids,
+    void Function()? onSessionRejected,
   }) {
     final made = GameSearchChannelImpl(
       over,
       newCorrelationId: ids ?? () => _id,
+      onSessionRejected: onSessionRejected,
     );
     addTearDown(made.close);
     return made;
@@ -860,6 +862,36 @@ void main() {
         reason: 'the server is closing the socket',
       );
       expect(lease.listened, isFalse);
+    });
+
+    test('auth:error reports the session rejection and fails the search with '
+        'a 401 transient', () async {
+      var reports = 0;
+      final reporting = channelOver(
+        lease,
+        onSessionRejected: () => reports += 1,
+      );
+      final heard = _Heard(reporting.search('catan'));
+
+      lease.hear('auth:error', {
+        'statusCode': 401,
+        'error': 'Unauthorized',
+        'message': 'Your session is invalid',
+        'pattern': 'search:start',
+        'correlationId': _id,
+      });
+      await pumpEventQueue();
+
+      expect(reports, 1);
+      expect(
+        heard.errors.single,
+        isA<GamesRemoteTransientException>().having(
+          (e) => e.statusCode,
+          'statusCode',
+          401,
+        ),
+      );
+      expect(heard.done, isTrue);
     });
   });
 

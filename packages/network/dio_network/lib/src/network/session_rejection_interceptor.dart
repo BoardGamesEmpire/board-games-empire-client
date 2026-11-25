@@ -1,8 +1,23 @@
 import 'package:dio/dio.dart';
+import 'package:dio_network/src/network/dio_factory.dart';
 import 'package:http_status/http_status.dart';
 import 'package:observability/observability.dart';
 
 final BgeLogger _log = BgeLogger('bge.auth.session_rejection');
+
+/// The auth API's base URI on the server at `serverUrl`, for
+/// [SessionRejectionInterceptor]'s `authBase` (#484).
+///
+/// Built the way the per-server Dio builds the auth repository's requests:
+/// the address with one trailing slash dropped
+/// ([DefaultDioFactory.normalizeBaseUrl]) and `authBasePath` appended, not
+/// resolved against it, which would drop a path prefix. Dio's own
+/// [RequestOptions.uri] does the join, so the base also has its `//` and `..`
+/// collapsed and compares like the request URIs checked against it.
+Uri sessionAuthBase(String serverUrl, String authBasePath) => RequestOptions(
+  baseUrl: DefaultDioFactory.normalizeBaseUrl(serverUrl),
+  path: authBasePath,
+).uri;
 
 /// Reports a 401 from any non-auth endpoint of the server (#484).
 ///
@@ -27,8 +42,8 @@ final class SessionRejectionInterceptor extends Interceptor {
   /// Creates the interceptor.
   ///
   /// `authBase` is the auth API's base URI (for example
-  /// `https://host/api/auth`). `onRejected` is called synchronously for each
-  /// qualifying 401.
+  /// `https://host/api/auth`), as [sessionAuthBase] builds it. `onRejected`
+  /// is called synchronously for each qualifying 401.
   SessionRejectionInterceptor({
     required Uri authBase,
     required this._onRejected,

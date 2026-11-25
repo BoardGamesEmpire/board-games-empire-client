@@ -224,4 +224,61 @@ void main() {
       expect(rejections, 1);
     });
   });
+
+  group('sessionAuthBase', () {
+    test('appends the auth path to a server under a path prefix', () {
+      expect(
+        sessionAuthBase('https://h/bge', '/api/auth'),
+        Uri.parse('https://h/bge/api/auth'),
+      );
+    });
+
+    test('drops a trailing slash on the server address', () {
+      expect(
+        sessionAuthBase('https://h/bge/', '/api/auth'),
+        Uri.parse('https://h/bge/api/auth'),
+      );
+    });
+
+    test('collapses a double slash, as Dio does for requests', () {
+      expect(
+        sessionAuthBase('https://h/bge//', '/api/auth'),
+        Uri.parse('https://h/bge/api/auth'),
+      );
+    });
+
+    test('collapses a dot segment, as Dio does for requests', () {
+      expect(
+        sessionAuthBase('https://h/bge/../x', '/api/auth'),
+        Uri.parse('https://h/x/api/auth'),
+      );
+    });
+
+    // The rule exists for this: the base and the request URIs it is
+    // checked against must be formed alike, or the session read's own 401
+    // would be reported and revalidate in a loop.
+    test('a request built from the same address is under its base', () async {
+      const serverUrl = 'https://h/bge//';
+      final dio =
+          Dio(
+              BaseOptions(
+                baseUrl: DefaultDioFactory.normalizeBaseUrl(serverUrl),
+                validateStatus: (_) => true,
+              ),
+            )
+            ..httpClientAdapter = _StatusAdapter(401)
+            ..interceptors.add(
+              SessionRejectionInterceptor(
+                authBase: sessionAuthBase(serverUrl, '/api/auth'),
+                onRejected: () => rejections++,
+              ),
+            );
+
+      await dio.get<dynamic>('/api/auth/get-session');
+      expect(rejections, 0);
+
+      await dio.get<dynamic>('/api/households');
+      expect(rejections, 1);
+    });
+  });
 }
