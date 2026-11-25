@@ -12,6 +12,7 @@ import 'package:native_network/src/network/token_interceptor.dart';
 import 'package:network_interface/network_interface.dart'
     show
         AdminHouseholdRemoteDataSource,
+        ApiKeyRemoteDataSource,
         DataGatewayRemoteDataSource,
         EventRemoteDataSource,
         GameCollectionRemoteDataSource,
@@ -154,6 +155,12 @@ void registerServerNetwork({
     ..registerSingleton<HouseholdInviteRemoteDataSource>(
       HouseholdInviteRemoteDataSourceImpl(dio),
     )
+    // #1028: the per-server API key remote, for the API keys screens. Same
+    // convention and placement as the remotes above: it shares the per-server
+    // Dio (base URL + BetterAuth session the `/api/api-keys` routes require)
+    // and adds no auth of its own. Const and stateless; the container owns the
+    // Dio.
+    ..registerSingleton<ApiKeyRemoteDataSource>(ApiKeyRemoteDataSourceImpl(dio))
     // #480: the per-server household member remote, for changing a member's
     // role and removing a member. Same convention and placement as the
     // remotes above: it shares the per-server Dio and adds no auth of its own.
