@@ -47,9 +47,9 @@ final class ProviderSignInAddressMismatch extends ProviderSignInAvailability {
 
 /// Why a provider sign-in was refused.
 ///
-/// [rateLimited] and [network] have no wire code: they name client-side
-/// outcomes that the bloc maps from `AuthRateLimitedException` and
-/// `AuthNetworkException`.
+/// [rateLimited], [network] and [deviceStorage] have no wire code: they name
+/// client-side outcomes that the bloc maps from `AuthRateLimitedException`,
+/// `AuthNetworkException` and `AuthDeviceStorageException`.
 enum ProviderSignInFailureReason {
   registrationDisabled,
   emailUnverified,
@@ -59,6 +59,10 @@ enum ProviderSignInFailureReason {
   startAgain,
   rateLimited,
   network,
+
+  /// The server granted the session and this device could not store it
+  /// (#726).
+  deviceStorage,
   generic;
 
   /// Maps a wire `error` / `code` to its reason. Case-sensitive. A code

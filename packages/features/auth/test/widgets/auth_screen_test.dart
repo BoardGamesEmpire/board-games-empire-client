@@ -552,6 +552,36 @@ void main() {
         );
       });
 
+      // The server signed the user in and this device could not keep the
+      // session (#726). The fault is the device's, so the copy blames
+      // neither the server nor the password.
+      testWidgets('a session this device could not store points at the '
+          'device, not the server (#726)', (tester) async {
+        whenListen(
+          mockBloc,
+          Stream.fromIterable([
+            const AuthInitial(),
+            const AuthFailureDeviceStorage(),
+          ]),
+          initialState: const AuthInitial(),
+        );
+
+        await tester.pumpWidget(_wrap(_screen(testServerIdentity()), mockBloc));
+        await tester.pumpAndSettle();
+
+        expect(
+          find.text(
+            "Couldn't save your sign-in on this device. Make sure it has "
+            'free storage space, then try again.',
+          ),
+          findsOneWidget,
+        );
+        expect(
+          find.text('Something went wrong on the server. Please try again.'),
+          findsNothing,
+        );
+      });
+
       // The server checked the password and wants the address confirmed
       // first, so "incorrect password" would send the user to reset a
       // password that works (#394).

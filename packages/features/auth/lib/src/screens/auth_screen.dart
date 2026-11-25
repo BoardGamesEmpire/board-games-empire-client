@@ -508,6 +508,7 @@ class _AuthScreenState extends State<AuthScreen> {
     AuthFailureNetwork() => l10n.authErrorNetwork,
     AuthFailureLocalDecode() => l10n.authErrorLocalDecode,
     AuthFailureSessionNotGranted() => l10n.authErrorSessionNotGranted,
+    AuthFailureDeviceStorage() => l10n.authErrorDeviceStorage,
     AuthFailureEmailNotVerified() => l10n.authErrorEmailNotVerified,
     AuthFailureServer() => l10n.authErrorServer,
     AuthFailureRateLimited(:final retryAfter) => rateLimitedMessage(
@@ -542,6 +543,8 @@ class _AuthScreenState extends State<AuthScreen> {
           retryAfter,
         ),
         ProviderSignInFailureReason.network => l10n.authErrorNetwork,
+        ProviderSignInFailureReason.deviceStorage =>
+          l10n.authProviderErrorDeviceStorage,
         ProviderSignInFailureReason.generic => l10n.authProviderErrorGeneric,
       },
   };

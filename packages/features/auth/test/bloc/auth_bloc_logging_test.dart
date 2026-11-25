@@ -156,6 +156,27 @@ void main() {
   );
 
   blocTest<AuthBloc, AuthBlocState>(
+    'logs a raw sign-in throw at error once, from onError, not again for the '
+    'failure state it lands on (#726)',
+    build: () {
+      when(
+        () => repo.signIn(
+          email: any(named: 'email'),
+          password: any(named: 'password'),
+        ),
+      ).thenThrow(StateError('raw'));
+      return AuthBloc(authRepository: repo);
+    },
+    act: (b) =>
+        b.add(const AuthSignInRequested(email: 'a@b.co', password: 'x')),
+    verify: (_) {
+      expect(errors(), hasLength(1));
+      expect(errors().single.message, 'Uncaught error in AuthBloc');
+      expect(errors().single.error, isA<StateError>());
+    },
+  );
+
+  blocTest<AuthBloc, AuthBlocState>(
     'warns when a session check cannot complete (network) — indeterminate',
     build: () {
       when(() => repo.getSession())

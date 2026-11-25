@@ -241,6 +241,14 @@ final class AuthFailureSessionNotGranted extends AuthOperationFailure {
   const AuthFailureSessionNotGranted();
 }
 
+/// The server signed the user in and this device could not store the session,
+/// so the repository ended it (#726). The fault is the device's, perhaps a
+/// full disk or a locked keychain, so the copy must not blame the server or
+/// the password.
+final class AuthFailureDeviceStorage extends AuthOperationFailure {
+  const AuthFailureDeviceStorage();
+}
+
 /// Sign-in refused: the server checked the credentials and wants the email
 /// confirmed first (#394). Not a wrong password, so the copy must not send
 /// the user to fix one.
@@ -290,5 +298,8 @@ final class AuthFailureProviderSignIn extends AuthOperationFailure {
 final class AuthFailureServer extends AuthOperationFailure {
   const AuthFailureServer([this.cause]);
 
+  /// The [AuthException] behind it. Null for a raw throw the credential
+  /// handlers' backstop landed: that one was reported through `addError`
+  /// instead, and logged there (#726).
   final Object? cause;
 }

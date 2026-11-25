@@ -225,6 +225,9 @@ void main() {
           'Too many attempts. Wait a moment, then try again.',
       ProviderSignInFailureReason.network:
           'Could not reach the server. Check your connection.',
+      ProviderSignInFailureReason.deviceStorage:
+          "Couldn't save your sign-in on this device. Make sure it has free "
+          'storage space, then try again.',
       ProviderSignInFailureReason.generic: _genericCopy,
     };
 

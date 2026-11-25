@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:bge_test_support/domain.dart';
 import 'package:dio/dio.dart';
+import 'package:flutter/services.dart' show PlatformException;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:logging/logging.dart';
@@ -482,6 +483,305 @@ void main() {
         await expectLater(
           repo.signIn(email: 'a@b.com', password: 'pass'),
           throwsA(isA<AuthSessionNotGrantedException>()),
+        );
+        verifyNever(
+          () => mockDio.get<String>(any(), options: any(named: 'options')),
+        );
+      });
+    });
+
+    // The server granted a session and this device could not keep it (#726).
+    // A raw storage error used to leave the grant, slip past every
+    // `on AuthException` clause in AuthBloc and strand the form on its
+    // loading state. It now leaves as its own reason, and the session nobody
+    // holds is revoked best-effort with the token still in memory.
+    group('a grant this device cannot store', () {
+      final storageFault = PlatformException(code: 'x');
+      final signOutEndpoint = testServerIdentity().signOutEndpoint;
+
+      void stubGrant() => when(
+        () => mockDio.post<String>(
+          '$testAuthBasePath/sign-in/email',
+          data: any(named: 'data'),
+          options: any(named: 'options'),
+        ),
+      ).thenAnswer((_) async => _ok(_signInJson()));
+
+      void stubStoreFails() => when(
+        () => mockStorage.store(
+          token: any(named: 'token'),
+          expiresAt: any(named: 'expiresAt'),
+          persistedAt: any(named: 'persistedAt'),
+          user: any(named: 'user'),
+        ),
+      ).thenAnswer((_) => Future.error(storageFault));
+
+      /// Records the options of every sign-out POST; [answer] decides how
+      /// each one ends.
+      List<Options?> stubSignOutPost(
+        Future<Response<String>> Function() answer,
+      ) {
+        final sent = <Options?>[];
+        when(
+          () => mockDio.post<String>(
+            signOutEndpoint,
+            options: any(named: 'options'),
+          ),
+        ).thenAnswer((invocation) {
+          sent.add(invocation.namedArguments[#options] as Options?);
+          return answer();
+        });
+        return sent;
+      }
+
+      /// Every auth state the repository publishes from here on.
+      List<AuthState> recordStates() {
+        final states = <AuthState>[];
+        final subscription = repo.watchAuthState().listen(states.add);
+        addTearDown(subscription.cancel);
+        return states;
+      }
+
+      Matcher deviceStorageFault() => isA<AuthDeviceStorageException>().having(
+        (e) => e.cause,
+        'cause',
+        same(storageFault),
+      );
+
+      test('a token store failure revokes the granted session, clears, and '
+          'throws AuthDeviceStorageException', () async {
+        stubGrant();
+        stubStoreFails();
+        stubClear();
+        final sent = stubSignOutPost(() async => _status(200));
+        final states = recordStates();
+
+        await expectLater(
+          repo.signIn(email: 'a@b.com', password: 'pass'),
+          throwsA(deviceStorageFault()),
+        );
+        // The revoke is fire-and-forget; let it run.
+        await pumpEventQueue();
+
+        verify(() => mockStorage.clear()).called(1);
+        expect(sent, hasLength(1), reason: 'one revoke of the granted session');
+        expect(
+          sent.single?.headers?['Authorization'],
+          'Bearer session-tok-abc',
+        );
+        expect(states, isNot(contains(isA<AuthStateAuthenticated>())));
+        expect(repo.currentAuthState, isNot(isA<AuthStateAuthenticated>()));
+      });
+
+      final failedRevokes = <String, Future<Response<String>> Function()>{
+        'the sign-out POST answers 500': () async => _status(500),
+        'the sign-out POST fails in transport': () async => throw DioException(
+          type: DioExceptionType.connectionError,
+          requestOptions: RequestOptions(),
+        ),
+      };
+      for (final MapEntry(key: name, value: answer) in failedRevokes.entries) {
+        test('a failed revoke after a store failure still throws '
+            'AuthDeviceStorageException: $name', () async {
+          stubGrant();
+          stubStoreFails();
+          stubClear();
+          final sent = stubSignOutPost(answer);
+
+          await expectLater(
+            repo.signIn(email: 'a@b.com', password: 'pass'),
+            throwsA(deviceStorageFault()),
+          );
+          await pumpEventQueue();
+
+          expect(sent, hasLength(1));
+          verify(() => mockStorage.clear()).called(1);
+        });
+      }
+
+      test('a sign-out during a failing store reports superseded, not '
+          'storage', () async {
+        stubGrant();
+        stubClear();
+        // The sign-out reads no stored token: the grant's never landed.
+        when(() => mockStorage.retrieve()).thenAnswer((_) async => null);
+        final sent = stubSignOutPost(() async => _status(200));
+        final storeReached = Completer<void>();
+        final storeGate = Completer<void>();
+        when(
+          () => mockStorage.store(
+            token: any(named: 'token'),
+            expiresAt: any(named: 'expiresAt'),
+            persistedAt: any(named: 'persistedAt'),
+            user: any(named: 'user'),
+          ),
+        ).thenAnswer((_) {
+          storeReached.complete();
+          return storeGate.future;
+        });
+
+        final signIn = repo.signIn(email: 'a@b.com', password: 'pass');
+        await storeReached.future;
+        await repo.signOut();
+        storeGate.completeError(storageFault);
+
+        await expectLater(signIn, throwsA(isA<AuthSupersededException>()));
+        await pumpEventQueue();
+
+        // The sign-out could not revoke the grant, since it never reached
+        // storage, so the grant revokes itself.
+        expect(
+          sent.map((options) => options?.headers?['Authorization']),
+          contains('Bearer session-tok-abc'),
+        );
+      });
+
+      test('a sign-out during the clear after a failing store reports '
+          'superseded, not storage, and logs the fault quietly', () async {
+        stubGrant();
+        stubStoreFails();
+        when(() => mockStorage.retrieve()).thenAnswer((_) async => null);
+        final sent = stubSignOutPost(() async => _status(200));
+        final clearReached = Completer<void>();
+        final clearGate = Completer<void>();
+        when(() => mockStorage.clear()).thenAnswer((_) {
+          // The grant's clear is held; the sign-out's own clear is not.
+          if (clearReached.isCompleted) return Future<void>.value();
+          clearReached.complete();
+          return clearGate.future;
+        });
+        final records = <LogRecord>[];
+        final previousLevel = Logger.root.level;
+        Logger.root.level = Level.ALL;
+        final logs = Logger.root.onRecord.listen(records.add);
+        addTearDown(() async {
+          await logs.cancel();
+          Logger.root.level = previousLevel;
+        });
+
+        final signIn = repo.signIn(email: 'a@b.com', password: 'pass');
+        await clearReached.future;
+        await repo.signOut();
+        clearGate.complete();
+
+        await expectLater(signIn, throwsA(isA<AuthSupersededException>()));
+        await pumpEventQueue();
+
+        expect(
+          sent.map((options) => options?.headers?['Authorization']),
+          contains('Bearer session-tok-abc'),
+        );
+        final storageRecords = records.where(
+          (record) => identical(record.error, storageFault),
+        );
+        expect(storageRecords, hasLength(1), reason: 'the fault is kept');
+        expect(
+          storageRecords.single.level,
+          lessThan(Level.WARNING),
+          reason: 'superseded is quiet',
+        );
+      });
+
+      test('a raw storage read failure during the reconcile throws '
+          'AuthDeviceStorageException', () async {
+        stubGrant();
+        stubStore();
+        stubClear();
+        when(
+          () => mockStorage.retrieve(),
+        ).thenAnswer((_) => Future.error(storageFault));
+        final sent = stubSignOutPost(() async => _status(200));
+        final states = recordStates();
+
+        await expectLater(
+          repo.signIn(email: 'a@b.com', password: 'pass'),
+          throwsA(deviceStorageFault()),
+        );
+        await pumpEventQueue();
+
+        verify(() => mockStorage.clear()).called(1);
+        expect(sent, hasLength(1));
+        expect(
+          sent.single?.headers?['Authorization'],
+          'Bearer session-tok-abc',
+        );
+        expect(states, isNot(contains(isA<AuthStateAuthenticated>())));
+        verifyNever(
+          () => mockDio.get<String>(any(), options: any(named: 'options')),
+        );
+      });
+
+      test('a raw failure storing the confirmed session during the reconcile '
+          'throws AuthDeviceStorageException', () async {
+        stubGrant();
+        stubRetrieve();
+        stubClear();
+        when(
+          () => mockDio.get<String>(
+            '$testAuthBasePath/get-session',
+            options: any(named: 'options'),
+          ),
+        ).thenAnswer((_) async => _ok(_sessionJson()));
+        // The grant's own store lands; the reconcile's store of the session
+        // the server confirmed does not.
+        when(
+          () => mockStorage.store(
+            token: any(named: 'token'),
+            expiresAt: any(named: 'expiresAt'),
+            persistedAt: any(named: 'persistedAt'),
+            user: any(named: 'user'),
+          ),
+        ).thenAnswer(
+          (invocation) =>
+              invocation.namedArguments[#token] == _kServerVendedToken
+              ? Future.error(storageFault)
+              : Future<void>.value(),
+        );
+        final sent = stubSignOutPost(() async => _status(200));
+        final states = recordStates();
+
+        await expectLater(
+          repo.signIn(email: 'a@b.com', password: 'pass'),
+          throwsA(deviceStorageFault()),
+        );
+        await pumpEventQueue();
+
+        verify(() => mockStorage.clear()).called(1);
+        expect(sent, hasLength(1));
+        expect(
+          sent.single?.headers?['Authorization'],
+          'Bearer session-tok-abc',
+        );
+        expect(states, isNot(contains(isA<AuthStateAuthenticated>())));
+      });
+
+      test('a raw reconcile failure after a sign-out reports superseded, not '
+          'storage', () async {
+        stubGrant();
+        stubStore();
+        stubClear();
+        final sent = stubSignOutPost(() async => _status(200));
+        final readReached = Completer<void>();
+        final readGate = Completer<StoredSession?>();
+        when(() => mockStorage.retrieve()).thenAnswer((_) {
+          // The reconcile's read is held, then fails; the sign-out's own read
+          // of its token finds nothing.
+          if (readReached.isCompleted) return Future.value();
+          readReached.complete();
+          return readGate.future;
+        });
+
+        final signIn = repo.signIn(email: 'a@b.com', password: 'pass');
+        await readReached.future;
+        await repo.signOut();
+        readGate.completeError(storageFault);
+
+        await expectLater(signIn, throwsA(isA<AuthSupersededException>()));
+        await pumpEventQueue();
+
+        expect(
+          sent.map((options) => options?.headers?['Authorization']),
+          contains('Bearer session-tok-abc'),
         );
         verifyNever(
           () => mockDio.get<String>(any(), options: any(named: 'options')),

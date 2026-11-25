@@ -102,11 +102,12 @@ import 'package:observability/observability.dart';
 /// [onError] alone would see almost nothing; [onTransition] categorises the
 /// emitted failure states by the #100 severity buckets — warn for the
 /// modelled, recoverable outcomes (invalid credentials, network, local
-/// decode, session not granted, email taken, registration disabled), error
-/// for [AuthFailureServer] and for an [AuthSessionCheckFailed] whose cause is
-/// an unexpected non-auth fault.
+/// decode, session not granted, a session the device could not store, email
+/// taken, registration disabled), error for [AuthFailureServer] and for an
+/// [AuthSessionCheckFailed] whose cause is an unexpected non-auth fault.
 /// [onError] is the backstop for the genuinely unexpected: sign-out's
-/// `addError`, or any future uncaught throw in a handler. The decision to
+/// `addError`, the credential handlers' `addError` for a throw they don't
+/// model (#726), or any future uncaught throw in a handler. The decision to
 /// enter on a cached session is logged by the repository, which owns the
 /// reasoning; this bloc does not duplicate it.
 class AuthBloc extends Bloc<AuthEvent, AuthBlocState> {
@@ -393,6 +394,9 @@ class AuthBloc extends Bloc<AuthEvent, AuthBlocState> {
           _emitCredentialFailure(e, emit);
       }
       return;
+    } on Object catch (error, stackTrace) {
+      _landUnmodelledThrow(error, stackTrace, emit, const AuthFailureServer());
+      return;
     }
     emit(AuthAuthenticated(session: session));
   }
@@ -423,8 +427,30 @@ class AuthBloc extends Bloc<AuthEvent, AuthBlocState> {
           _emitCredentialFailure(e, emit);
       }
       return;
+    } on Object catch (error, stackTrace) {
+      _landUnmodelledThrow(error, stackTrace, emit, const AuthFailureServer());
+      return;
     }
     emit(AuthAuthenticated(session: session));
+  }
+
+  /// The backstop for a credential handler: nothing raw may leave one
+  /// (#181). A throw no arm models, like the storage fault #726 found, left
+  /// the form on [AuthLoading] for good.
+  ///
+  /// The throw is always reported first, so nothing raw is lost, even when a
+  /// session that arrived meanwhile is kept. Only then does [failure] land,
+  /// without the throw as its cause: [onError] has logged it, and
+  /// [onTransition] logging it again would count one fault twice.
+  void _landUnmodelledThrow(
+    Object error,
+    StackTrace stackTrace,
+    Emitter<AuthBlocState> emit,
+    AuthOperationFailure failure,
+  ) {
+    addError(error, stackTrace);
+    if (state is AuthAuthenticated) return;
+    emit(failure);
   }
 
   /// Emits the state for a sign-in or register failure the two handlers
@@ -449,6 +475,11 @@ class AuthBloc extends Bloc<AuthEvent, AuthBlocState> {
         _mirrorUnauthenticated(emit);
       case AuthSessionNotGrantedException():
         emit(const AuthFailureSessionNotGranted());
+      case AuthDeviceStorageException():
+        // The server signed the user in and this device could not keep the
+        // session, so the repository ended it (#726). The device's fault,
+        // not the server's, so not AuthFailureServer.
+        emit(const AuthFailureDeviceStorage());
       case final AuthLocalDecodeException decode:
         emit(AuthFailureLocalDecode(decode));
       case AuthNetworkException():
@@ -498,6 +529,14 @@ class AuthBloc extends Bloc<AuthEvent, AuthBlocState> {
               ProviderSignInFailureReason.network,
             ),
           );
+        case AuthDeviceStorageException():
+          // See _emitCredentialFailure (#726).
+          emit(
+            AuthFailureProviderSignIn(
+              ProviderSignInFailureReason.deviceStorage,
+              cause: e,
+            ),
+          );
         case _:
           emit(
             AuthFailureProviderSignIn(
@@ -506,6 +545,19 @@ class AuthBloc extends Bloc<AuthEvent, AuthBlocState> {
             ),
           );
       }
+      return;
+    } on Object catch (error, stackTrace) {
+      // The provider section words it, as it does every provider failure, so
+      // the generic reason rather than AuthFailureServer.
+      _landUnmodelledThrow(
+        error,
+        stackTrace,
+        emit,
+        AuthFailureProviderSignIn(
+          ProviderSignInFailureReason.generic,
+          cause: error,
+        ),
+      );
       return;
     }
 
@@ -771,6 +823,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthBlocState> {
       case AuthFailureRegistrationDisabled():
       case AuthFailureNetwork():
       case AuthFailureSessionNotGranted():
+      case AuthFailureDeviceStorage():
       case AuthFailureEmailNotVerified():
       case AuthFailureRateLimited():
         _log.warn(
@@ -797,6 +850,10 @@ class AuthBloc extends Bloc<AuthEvent, AuthBlocState> {
           error: cause,
           context: {'event': event, 'failure': 'AuthFailureLocalDecode'},
         );
+      // A raw throw the credential backstop landed: it went through
+      // addError, so onError has logged it at error already (#726).
+      case AuthFailureServer(cause: null):
+        break;
       // Anything unanticipated (unexpected status, malformed body, …) → error.
       case AuthFailureServer(:final cause):
         _log.error(
@@ -828,10 +885,10 @@ class AuthBloc extends Bloc<AuthEvent, AuthBlocState> {
   }
 
   /// Backstop for the genuinely unexpected (#100): sign-out's `addError`,
-  /// revalidation's non-auth faults, or any uncaught throw in a handler
-  /// that is not modelled as a failure state. Modelled failures are logged
-  /// in [onTransition]; this catches what would otherwise vanish into the
-  /// error sink.
+  /// revalidation's non-auth faults, a credential handler's throw it does not
+  /// model (#726), or any uncaught throw in a handler that is not modelled as
+  /// a failure state. Modelled failures are logged in [onTransition]; this
+  /// catches what would otherwise vanish into the error sink.
   @override
   void onError(Object error, StackTrace stackTrace) {
     _log.error(
