@@ -18,6 +18,8 @@ abstract class AuthRepository {
   /// Throws [AuthInvalidCredentialsException] for a 401, or a 403 whose body
   /// carries no code it recognises.
   /// Throws [AuthEmailNotVerifiedException] for a 403 `EMAIL_NOT_VERIFIED`.
+  /// Throws [AuthTwoFactorRequiredException] for BetterAuth's
+  /// `twoFactorRedirect` answer, with nothing stored and no reconcile (#704).
   /// Throws [AuthNetworkException] for connectivity failures.
   /// Throws [AuthLocalDecodeException] when the server answered but this
   /// device could not decode the reply.
@@ -639,6 +641,20 @@ final class AuthDeviceStorageException extends AuthException {
     super.message =
         'This device could not keep the session the server granted.',
     super.cause,
+  });
+}
+
+/// The server checked the password and wants a second sign-in step, because
+/// the account has two-factor turned on (#704).
+///
+/// BetterAuth's two-factor hook answers a password sign-in with
+/// `twoFactorRedirect: true` and no user, and grants no usable session. This
+/// app has no second step yet (#1121), so the sign-in ends here: nothing from
+/// the answer is stored. Not a wrong password and not a server fault, and a
+/// retry gets the same answer.
+final class AuthTwoFactorRequiredException extends AuthException {
+  const AuthTwoFactorRequiredException({
+    super.message = 'This account needs a second sign-in step.',
   });
 }
 

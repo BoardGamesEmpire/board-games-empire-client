@@ -509,6 +509,7 @@ class _AuthScreenState extends State<AuthScreen> {
     AuthFailureLocalDecode() => l10n.authErrorLocalDecode,
     AuthFailureSessionNotGranted() => l10n.authErrorSessionNotGranted,
     AuthFailureDeviceStorage() => l10n.authErrorDeviceStorage,
+    AuthFailureTwoFactorRequired() => l10n.authErrorTwoFactorRequired,
     AuthFailureEmailNotVerified() => l10n.authErrorEmailNotVerified,
     AuthFailureServer() => l10n.authErrorServer,
     AuthFailureRateLimited(:final retryAfter) => rateLimitedMessage(

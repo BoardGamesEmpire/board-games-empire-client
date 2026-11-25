@@ -793,4 +793,89 @@ void main() {
       expect(repo.currentAuthState, isA<AuthStateAuthenticated>());
     });
   });
+
+  // BetterAuth's two-factor hook answers a correct password with this body and
+  // no user (#704). The redirect's token opens nothing, so nothing from it is
+  // kept, and there is no session to reconcile. The second step is #1121.
+  group('a two-factor answer to a password sign-in (#704)', () {
+    test('sign-in answered with twoFactorRedirect throws '
+        'AuthTwoFactorRequiredException and stores nothing', () async {
+      final dio = routingDio({
+        '/sign-in/email': ('{"twoFactorRedirect": true}', 200),
+        '/get-session': (jsonEncode(_sessionJson()), 200),
+      });
+      final requested = <String>[];
+      dio.interceptors.add(
+        InterceptorsWrapper(
+          onRequest: (options, handler) {
+            requested.add(options.path);
+            handler.next(options);
+          },
+        ),
+      );
+      final repo = repoWith(dio);
+      final before = repo.currentAuthState;
+
+      await expectLater(
+        repo.signIn(email: 'a@b.c', password: 'pw'),
+        throwsA(isA<AuthTwoFactorRequiredException>()),
+      );
+
+      verifyNever(
+        () => storage.store(
+          token: any(named: 'token'),
+          expiresAt: any(named: 'expiresAt'),
+          persistedAt: any(named: 'persistedAt'),
+          user: any(named: 'user'),
+        ),
+      );
+      expect(requested, isNot(contains(endsWith('/get-session'))));
+      expect(requested, [endsWith('/sign-in/email')]);
+      expect(repo.currentAuthState, same(before));
+    });
+
+    // The check comes before the parse: a body that would parse as a full
+    // grant is still two-factor, and its token is not kept.
+    test('a twoFactorRedirect body that also carries a token and a user '
+        'throws AuthTwoFactorRequiredException and stores nothing', () async {
+      final dio = routingDio({
+        '/sign-in/email': (
+          jsonEncode({
+            'twoFactorRedirect': true,
+            'token': 'tok',
+            'user': _wireUser(),
+          }),
+          200,
+        ),
+        '/get-session': (jsonEncode(_sessionJson()), 200),
+      });
+      final requested = <String>[];
+      dio.interceptors.add(
+        InterceptorsWrapper(
+          onRequest: (options, handler) {
+            requested.add(options.path);
+            handler.next(options);
+          },
+        ),
+      );
+      final repo = repoWith(dio);
+      final before = repo.currentAuthState;
+
+      await expectLater(
+        repo.signIn(email: 'a@b.c', password: 'pw'),
+        throwsA(isA<AuthTwoFactorRequiredException>()),
+      );
+
+      verifyNever(
+        () => storage.store(
+          token: any(named: 'token'),
+          expiresAt: any(named: 'expiresAt'),
+          persistedAt: any(named: 'persistedAt'),
+          user: any(named: 'user'),
+        ),
+      );
+      expect(requested, [endsWith('/sign-in/email')]);
+      expect(repo.currentAuthState, same(before));
+    });
+  });
 }

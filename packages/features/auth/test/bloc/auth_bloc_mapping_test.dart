@@ -200,6 +200,38 @@ void main() {
     );
   });
 
+  // The password was right and the account has two-factor turned on, which
+  // this app has no step for yet (#704; the step is #1121). Its own kind, so
+  // the copy blames neither the password nor the server.
+  group('a sign-in that needs a second step', () {
+    const twoFactor = AuthTwoFactorRequiredException();
+
+    blocTest<AuthBloc, AuthBlocState>(
+      'sign-in mapping: AuthTwoFactorRequiredException → '
+      'AuthFailureTwoFactorRequired',
+      build: () {
+        stubSignIn(() => Future.error(twoFactor));
+        return AuthBloc(authRepository: mockRepo);
+      },
+      seed: () => const AuthUnauthenticated(),
+      act: (bloc) => bloc.add(signIn),
+      expect: () => [const AuthLoading(), const AuthFailureTwoFactorRequired()],
+    );
+
+    // Sign-up never gets this answer, so register words it as nothing more
+    // than the server fault it would be there.
+    blocTest<AuthBloc, AuthBlocState>(
+      'register leaves AuthTwoFactorRequiredException to the server arm',
+      build: () {
+        stubSignUp(() => Future.error(twoFactor));
+        return AuthBloc(authRepository: mockRepo);
+      },
+      seed: () => const AuthUnauthenticated(),
+      act: (bloc) => bloc.add(register),
+      expect: () => [const AuthLoading(), serverFailure(twoFactor)],
+    );
+  });
+
   // Nothing raw may leave a credential handler (#181): a throw no arm models
   // used to strand the form on AuthLoading for good (#726).
   group('a throw that is not an AuthException', () {

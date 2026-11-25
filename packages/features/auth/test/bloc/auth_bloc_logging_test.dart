@@ -120,6 +120,26 @@ void main() {
   );
 
   blocTest<AuthBloc, AuthBlocState>(
+    'warns (not errors) when the account needs a second sign-in step — the '
+    'password was right and nothing is broken (#704)',
+    build: () {
+      when(
+        () => repo.signIn(
+          email: any(named: 'email'),
+          password: any(named: 'password'),
+        ),
+      ).thenThrow(const AuthTwoFactorRequiredException());
+      return AuthBloc(authRepository: repo);
+    },
+    act: (b) =>
+        b.add(const AuthSignInRequested(email: 'a@b.co', password: 'x')),
+    verify: (_) {
+      expect(warns(), isNotEmpty);
+      expect(errors(), isEmpty);
+    },
+  );
+
+  blocTest<AuthBloc, AuthBlocState>(
     'warns (not errors) when the server wants the email confirmed — the '
     'user has a step to take, and nothing is broken (#394)',
     build: () {

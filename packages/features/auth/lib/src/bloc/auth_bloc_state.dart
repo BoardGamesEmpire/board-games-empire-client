@@ -249,6 +249,13 @@ final class AuthFailureDeviceStorage extends AuthOperationFailure {
   const AuthFailureDeviceStorage();
 }
 
+/// Sign-in stopped: the password was right and the account has two-factor
+/// turned on, and this app has no second step yet (#704; the step is #1121).
+/// The copy must not suggest the password was wrong or the server failed.
+final class AuthFailureTwoFactorRequired extends AuthOperationFailure {
+  const AuthFailureTwoFactorRequired();
+}
+
 /// Sign-in refused: the server checked the credentials and wants the email
 /// confirmed first (#394). Not a wrong password, so the copy must not send
 /// the user to fix one.

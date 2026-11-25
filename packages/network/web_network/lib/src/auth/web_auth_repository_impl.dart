@@ -357,14 +357,22 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
     );
 
     final body = await _requireGrantBody(response, context: 'sign-in');
+    final grant = _readGrant(
+      body,
+      status: response.statusCode,
+      context: 'sign-in',
+    );
+
+    // The account has two-factor turned on, and this app has no second step
+    // yet (#704; the step is #1121). The answer carries no session, so there
+    // is nothing to reconcile. Ending here also keeps the #348 latch held: no
+    // replacement cookie was proven.
+    if (grant is _TwoFactorGrant) throw const AuthTwoFactorRequiredException();
 
     // BetterAuth set the session cookie in this response and the browser
     // stored it automatically. The reconcile that follows is for the full
     // user object and the canonical expiry — not for the credential.
-    return _reconcileCredentialGrant(
-      _readGrant(body, status: response.statusCode, context: 'sign-in'),
-      context: 'sign-in',
-    );
+    return _reconcileCredentialGrant(grant, context: 'sign-in');
   }
 
   @override
@@ -1478,6 +1486,9 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
   /// statement that it declined to grant a session; a missing or unreadable
   /// body says nothing about why, so where no session follows it stays a
   /// server fault (#331).
+  ///
+  /// A fourth answer is read before any of them: BetterAuth's
+  /// `twoFactorRedirect`, a [_TwoFactorGrant], which [signIn] ends on (#704).
   _Grant _readGrant(
     Map<String, dynamic>? data, {
     required int? status,
@@ -1487,6 +1498,12 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
     // this path and has already said why, with more detail than this branch
     // could. A second record would double-count one event.
     if (data == null) return const _UnreadableGrant();
+
+    // BetterAuth's two-factor hook answers a correct password with this flag
+    // and no user (#704). Checked before the parse, so it is neither an
+    // unreadable body nor, should it carry `token: null`, a declined grant.
+    // The second step it asks for is #1121.
+    if (data['twoFactorRedirect'] == true) return const _TwoFactorGrant();
 
     final AuthResponse granted;
     try {
@@ -1560,7 +1577,9 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
   /// otherwise (#331).
   static AuthException _noSessionAfter(String context, _Grant grant) =>
       switch (grant) {
-        _DeclinedGrant() => AuthSessionNotGrantedException(
+        // Unreachable for a two-factor grant: signIn ends before the
+        // reconcile, and sign-up never gets this answer (#704).
+        _DeclinedGrant() || _TwoFactorGrant() => AuthSessionNotGrantedException(
           message: 'The server accepted the $context but granted no session.',
         ),
         _AdoptableGrant() || _UnreadableGrant() => AuthServerException(
@@ -1599,7 +1618,8 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
   }) async {
     final granted = switch (grant) {
       _AdoptableGrant(:final session) => session,
-      _DeclinedGrant() || _UnreadableGrant() => null,
+      // A two-factor grant never reaches here (see signIn, #704).
+      _DeclinedGrant() || _TwoFactorGrant() || _UnreadableGrant() => null,
     };
 
     // #348's release condition. Reaching here means the credential POST
@@ -2026,4 +2046,12 @@ final class _DeclinedGrant extends _Grant {
 /// nothing adoptable, and nothing said about why.
 final class _UnreadableGrant extends _Grant {
   const _UnreadableGrant();
+}
+
+/// BetterAuth's `twoFactorRedirect` answer: the password was right and the
+/// account wants a second sign-in step, which this app does not offer yet
+/// (#704; the step is #1121). It grants no session, so nothing is adoptable,
+/// and [WebAuthRepositoryImpl.signIn] ends the sign-in before any reconcile.
+final class _TwoFactorGrant extends _Grant {
+  const _TwoFactorGrant();
 }

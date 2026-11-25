@@ -390,6 +390,12 @@ class AuthBloc extends Bloc<AuthEvent, AuthBlocState> {
           emit(const AuthFailureInvalidCredentials());
         case AuthEmailNotVerifiedException():
           emit(const AuthFailureEmailNotVerified());
+        case AuthTwoFactorRequiredException():
+          // The password was right and the account has two-factor turned
+          // on (#704). Its own kind, not AuthFailureServer; the second step
+          // is #1121. Register leaves it to the server arm: sign-up never
+          // gets this answer.
+          emit(const AuthFailureTwoFactorRequired());
         case _:
           _emitCredentialFailure(e, emit);
       }
@@ -824,6 +830,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthBlocState> {
       case AuthFailureNetwork():
       case AuthFailureSessionNotGranted():
       case AuthFailureDeviceStorage():
+      case AuthFailureTwoFactorRequired():
       case AuthFailureEmailNotVerified():
       case AuthFailureRateLimited():
         _log.warn(

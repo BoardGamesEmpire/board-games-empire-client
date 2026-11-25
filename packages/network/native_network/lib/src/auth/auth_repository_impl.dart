@@ -1084,6 +1084,15 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
     required String context,
     required int? status,
   }) {
+    // BetterAuth's two-factor hook answers a correct password with this flag
+    // and no user (#704). Checked before the parse, and outside its try, so
+    // it is not read as an unreadable body and filed as a server fault.
+    // Nothing from this answer is stored: its token opens nothing. The
+    // second step it asks for is #1121.
+    if (body['twoFactorRedirect'] == true) {
+      throw const AuthTwoFactorRequiredException();
+    }
+
     try {
       return AuthResponse.fromJson(body);
     } on Object catch (error) {
