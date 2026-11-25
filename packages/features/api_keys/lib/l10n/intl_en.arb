@@ -312,6 +312,28 @@
   "@apiKeyScopesUndescribed": {
     "description": "Shown above an API key's permissions when the descriptions of the permissions could not be read from the server. Each permission is then shown by its code, such as 'collection:read'."
   },
+  "apiKeyScopeEverything": "Everything I can do",
+  "@apiKeyScopeEverything": {
+    "description": "Label of the switch above the permissions to choose from, when creating an API key. On, it gives the key every permission the user may give a key, and each permission below shows as included."
+  },
+  "apiKeyScopeEverythingIncludes": "{count, plural, =1{Includes 1 permission} other{Includes {count} permissions}}",
+  "@apiKeyScopeEverythingIncludes": {
+    "description": "Under the 'Everything I can do' switch while it is on: how many permissions it gives the key. Each of them is listed below it.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "12"
+      }
+    }
+  },
+  "apiKeyScopeNoLongerAvailableRemoved": "No longer available; saving removes it",
+  "@apiKeyScopeNoLongerAvailableRemoved": {
+    "description": "Under a permission an API key holds that the user may no longer give a key, once the user has changed the key's permissions: saving the change takes this permission off the key. The permission is shown by its code, as there is no description for it."
+  },
+  "apiKeyScopesNoneWarning": "With no permissions, this key works nowhere.",
+  "@apiKeyScopesNoneWarning": {
+    "description": "Warning under the permissions to choose from when none is chosen. A key may be saved with none, but it can't be used for anything until it is given some."
+  },
   "apiKeyDelete": "Delete key",
   "@apiKeyDelete": {
     "description": "Button at the end of an API key's page that deletes the key, after asking."

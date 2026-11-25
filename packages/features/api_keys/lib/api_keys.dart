@@ -11,4 +11,5 @@ export 'src/list/api_key_list_state.dart';
 export 'src/widgets/api_key_row.dart';
 export 'src/widgets/api_key_scope_list.dart';
 export 'src/widgets/delete_key_dialog.dart';
+export 'src/widgets/scope_picker.dart';
 export 'src/widgets/scope_summary.dart';
