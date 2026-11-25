@@ -189,8 +189,13 @@ class ApiKeyRemoteDataSourceImpl implements ApiKeyRemoteDataSource {
 
   static String _row(String id) => '$_path/${Uri.encodeComponent(id)}';
 
+  /// The server refuses this character in a name, a slug and a resourceId,
+  /// because Postgres cannot store it.
+  static const String _nul = '\u{0}';
+
   /// The name as the server will read it: trimmed, and 1 to
-  /// [ApiKeyRemoteDataSource.maxNameLength] units of Dart `String.length`.
+  /// [ApiKeyRemoteDataSource.maxNameLength] units of Dart `String.length`,
+  /// with no NUL character.
   static String _checkedName(String name) {
     final trimmed = name.trim();
     if (trimmed.isEmpty ||
@@ -201,6 +206,9 @@ class ApiKeyRemoteDataSourceImpl implements ApiKeyRemoteDataSource {
         'must be 1 to ${ApiKeyRemoteDataSource.maxNameLength} characters '
             'after trimming',
       );
+    }
+    if (trimmed.contains(_nul)) {
+      throw ArgumentError.value(name, 'name', 'must not hold a NUL character');
     }
     return trimmed;
   }
@@ -221,11 +229,19 @@ class ApiKeyRemoteDataSourceImpl implements ApiKeyRemoteDataSource {
   /// has a null `resourceId`: an empty one is never what was meant.
   static void _checkScopes(List<ApiKeyScope> scopes, {required String name}) {
     for (final scope in scopes) {
-      if (scope.slug.isEmpty || scope.resourceId?.isEmpty == true) {
+      final resourceId = scope.resourceId;
+      if (scope.slug.isEmpty || resourceId?.isEmpty == true) {
         throw ArgumentError.value(
           scopes,
           name,
           'a scope needs a slug, and a pin is left out rather than empty',
+        );
+      }
+      if (scope.slug.contains(_nul) || (resourceId?.contains(_nul) ?? false)) {
+        throw ArgumentError.value(
+          scopes,
+          name,
+          'a slug or pin must not hold a NUL character',
         );
       }
     }

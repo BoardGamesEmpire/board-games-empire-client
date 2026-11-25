@@ -319,6 +319,18 @@ void main() {
           name: 'a',
           grant: ApiKeyScopesGrant([ApiKeyScope(slug: '')]),
         ),
+        // A NUL character, which Postgres cannot store.
+        const ApiKeyCreate(name: 'CI\u{0}deploy', grant: grant),
+        const ApiKeyCreate(
+          name: 'a',
+          grant: ApiKeyScopesGrant([ApiKeyScope(slug: 'read:ga\u{0}me')]),
+        ),
+        const ApiKeyCreate(
+          name: 'a',
+          grant: ApiKeyScopesGrant([
+            ApiKeyScope(slug: 'read:game', resourceId: 'g\u{0}'),
+          ]),
+        ),
       ];
 
       for (final request in bad) {
@@ -422,21 +434,44 @@ void main() {
       },
     );
 
-    test('refuses an invalid name, expiry or id before sending', () async {
-      await expectLater(
-        remote.update('k_1', const ApiKeyPatch(name: '')),
-        throwsA(isA<ArgumentError>()),
-      );
-      await expectLater(
-        remote.update('k_1', const ApiKeyPatch(expiresInDays: 400)),
-        throwsA(isA<ArgumentError>()),
-      );
-      await expectLater(
-        remote.update('..', const ApiKeyPatch(name: 'a')),
-        throwsA(isA<ArgumentError>()),
-      );
-      expect(server.requests, isEmpty);
-    });
+    test(
+      'refuses an invalid name, scope, expiry or id before sending',
+      () async {
+        await expectLater(
+          remote.update('k_1', const ApiKeyPatch(name: '')),
+          throwsA(isA<ArgumentError>()),
+        );
+        await expectLater(
+          remote.update('k_1', const ApiKeyPatch(name: 'CI\u{0}deploy')),
+          throwsA(isA<ArgumentError>()),
+        );
+        await expectLater(
+          remote.update(
+            'k_1',
+            const ApiKeyPatch(scopes: [ApiKeyScope(slug: 'read:ga\u{0}me')]),
+          ),
+          throwsA(isA<ArgumentError>()),
+        );
+        await expectLater(
+          remote.update(
+            'k_1',
+            const ApiKeyPatch(
+              scopes: [ApiKeyScope(slug: 'read:game', resourceId: 'g\u{0}')],
+            ),
+          ),
+          throwsA(isA<ArgumentError>()),
+        );
+        await expectLater(
+          remote.update('k_1', const ApiKeyPatch(expiresInDays: 400)),
+          throwsA(isA<ArgumentError>()),
+        );
+        await expectLater(
+          remote.update('..', const ApiKeyPatch(name: 'a')),
+          throwsA(isA<ArgumentError>()),
+        );
+        expect(server.requests, isEmpty);
+      },
+    );
   });
 
   group('delete', () {

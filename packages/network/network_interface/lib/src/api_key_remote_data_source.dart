@@ -71,7 +71,8 @@ import 'package:network_interface/src/paginated_result.dart';
 /// `1..maxPageSize`, a name that is empty once trimmed or longer than
 /// [maxNameLength], an expiry outside `minExpiryDays..maxExpiryDays`, or an
 /// empty [ApiKeyPatch]. A scope with an empty slug or an empty resourceId
-/// throws too: an unpinned scope's resourceId is null, never empty.
+/// throws too: an unpinned scope's resourceId is null, never empty. So does a
+/// NUL character in a name, a slug or a resourceId, which the server refuses.
 /// [ApiKeyCreate] and [ApiKeyPatch] are not validated in their constructors,
 /// so the implementation checks them.
 abstract class ApiKeyRemoteDataSource {
