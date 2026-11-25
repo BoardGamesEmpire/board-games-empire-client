@@ -1,0 +1,239 @@
+{
+  "@@locale": "en",
+  "apiKeysTitle": "API keys",
+  "@apiKeysTitle": {
+    "description": "Title of the screen that lists the signed-in user's API keys on this server. An API key lets a script or another app act as the user, with only the permissions the key holds."
+  },
+  "apiKeysLoading": "Loading your API keys…",
+  "@apiKeysLoading": {
+    "description": "Shown beside a spinner, and read out by screen readers, while the list of the user's API keys is being read from the server."
+  },
+  "apiKeysLoadFailed": "Couldn't load your API keys",
+  "@apiKeysLoadFailed": {
+    "description": "Title of the message shown in place of the list when the user's API keys could not be read from the server."
+  },
+  "apiKeysLoadFailedBody": "Check your connection, then try again.",
+  "@apiKeysLoadFailedBody": {
+    "description": "Body under the title when the user's API keys could not be read from the server."
+  },
+  "apiKeysRetry": "Try again",
+  "@apiKeysRetry": {
+    "description": "Button that reads the list of API keys from the server again after it failed."
+  },
+  "apiKeysEmptyTitle": "No API keys yet",
+  "@apiKeysEmptyTitle": {
+    "description": "Title shown in place of the list when the user has no API keys on this server."
+  },
+  "apiKeysEmptyBody": "An API key lets a script or another app use this server as you, with only the permissions you give the key.",
+  "@apiKeysEmptyBody": {
+    "description": "Body under the empty list's title, explaining what an API key is."
+  },
+  "apiKeysEmptyEnabled": "No enabled keys",
+  "@apiKeysEmptyEnabled": {
+    "description": "Shown in place of the list when the 'Enabled' filter is chosen and none of the user's loaded API keys is enabled."
+  },
+  "apiKeysEmptyDisabled": "No disabled keys",
+  "@apiKeysEmptyDisabled": {
+    "description": "Shown in place of the list when the 'Disabled' filter is chosen and none of the user's loaded API keys is disabled."
+  },
+  "apiKeysEmptyFilterMore": "Some may be among the keys not loaded yet. Choose More to load them.",
+  "@apiKeysEmptyFilterMore": {
+    "description": "Body under 'No enabled keys' or 'No disabled keys' while the server has more keys than the list has loaded. 'More' is the name of the button under the list that loads the next keys."
+  },
+  "apiKeysFilterAll": "All",
+  "@apiKeysFilterAll": {
+    "description": "Filter choice above the API key list that shows every loaded key, enabled or disabled."
+  },
+  "apiKeysFilterEnabled": "Enabled",
+  "@apiKeysFilterEnabled": {
+    "description": "Filter choice above the API key list that shows only the keys that are enabled, which work."
+  },
+  "apiKeysFilterDisabled": "Disabled",
+  "@apiKeysFilterDisabled": {
+    "description": "Filter choice above the API key list that shows only the keys that are disabled, which don't work until enabled again."
+  },
+  "apiKeysMore": "More",
+  "@apiKeysMore": {
+    "description": "Button under the API key list that loads the next keys from the server."
+  },
+  "apiKeysLoadingMore": "Loading more keys…",
+  "@apiKeysLoadingMore": {
+    "description": "The name of the 'More' button while it is loading the next keys. Read out by screen readers as the button's name."
+  },
+  "apiKeysMoreFailed": "Couldn't load more keys. Choose More to try again.",
+  "@apiKeysMoreFailed": {
+    "description": "Shown above the 'More' button when the next keys could not be read from the server. The keys already shown stay."
+  },
+  "apiKeysRefreshFailed": "Couldn't refresh your API keys. They may be out of date.",
+  "@apiKeysRefreshFailed": {
+    "description": "Shown above the API key list when reading it again from the server failed. The keys already shown stay, but may have changed since they were read."
+  },
+  "apiKeysRefresh": "Refresh",
+  "@apiKeysRefresh": {
+    "description": "Name and tooltip of the app bar button that reads the API key list from the server again."
+  },
+  "apiKeysRefreshing": "Refreshing…",
+  "@apiKeysRefreshing": {
+    "description": "Name and tooltip of the refresh button while the API key list is being read again."
+  },
+  "apiKeyUnnamed": "Unnamed key",
+  "@apiKeyUnnamed": {
+    "description": "Shown as an API key's name when the server has no name for it."
+  },
+  "apiKeyStart": "{start}…",
+  "@apiKeyStart": {
+    "description": "The first characters of an API key's secret, followed by an ellipsis, so the user can tell keys apart. Only the first characters are ever shown.",
+    "placeholders": {
+      "start": {
+        "type": "String",
+        "example": "bge_a1B2"
+      }
+    }
+  },
+  "apiKeyScopeCount": "{count, plural, =1{1 permission} other{{count} permissions}}",
+  "@apiKeyScopeCount": {
+    "description": "How many permissions an API key holds, on its row in the key list, when the risk levels of its permissions aren't known.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "3"
+      }
+    }
+  },
+  "apiKeyScopeCountWithRisk": "{count, plural, =1{1 permission, highest risk {risk}} other{{count} permissions, highest risk {risk}}}",
+  "@apiKeyScopeCountWithRisk": {
+    "description": "How many permissions an API key holds and the highest risk level among them, on its row in the key list. {risk} is one of the risk level names: Low, Medium, High or Critical.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "3"
+      },
+      "risk": {
+        "type": "String",
+        "example": "High"
+      }
+    }
+  },
+  "apiKeyNoScopes": "No permissions: this key works nowhere",
+  "@apiKeyNoScopes": {
+    "description": "Shown for an API key that holds no permissions, which can't be used for anything until it is given some."
+  },
+  "apiKeyRiskLow": "Low",
+  "@apiKeyRiskLow": {
+    "description": "Name of the lowest risk level a permission can have."
+  },
+  "apiKeyRiskMedium": "Medium",
+  "@apiKeyRiskMedium": {
+    "description": "Name of the second of four risk levels a permission can have."
+  },
+  "apiKeyRiskHigh": "High",
+  "@apiKeyRiskHigh": {
+    "description": "Name of the third of four risk levels a permission can have."
+  },
+  "apiKeyRiskCritical": "Critical",
+  "@apiKeyRiskCritical": {
+    "description": "Name of the highest risk level a permission can have. Giving a key a Critical permission needs the user's confirmation."
+  },
+  "apiKeyRiskUnknown": "Unknown",
+  "@apiKeyRiskUnknown": {
+    "description": "Shown as a permission's risk level when the server named a level this app doesn't know."
+  },
+  "apiKeyExpires": "Expires {date}",
+  "@apiKeyExpires": {
+    "description": "When an API key stops working.",
+    "placeholders": {
+      "date": {
+        "type": "DateTime",
+        "format": "yMMMd"
+      }
+    }
+  },
+  "apiKeyNeverExpires": "Never expires",
+  "@apiKeyNeverExpires": {
+    "description": "Shown in place of an expiry date for an API key that doesn't stop working on a date."
+  },
+  "apiKeyEnabled": "Enabled",
+  "@apiKeyEnabled": {
+    "description": "Says an API key is enabled: it works."
+  },
+  "apiKeyDisabled": "Disabled",
+  "@apiKeyDisabled": {
+    "description": "Says an API key is disabled: it doesn't work until it is enabled again."
+  },
+  "apiKeyLastUsed": "Last used {date}",
+  "@apiKeyLastUsed": {
+    "description": "When an API key was last used.",
+    "placeholders": {
+      "date": {
+        "type": "DateTime",
+        "format": "yMMMd"
+      }
+    }
+  },
+  "apiKeyNeverUsed": "Never used",
+  "@apiKeyNeverUsed": {
+    "description": "Shown in place of a last-used date for an API key that hasn't been used yet."
+  },
+  "apiKeyFailureNeedsRecentSignIn": "This needs a recent sign-in. Sign out, sign in again, then try once more.",
+  "@apiKeyFailureNeedsRecentSignIn": {
+    "description": "Shown when the server refused a change to an API key because the user signed in too long ago."
+  },
+  "apiKeyFailureCriticalNeedsConfirmation": "A Critical permission needs your confirmation first.",
+  "@apiKeyFailureCriticalNeedsConfirmation": {
+    "description": "Shown when the server refused to give a key a permission of the Critical risk level because the user hadn't confirmed it."
+  },
+  "apiKeyFailureScopeNotGrantable": "You can't give a key the permission {permission}.",
+  "@apiKeyFailureScopeNotGrantable": {
+    "description": "Shown when the server refused a permission the user tried to give an API key, because the user may not give it. {permission} is the permission's description, or its code when the app doesn't have its description.",
+    "placeholders": {
+      "permission": {
+        "type": "String",
+        "example": "Read your game collection"
+      }
+    }
+  },
+  "apiKeyFailureScopeNotPinnable": "The permission {permission} can't be limited to one record.",
+  "@apiKeyFailureScopeNotPinnable": {
+    "description": "Shown when the server refused to limit a permission of an API key to a single record. {permission} is the permission's description, or its code when the app doesn't have its description.",
+    "placeholders": {
+      "permission": {
+        "type": "String",
+        "example": "Manage your households"
+      }
+    }
+  },
+  "apiKeyFailureScopeUnnamed": "You can't give a key one of these permissions.",
+  "@apiKeyFailureScopeUnnamed": {
+    "description": "Shown when the server refused one of the permissions the user tried to give an API key without saying which."
+  },
+  "apiKeyFailureScopeUnpinnableUnnamed": "One of these permissions can't be limited to one record.",
+  "@apiKeyFailureScopeUnpinnableUnnamed": {
+    "description": "Shown when the server refused to limit one of an API key's permissions to a single record without saying which."
+  },
+  "apiKeyFailureExpiryOutOfRange": "A key can last from {min, plural, =1{1 day} other{{min} days}} to {max, plural, =1{1 day} other{{max} days}}.",
+  "@apiKeyFailureExpiryOutOfRange": {
+    "description": "Shown when the server refused the lifetime the user chose for an API key.",
+    "placeholders": {
+      "min": {
+        "type": "int",
+        "example": "1"
+      },
+      "max": {
+        "type": "int",
+        "example": "365"
+      }
+    }
+  },
+  "apiKeyFailureNotFound": "This key no longer exists.",
+  "@apiKeyFailureNotFound": {
+    "description": "Shown when the server says the API key the user acted on doesn't exist, for example because it was deleted elsewhere."
+  },
+  "apiKeyFailureTransient": "Couldn't reach the server. Check your connection, then try again.",
+  "@apiKeyFailureTransient": {
+    "description": "Shown when a request about an API key got no answer from the server that says anything about it."
+  },
+  "apiKeyFailureGeneric": "The server couldn't do that. Try again later.",
+  "@apiKeyFailureGeneric": {
+    "description": "Shown when the server refused a request about an API key and gave no message of its own."
+  }
+}
