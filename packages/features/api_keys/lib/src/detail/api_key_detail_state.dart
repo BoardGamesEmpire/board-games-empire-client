@@ -60,6 +60,7 @@ final class ApiKeyDetailState extends Equatable {
     this.writing,
     this.outcome,
     this.deleted = false,
+    this.loadFailure,
   });
 
   final ApiKeyDetailStatus status;
@@ -84,6 +85,10 @@ final class ApiKeyDetailState extends Equatable {
   /// [key] as it last drew it on the way out. Nothing more is sent.
   final bool deleted;
 
+  /// Why the key couldn't be read, while [status] is
+  /// [ApiKeyDetailStatus.loadFailed]; null otherwise.
+  final ApiKeyFailure? loadFailure;
+
   /// A copy with the fields given. The nullable fields take a function, so
   /// that a copy can set them to null.
   ApiKeyDetailState copyWith({
@@ -93,6 +98,7 @@ final class ApiKeyDetailState extends Equatable {
     ApiKeyWrite? Function()? writing,
     ApiKeyDetailOutcome? Function()? outcome,
     bool? deleted,
+    ApiKeyFailure? Function()? loadFailure,
   }) => ApiKeyDetailState(
     status: status ?? this.status,
     key: key ?? this.key,
@@ -100,6 +106,7 @@ final class ApiKeyDetailState extends Equatable {
     writing: writing == null ? this.writing : writing(),
     outcome: outcome == null ? this.outcome : outcome(),
     deleted: deleted ?? this.deleted,
+    loadFailure: loadFailure == null ? this.loadFailure : loadFailure(),
   );
 
   @override
@@ -110,5 +117,6 @@ final class ApiKeyDetailState extends Equatable {
     writing,
     outcome,
     deleted,
+    loadFailure,
   ];
 }

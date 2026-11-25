@@ -11,6 +11,8 @@ resolution: workspace
 dependencies:
   analytics:
     path: ../core/analytics
+  api_keys:
+    path: ../features/api_keys
   auth:
     path: ../features/auth
   data_export:

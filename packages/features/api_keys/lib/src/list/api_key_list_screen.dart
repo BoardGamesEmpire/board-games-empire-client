@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:api_keys/l10n/api_keys_localizations.dart';
+import 'package:api_keys/src/failure/api_key_failure.dart';
 import 'package:api_keys/src/list/api_key_list_bloc.dart';
 import 'package:api_keys/src/list/api_key_list_event.dart';
 import 'package:api_keys/src/list/api_key_list_state.dart';
@@ -17,7 +18,7 @@ import 'package:ui_tokens/ui_tokens.dart';
 ///
 /// Online only, as the sign-in methods screen is: the keys and the
 /// permissions the user may grant are read from the server when the screen
-/// opens, again when a key's own page closes, and on Refresh. Nothing is
+/// opens, again when a page over it has gone, and on Refresh. Nothing is
 /// stored. The list writes nothing, so nothing here waits for a connection.
 ///
 /// Each row says its key's name, the start of its secret, its permissions
@@ -25,9 +26,25 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// enabled and when it was last used ([ApiKeyRow]). Tapping a row opens the
 /// key through [openKey]; a second tap while that page is open does nothing.
 ///
+/// ## Coming back
+///
+/// The list reads its pages again once a page over it has gone, so what
+/// was done there shows here, and a key opened from a later page keeps its
+/// row and its focus. There are two signs of that, and one read for both:
+///
+/// - [openKey]'s future completes, for a page the list opened;
+/// - the list's route is the top one again, after not being. That covers a
+///   page the list never opened, as when a link or a reload builds the list
+///   beneath a key's page, and a page the router took away without popping
+///   it, as the browser's Back does. The future a push returned then never
+///   completes, and waiting on it alone would leave the list unable to open
+///   anything again.
+///
 /// A read that fails with keys on screen leaves them there, with their
 /// focus, under a [BgeRefreshBanner] saying they may be out of date. Only a
-/// read that fails with nothing loaded takes the page, as a [BgeErrorState].
+/// read that fails with nothing loaded takes the page, as a [BgeErrorState]
+/// that says why: the connection, or the server's refusal in its words. Its
+/// Try again goes as the read starts, so focus waits on the page's title.
 ///
 /// The screen makes its own [ApiKeyListBloc], and a new [remote] makes a new
 /// one, so one server's keys never show under another's.
@@ -35,7 +52,6 @@ class ApiKeyListScreen extends StatefulWidget {
   const ApiKeyListScreen({
     required this.remote,
     required this.openKey,
-    this.createKey,
     super.key,
   });
 
@@ -59,53 +75,131 @@ class ApiKeyListScreen extends StatefulWidget {
   /// completes, so a change made there shows here.
   final Future<void> Function(String id) openKey;
 
-  /// Opens the page that makes a key. Null offers none.
-  final Future<void> Function()? createKey;
-
   @override
   State<ApiKeyListScreen> createState() => _ApiKeyListScreenState();
 }
 
 class _ApiKeyListScreenState extends State<ApiKeyListScreen> {
-  /// Whether a key's page is open from here, so a second tap opens nothing.
-  bool _opening = false;
-
-  Future<void> _open(BuildContext context, String id) async {
-    if (_opening) return;
-    _opening = true;
-    // Read before the await: a new remote replaces the bloc meanwhile, and
-    // the one closed with it is not asked to read again.
-    final bloc = context.read<ApiKeyListBloc>();
-    try {
-      await widget.openKey(id);
-    } finally {
-      if (mounted) _opening = false;
-    }
-    // A provider can close its bloc before isClosed reads true, so the
-    // screen being mounted is asked too.
-    if (mounted && !bloc.isClosed) bloc.add(const ApiKeyListRequested());
-  }
-
   @override
   Widget build(BuildContext context) => BlocProvider<ApiKeyListBloc>(
     // A new remote is another server's keys: a new list, not the old rows.
     key: ObjectKey(widget.remote),
     create: (_) =>
         ApiKeyListBloc(widget.remote)..add(const ApiKeyListRequested()),
-    child: BlocBuilder<ApiKeyListBloc, ApiKeyListState>(
-      builder: (context, state) => _ApiKeyListView(
-        state: state,
-        onOpen: (id) => unawaited(_open(context, id)),
-      ),
-    ),
+    child: _ApiKeyList(openKey: widget.openKey),
   );
 }
 
+/// The list under its bloc's provider: what opens a page from it, and what
+/// reads it again once a page over it has gone. See "Coming back" on
+/// [ApiKeyListScreen].
+class _ApiKeyList extends StatefulWidget {
+  const _ApiKeyList({required this.openKey});
+
+  final Future<void> Function(String id) openKey;
+
+  @override
+  State<_ApiKeyList> createState() => _ApiKeyListState();
+}
+
+class _ApiKeyListState extends State<_ApiKeyList> {
+  /// Whether a key's page opened from here is open. A second tap then opens
+  /// nothing.
+  bool _opening = false;
+
+  /// Whether another route was over the list's when it was last asked.
+  bool _covered = false;
+
+  /// Whether the list has read again for the page now over it, so the
+  /// second sign of that page going reads nothing more.
+  bool _readAgain = false;
+
+  /// On the page's title, which takes focus only when sent there: it is no
+  /// Tab stop. Where focus waits when Try again goes as the read starts.
+  final FocusNode _heading = FocusNode(
+    debugLabel: 'API keys heading',
+    skipTraversal: true,
+  );
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final current = ModalRoute.isCurrentOf(context) ?? true;
+    if (_covered && current) {
+      // The top route again: whatever was over the list has gone, by a pop
+      // or by the router taking it away, whoever opened it.
+      _opening = false;
+      if (!_readAgain) _read();
+    }
+    // A page newly over the list has had no read made for it yet.
+    if (!_covered || current) _readAgain = false;
+    _covered = !current;
+  }
+
+  @override
+  void dispose() {
+    _heading.dispose();
+    super.dispose();
+  }
+
+  /// Reads the pages loaded again, unless the list has gone: a new remote
+  /// takes this State with the bloc it read from.
+  void _read() {
+    if (!mounted) return;
+    context.read<ApiKeyListBloc>().add(const ApiKeyListRequested());
+  }
+
+  Future<void> _away(Future<void> Function() open) async {
+    if (_opening) return;
+    _opening = true;
+    try {
+      await open();
+    } finally {
+      // Still waited on: the list's route coming back to the top has not
+      // answered for this page already.
+      if (_opening) {
+        _opening = false;
+        _read();
+        _readAgain = true;
+      }
+    }
+  }
+
+  void _retry() {
+    // Try again goes as the read starts, and would take focus with it.
+    _heading.requestFocus();
+    _read();
+  }
+
+  @override
+  Widget build(BuildContext context) =>
+      BlocBuilder<ApiKeyListBloc, ApiKeyListState>(
+        builder: (context, state) => _ApiKeyListView(
+          state: state,
+          heading: _heading,
+          onOpen: (id) => unawaited(_away(() => widget.openKey(id))),
+          onRetry: _retry,
+        ),
+      );
+}
+
 class _ApiKeyListView extends StatelessWidget {
-  const _ApiKeyListView({required this.state, required this.onOpen});
+  const _ApiKeyListView({
+    required this.state,
+    required this.heading,
+    required this.onOpen,
+    required this.onRetry,
+  });
 
   final ApiKeyListState state;
+
+  /// The page title's focus node.
+  final FocusNode heading;
+
   final void Function(String id) onOpen;
+
+  /// Reads page 1 again after a load failure.
+  final VoidCallback onRetry;
 
   @override
   Widget build(BuildContext context) {
@@ -116,7 +210,7 @@ class _ApiKeyListView extends StatelessWidget {
     final visible = state.visible;
 
     return BgePage.slivers(
-      title: Text(l10n.apiKeysTitle),
+      title: Focus(focusNode: heading, child: Text(l10n.apiKeysTitle)),
       // Rows of a name and its facts: the list measure.
       width: BgePageWidth.pane,
       // What the list holds now, grown as pages arrive. Not known until the
@@ -168,9 +262,16 @@ class _ApiKeyListView extends StatelessWidget {
               key: ApiKeyListScreen.failedKey,
               icon: Icons.cloud_off_outlined,
               title: l10n.apiKeysLoadFailed,
-              body: l10n.apiKeysLoadFailedBody,
+              body: switch (state.loadFailure) {
+                // A refusal says why in its own words, the server's where
+                // the client has none (#1028).
+                final failure?
+                    when failure.reason != ApiKeyFailureReason.transient =>
+                  apiKeyFailureMessage(l10n, failure),
+                _ => l10n.apiKeysLoadFailedBody,
+              },
               retryLabel: l10n.apiKeysRetry,
-              onRetry: () => bloc.add(const ApiKeyListRequested()),
+              onRetry: onRetry,
             ),
           ),
           // With more to load, More follows the words, so the state takes
@@ -292,15 +393,15 @@ class _FilterControl extends StatelessWidget {
       segments: [
         ButtonSegment(
           value: ApiKeyStatusFilter.all,
-          label: Text(l10n.apiKeysFilterAll),
+          label: _SegmentLabel(l10n.apiKeysFilterAll),
         ),
         ButtonSegment(
           value: ApiKeyStatusFilter.enabled,
-          label: Text(l10n.apiKeysFilterEnabled),
+          label: _SegmentLabel(l10n.apiKeysFilterEnabled),
         ),
         ButtonSegment(
           value: ApiKeyStatusFilter.disabled,
-          label: Text(l10n.apiKeysFilterDisabled),
+          label: _SegmentLabel(l10n.apiKeysFilterDisabled),
         ),
       ],
       selected: {filter},
@@ -310,4 +411,18 @@ class _FilterControl extends StatelessWidget {
       ),
     );
   }
+}
+
+/// A filter segment's label. A segment is as wide as a third of the row, so
+/// at 320dp and 200% text a word wider than that scales down to fit on one
+/// line rather than breaking mid-word, as a tab's label does (STYLE_GUIDE,
+/// "Tabs").
+class _SegmentLabel extends StatelessWidget {
+  const _SegmentLabel(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) =>
+      FittedBox(fit: BoxFit.scaleDown, child: Text(text, maxLines: 1));
 }

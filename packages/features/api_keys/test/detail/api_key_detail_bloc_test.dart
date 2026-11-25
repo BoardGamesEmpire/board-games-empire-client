@@ -106,9 +106,34 @@ void main() {
         bloc.add(const ApiKeyDetailRequested());
       },
       expect: () => [
-        const ApiKeyDetailState(status: ApiKeyDetailStatus.loadFailed),
+        const ApiKeyDetailState(
+          status: ApiKeyDetailStatus.loadFailed,
+          loadFailure: ApiKeyFailure(ApiKeyFailureReason.transient),
+        ),
         const ApiKeyDetailState(),
         loaded(),
+      ],
+    );
+
+    blocTest<ApiKeyDetailBloc, ApiKeyDetailState>(
+      "a load failure keeps why, with the server's words",
+      setUp: () => when(() => remote.fetch('k_1')).thenThrow(
+        const ApiKeyPermanentException(
+          'refused',
+          statusCode: 400,
+          apiMessage: 'That id is not a key id',
+        ),
+      ),
+      build: build,
+      act: (bloc) => bloc.add(const ApiKeyDetailRequested()),
+      expect: () => [
+        const ApiKeyDetailState(
+          status: ApiKeyDetailStatus.loadFailed,
+          loadFailure: ApiKeyFailure(
+            ApiKeyFailureReason.generic,
+            serverMessage: 'That id is not a key id',
+          ),
+        ),
       ],
     );
   });

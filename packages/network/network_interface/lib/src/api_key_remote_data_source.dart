@@ -70,8 +70,10 @@ import 'package:network_interface/src/paginated_result.dart';
 /// unwrapped, before any request: a page below 1, a limit outside
 /// `1..maxPageSize`, a name that is empty once trimmed or longer than
 /// [maxNameLength], an expiry outside `minExpiryDays..maxExpiryDays`, or an
-/// empty [ApiKeyPatch]. [ApiKeyCreate] and [ApiKeyPatch] are not validated in
-/// their constructors, so the implementation checks them.
+/// empty [ApiKeyPatch]. A scope with an empty slug or an empty resourceId
+/// throws too: an unpinned scope's resourceId is null, never empty.
+/// [ApiKeyCreate] and [ApiKeyPatch] are not validated in their constructors,
+/// so the implementation checks them.
 abstract class ApiKeyRemoteDataSource {
   /// The page size the screens ask for, and the server's default.
   static const int defaultPageSize = 20;

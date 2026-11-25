@@ -1,4 +1,5 @@
 import 'package:api_keys/l10n/api_keys_localizations.dart';
+import 'package:api_keys/src/widgets/api_key_facts.dart';
 import 'package:api_keys/src/widgets/scope_summary.dart';
 import 'package:flutter/material.dart';
 import 'package:models/domain.dart';
@@ -32,9 +33,8 @@ class ApiKeyRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = ApiKeysLocalizations.of(context);
-    final start = apiKey.start;
-    final expiresAt = apiKey.expiresAt;
-    final lastUsedAt = apiKey.lastUsedAt;
+    final facts = apiKeyFactLines(l10n, apiKey);
+    final start = facts.start;
 
     // MergeSemantics inside the outline and outside the ring, so the tap and
     // every line are one node, as on the other list rows.
@@ -46,24 +46,16 @@ class ApiKeyRow extends StatelessWidget {
             onFocusChange: row.onFocusChange,
             focusColor: row.focusColor,
             onTap: row.onTap(onOpen),
-            title: Text(apiKey.name ?? l10n.apiKeyUnnamed),
+            title: Text(apiKeyNameOf(l10n, apiKey)),
             subtitle: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (start != null) Text(l10n.apiKeyStart(start)),
+                if (start != null) Text(start),
                 Text(scopeSummary(l10n, apiKey.scopes, grantable)),
-                Text(
-                  expiresAt == null
-                      ? l10n.apiKeyNeverExpires
-                      : l10n.apiKeyExpires(expiresAt.toLocal()),
-                ),
+                Text(facts.expiry),
                 Text(apiKey.enabled ? l10n.apiKeyEnabled : l10n.apiKeyDisabled),
-                Text(
-                  lastUsedAt == null
-                      ? l10n.apiKeyNeverUsed
-                      : l10n.apiKeyLastUsed(lastUsedAt.toLocal()),
-                ),
+                Text(facts.lastUsed),
               ],
             ),
           ),

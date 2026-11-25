@@ -169,3 +169,22 @@ opens with no lookup or switch, and only at a location the app declares. A web c
 load is one too. Not Android's App Links, which are verified `https` links, nor the
 `app_links` package that receives both kinds.
 _Avoid_: Settings link, server-less link
+
+### API keys
+
+**API key**:
+A credential a user creates so that a program can act as them. It can do only what
+both its owner and its key scopes allow, and it stops working while its owner is
+banned.
+_Avoid_: token, delegation
+
+**Key scope**:
+The permissions one API key is limited to. A key with no scopes can do nothing that
+needs a permission.
+_Avoid_: key permission
+
+**Risk level**:
+How dangerous a permission is to hand over: low, medium, high or critical. It decides
+how prominently the permission is shown when consent is asked, and whether consent
+must be given again when the level rises.
+_Avoid_: severity, sensitivity

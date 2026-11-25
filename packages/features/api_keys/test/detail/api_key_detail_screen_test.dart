@@ -302,6 +302,11 @@ void main() {
       await show(tester);
 
       expect(find.byKey(ApiKeyDetailScreen.failedKey), findsOneWidget);
+      // Nothing that answered: the connection is what to check.
+      expect(
+        find.text('Check your connection, then try again.'),
+        findsOneWidget,
+      );
       // The retry is autofocused; a keyboard press goes as the read starts.
       await tester.sendKeyEvent(LogicalKeyboardKey.space);
       await tester.pump();
@@ -315,6 +320,27 @@ void main() {
       await tester.pumpAndSettle();
       expect(reads, 2);
       expect(find.text('CI deploy'), findsNWidgets(2));
+    });
+
+    testWidgets("a load the server refused says why in the server's words", (
+      tester,
+    ) async {
+      when(() => remote.fetch('k_1')).thenThrow(
+        const ApiKeyPermanentException(
+          'refused',
+          statusCode: 400,
+          apiMessage: 'That id is not a key id',
+        ),
+      );
+
+      await show(tester);
+
+      expect(find.text("Couldn't load this key"), findsOneWidget);
+      expect(find.text('That id is not a key id'), findsOneWidget);
+      expect(
+        find.text('Check your connection, then try again.'),
+        findsNothing,
+      );
     });
 
     testWidgets('a new id reads that key', (

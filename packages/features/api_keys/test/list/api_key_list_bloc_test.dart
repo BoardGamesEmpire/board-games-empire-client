@@ -95,7 +95,49 @@ void main() {
     ).thenThrow(const ApiKeyTransientException('down')),
     build: build,
     act: (bloc) => bloc.add(const ApiKeyListRequested()),
-    expect: () => [const ApiKeyListState(status: ApiKeyListStatus.loadFailed)],
+    expect: () => [
+      const ApiKeyListState(
+        status: ApiKeyListStatus.loadFailed,
+        loadFailure: ApiKeyFailure(ApiKeyFailureReason.transient),
+      ),
+    ],
+  );
+
+  blocTest<ApiKeyListBloc, ApiKeyListState>(
+    "a load failure keeps why, with the server's words, and a read again "
+    'drops it',
+    setUp: () {
+      var calls = 0;
+      when(() => remote.fetchPage(limit: any(named: 'limit'))).thenAnswer((
+        _,
+      ) async {
+        if (calls++ == 0) {
+          throw const ApiKeyPermanentException(
+            'refused',
+            statusCode: 400,
+            apiMessage: 'Listing keys is switched off on this server',
+          );
+        }
+        return pageOf([a]);
+      });
+    },
+    build: build,
+    act: (bloc) async {
+      bloc.add(const ApiKeyListRequested());
+      await Future<void>.delayed(Duration.zero);
+      bloc.add(const ApiKeyListRequested());
+    },
+    expect: () => [
+      const ApiKeyListState(
+        status: ApiKeyListStatus.loadFailed,
+        loadFailure: ApiKeyFailure(
+          ApiKeyFailureReason.generic,
+          serverMessage: 'Listing keys is switched off on this server',
+        ),
+      ),
+      const ApiKeyListState(),
+      loaded([a]),
+    ],
   );
 
   blocTest<ApiKeyListBloc, ApiKeyListState>(
@@ -131,7 +173,8 @@ void main() {
     'a key that moved onto the next page is not listed twice',
     setUp: () {
       answerPage(remote, [a, b], hasMore: true);
-      // A key made meanwhile pushed b down onto page 2.
+      // A key made meanwhile pushed b down onto page 2, and one removed
+      // left the count as it was.
       answerPage(remote, [b, c], page: 2);
     },
     build: build,
@@ -234,10 +277,10 @@ void main() {
   });
 
   blocTest<ApiKeyListBloc, ApiKeyListState>(
-    'requested again replaces the list from page 1',
+    'requested again reads every page loaded again, and replaces the list',
     setUp: () {
       answerPage(remote, [a, b], hasMore: true);
-      answerPage(remote, [c], page: 2);
+      answerPage(remote, [c, d], page: 2, hasMore: true);
     },
     build: build,
     act: (bloc) async {
@@ -245,17 +288,101 @@ void main() {
       await Future<void>.delayed(Duration.zero);
       bloc.add(const ApiKeyListMoreRequested());
       await Future<void>.delayed(Duration.zero);
-      // b was deleted elsewhere.
-      answerPage(remote, [a]);
+      // b was deleted elsewhere, which moved c onto page 1.
+      answerPage(remote, [a, c], hasMore: true, total: 3);
+      answerPage(remote, [d], page: 2, total: 3);
       bloc.add(const ApiKeyListRequested());
     },
     skip: 3,
     expect: () => [
       // The rows stay while the list is read again.
-      loaded([a, b, c]).copyWith(refreshing: true),
+      loaded([a, b, c, d], hasMore: true).copyWith(refreshing: true),
+      // d, on page 2, keeps its row.
+      loaded([a, c, d]),
+    ],
+    verify: (_) {
+      verify(
+        () => remote.fetchPage(page: 2, limit: any(named: 'limit')),
+      ).called(2);
+      verify(remote.fetchGrantable).called(2);
+    },
+  );
+
+  blocTest<ApiKeyListBloc, ApiKeyListState>(
+    'a page read again that has gone is no row and no More',
+    setUp: () {
+      answerPage(remote, [a], hasMore: true);
+      answerPage(remote, [b], page: 2);
+    },
+    build: build,
+    act: (bloc) async {
+      bloc.add(const ApiKeyListRequested());
+      await Future<void>.delayed(Duration.zero);
+      bloc.add(const ApiKeyListMoreRequested());
+      await Future<void>.delayed(Duration.zero);
+      // b was deleted elsewhere, so page 2 is empty now.
+      answerPage(remote, [a], total: 1);
+      answerPage(remote, const [], page: 2, total: 1);
+      bloc.add(const ApiKeyListRequested());
+    },
+    skip: 4,
+    expect: () => [
       loaded([a]),
     ],
-    verify: (_) => verify(remote.fetchGrantable).called(2),
+  );
+
+  blocTest<ApiKeyListBloc, ApiKeyListState>(
+    'a More whose count moved reads every page up to its own again',
+    setUp: () {
+      answerPage(remote, [a, b], hasMore: true, total: 4);
+      // b was deleted elsewhere, which moved c up onto page 1: page 2 alone
+      // would skip it.
+      answerPage(remote, [d], page: 2, total: 3);
+    },
+    build: build,
+    act: (bloc) async {
+      bloc.add(const ApiKeyListRequested());
+      await Future<void>.delayed(Duration.zero);
+      answerPage(remote, [a, c], hasMore: true, total: 3);
+      bloc.add(const ApiKeyListMoreRequested());
+    },
+    skip: 1,
+    expect: () => [
+      loaded([a, b], hasMore: true).copyWith(loadingMore: true),
+      loaded([a, c, d]),
+    ],
+    verify: (_) {
+      verify(
+        () => remote.fetchPage(page: 2, limit: any(named: 'limit')),
+      ).called(2);
+      // The pages, not the grantable list.
+      verify(remote.fetchGrantable).called(1);
+    },
+  );
+
+  blocTest<ApiKeyListBloc, ApiKeyListState>(
+    'after a More whose count moved, the next More follows on from it',
+    // One key a page, to keep the pages short.
+    setUp: () => answerPage(remote, [a], hasMore: true, total: 3),
+    build: build,
+    act: (bloc) async {
+      bloc.add(const ApiKeyListRequested());
+      await Future<void>.delayed(Duration.zero);
+      // b was made elsewhere, newest of all, which moved a down to page 2.
+      answerPage(remote, [b], hasMore: true, total: 4);
+      answerPage(remote, [a], page: 2, hasMore: true, total: 4);
+      answerPage(remote, [c], page: 3, hasMore: true, total: 4);
+      bloc.add(const ApiKeyListMoreRequested());
+      await Future<void>.delayed(Duration.zero);
+      bloc.add(const ApiKeyListMoreRequested());
+    },
+    skip: 1,
+    expect: () => [
+      loaded([a], hasMore: true).copyWith(loadingMore: true),
+      loaded([b, a], hasMore: true),
+      loaded([b, a], hasMore: true).copyWith(loadingMore: true),
+      loaded([b, a, c], hasMore: true),
+    ],
   );
 
   blocTest<ApiKeyListBloc, ApiKeyListState>(
@@ -347,6 +474,85 @@ void main() {
       },
       expect: () => [
         loaded([c]),
+      ],
+    );
+
+    blocTest<ApiKeyListBloc, ApiKeyListState>(
+      'More can be pressed again at once after a re-read dropped the last',
+      build: build,
+      setUp: () {
+        answerPage(remote, [a], hasMore: true);
+        var calls = 0;
+        when(
+          () => remote.fetchPage(page: 2, limit: any(named: 'limit')),
+        ).thenAnswer((_) {
+          // The first More hangs on a slow connection.
+          if (calls++ == 0) return held.future;
+          return Future.value(pageOf([c], page: 2));
+        });
+      },
+      act: (bloc) async {
+        bloc.add(const ApiKeyListRequested());
+        await Future<void>.delayed(Duration.zero);
+        bloc.add(const ApiKeyListMoreRequested());
+        await Future<void>.delayed(Duration.zero);
+        answerPage(remote, [b], hasMore: true);
+        bloc.add(const ApiKeyListRequested());
+        await Future<void>.delayed(Duration.zero);
+        // The re-read has answered while the first More is still out.
+        bloc.add(const ApiKeyListMoreRequested());
+        await Future<void>.delayed(Duration.zero);
+        held.complete(pageOf([d], page: 2));
+        await Future<void>.delayed(Duration.zero);
+      },
+      skip: 4,
+      expect: () => [
+        loaded([b], hasMore: true).copyWith(loadingMore: true),
+        loaded([b, c]),
+      ],
+      verify: (_) => verify(
+        () => remote.fetchPage(page: 2, limit: any(named: 'limit')),
+      ).called(2),
+    );
+
+    blocTest<ApiKeyListBloc, ApiKeyListState>(
+      'a More while the pages are read again ends one still out',
+      build: build,
+      setUp: () {
+        answerPage(remote, [a], hasMore: true);
+        when(
+          () => remote.fetchPage(page: 2, limit: any(named: 'limit')),
+        ).thenAnswer((_) => held.future);
+      },
+      act: (bloc) async {
+        bloc.add(const ApiKeyListRequested());
+        await Future<void>.delayed(Duration.zero);
+        bloc.add(const ApiKeyListMoreRequested());
+        await Future<void>.delayed(Duration.zero);
+        final reread = Completer<PaginatedResult<ApiKey>>();
+        when(
+          () => remote.fetchPage(limit: any(named: 'limit')),
+        ).thenAnswer((_) => reread.future);
+        bloc.add(const ApiKeyListRequested());
+        await Future<void>.delayed(Duration.zero);
+        // Pressed in code: the button is inert while the pages are read.
+        bloc.add(const ApiKeyListMoreRequested());
+        await Future<void>.delayed(Duration.zero);
+        reread.completeError(const ApiKeyTransientException('down'));
+        await Future<void>.delayed(Duration.zero);
+        held.complete(pageOf([c], page: 2));
+        await Future<void>.delayed(Duration.zero);
+      },
+      skip: 2,
+      // The refresh failed, and More is ready to be pressed again rather
+      // than saying it loads a page nothing is waiting for.
+      expect: () => [
+        loaded([a], hasMore: true).copyWith(
+          loadingMore: true,
+          refreshing: true,
+        ),
+        loaded([a], hasMore: true).copyWith(refreshing: true),
+        loaded([a], hasMore: true).copyWith(refreshFailed: true),
       ],
     );
 

@@ -262,6 +262,45 @@ void main() {
     expect(rowLabel(tester, 'k_2'), contains('Disabled'));
   });
 
+  testWidgets('a key opened from page 2 keeps its row and focus on return', (
+    tester,
+  ) async {
+    answerPage(remote, [apiKey('k_1')], hasMore: true);
+    answerPage(remote, [apiKey('k_2', name: 'Backup')], page: 2);
+    final page = Completer<void>();
+    await tester.pumpWidget(
+      screen(
+        openKey: (id) {
+          opened.add(id);
+          return page.future;
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(ApiKeyListScreen.moreKey));
+    await tester.tap(find.byKey(ApiKeyListScreen.moreKey));
+    await tester.pumpAndSettle();
+
+    final row = Focus.of(tester.element(find.text('Backup')))..requestFocus();
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pump();
+    expect(opened, ['k_2']);
+
+    // The key was disabled on its own page.
+    answerPage(remote, [
+      apiKey('k_2', name: 'Backup', enabled: false),
+    ], page: 2);
+    page.complete();
+    await tester.pumpAndSettle();
+
+    verify(
+      () => remote.fetchPage(page: 2, limit: any(named: 'limit')),
+    ).called(2);
+    expect(rowLabel(tester, 'k_2'), contains('Disabled'));
+    expect(row.hasPrimaryFocus, isTrue);
+  });
+
   testWidgets('a second tap while a key is open opens nothing more', (
     tester,
   ) async {
@@ -285,6 +324,144 @@ void main() {
     expect(opened, ['k_1']);
     page.complete();
     await tester.pumpAndSettle();
+  });
+
+  group('coming back', () {
+    /// Counts the reads of page 1 since the last count.
+    void expectPageReads(int count) => count == 0
+        ? verifyNever(() => remote.fetchPage(limit: any(named: 'limit')))
+        : verify(
+            () => remote.fetchPage(limit: any(named: 'limit')),
+          ).called(count);
+
+    /// A page pushed over the list, as the app pushes a key's own page, with
+    /// a way to close it.
+    Route<void> pageOver() => MaterialPageRoute<void>(
+      builder: (context) => Scaffold(
+        body: TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Close'),
+        ),
+      ),
+    );
+
+    testWidgets('a page taken away without a pop, whose open never '
+        'completes, still re-reads the list and lets it open again', (
+      tester,
+    ) async {
+      answerPage(remote, [apiKey('k_1')]);
+      late NavigatorState navigator;
+      final routes = <Route<void>>[];
+      await tester.pumpWidget(
+        screen(
+          // As a router's push answers when Back in the browser takes the
+          // page away: with a future that never completes.
+          openKey: (id) {
+            opened.add(id);
+            routes.add(pageOver());
+            navigator.push(routes.last);
+            return Completer<void>().future;
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
+      navigator = tester.state(find.byType(Navigator));
+      expectPageReads(1);
+
+      await tester.tap(find.text('CI deploy'));
+      await tester.pumpAndSettle();
+      expect(find.text('Close'), findsOneWidget);
+      expectPageReads(0);
+
+      answerPage(remote, [apiKey('k_1', enabled: false)]);
+      navigator.removeRoute(routes.single);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Close'), findsNothing);
+      expectPageReads(1);
+      expect(rowLabel(tester, 'k_1'), contains('Disabled'));
+
+      // Not left waiting on the open that never completed.
+      await tester.tap(find.text('CI deploy'));
+      await tester.pumpAndSettle();
+      expect(opened, ['k_1', 'k_1']);
+      expect(find.text('Close'), findsOneWidget);
+    });
+
+    testWidgets('a page taken away before it had fully arrived frees the '
+        'list too', (tester) async {
+      answerPage(remote, [apiKey('k_1')]);
+      late NavigatorState navigator;
+      final routes = <Route<void>>[];
+      await tester.pumpWidget(
+        screen(
+          openKey: (id) {
+            routes.add(pageOver());
+            navigator.push(routes.last);
+            return Completer<void>().future;
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
+      navigator = tester.state(find.byType(Navigator));
+      expectPageReads(1);
+
+      await tester.tap(find.text('CI deploy'));
+      // Part-way through its entrance: it has not yet covered the list.
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+      navigator.removeRoute(routes.single);
+      await tester.pumpAndSettle();
+
+      expectPageReads(1);
+      await tester.tap(find.text('CI deploy'));
+      await tester.pumpAndSettle();
+      expect(routes, hasLength(2));
+    });
+
+    testWidgets('a page the list never opened, gone from over it, reads '
+        'the list again', (tester) async {
+      answerPage(remote, [apiKey('k_1')]);
+      await show(tester);
+      final navigator = tester.state<NavigatorState>(find.byType(Navigator));
+      expectPageReads(1);
+
+      // As when a link or a reload builds the list beneath a key's page:
+      // nothing here opened it.
+      navigator.push(pageOver());
+      await tester.pumpAndSettle();
+      expectPageReads(0);
+
+      answerPage(remote, [apiKey('k_new', name: 'Backup'), apiKey('k_1')]);
+      await tester.tap(find.text('Close'));
+      await tester.pumpAndSettle();
+
+      expectPageReads(1);
+      expect(find.byKey(ApiKeyListScreen.rowKey('k_new')), findsOneWidget);
+      expect(opened, isEmpty);
+    });
+
+    testWidgets('one page gone is one read, though both its signs come', (
+      tester,
+    ) async {
+      answerPage(remote, [apiKey('k_1')]);
+      late NavigatorState navigator;
+      await tester.pumpWidget(
+        screen(openKey: (id) => navigator.push(pageOver())),
+      );
+      await tester.pumpAndSettle();
+      navigator = tester.state(find.byType(Navigator));
+      expectPageReads(1);
+
+      await tester.tap(find.text('CI deploy'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Close'));
+      await tester.pumpAndSettle();
+
+      // The push's future completed and the list's route is the top one
+      // again: one return.
+      expectPageReads(1);
+    });
   });
 
   testWidgets("the filter's empty result names the filter", (tester) async {
@@ -370,6 +547,11 @@ void main() {
       isA<BgeErrorState>(),
     );
     expect(find.text("Couldn't load your API keys"), findsOneWidget);
+    // Nothing that answered: the connection is what to check.
+    expect(
+      find.text('Check your connection, then try again.'),
+      findsOneWidget,
+    );
 
     answerPage(remote, [apiKey('k_1')]);
     await tester.tap(find.text('Try again'));
@@ -377,6 +559,62 @@ void main() {
 
     expect(find.byKey(ApiKeyListScreen.failedKey), findsNothing);
     expect(find.byKey(ApiKeyListScreen.rowKey('k_1')), findsOneWidget);
+  });
+
+  testWidgets("a load the server refused says why in the server's words", (
+    tester,
+  ) async {
+    when(() => remote.fetchPage(limit: any(named: 'limit'))).thenThrow(
+      const ApiKeyPermanentException(
+        'refused',
+        statusCode: 400,
+        apiMessage: 'Listing keys is switched off on this server',
+      ),
+    );
+
+    await show(tester);
+
+    expect(find.text("Couldn't load your API keys"), findsOneWidget);
+    expect(
+      find.text('Listing keys is switched off on this server'),
+      findsOneWidget,
+    );
+    expect(find.text('Check your connection, then try again.'), findsNothing);
+  });
+
+  testWidgets("Try again waits on the page's title as the read starts", (
+    tester,
+  ) async {
+    final retried = Completer<PaginatedResult<ApiKey>>();
+    var reads = 0;
+    when(() => remote.fetchPage(limit: any(named: 'limit'))).thenAnswer(
+      (_) => reads++ == 0
+          ? Future.error(const ApiKeyTransientException('down'))
+          : retried.future,
+    );
+    await show(tester);
+    expect(find.byKey(ApiKeyListScreen.failedKey), findsOneWidget);
+
+    // The retry is autofocused; a keyboard press goes as the read starts.
+    await tester.sendKeyEvent(LogicalKeyboardKey.space);
+    await tester.pump();
+
+    expect(find.byKey(ApiKeyListScreen.failedKey), findsNothing);
+    final focused = FocusManager.instance.primaryFocus;
+    expect(focused, isNot(isA<FocusScopeNode>()));
+    expect(
+      find.descendant(
+        of: find.byWidget(focused!.context!.widget),
+        matching: find.text('API keys'),
+      ),
+      findsOneWidget,
+    );
+
+    retried.complete(pageOf([apiKey('k_1')]));
+    await tester.pumpAndSettle();
+    expect(reads, 2);
+    expect(find.byKey(ApiKeyListScreen.rowKey('k_1')), findsOneWidget);
+    expect(FocusManager.instance.primaryFocus, same(focused));
   });
 
   testWidgets('a failed re-read keeps the rows and their focus, and says so '

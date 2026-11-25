@@ -11,9 +11,10 @@ import 'package:network_interface/network_interface.dart';
 ///
 /// Nothing is stored. [ApiKeyDetailRequested] reads the key and the
 /// permissions the user may grant together. A 404 is [ApiKeyDetailStatus.gone]
-/// and any other failure [ApiKeyDetailStatus.loadFailed]. The grantable
-/// permissions only describe the key's scopes, so a failed read of them
-/// leaves them null and never fails the page.
+/// and any other failure [ApiKeyDetailStatus.loadFailed], with why in
+/// [ApiKeyDetailState.loadFailure]. The grantable permissions only describe
+/// the key's scopes, so a failed read of them leaves them null and never
+/// fails the page.
 ///
 /// ## Writes
 ///
@@ -71,9 +72,14 @@ class ApiKeyDetailBloc extends Bloc<ApiKeyDetailEvent, ApiKeyDetailState> {
       if (emit.isDone) return;
       emit(const ApiKeyDetailState(status: ApiKeyDetailStatus.gone));
       return;
-    } on Object {
+    } on Object catch (error) {
       if (emit.isDone) return;
-      emit(const ApiKeyDetailState(status: ApiKeyDetailStatus.loadFailed));
+      emit(
+        ApiKeyDetailState(
+          status: ApiKeyDetailStatus.loadFailed,
+          loadFailure: apiKeyFailureOf(error),
+        ),
+      );
       return;
     }
     final permissions = await grantable;

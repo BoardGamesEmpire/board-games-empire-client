@@ -5,6 +5,7 @@ import 'package:api_keys/src/detail/api_key_detail_bloc.dart';
 import 'package:api_keys/src/detail/api_key_detail_event.dart';
 import 'package:api_keys/src/detail/api_key_detail_state.dart';
 import 'package:api_keys/src/failure/api_key_failure.dart';
+import 'package:api_keys/src/widgets/api_key_facts.dart';
 import 'package:api_keys/src/widgets/api_key_scope_list.dart';
 import 'package:api_keys/src/widgets/delete_key_dialog.dart';
 import 'package:api_keys/src/widgets/scope_summary.dart';
@@ -198,7 +199,7 @@ class _ApiKeyDetailState extends State<_ApiKeyDetail> {
   String? _lateMessage(ApiKeyDetailState state) {
     final key = state.key;
     if (key == null) return null;
-    final name = _nameOf(_l10n, key);
+    final name = apiKeyNameOf(_l10n, key);
     return switch (state.outcome) {
       ApiKeyDetailDeleted() => _l10n.apiKeyDeleted(name),
       ApiKeyDetailFailed(:final failure, :final write) =>
@@ -284,7 +285,9 @@ class _ApiKeyDetailState extends State<_ApiKeyDetail> {
     return BgePage(
       title: Focus(
         focusNode: _heading,
-        child: Text(key == null ? l10n.apiKeyDetailTitle : _nameOf(l10n, key)),
+        child: Text(
+          key == null ? l10n.apiKeyDetailTitle : apiKeyNameOf(l10n, key),
+        ),
       ),
       // The spinner, the failure and gone sit mid-page, the key at the top.
       centerVertically: key == null,
@@ -298,7 +301,14 @@ class _ApiKeyDetailState extends State<_ApiKeyDetail> {
           retryKey: ApiKeyDetailScreen.retryKey,
           icon: Icons.cloud_off_outlined,
           title: l10n.apiKeyDetailLoadFailed,
-          body: l10n.apiKeyDetailLoadFailedBody,
+          body: switch (state.loadFailure) {
+            // A refusal says why in its own words, the server's where the
+            // client has none (#1028).
+            final failure?
+                when failure.reason != ApiKeyFailureReason.transient =>
+              apiKeyFailureMessage(l10n, failure),
+            _ => l10n.apiKeyDetailLoadFailedBody,
+          },
           retryLabel: l10n.apiKeyDetailRetry,
           onRetry: _retry,
         ),
@@ -332,7 +342,7 @@ class _ApiKeyDetailState extends State<_ApiKeyDetail> {
       final ApiKeyDetailFailed failed => failed,
       _ => null,
     };
-    final name = _nameOf(l10n, key);
+    final name = apiKeyNameOf(l10n, key);
 
     Widget banner(Key bannerKey, ApiKeyDetailFailed failed) => BgeInlineBanner(
       key: bannerKey,
@@ -417,11 +427,6 @@ class _ApiKeyDetailState extends State<_ApiKeyDetail> {
   }
 }
 
-/// What a key is called on its page and in what is said of it: its name, or
-/// "Unnamed key", as its row on the list says.
-String _nameOf(ApiKeysLocalizations l10n, ApiKey key) =>
-    key.name ?? l10n.apiKeyUnnamed;
-
 /// What failed, by the [write] and the [key] it was sent for. A failed toggle
 /// leaves the key as it was, so an enabled key failed to be disabled.
 String _failedTitle(
@@ -429,7 +434,7 @@ String _failedTitle(
   ApiKeyWrite write,
   ApiKey key,
 ) {
-  final name = _nameOf(l10n, key);
+  final name = apiKeyNameOf(l10n, key);
   return switch (write) {
     ApiKeyWrite.toggle =>
       key.enabled
@@ -463,29 +468,20 @@ class _Facts extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = ApiKeysLocalizations.of(context);
-    final start = apiKey.start;
-    final expiresAt = apiKey.expiresAt;
-    final lastUsedAt = apiKey.lastUsedAt;
+    final facts = apiKeyFactLines(l10n, apiKey);
+    final start = facts.start;
     final scopes = apiKey.scopes;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (start != null) Text(l10n.apiKeyStart(start)),
+        if (start != null) Text(start),
         // With none, the permissions below say the key works nowhere.
         if (scopes.isNotEmpty) Text(scopeSummary(l10n, scopes, grantable)),
         Text(l10n.apiKeyCreated(apiKey.createdAt.toLocal())),
-        Text(
-          expiresAt == null
-              ? l10n.apiKeyNeverExpires
-              : l10n.apiKeyExpires(expiresAt.toLocal()),
-        ),
-        Text(
-          lastUsedAt == null
-              ? l10n.apiKeyNeverUsed
-              : l10n.apiKeyLastUsed(lastUsedAt.toLocal()),
-        ),
+        Text(facts.expiry),
+        Text(facts.lastUsed),
       ],
     );
   }

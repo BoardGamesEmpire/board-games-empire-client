@@ -1,3 +1,4 @@
+import 'package:api_keys/src/failure/api_key_failure.dart';
 import 'package:equatable/equatable.dart';
 import 'package:models/domain.dart';
 
@@ -20,6 +21,7 @@ final class ApiKeyListState extends Equatable {
     this.refreshFailed = false,
     this.filter = ApiKeyStatusFilter.all,
     this.grantable,
+    this.loadFailure,
   });
 
   final ApiKeyListStatus status;
@@ -51,6 +53,10 @@ final class ApiKeyListState extends Equatable {
   /// of permissions without a risk level.
   final Map<String, GrantablePermission>? grantable;
 
+  /// Why page 1 couldn't be read, while [status] is
+  /// [ApiKeyListStatus.loadFailed]; null otherwise.
+  final ApiKeyFailure? loadFailure;
+
   /// The loaded keys [filter] lets through, in the server's order.
   List<ApiKey> get visible => switch (filter) {
     ApiKeyStatusFilter.all => keys,
@@ -64,8 +70,8 @@ final class ApiKeyListState extends Equatable {
     ],
   };
 
-  /// A copy with the fields given. [grantable] takes a function, so that a
-  /// copy can set it to null.
+  /// A copy with the fields given. [grantable] and [loadFailure] take a
+  /// function, so that a copy can set them to null.
   ApiKeyListState copyWith({
     ApiKeyListStatus? status,
     List<ApiKey>? keys,
@@ -76,6 +82,7 @@ final class ApiKeyListState extends Equatable {
     bool? refreshFailed,
     ApiKeyStatusFilter? filter,
     Map<String, GrantablePermission>? Function()? grantable,
+    ApiKeyFailure? Function()? loadFailure,
   }) => ApiKeyListState(
     status: status ?? this.status,
     keys: keys ?? this.keys,
@@ -86,6 +93,7 @@ final class ApiKeyListState extends Equatable {
     refreshFailed: refreshFailed ?? this.refreshFailed,
     filter: filter ?? this.filter,
     grantable: grantable == null ? this.grantable : grantable(),
+    loadFailure: loadFailure == null ? this.loadFailure : loadFailure(),
   );
 
   @override
@@ -99,5 +107,6 @@ final class ApiKeyListState extends Equatable {
     refreshFailed,
     filter,
     grantable,
+    loadFailure,
   ];
 }

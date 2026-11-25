@@ -40,6 +40,34 @@ abstract final class AppRoutes {
       '$settings/$_settingsSignInMethodsSegment';
   static const _settingsSignInMethodsSegment = 'sign-in-methods';
 
+  /// The signed-in user's API keys on the active server (#1028): a child of
+  /// [settings], beside [settingsSignInMethods].
+  static const settingsApiKeys = '$settings/$_settingsApiKeysSegment';
+  static const _settingsApiKeysSegment = 'api-keys';
+
+  /// The page that makes a key, beneath the list.
+  static const settingsApiKeyNew =
+      '$settingsApiKeys/$_settingsApiKeyNewSegment';
+
+  /// One key's own page, beneath the list, so a key reached directly has the
+  /// list to go back to and leaving it is a plain pop. Build a concrete
+  /// location with [settingsApiKeyOf].
+  ///
+  /// This pattern and [settingsApiKeyNew] **overlap**: `new` is a legal id
+  /// segment, so the new-key page is declared first, or it would open as the
+  /// page of a key with the id "new".
+  static const settingsApiKey = '$settingsApiKeys/$_settingsApiKeySegment';
+
+  /// The id segment of [settingsApiKey].
+  static const apiKeyIdParam = 'apiKeyId';
+
+  static const _settingsApiKeyNewSegment = 'new';
+  static const _settingsApiKeySegment = ':$apiKeyIdParam';
+
+  /// The location of one key's own page.
+  static String settingsApiKeyOf(String id) =>
+      '$settingsApiKeys/${Uri.encodeComponent(id)}';
+
   /// The household list (#269). Singular, consistent with
   /// [householdCreate] and with the reserved
   /// `/server/:serverId/household/:householdId/invite/:token` deep link.
@@ -586,6 +614,27 @@ typedef DataExportScreenBuilder = Widget? Function(BuildContext context);
 /// the entry is never shown for a route that would fall back.
 typedef SignInMethodsScreenBuilder = Widget? Function(BuildContext context);
 
+/// Builds the API key list (#1028) for the [AppRoutes.settingsApiKeys] route.
+/// Supplied by `BgeApp`; returns null when there is no active server or its
+/// container lacks the `ApiKeyRemoteDataSource`, in which case the route
+/// falls back to [NotYetAvailableScreen].
+///
+/// The Settings entry that opens it is offered under the same conditions, so
+/// the entry is never shown for a route that would fall back.
+typedef ApiKeysScreenBuilder = Widget? Function(BuildContext context);
+
+/// Builds one API key's own page (#1028) for [apiKeyId]. Same null contract
+/// as [ApiKeysScreenBuilder].
+typedef ApiKeyDetailScreenBuilder = Widget? Function(
+  BuildContext context,
+  String apiKeyId,
+);
+
+/// Builds the page that makes an API key (#1028) for the
+/// [AppRoutes.settingsApiKeyNew] route. Same null contract as
+/// [ApiKeysScreenBuilder].
+typedef ApiKeyCreateScreenBuilder = Widget? Function(BuildContext context);
+
 /// Builds the create-household flow (#129) for the
 /// [AppRoutes.householdCreate] route. Supplied by `BgeApp`; returns null at
 /// navigation time when no active server is resolvable or its container
@@ -1001,6 +1050,9 @@ GoRouter buildAppRouter({
   SettingsScreenBuilder? settingsBuilder,
   DataExportScreenBuilder? dataExportBuilder,
   SignInMethodsScreenBuilder? signInMethodsBuilder,
+  ApiKeysScreenBuilder? apiKeysBuilder,
+  ApiKeyDetailScreenBuilder? apiKeyDetailBuilder,
+  ApiKeyCreateScreenBuilder? apiKeyCreateBuilder,
   CreateHouseholdScreenBuilder? createHouseholdBuilder,
   HouseholdListScreenBuilder? householdListBuilder,
   HouseholdDetailScreenBuilder? householdDetailBuilder,
@@ -1300,6 +1352,44 @@ GoRouter buildAppRouter({
                       signInMethodsBuilder?.call(context) ??
                           const NotYetAvailableScreen(),
                     ),
+                  ),
+                  // #1028: API keys, beside sign-in methods and for the same
+                  // reason not a [BgeTopLevelRoute]. A key's page and the
+                  // new-key page are children of the list, as the DataGateway
+                  // ones are of theirs, so a key reached directly has the
+                  // list beneath it, and the page leaves after a delete with
+                  // a plain pop. The new-key page stays ahead of a key's: see
+                  // [AppRoutes.settingsApiKey].
+                  GoRoute(
+                    path: AppRoutes._settingsApiKeysSegment,
+                    pageBuilder: (context, state) => _materialPage(
+                      state,
+                      apiKeysBuilder?.call(context) ??
+                          const NotYetAvailableScreen(),
+                    ),
+                    routes: [
+                      GoRoute(
+                        path: AppRoutes._settingsApiKeyNewSegment,
+                        pageBuilder: (context, state) => _materialPage(
+                          state,
+                          apiKeyCreateBuilder?.call(context) ??
+                              const NotYetAvailableScreen(),
+                        ),
+                      ),
+                      GoRoute(
+                        path: AppRoutes._settingsApiKeySegment,
+                        pageBuilder: (context, state) {
+                          final id =
+                              state.pathParameters[AppRoutes.apiKeyIdParam] ??
+                              '';
+                          return _materialPage(
+                            state,
+                            apiKeyDetailBuilder?.call(context, id) ??
+                                const NotYetAvailableScreen(),
+                          );
+                        },
+                      ),
+                    ],
                   ),
                 ],
               ),

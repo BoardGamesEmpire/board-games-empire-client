@@ -25,17 +25,23 @@ ApiKey apiKey(
   lastUsedAt: lastUsedAt,
 );
 
-/// One page of [items], saying [hasMore] or not.
+/// How many keys a page says the server has, unless a test says otherwise.
+/// The same on every page, as a listing that nothing changed between reads.
+const int listingTotal = 100;
+
+/// One page of [items], saying [hasMore] or not, and that the server has
+/// [total] keys.
 PaginatedResult<ApiKey> pageOf(
   List<ApiKey> items, {
   int page = 1,
   bool hasMore = false,
+  int total = listingTotal,
 }) => PaginatedResult(
   items: items,
   meta: PaginationMeta(
     page: page,
     limit: ApiKeyRemoteDataSource.defaultPageSize,
-    total: items.length + (hasMore ? 1 : 0),
+    total: total,
     totalPages: hasMore ? page + 1 : page,
     hasMore: hasMore,
   ),
@@ -64,16 +70,20 @@ void answerGrantable(
 void answerKey(MockApiKeyRemoteDataSource remote, ApiKey key) =>
     when(() => remote.fetch(key.id)).thenAnswer((_) async => key);
 
-/// Answers page [page] with [keys]. The list always names the page it asks
-/// for.
+/// Answers page [page] with [keys], saying the server has [total]. The list
+/// always names the page it asks for.
 void answerPage(
   MockApiKeyRemoteDataSource remote,
   List<ApiKey> keys, {
   int page = 1,
   bool hasMore = false,
-}) => when(
-  () => remote.fetchPage(
-    page: page,
-    limit: any(named: 'limit'),
-  ),
-).thenAnswer((_) async => pageOf(keys, page: page, hasMore: hasMore));
+  int total = listingTotal,
+}) =>
+    when(
+      () => remote.fetchPage(
+        page: page,
+        limit: any(named: 'limit'),
+      ),
+    ).thenAnswer(
+      (_) async => pageOf(keys, page: page, hasMore: hasMore, total: total),
+    );

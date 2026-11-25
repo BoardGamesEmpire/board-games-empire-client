@@ -1,3 +1,4 @@
+import 'package:api_keys/src/failure/api_key_failure.dart';
 import 'package:api_keys/src/list/api_key_list_event.dart';
 import 'package:api_keys/src/list/api_key_list_state.dart';
 import 'package:bloc_concurrency/bloc_concurrency.dart';
@@ -8,24 +9,34 @@ import 'package:network_interface/network_interface.dart';
 /// Drives the key list (#1028): the user's keys a page at a time, filtered
 /// by status over the pages loaded, and the permissions they may grant.
 ///
-/// Nothing is stored. Each [ApiKeyListRequested] reads page 1 and the
-/// grantable permissions together, and its answer replaces everything
-/// loaded. The rows on screen stay while it runs, and stay when it fails:
+/// Nothing is stored. Each [ApiKeyListRequested] reads again every page
+/// loaded, or page 1 when none is, with the grantable permissions, and its
+/// answer replaces everything loaded. So a key opened from page 3 still has
+/// its row, and its focus, when the list reads again on its page closing.
+/// The rows on screen stay while it runs, and stay when it fails:
 /// the state then says the refresh failed, and the rows keep their place and
-/// their focus. Only a failure with nothing loaded is a load failure.
+/// their focus. Only a failure with nothing loaded is a load failure, which
+/// keeps why in [ApiKeyListState.loadFailure].
 ///
 /// ## Overlapping reads
 ///
 /// A read asked for while another runs takes its place: the earlier one's
-/// answer is dropped. A More while one is out is dropped too, and so is a
-/// More while page 1 is being read, which would page through a listing
-/// that's about to be replaced. A More that answers after page 1 was read
-/// again belongs to the old listing, so it adds nothing. One that answers
-/// after a re-read failed still belongs to the listing on screen, and is
-/// added.
+/// answer is dropped. So does a More asked for while one is out, and a More
+/// while the pages are being read again is dropped, as it would page
+/// through a listing that's about to be replaced. A More that answers after
+/// the pages were read again belongs to the old listing, so it adds nothing,
+/// and More can be pressed again at once. One that answers after a re-read
+/// failed still belongs to the listing on screen, and is added.
 ///
-/// A key made between two reads moves the rest down a page, so the next page
-/// can begin with a key already loaded. It is not listed twice.
+/// ## Keys made or removed between reads
+///
+/// The server counts pages from the newest key, so a key made or removed
+/// between two reads moves every later key down or up. Each answer says how
+/// many keys there are: a More whose count differs from the last read's
+/// reads again every page up to its own, so no key is skipped and none is
+/// listed twice. A key made and another removed between the same two reads
+/// leave the count as it was, and then the next page can repeat a key, which
+/// is listed once, or skip one, which shows at the next read.
 ///
 /// ## The grantable permissions
 ///
@@ -38,7 +49,7 @@ class ApiKeyListBloc extends Bloc<ApiKeyListEvent, ApiKeyListState> {
     this._pageSize = ApiKeyRemoteDataSource.defaultPageSize,
   }) : super(const ApiKeyListState()) {
     on<ApiKeyListRequested>(_onRequested, transformer: restartable());
-    on<ApiKeyListMoreRequested>(_onMoreRequested, transformer: droppable());
+    on<ApiKeyListMoreRequested>(_onMoreRequested, transformer: restartable());
     on<ApiKeyListFilterChanged>(_onFilterChanged);
   }
 
@@ -48,8 +59,11 @@ class ApiKeyListBloc extends Bloc<ApiKeyListEvent, ApiKeyListState> {
   /// The last page loaded.
   int _page = 0;
 
-  /// Counts the answers of page 1 that replaced the loaded keys, so a More
-  /// can tell its listing was replaced while it was out.
+  /// How many keys the server had at the last read.
+  int _total = 0;
+
+  /// Counts the reads that replaced the loaded keys, so a More can tell its
+  /// listing was replaced while it was out.
   int _listing = 0;
 
   Future<void> _onRequested(
@@ -62,16 +76,23 @@ class ApiKeyListBloc extends Bloc<ApiKeyListEvent, ApiKeyListState> {
       case ApiKeyListStatus.loaded:
         emit(state.copyWith(refreshing: true));
       case ApiKeyListStatus.loadFailed:
-        emit(state.copyWith(status: ApiKeyListStatus.loading));
+        emit(
+          state.copyWith(
+            status: ApiKeyListStatus.loading,
+            loadFailure: () => null,
+          ),
+        );
       case ApiKeyListStatus.loading:
         break;
     }
+    // Every page loaded, so no row on screen goes: page 1 when none is.
+    final pages = _page < 1 ? 1 : _page;
     // Both start before either is awaited.
     final grantable = _readGrantable();
-    final PaginatedResult<ApiKey> first;
+    final _Pages read;
     try {
-      first = await _remote.fetchPage(limit: _pageSize);
-    } on Object {
+      read = await _readPages(pages);
+    } on Object catch (error) {
       if (emit.isDone) return;
       if (state.status == ApiKeyListStatus.loaded) {
         // The rows stay where they are, focus with them, and the screen says
@@ -84,6 +105,7 @@ class ApiKeyListBloc extends Bloc<ApiKeyListEvent, ApiKeyListState> {
         ApiKeyListState(
           status: ApiKeyListStatus.loadFailed,
           filter: state.filter,
+          loadFailure: apiKeyFailureOf(error),
         ),
       );
       return;
@@ -91,16 +113,31 @@ class ApiKeyListBloc extends Bloc<ApiKeyListEvent, ApiKeyListState> {
     final permissions = await grantable;
     // A read asked for since has taken this one's place.
     if (emit.isDone) return;
-    _page = 1;
+    _page = pages;
+    _total = read.total;
     _listing++;
     emit(
       ApiKeyListState(
         status: ApiKeyListStatus.loaded,
-        keys: _distinct(first.items),
-        hasMore: first.meta.hasMore,
+        keys: read.keys,
+        hasMore: read.hasMore,
         filter: state.filter,
         grantable: permissions,
       ),
+    );
+  }
+
+  /// Pages 1 to [pages], read together, as one listing.
+  Future<_Pages> _readPages(int pages) async {
+    final answers = await Future.wait([
+      for (var page = 1; page <= pages; page++)
+        _remote.fetchPage(page: page, limit: _pageSize),
+    ]);
+    final last = answers.last.meta;
+    return (
+      keys: _distinct([for (final answer in answers) ...answer.items]),
+      hasMore: last.hasMore,
+      total: last.total,
     );
   }
 
@@ -124,6 +161,9 @@ class ApiKeyListBloc extends Bloc<ApiKeyListEvent, ApiKeyListState> {
     if (state.status != ApiKeyListStatus.loaded ||
         !state.hasMore ||
         state.refreshing) {
+      // This More took the place of any still out, whose answer adds
+      // nothing now: one still saying it loads would say so for ever.
+      if (state.loadingMore) emit(state.copyWith(loadingMore: false));
       return;
     }
     final listing = _listing;
@@ -132,11 +172,27 @@ class ApiKeyListBloc extends Bloc<ApiKeyListEvent, ApiKeyListState> {
     try {
       final next = await _remote.fetchPage(page: page, limit: _pageSize);
       if (listing != _listing || emit.isDone) return;
+      if (next.meta.total == _total) {
+        _page = page;
+        emit(
+          state.copyWith(
+            keys: _distinct([...state.keys, ...next.items]),
+            hasMore: next.meta.hasMore,
+            loadingMore: false,
+          ),
+        );
+        return;
+      }
+      // Keys were made or removed since the last read, which moved this
+      // page: every page up to it is read again, so none is skipped.
+      final read = await _readPages(page);
+      if (listing != _listing || emit.isDone) return;
       _page = page;
+      _total = read.total;
       emit(
         state.copyWith(
-          keys: _distinct([...state.keys, ...next.items]),
-          hasMore: next.meta.hasMore,
+          keys: read.keys,
+          hasMore: read.hasMore,
           loadingMore: false,
         ),
       );
@@ -160,3 +216,7 @@ class ApiKeyListBloc extends Bloc<ApiKeyListEvent, ApiKeyListState> {
     ];
   }
 }
+
+/// Pages read together: their keys, each once, whether a page follows the
+/// last, and how many keys the server has.
+typedef _Pages = ({List<ApiKey> keys, bool hasMore, int total});

@@ -2,7 +2,17 @@
   "@@locale": "en",
   "apiKeysTitle": "API keys",
   "@apiKeysTitle": {
-    "description": "Title of the screen that lists the signed-in user's API keys on this server. An API key lets a script or another app act as the user, with only the permissions the key holds."
+    "description": "Title of the screen that lists the signed-in user's API keys on this server. An API key lets a script or another app act as the user, with only the permissions the key holds. Also the title of the row in Settings that opens the screen."
+  },
+  "apiKeysSettingsSubtitle": "Keys for programs to use {serverName} as you",
+  "@apiKeysSettingsSubtitle": {
+    "description": "Second line of the API keys row in Settings, in the section for the server the user is signed in to. {serverName} is the name the server gives itself. The row opens the list of the user's API keys on that server.",
+    "placeholders": {
+      "serverName": {
+        "type": "String",
+        "example": "Board Game Night"
+      }
+    }
   },
   "apiKeysLoading": "Loading your API keys…",
   "@apiKeysLoading": {

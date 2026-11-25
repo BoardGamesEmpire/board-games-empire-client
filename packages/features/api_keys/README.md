@@ -6,9 +6,11 @@ act as you, each holding only the permissions you gave it.
 ## Shape
 
 - `ApiKeyListScreen`: the list. It reads the first page of keys and the
-  permissions you may grant together when it opens, and again when a key's
-  own page closes. An All / Enabled / Disabled filter works over the pages
-  loaded so far; the server orders the keys newest first. It owns its bloc.
+  permissions you may grant together when it opens, and again once a page
+  over it has gone, however it went: a pop, the browser's Back, or a page it
+  never opened, as when a link builds the list beneath a key's page. An
+  All / Enabled / Disabled filter works over the pages loaded so far; the
+  server orders the keys newest first. It owns its bloc.
 - `ApiKeyListBloc`: the paged read, the filter, and the grantable
   permissions by slug. A failed grantable read never fails the list: the rows
   then give a count of permissions without a risk level.

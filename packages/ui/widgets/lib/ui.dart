@@ -6,20 +6,22 @@
 /// feature packages for their screens).
 ///
 /// Everything here is justified by duplication that already existed, and the
-/// migration is complete rather than aspirational — `BgePage` is used by all
-/// 12 page-shaped screens, `BgeSubmitButton` by all 6 submit controls,
+/// migration is complete rather than aspirational — `BgePage` is used by
+/// every page-shaped screen, at 70 call sites in `lib/`, `BgeSubmitButton` by
+/// all 6 submit controls,
 /// `BgeTextField` by every form field in 5 files (#165), `BgeDropdownField`
-/// by all 4 form menus (#649), `BgeErrorState` by
-/// both whole-surface retry views (#102), `BgeFormActions` by all 4 forms
+/// by all 4 form menus (#649), `BgeErrorState` by every whole-surface retry
+/// view, at 31 call sites in `lib/` (#102), `BgeFormActions` by all 4 forms
 /// that show a submit's failure (#211), `rejectSubmit` by all 5 forms
 /// (#230), `ReadAgainWhenUncovered` by all 3 screens that read the
 /// server again when uncovered (#41, #455), `BgeKeyedSliverList` by the
-/// nine row lists #549 covers, `BgeShelf` by the home page's game sections and
+/// nine row lists #549 covers and the lists built since, at 16 call sites in
+/// `lib/`, `BgeShelf` by the home page's game sections and
 /// its events (#615, #669), `BgeFocusRing` by the game covers and the event
 /// cards on them (#669), `BgePointerFocus` by those covers, which take focus
 /// from a tap (#707), and by every `BgeRowFocusRing`, whose rows take focus
 /// from a tap only with `focusOnTap` (#709, #758), `BgeRowFocusRing` by
-/// every tappable `ListTile` and selection tile outside `packages/ui`, 36
+/// every tappable `ListTile` and selection tile outside `packages/ui`, 44
 /// call sites (#758),
 /// `BgeCoverTile` by
 /// the home shelves' covers and the Games and Collection grids' tiles (#707,
@@ -30,26 +32,27 @@
 /// expansions under its row (#711),
 /// `BgeFocusHandoffScope` and `BgeFocusHandoff` by the Games and Collection
 /// lists and grids, whose games change form (#769, #711),
-/// `BgeRefreshBanner` by the 7 stale-data banners, on 3 lists, 2 detail
+/// `BgeRefreshBanner` by the 8 stale-data banners, on 4 lists, 2 detail
 /// screens, the home events section and the catalog's from-cache screens and
-/// quick look (#573, #607), `BgeRefreshButton` by the 2 lists a pull
-/// refreshes, the household and collection lists, at 2 call sites in `lib/`
-/// (#314, #717), `BgeInertButton` by buttons that keep focus while they can
-/// do nothing, at 26 call sites in `lib/` (#607, #807),
+/// quick look (#573, #607), `BgeRefreshButton` by the 3 lists with a Refresh
+/// action: the household and collection lists, which a pull refreshes too,
+/// and the API key list, which takes no pull, at 3 call sites in `lib/`
+/// (#314, #717, #1028), `BgeInertButton` by buttons that keep focus while
+/// they can do nothing, at 28 call sites in `lib/` (#607, #807),
 /// `BgeExtendedFab` by all 6 extended floating buttons, which it rings
 /// inside their edge on keyboard focus (#760) and whose label, a
 /// `BgeFabLabel`, it keeps on screen at large text (#50), `replaceSnackBar`
 /// by every SnackBar, at 4 uses in `lib/` (#343), `closeWhenSettled` by the
-/// 8 screens that save and then leave, at 8 call sites in `lib/`, all
+/// 10 screens that save and then leave, at 10 call sites in `lib/`, all
 /// outside this package (#464),
-/// `SessionMessenger` by those 8 screens and the collection's add sheet,
-/// which say every bar through it, at 9 constructor calls in `lib/`, all
+/// `SessionMessenger` by those 10 screens and the collection's add sheet,
+/// which say every bar through it, at 11 constructor calls in `lib/`, all
 /// outside this package (#464, #694), and
 /// `BgeLoadingState`, `BgeEmptyState` and `BgeStateSliver` by the loading,
-/// empty and denied surfaces of the feature screens, at 28, 38 and 60 call
+/// empty and denied surfaces of the feature screens, at 39, 51 and 74 call
 /// sites in `lib/` (#49, #807). `BgeOnlineOnly`, `BgeOnlineOnlyLabel`,
 /// `BgeOnlineOnlyNote`, `BgeOnlineOnlyMenu` and `BgeOnlineOnlyPopupMenuItem`
-/// are on the controls that write straight to the server, at 27, 12, 10, 4
+/// are on the controls that write straight to the server, at 36, 13, 10, 4
 /// and 4 call sites in `lib/` (#49, #807). Each `lib/` count is of
 /// constructor calls in every package, this one included: 3 of
 /// `BgeInertButton`'s, 1 of `BgeOnlineOnlyLabel`'s and 1 of
