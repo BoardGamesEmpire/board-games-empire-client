@@ -24,6 +24,8 @@ dependencies:
   # The remote comes in as a parameter. Nothing under `lib/` names `di`.
   network_interface:
     path: ../../network/network_interface
+  # The expiry's custom days field, and the create and edit forms (#1028).
+  reactive_forms: ^18.1.1
   ui:
     path: ../../ui/widgets
   ui_tokens:

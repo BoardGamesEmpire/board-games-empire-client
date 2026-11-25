@@ -459,5 +459,61 @@
   "apiKeyFailureGeneric": "The server couldn't do that. Try again later.",
   "@apiKeyFailureGeneric": {
     "description": "Shown when the server refused a request about an API key and gave no message of its own."
+  },
+  "apiKeyExpiryPreset": "{count, plural, =1{1 day} other{{count} days}}",
+  "@apiKeyExpiryPreset": {
+    "description": "Label of a choice of how long a new API key lasts, such as '30 days' or '90 days'. One of a row of choices next to 'Custom'.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "30"
+      }
+    }
+  },
+  "apiKeyExpiryCustom": "Custom",
+  "@apiKeyExpiryCustom": {
+    "description": "Label of the choice of how long an API key lasts that lets the user type their own number of days. Next to choices such as '30 days'. Choosing it shows a field for the number."
+  },
+  "apiKeyExpiryCustomField": "Number of days",
+  "@apiKeyExpiryCustomField": {
+    "description": "Label of the field where the user types how many days an API key lasts, shown after they choose 'Custom'."
+  },
+  "apiKeyExpiryCustomHelper": "Whole days, from {min} to {max}",
+  "@apiKeyExpiryCustomHelper": {
+    "description": "Under the field where the user types how many days an API key lasts: the fewest and the most days the server allows.",
+    "placeholders": {
+      "min": {
+        "type": "int",
+        "example": "1"
+      },
+      "max": {
+        "type": "int",
+        "example": "365"
+      }
+    }
+  },
+  "apiKeyExpiryCustomInvalid": "Enter a whole number of days from {min} to {max}.",
+  "@apiKeyExpiryCustomInvalid": {
+    "description": "Error under the field where the user types how many days an API key lasts, when what they typed isn't a whole number in the range the server allows.",
+    "placeholders": {
+      "min": {
+        "type": "int",
+        "example": "1"
+      },
+      "max": {
+        "type": "int",
+        "example": "365"
+      }
+    }
+  },
+  "apiKeyExpiryDate": "Expires {date}",
+  "@apiKeyExpiryDate": {
+    "description": "Under the choices of how long an API key lasts: the day the key stops working if the user chooses what is selected, in the device's time zone. It is read out when the choice changes.",
+    "placeholders": {
+      "date": {
+        "type": "DateTime",
+        "format": "yMMMd"
+      }
+    }
   }
 }
