@@ -264,6 +264,11 @@ void main() {
       verify(
         () => remote.fetchPage(limit: any(named: 'limit')),
       ).called(1);
+      verify(
+        () => remote.fetchPage(page: 2, limit: any(named: 'limit')),
+      ).called(1);
+      verify(remote.fetchGrantable).called(1);
+      verifyNoMoreInteractions(remote);
     },
   );
 
@@ -553,6 +558,44 @@ void main() {
         ),
         loaded([a], hasMore: true).copyWith(refreshing: true),
         loaded([a], hasMore: true).copyWith(refreshFailed: true),
+      ],
+    );
+
+    blocTest<ApiKeyListBloc, ApiKeyListState>(
+      'a more that answers while the pages are read again adds nothing',
+      build: build,
+      setUp: () {
+        answerPage(remote, [a], hasMore: true);
+        when(
+          () => remote.fetchPage(page: 2, limit: any(named: 'limit')),
+        ).thenAnswer((_) => held.future);
+      },
+      act: (bloc) async {
+        bloc.add(const ApiKeyListRequested());
+        await Future<void>.delayed(Duration.zero);
+        bloc.add(const ApiKeyListMoreRequested());
+        await Future<void>.delayed(Duration.zero);
+        final reread = Completer<PaginatedResult<ApiKey>>();
+        when(
+          () => remote.fetchPage(limit: any(named: 'limit')),
+        ).thenAnswer((_) => reread.future);
+        bloc.add(const ApiKeyListRequested());
+        await Future<void>.delayed(Duration.zero);
+        // More answers first. The re-read only asked for page 1, so rows
+        // added now would vanish when it lands.
+        held.complete(pageOf([c], page: 2));
+        await Future<void>.delayed(Duration.zero);
+        reread.complete(pageOf([a], hasMore: true));
+        await Future<void>.delayed(Duration.zero);
+      },
+      skip: 2,
+      expect: () => [
+        loaded([a], hasMore: true).copyWith(
+          loadingMore: true,
+          refreshing: true,
+        ),
+        loaded([a], hasMore: true).copyWith(refreshing: true),
+        loaded([a], hasMore: true),
       ],
     );
 

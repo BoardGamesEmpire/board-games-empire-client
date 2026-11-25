@@ -23,10 +23,13 @@ import 'package:network_interface/network_interface.dart';
 /// A read asked for while another runs takes its place: the earlier one's
 /// answer is dropped. So does a More asked for while one is out, and a More
 /// while the pages are being read again is dropped, as it would page
-/// through a listing that's about to be replaced. A More that answers after
-/// the pages were read again belongs to the old listing, so it adds nothing,
-/// and More can be pressed again at once. One that answers after a re-read
-/// failed still belongs to the listing on screen, and is added.
+/// through a listing that's about to be replaced. A More that answers while
+/// they are read again adds nothing either: the re-read only asked for the
+/// pages loaded when it started, so rows added meanwhile would vanish as it
+/// lands. A More that answers after the pages were read again belongs to the
+/// old listing, so it adds nothing, and More can be pressed again at once.
+/// One that answers after a re-read failed still belongs to the listing on
+/// screen, and is added.
 ///
 /// ## Keys made or removed between reads
 ///
@@ -171,7 +174,7 @@ class ApiKeyListBloc extends Bloc<ApiKeyListEvent, ApiKeyListState> {
     emit(state.copyWith(loadingMore: true, moreFailed: false));
     try {
       final next = await _remote.fetchPage(page: page, limit: _pageSize);
-      if (listing != _listing || emit.isDone) return;
+      if (_dropped(listing, emit)) return;
       if (next.meta.total == _total) {
         _page = page;
         emit(
@@ -186,7 +189,7 @@ class ApiKeyListBloc extends Bloc<ApiKeyListEvent, ApiKeyListState> {
       // Keys were made or removed since the last read, which moved this
       // page: every page up to it is read again, so none is skipped.
       final read = await _readPages(page);
-      if (listing != _listing || emit.isDone) return;
+      if (_dropped(listing, emit)) return;
       _page = page;
       _total = read.total;
       emit(
@@ -197,9 +200,21 @@ class ApiKeyListBloc extends Bloc<ApiKeyListEvent, ApiKeyListState> {
         ),
       );
     } on Object {
-      if (listing != _listing || emit.isDone) return;
+      if (_dropped(listing, emit)) return;
       emit(state.copyWith(loadingMore: false, moreFailed: true));
     }
+  }
+
+  /// Whether a More's answer is to be dropped: [listing] was replaced while it
+  /// was out, or the pages are being read again now. The re-read only asked
+  /// for the pages loaded when it started, so rows added now would vanish
+  /// when it lands. A More dropped that way settles, so it doesn't say it
+  /// loads for ever.
+  bool _dropped(int listing, Emitter<ApiKeyListState> emit) {
+    if (listing != _listing || emit.isDone) return true;
+    if (!state.refreshing) return false;
+    emit(state.copyWith(loadingMore: false));
+    return true;
   }
 
   void _onFilterChanged(

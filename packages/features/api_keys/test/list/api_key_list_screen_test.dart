@@ -17,9 +17,11 @@ void main() {
   late MockApiKeyRemoteDataSource remote;
   late List<String> opened;
 
-  // Noon UTC, so the date is the same in every zone a test machine is in.
-  final expires = DateTime.utc(2027, 2, 1, 12);
-  final used = DateTime.utc(2026, 11, 20, 12);
+  // Local noon: the screen shows dates in local time, and `toLocal()` keeps
+  // a local time's date in every zone a test machine is in. Noon UTC was the
+  // next day from UTC+12 on.
+  final expires = DateTime(2027, 2, 1, 12);
+  final used = DateTime(2026, 11, 20, 12);
 
   setUp(() {
     remote = MockApiKeyRemoteDataSource();
@@ -675,7 +677,12 @@ void main() {
     await tester.tap(find.byKey(ApiKeyListScreen.moreKey));
     await tester.pumpAndSettle();
 
-    expect(find.byKey(ApiKeyListScreen.rowKey('k_2')), findsOneWidget);
+    // Page 2 joins page 1, under it, rather than taking its place.
+    final first = find.byKey(ApiKeyListScreen.rowKey('k_1'));
+    final second = find.byKey(ApiKeyListScreen.rowKey('k_2'));
+    expect(first, findsOneWidget);
+    expect(second, findsOneWidget);
+    expect(tester.getTopLeft(first).dy, lessThan(tester.getTopLeft(second).dy));
     expect(find.byKey(ApiKeyListScreen.moreKey), findsNothing);
   });
 

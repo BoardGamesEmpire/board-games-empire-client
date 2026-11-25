@@ -17,9 +17,11 @@ void main() {
   late MockApiKeyRemoteDataSource remote;
   late FakeSessionLease lease;
 
-  // Noon UTC, so the date is the same in every zone a test machine is in.
-  final expires = DateTime.utc(2027, 2, 1, 12);
-  final used = DateTime.utc(2026, 11, 20, 12);
+  // Local noon: the screen shows dates in local time, and `toLocal()` keeps
+  // a local time's date in every zone a test machine is in. Noon UTC was the
+  // next day from UTC+12 on.
+  final expires = DateTime(2027, 2, 1, 12);
+  final used = DateTime(2026, 11, 20, 12);
 
   final readCollection = permission(
     'collection:read',
@@ -45,7 +47,7 @@ void main() {
     ],
     expiresAt: expires,
     lastUsedAt: used,
-  ).copyWith(createdAt: DateTime.utc(2026, 11, 1, 12));
+  ).copyWith(createdAt: DateTime(2026, 11, 1, 12));
 
   const transient = ApiKeyTransientException('down');
   const unreachable =
