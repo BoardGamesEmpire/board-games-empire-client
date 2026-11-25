@@ -32,6 +32,7 @@ void main() {
   Widget screen({
     ThemeData? theme,
     Future<void> Function(String id)? openKey,
+    Future<void> Function()? createKey,
   }) => hostScreen(
     ApiKeyListScreen(
       remote: remote,
@@ -40,6 +41,7 @@ void main() {
           (id) async {
             opened.add(id);
           },
+      createKey: createKey,
     ),
     theme: theme,
   );
@@ -480,6 +482,305 @@ void main() {
     });
   });
 
+  group('Create key', () {
+    Finder createFab() => find.byKey(ApiKeyListScreen.createFabKey);
+
+    FocusNode createFocus(WidgetTester tester) =>
+        tester.widget<BgeExtendedFab>(createFab()).focusNode!;
+
+    /// Counts the reads of page 1 since the last count.
+    void expectPageReads(int count) => count == 0
+        ? verifyNever(() => remote.fetchPage(limit: any(named: 'limit')))
+        : verify(
+            () => remote.fetchPage(limit: any(named: 'limit')),
+          ).called(count);
+
+    /// A page pushed over the list, as the app pushes the one that makes a
+    /// key, with a way to close it.
+    Route<void> pageOver() => MaterialPageRoute<void>(
+      builder: (context) => Scaffold(
+        body: TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Close'),
+        ),
+      ),
+    );
+
+    testWidgets('with no createKey there is no Create key', (tester) async {
+      answerPage(remote, const []);
+      await show(tester);
+
+      expect(find.byKey(ApiKeyListScreen.emptyKey), findsOneWidget);
+      expect(find.text('Create key'), findsNothing);
+      expect(find.byType(BgeExtendedFab), findsNothing);
+    });
+
+    testWidgets('Create key opens createKey and the list re-reads after', (
+      tester,
+    ) async {
+      answerPage(remote, [apiKey('k_1')]);
+      final page = Completer<void>();
+      var asked = 0;
+      await tester.pumpWidget(
+        screen(
+          createKey: () {
+            asked++;
+            return page.future;
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
+      expectPageReads(1);
+      expect(find.text('Create key'), findsOneWidget);
+
+      await tester.tap(createFab());
+      await tester.pump();
+      expect(asked, 1);
+      // Nothing is read again while the page is open.
+      expectPageReads(0);
+
+      // A key was made on it.
+      answerPage(remote, [apiKey('k_new', name: 'Backup'), apiKey('k_1')]);
+      page.complete();
+      await tester.pumpAndSettle();
+
+      expectPageReads(1);
+      expect(find.byKey(ApiKeyListScreen.rowKey('k_new')), findsOneWidget);
+      expect(opened, isEmpty);
+    });
+
+    testWidgets('a list with no keys offers it under its words too, and '
+        'that opens the same page', (tester) async {
+      answerPage(remote, const []);
+      final page = Completer<void>();
+      var asked = 0;
+      await tester.pumpWidget(
+        screen(
+          createKey: () {
+            asked++;
+            return page.future;
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
+      final under = find.byKey(ApiKeyListScreen.emptyCreateKey);
+      expect(
+        find.descendant(
+          of: find.byKey(ApiKeyListScreen.emptyKey),
+          matching: under,
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Create key'), findsNWidgets(2));
+
+      await tester.tap(under);
+      await tester.pump();
+      expect(asked, 1);
+      // The floating one has focus, to take it back when the page closes:
+      // the one under the words goes once there is a key to show.
+      expect(createFocus(tester).hasPrimaryFocus, isTrue);
+
+      answerPage(remote, [apiKey('k_new')]);
+      page.complete();
+      await tester.pumpAndSettle();
+
+      expect(under, findsNothing);
+      expect(find.byKey(ApiKeyListScreen.rowKey('k_new')), findsOneWidget);
+      expect(createFocus(tester).hasPrimaryFocus, isTrue);
+    });
+
+    testWidgets('320dp at 2.0 lays out both without one covering the '
+        'other', (tester) async {
+      useViewSize(tester, const Size(320, 800));
+      tester.platformDispatcher.textScaleFactorTestValue = 2;
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      answerPage(remote, const []);
+      await tester.pumpWidget(screen(createKey: () async {}));
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      final under = tester.getRect(
+        find.byKey(ApiKeyListScreen.emptyCreateKey),
+      );
+      final floating = tester.getRect(createFab());
+      expect(
+        under.overlaps(floating),
+        isFalse,
+        reason: '$under is under the floating button at $floating',
+      );
+      expect(floating.right, lessThanOrEqualTo(320));
+      expect(under.right, lessThanOrEqualTo(320));
+    });
+
+    testWidgets('a filter that shows none offers it only as the floating '
+        'button', (tester) async {
+      answerPage(remote, [apiKey('k_1')]);
+      await tester.pumpWidget(screen(createKey: () async {}));
+      await tester.pumpAndSettle();
+
+      await tester.tap(
+        find.descendant(
+          of: find.byKey(ApiKeyListScreen.filterKey),
+          matching: find.text('Disabled'),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('No disabled keys'), findsOneWidget);
+      expect(find.byKey(ApiKeyListScreen.emptyCreateKey), findsNothing);
+      expect(createFab(), findsOneWidget);
+    });
+
+    testWidgets('a second press while its page is open opens nothing more, '
+        'and neither does a row', (tester) async {
+      answerPage(remote, [apiKey('k_1')]);
+      final page = Completer<void>();
+      var asked = 0;
+      await tester.pumpWidget(
+        screen(
+          createKey: () {
+            asked++;
+            return page.future;
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(createFab());
+      await tester.pump();
+      await tester.tap(createFab());
+      await tester.pump();
+      await tester.tap(find.text('CI deploy'));
+      await tester.pump();
+
+      expect(asked, 1);
+      expect(opened, isEmpty);
+      page.complete();
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets("a screen reader's Create key has focus back when the page "
+        'it opened closes', (tester) async {
+      answerPage(remote, [apiKey('k_1')]);
+      final semantics = tester.ensureSemantics();
+      late NavigatorState navigator;
+      await tester.pumpWidget(
+        screen(createKey: () => navigator.push(pageOver())),
+      );
+      await tester.pumpAndSettle();
+      navigator = tester.state(find.byType(Navigator));
+      expect(createFocus(tester).hasPrimaryFocus, isFalse);
+
+      // A double tap with a screen reader moves no input focus of its own.
+      tester.semantics.tap(find.semantics.byLabel('Create key'));
+      await tester.pumpAndSettle();
+      expect(find.text('Close'), findsOneWidget);
+
+      await tester.tap(find.text('Close'));
+      await tester.pumpAndSettle();
+
+      expect(createFocus(tester).hasPrimaryFocus, isTrue);
+      semantics.dispose();
+    });
+
+    testWidgets('a page taken away without a pop, whose open never '
+        'completes, still re-reads the list and lets it open again', (
+      tester,
+    ) async {
+      answerPage(remote, [apiKey('k_1')]);
+      late NavigatorState navigator;
+      final routes = <Route<void>>[];
+      var asked = 0;
+      await tester.pumpWidget(
+        screen(
+          // As a router's push answers when Back in the browser takes the
+          // page away: with a future that never completes.
+          createKey: () {
+            asked++;
+            routes.add(pageOver());
+            navigator.push(routes.last);
+            return Completer<void>().future;
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
+      navigator = tester.state(find.byType(Navigator));
+      expectPageReads(1);
+
+      await tester.tap(createFab());
+      await tester.pumpAndSettle();
+      expect(find.text('Close'), findsOneWidget);
+      expectPageReads(0);
+
+      answerPage(remote, [apiKey('k_new'), apiKey('k_1')]);
+      navigator.removeRoute(routes.single);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Close'), findsNothing);
+      expectPageReads(1);
+      expect(find.byKey(ApiKeyListScreen.rowKey('k_new')), findsOneWidget);
+
+      // Not left waiting on the open that never completed.
+      await tester.tap(createFab());
+      await tester.pumpAndSettle();
+      expect(asked, 2);
+      expect(find.text('Close'), findsOneWidget);
+    });
+
+    testWidgets('a page taken away before it had fully arrived frees the '
+        'list too', (tester) async {
+      answerPage(remote, [apiKey('k_1')]);
+      late NavigatorState navigator;
+      final routes = <Route<void>>[];
+      await tester.pumpWidget(
+        screen(
+          createKey: () {
+            routes.add(pageOver());
+            navigator.push(routes.last);
+            return Completer<void>().future;
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
+      navigator = tester.state(find.byType(Navigator));
+      expectPageReads(1);
+
+      await tester.tap(createFab());
+      // Part-way through its entrance: it has not yet covered the list.
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+      navigator.removeRoute(routes.single);
+      await tester.pumpAndSettle();
+
+      expectPageReads(1);
+      await tester.tap(createFab());
+      await tester.pumpAndSettle();
+      expect(routes, hasLength(2));
+    });
+
+    testWidgets('one page gone is one read, though both its signs come', (
+      tester,
+    ) async {
+      answerPage(remote, [apiKey('k_1')]);
+      late NavigatorState navigator;
+      await tester.pumpWidget(
+        screen(createKey: () => navigator.push(pageOver())),
+      );
+      await tester.pumpAndSettle();
+      navigator = tester.state(find.byType(Navigator));
+      expectPageReads(1);
+
+      await tester.tap(createFab());
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Close'));
+      await tester.pumpAndSettle();
+
+      // The push's future completed and the list's route is the top one
+      // again: one return.
+      expectPageReads(1);
+    });
+  });
+
   testWidgets("the filter's empty result names the filter", (tester) async {
     answerPage(remote, [apiKey('k_1')]);
 
@@ -883,6 +1184,31 @@ void main() {
       arrange: (tester) async {
         await tester.pumpAndSettle();
         expect(find.byKey(ApiKeyListScreen.emptyKey), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'loaded, with Create key',
+      build: (theme) {
+        rows();
+        return screen(theme: theme, createKey: () async {});
+      },
+      arrange: (tester) async {
+        await tester.pumpAndSettle();
+        expect(find.byKey(ApiKeyListScreen.createFabKey), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'empty, with Create key under its words and floating',
+      build: (theme) {
+        answerPage(remote, const []);
+        return screen(theme: theme, createKey: () async {});
+      },
+      arrange: (tester) async {
+        await tester.pumpAndSettle();
+        expect(find.byKey(ApiKeyListScreen.emptyCreateKey), findsOneWidget);
+        expect(find.byKey(ApiKeyListScreen.createFabKey), findsOneWidget);
       },
     );
 

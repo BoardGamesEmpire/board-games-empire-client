@@ -635,6 +635,15 @@ typedef ApiKeyDetailScreenBuilder = Widget? Function(
 /// [ApiKeysScreenBuilder].
 typedef ApiKeyCreateScreenBuilder = Widget? Function(BuildContext context);
 
+/// Asked before the router takes the [AppRoutes.settingsApiKeyNew] route
+/// away (#1028): true lets it go, false keeps it. Supplied by `BgeApp`,
+/// which asks the page.
+///
+/// The page shows a new key's secret once, and refuses a pop of its route
+/// itself. This is for what a page can't refuse: the browser's Back, and a
+/// move to another location, which take a route without popping it.
+typedef ApiKeyCreateExit = FutureOr<bool> Function();
+
 /// Builds the create-household flow (#129) for the
 /// [AppRoutes.householdCreate] route. Supplied by `BgeApp`; returns null at
 /// navigation time when no active server is resolvable or its container
@@ -1053,6 +1062,7 @@ GoRouter buildAppRouter({
   ApiKeysScreenBuilder? apiKeysBuilder,
   ApiKeyDetailScreenBuilder? apiKeyDetailBuilder,
   ApiKeyCreateScreenBuilder? apiKeyCreateBuilder,
+  ApiKeyCreateExit? apiKeyCreateExit,
   CreateHouseholdScreenBuilder? createHouseholdBuilder,
   HouseholdListScreenBuilder? householdListBuilder,
   HouseholdDetailScreenBuilder? householdDetailBuilder,
@@ -1098,10 +1108,24 @@ GoRouter buildAppRouter({
   // another runs for a bootstrap change, not for the visitor's own
   // navigation (#916).
   AppBootstrapState? lastState;
+  // Whether the router is re-reading its location for a bootstrap change,
+  // which is what the refresh listenable notifies of. go_router's own
+  // listener, added as the router is made, does that re-read, its redirect
+  // and the move that follows, all before it returns. So a listener added
+  // ahead of it and one added after it mark where that starts and ends.
+  //
+  // A route's `onExit` reads it (#1028): a move made then is the
+  // bootstrap's, such as the one to sign-in as a session ends, and no page
+  // is asked whether it may happen. It also covers a re-read that moves
+  // nothing. go_router gives a pushed page a new match on each one, takes
+  // that for the page leaving, and asks its `onExit`, when the page is
+  // going nowhere.
+  var refreshing = false;
+  refreshListenable.addListener(() => refreshing = true);
   late final GoRouter router;
   // Named so the redirect can read the location that shows, and reach a
   // context beneath the Router for its replace.
-  return router = GoRouter(
+  router = GoRouter(
     initialLocation: AppRoutes.splash,
     observers: [modalGuard.rootObserver],
     // go_router removes its listener on dispose but never disposes the
@@ -1370,6 +1394,15 @@ GoRouter buildAppRouter({
                     routes: [
                       GoRoute(
                         path: AppRoutes._settingsApiKeyNewSegment,
+                        // The page shows a key's secret once, so what
+                        // would take it away asks it first. The page
+                        // answers a pop itself; this is for the browser's
+                        // Back and a move elsewhere, which pop nothing. A
+                        // bootstrap move asks no one.
+                        onExit: apiKeyCreateExit == null
+                            ? null
+                            : (context, state) =>
+                                  refreshing ? true : apiKeyCreateExit(),
                         pageBuilder: (context, state) => _materialPage(
                           state,
                           apiKeyCreateBuilder?.call(context) ??
@@ -2003,6 +2036,9 @@ GoRouter buildAppRouter({
       ),
     ],
   );
+  // After the router's own listener: see `refreshing`.
+  refreshListenable.addListener(() => refreshing = false);
+  return router;
 }
 
 /// The server link [state] carries in its [AppRoutes.deepLinkParam] query,

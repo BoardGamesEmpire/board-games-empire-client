@@ -398,9 +398,9 @@
       }
     }
   },
-  "apiKeyFailureNeedsRecentSignIn": "This needs a recent sign-in. Sign out, sign in again, then try once more.",
+  "apiKeyFailureNeedsRecentSignIn": "Giving a key a Critical permission needs a recent sign-in. Sign out, sign in again, then try once more.",
   "@apiKeyFailureNeedsRecentSignIn": {
-    "description": "Shown when the server refused a change to an API key because the user signed in too long ago."
+    "description": "Shown when the server refused to make an API key, or to change one, because it would give the key a permission of the Critical risk level and the user signed in too long ago. The server only asks for a recent sign-in for a Critical permission."
   },
   "apiKeyFailureCriticalNeedsConfirmation": "A Critical permission needs your confirmation first.",
   "@apiKeyFailureCriticalNeedsConfirmation": {
@@ -515,5 +515,131 @@
         "format": "yMMMd"
       }
     }
+  },
+  "apiKeyCreateAction": "Create key",
+  "@apiKeyCreateAction": {
+    "description": "Button on the API key list, and under 'No API keys yet', that opens the page where the user makes a new API key."
+  },
+  "apiKeyCreateTitle": "Create an API key",
+  "@apiKeyCreateTitle": {
+    "description": "Title of the page where the user makes a new API key: they name it, choose its permissions and choose how long it lasts."
+  },
+  "apiKeyCreateLoading": "Loading the permissions you can give a key…",
+  "@apiKeyCreateLoading": {
+    "description": "Shown beside a spinner, and read out by screen readers, while the page for making an API key reads from the server which permissions the user may give a key."
+  },
+  "apiKeyCreateLoadFailed": "Couldn't load the permissions you can give a key",
+  "@apiKeyCreateLoadFailed": {
+    "description": "Title of the message shown in place of the form for making an API key when the permissions the user may give a key could not be read from the server."
+  },
+  "apiKeyCreateLoadFailedBody": "Check your connection, then try again.",
+  "@apiKeyCreateLoadFailedBody": {
+    "description": "Body under the title when the permissions the user may give a key could not be read from the server."
+  },
+  "apiKeyCreateRetry": "Try again",
+  "@apiKeyCreateRetry": {
+    "description": "Button that reads the permissions the user may give a key from the server again after it failed."
+  },
+  "apiKeyNameLabel": "Name",
+  "@apiKeyNameLabel": {
+    "description": "Label of the field for an API key's name, which is how the user tells their keys apart."
+  },
+  "apiKeyNameRequired": "Enter a name for the key.",
+  "@apiKeyNameRequired": {
+    "description": "Error under the name field when the user tries to save an API key with no name, or one that is only spaces."
+  },
+  "apiKeyNameTooLong": "{max, plural, =1{Use 1 character at most.} other{Use {max} characters at most.}}",
+  "@apiKeyNameTooLong": {
+    "description": "Error under the name field when the API key's name is longer than the server allows. {max} is the most characters a name may have.",
+    "placeholders": {
+      "max": {
+        "type": "int",
+        "example": "32"
+      }
+    }
+  },
+  "apiKeyExpiryCreateLabel": "Expires in",
+  "@apiKeyExpiryCreateLabel": {
+    "description": "Label over the choices of how long a new API key lasts, such as '30 days' or '90 days'."
+  },
+  "apiKeyCreateSubmit": "Create key",
+  "@apiKeyCreateSubmit": {
+    "description": "Button at the end of the form for making an API key: sends it to the server."
+  },
+  "apiKeyCreateSubmitting": "Creating key…",
+  "@apiKeyCreateSubmitting": {
+    "description": "The name of the 'Create key' button while the new API key is on its way to the server. Read out by screen readers."
+  },
+  "apiKeyCreateFailedTitle": "Couldn't create the key",
+  "@apiKeyCreateFailedTitle": {
+    "description": "Title of the message shown above the 'Create key' button when making the API key failed. The reason follows it."
+  },
+  "apiKeyCriticalConfirmTitle": "Give this key Critical permissions?",
+  "@apiKeyCriticalConfirmTitle": {
+    "description": "Title of the dialog that asks before an API key is given a permission of the Critical risk level, the highest."
+  },
+  "apiKeyCriticalConfirmBody": "Anyone who gets hold of this key could do serious harm with it. It would be able to:",
+  "@apiKeyCriticalConfirmBody": {
+    "description": "In the dialog that asks before an API key is given Critical permissions: the line above the list of those permissions, each given by its description, such as 'Manage every user'."
+  },
+  "apiKeyCriticalConfirmBodyUnnamed": "This key would have a Critical permission. Anyone who gets hold of it could do serious harm with it.",
+  "@apiKeyCriticalConfirmBodyUnnamed": {
+    "description": "In the dialog that asks before an API key is given Critical permissions, when the app can't say which permissions those are."
+  },
+  "apiKeyCriticalConfirmSignIn": "The server may ask you to sign in again first.",
+  "@apiKeyCriticalConfirmSignIn": {
+    "description": "Last line of the dialog that asks before an API key is given Critical permissions. The server only gives a key such a permission when the user signed in recently."
+  },
+  "apiKeyCriticalConfirmCancel": "Cancel",
+  "@apiKeyCriticalConfirmCancel": {
+    "description": "Button in the dialog that asks before an API key is given Critical permissions: closes it, and nothing is sent to the server."
+  },
+  "apiKeyCriticalConfirmAction": "Confirm",
+  "@apiKeyCriticalConfirmAction": {
+    "description": "Button in the dialog that asks before an API key is given Critical permissions: goes ahead."
+  },
+  "apiKeySecretTitle": "Key created",
+  "@apiKeySecretTitle": {
+    "description": "Title of the page once a new API key has been made, while it shows the key itself for the only time."
+  },
+  "apiKeySecretLabel": "Your new key",
+  "@apiKeySecretLabel": {
+    "description": "Label over the new API key itself, the secret text a script or app sends to prove who it is, on the page shown once the key has been made."
+  },
+  "apiKeySecretCopy": "Copy key",
+  "@apiKeySecretCopy": {
+    "description": "Button under the new API key that copies the key itself to the clipboard."
+  },
+  "apiKeySecretCopied": "Key copied",
+  "@apiKeySecretCopied": {
+    "description": "Said once the new API key has been copied to the clipboard."
+  },
+  "apiKeySecretCopyFailed": "Couldn't copy the key. Select it and copy it yourself.",
+  "@apiKeySecretCopyFailed": {
+    "description": "Said when copying the new API key to the clipboard failed. The key is shown as text the user can select."
+  },
+  "apiKeySecretOnce": "This is the only time the key is shown. Copy it now and store it somewhere safe.",
+  "@apiKeySecretOnce": {
+    "description": "Warning under the new API key. The server never shows the key again after this page is left."
+  },
+  "apiKeySecretDone": "Done",
+  "@apiKeySecretDone": {
+    "description": "Button at the end of the page that shows the new API key: leaves the page, for the list of the user's keys."
+  },
+  "apiKeyLeaveTitle": "Leave without copying?",
+  "@apiKeyLeaveTitle": {
+    "description": "Title of the dialog that asks before the user goes back from the page that shows their new API key for the only time."
+  },
+  "apiKeyLeaveBody": "You won't see this key again.",
+  "@apiKeyLeaveBody": {
+    "description": "Body of the dialog that asks before the user goes back from the page that shows their new API key."
+  },
+  "apiKeyLeaveStay": "Stay",
+  "@apiKeyLeaveStay": {
+    "description": "Button in the dialog that asks before leaving the page that shows the new API key: closes the dialog and stays on the page."
+  },
+  "apiKeyLeaveConfirm": "Leave",
+  "@apiKeyLeaveConfirm": {
+    "description": "Button in the dialog that asks before leaving the page that shows the new API key: leaves the page. The key is not shown again."
   }
 }

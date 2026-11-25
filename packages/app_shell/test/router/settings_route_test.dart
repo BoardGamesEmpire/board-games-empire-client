@@ -34,12 +34,10 @@ void main() {
     ApiKeysScreenBuilder? apiKeysBuilder,
     ApiKeyDetailScreenBuilder? apiKeyDetailBuilder,
     ApiKeyCreateScreenBuilder? apiKeyCreateBuilder,
+    ApiKeyCreateExit? apiKeyCreateExit,
+    Stream<AppBootstrapState> states = const Stream.empty(),
   }) async {
-    whenListen(
-      cubit,
-      const Stream<AppBootstrapState>.empty(),
-      initialState: initialState,
-    );
+    whenListen(cubit, states, initialState: initialState);
     final listenable = BootstrapStreamListenable(cubit.stream);
     final router = buildAppRouter(
       bootstrapCubit: cubit,
@@ -50,6 +48,7 @@ void main() {
       apiKeysBuilder: apiKeysBuilder,
       apiKeyDetailBuilder: apiKeyDetailBuilder,
       apiKeyCreateBuilder: apiKeyCreateBuilder,
+      apiKeyCreateExit: apiKeyCreateExit,
     );
     addTearDown(() {
       router.dispose();
@@ -407,6 +406,191 @@ void main() {
       expect(AppRoutes.settingsApiKeyNew, '/settings/api-keys/new');
       expect(find.byKey(_apiKeyCreateMarkerKey), findsOneWidget);
       expect(detailIds, isEmpty);
+    });
+
+    testWidgets('/settings/api-keys/new builds the create screen, over the '
+        'list', (tester) async {
+      final router = await pumpRouter(
+        tester,
+        initialState: const AppBootstrapReady(),
+        apiKeysBuilder: (_) =>
+            const Scaffold(body: SizedBox(key: _apiKeysMarkerKey)),
+        apiKeyDetailBuilder: recordDetail,
+        apiKeyCreateBuilder: (_) =>
+            const Scaffold(body: SizedBox(key: _apiKeyCreateMarkerKey)),
+      );
+
+      router.go(AppRoutes.settingsApiKeyNew);
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(_apiKeyCreateMarkerKey), findsOneWidget);
+      expect(find.byType(NotYetAvailableScreen), findsNothing);
+      // The list is beneath it, not drawn while the page covers it.
+      expect(find.byKey(_apiKeysMarkerKey), findsNothing);
+
+      // So leaving the page, by Done or by Leave, is a plain pop that lands
+      // on the list, a page reached directly too.
+      router.pop();
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(_apiKeyCreateMarkerKey), findsNothing);
+      expect(find.byKey(_apiKeysMarkerKey), findsOneWidget);
+      expect(router.state.uri.toString(), AppRoutes.settingsApiKeys);
+      expect(detailIds, isEmpty);
+    });
+
+    testWidgets('/settings/api-keys/new is gated behind bootstrap: visiting '
+        'it while unauthenticated redirects to auth', (tester) async {
+      final router = await pumpRouter(
+        tester,
+        initialState: const AppBootstrapNeedsAuth(),
+        apiKeyCreateBuilder: (_) =>
+            const Scaffold(body: SizedBox(key: _apiKeyCreateMarkerKey)),
+      );
+
+      router.go(AppRoutes.settingsApiKeyNew);
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(_apiKeyCreateMarkerKey), findsNothing);
+      expect(find.text('Sign in'), findsOneWidget);
+    });
+
+    group('asking the create page before it is taken away', () {
+      /// How many times the router asked, and what it is told.
+      late int asked;
+      late bool mayLeave;
+
+      setUp(() {
+        asked = 0;
+        mayLeave = true;
+      });
+
+      Widget marker(Key key) => Scaffold(body: SizedBox(key: key));
+
+      /// A ready router with the list and the create page, which is asked
+      /// through `apiKeyCreateExit`.
+      Future<GoRouter> pumpGuarded(
+        WidgetTester tester, {
+        Stream<AppBootstrapState> states = const Stream.empty(),
+      }) => pumpRouter(
+        tester,
+        initialState: const AppBootstrapReady(),
+        states: states,
+        settingsBuilder: (_) => marker(_settingsMarkerKey),
+        apiKeysBuilder: (_) => marker(_apiKeysMarkerKey),
+        apiKeyCreateBuilder: (_) => marker(_apiKeyCreateMarkerKey),
+        apiKeyCreateExit: () {
+          asked++;
+          return mayLeave;
+        },
+      );
+
+      /// Opens the list, then pushes the create page over it, as the list's
+      /// Create key does.
+      Future<void> pushCreate(WidgetTester tester, GoRouter router) async {
+        router.go(AppRoutes.settingsApiKeys);
+        await tester.pumpAndSettle();
+        unawaited(router.push<void>(AppRoutes.settingsApiKeyNew));
+        await tester.pumpAndSettle();
+        expect(find.byKey(_apiKeyCreateMarkerKey), findsOneWidget);
+        asked = 0;
+      }
+
+      testWidgets('a go elsewhere asks, and a no keeps the page', (
+        tester,
+      ) async {
+        final router = await pumpGuarded(tester);
+        await pushCreate(tester, router);
+        mayLeave = false;
+
+        router.go(AppRoutes.settings);
+        await tester.pumpAndSettle();
+
+        expect(asked, 1);
+        expect(find.byKey(_apiKeyCreateMarkerKey), findsOneWidget);
+        expect(find.byKey(_settingsMarkerKey), findsNothing);
+
+        mayLeave = true;
+        router.go(AppRoutes.settings);
+        await tester.pumpAndSettle();
+
+        expect(asked, 2);
+        expect(find.byKey(_apiKeyCreateMarkerKey), findsNothing);
+        expect(find.byKey(_settingsMarkerKey), findsOneWidget);
+      });
+
+      testWidgets('a pop is asked about too, so a page that pops itself is '
+          'asked as it goes', (tester) async {
+        final router = await pumpGuarded(tester);
+        await pushCreate(tester, router);
+        mayLeave = false;
+
+        router.pop();
+        await tester.pumpAndSettle();
+
+        expect(asked, 1);
+        expect(find.byKey(_apiKeyCreateMarkerKey), findsOneWidget);
+
+        mayLeave = true;
+        router.pop();
+        await tester.pumpAndSettle();
+
+        expect(asked, 2);
+        expect(find.byKey(_apiKeyCreateMarkerKey), findsNothing);
+        expect(find.byKey(_apiKeysMarkerKey), findsOneWidget);
+      });
+
+      testWidgets('a page pushed over it is no leaving, and asks nothing', (
+        tester,
+      ) async {
+        final router = await pumpGuarded(tester);
+        await pushCreate(tester, router);
+
+        unawaited(router.push<void>(AppRoutes.settings));
+        await tester.pumpAndSettle();
+
+        expect(asked, 0);
+        expect(find.byKey(_settingsMarkerKey), findsOneWidget);
+      });
+
+      testWidgets('the router re-reading its location for a bootstrap '
+          'change asks nothing, with the page pushed', (tester) async {
+        final states = StreamController<AppBootstrapState>();
+        addTearDown(states.close);
+        final router = await pumpGuarded(tester, states: states.stream);
+        await pushCreate(tester, router);
+        // Were it asked, the answer would hold the page: it must not be.
+        mayLeave = false;
+
+        states.add(const AppBootstrapReady());
+        await tester.pumpAndSettle();
+
+        expect(asked, 0);
+        expect(find.byKey(_apiKeyCreateMarkerKey), findsOneWidget);
+
+        // And asking is back once the re-read is done.
+        router.go(AppRoutes.settings);
+        await tester.pumpAndSettle();
+        expect(asked, 1);
+        expect(find.byKey(_apiKeyCreateMarkerKey), findsOneWidget);
+      });
+
+      testWidgets('the bootstrap redirect as a session ends asks nothing, '
+          'whatever the page would say', (tester) async {
+        final states = StreamController<AppBootstrapState>();
+        addTearDown(states.close);
+        final router = await pumpGuarded(tester, states: states.stream);
+        await pushCreate(tester, router);
+        mayLeave = false;
+
+        states.add(const AppBootstrapNeedsAuth());
+        await tester.pumpAndSettle();
+
+        expect(asked, 0);
+        expect(find.byKey(_apiKeyCreateMarkerKey), findsNothing);
+        expect(find.text('Sign in'), findsOneWidget);
+        expect(router.state.uri.path, AppRoutes.auth);
+      });
     });
 
     testWidgets('/settings/api-keys/new falls back to NotYetAvailableScreen '

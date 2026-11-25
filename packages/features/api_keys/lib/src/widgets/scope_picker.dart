@@ -97,7 +97,11 @@ List<GrantablePermission> criticalIn(
 ///   so it is never put in [PickedScopes].
 ///
 /// With nothing picked, a warning under the rows says the key will work
-/// nowhere. It sits under them so that its coming moves no row.
+/// nowhere. It sits under them so that its coming moves no row. It is said
+/// as it appears unless [announceNoneWarning] is cleared, as a form does
+/// until the user has changed the picks: on a form nobody has touched, the
+/// warning is how the form starts, not something that happened, and said
+/// then it would be the first thing a screen reader hears of the page.
 ///
 /// A refusal that names a permission ([refusedSlug]) shows [refusedMessage]
 /// under each row of that slug, in the error style, read with the row.
@@ -119,6 +123,7 @@ class ScopePicker extends StatelessWidget {
     this.readOnly = false,
     this.refusedSlug,
     this.refusedMessage,
+    this.announceNoneWarning = true,
     super.key,
   });
 
@@ -152,6 +157,10 @@ class ScopePicker extends StatelessWidget {
 
   /// Why [refusedSlug] was refused, shown on its rows.
   final String? refusedMessage;
+
+  /// Whether the nothing-picked warning is said as it appears. It is drawn,
+  /// and read in its place, either way.
+  final bool announceNoneWarning;
 
   @override
   Widget build(BuildContext context) {
@@ -274,6 +283,7 @@ class ScopePicker extends StatelessWidget {
           BgeInlineBanner(
             message: l10n.apiKeyScopesNoneWarning,
             tone: BgeBannerTone.warning,
+            announce: announceNoneWarning,
             // Furniture while nothing is picked, not news: it isn't brought
             // into view.
             reveal: false,

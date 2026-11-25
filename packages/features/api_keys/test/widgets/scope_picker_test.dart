@@ -50,6 +50,7 @@ void main() {
     bool readOnly = false,
     String? refusedSlug,
     String? refusedMessage,
+    bool announceNoneWarning = true,
   }) => pumpOnPage(
     tester,
     ScopePicker(
@@ -61,6 +62,7 @@ void main() {
       readOnly: readOnly,
       refusedSlug: refusedSlug,
       refusedMessage: refusedMessage,
+      announceNoneWarning: announceNoneWarning,
     ),
   );
 
@@ -479,6 +481,22 @@ void main() {
       expect(find.text(_noneWarning), findsNothing);
       await pump(tester, selection: const EverythingScopes());
       expect(find.text(_noneWarning), findsNothing);
+    });
+
+    testWidgets('the nowhere warning is said as it appears, unless told it '
+        'is how the form starts', (tester) async {
+      final handle = tester.ensureSemantics();
+      SemanticsData warning() =>
+          tester.getSemantics(find.text(_noneWarning)).getSemanticsData();
+
+      await pump(tester);
+      expect(warning().flagsCollection.isLiveRegion, isTrue);
+
+      await pump(tester, announceNoneWarning: false);
+      expect(warning().flagsCollection.isLiveRegion, isFalse);
+      // Drawn, and read in its place, all the same.
+      expect(warning().label, contains(_noneWarning));
+      handle.dispose();
     });
 
     testWidgets("a refused slug's row says why", (tester) async {
