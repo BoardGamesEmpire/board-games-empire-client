@@ -77,8 +77,9 @@ abstract interface class FeedbackSink {
   /// report will be lost rather than promising a later send.
   ///
   /// Answer for the storage itself. A store the browser may still clear under
-  /// storage pressure survives a reload, and counts as surviving; eviction is
-  /// #320's to handle.
+  /// storage pressure survives a reload, and counts as surviving, whether or
+  /// not the browser granted the persistent-storage request the app makes
+  /// after the first sign-in (#320).
   bool get survivesRestart;
 
   /// Stores [record] under its [QueuedFeedbackReport.storageKey], unless a

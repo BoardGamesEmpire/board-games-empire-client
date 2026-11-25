@@ -9,8 +9,11 @@ import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:sqlite3/common.dart' show SqliteException;
 
+import 'package:web_storage/src/composition/web_database_exclusivity.dart';
+import 'package:web_storage/src/composition/web_database_in_use.dart';
 import 'package:web_storage/src/composition/web_database_open_failure.dart';
 import 'package:web_storage/src/databases/wasm_executor_factory.dart';
+import 'package:web_storage/src/databases/web_storage_persistence.dart';
 
 /// Reports how much persistence the browser gave this session (#288).
 ///
@@ -61,18 +64,47 @@ typedef WebStorageReport = void Function(WebDatabaseOpening opening);
 /// and must not be silently deleted, so nothing is deleted here. A database
 /// that won't open throws [WebDatabaseOpenFailure]; deleting it is
 /// `deleteServerDatabases`, behind a confirmation the app layer owns (#793).
+///
+/// ## One tab at a time on `unsafeIndexedDb` (#686)
+///
+/// On that storage each tab works on its own copy of the database, read once
+/// when it opens, and writes its pages back over the other tabs'. Two tabs
+/// open at once can lose one tab's writes, and the sync queue can send an op
+/// twice or out of order. So when the open lands there, the tab must hold the
+/// database (a [WebDatabaseExclusivity], Web Locks in production) before the
+/// first query, and holds it until the scope disposes the database.
+///
+/// A second tab waits up to `exclusiveWait` for the hold, long enough for a
+/// reloaded page to outlast the page it replaces. If the other tab still
+/// holds it, the second tab closes its connection, having read and written
+/// nothing, and [install] throws [WebDatabaseInUse].
+///
+/// Durable and in-memory storage take no hold, and nor does a browser context
+/// without Web Locks: those open as before.
 class WebStorageInstaller {
   /// Creates the installer.
   ///
   /// `factory` opens the wasm database; `onReport` is the app layer's
-  /// notification hook and may be null.
+  /// notification hook and may be null. `exclusivity` takes the one-tab hold
+  /// on `unsafeIndexedDb`, waiting up to `exclusiveWait` for another tab to
+  /// let go (#686).
   const WebStorageInstaller({
     this._factory = const WebWasmExecutorFactory(),
     this._onReport,
+    this._exclusivity = const WebLocksDatabaseExclusivity(),
+    this._exclusiveWait = defaultExclusiveWait,
   });
+
+  /// How long a tab waits for another to let go of the database before it
+  /// reports the database in use (#686). Long enough for a reload, whose old
+  /// page may still hold it when the new one asks; short enough that a second
+  /// tab hears soon.
+  static const Duration defaultExclusiveWait = Duration(seconds: 2);
 
   final WebWasmExecutorFactory _factory;
   final WebStorageReport? _onReport;
+  final WebDatabaseExclusivity _exclusivity;
+  final Duration _exclusiveWait;
 
   /// Opens the database for [identity]'s origin and registers it in
   /// [container], with the `UnsentChangesNoticeRepository` over it (#142).
@@ -82,16 +114,38 @@ class WebStorageInstaller {
   /// one origin, so this is not about switching servers; it is about a
   /// redeployed origin (a genuinely different server behind the same URL) not
   /// silently inheriting the previous one's rows.
+  ///
+  /// Throws [WebDatabaseInUse] when the database landed on `unsafeIndexedDb`
+  /// and another tab holds it (#686).
   Future<void> install(
     DependencyContainer container,
     ServerIdentity identity,
   ) async {
     final opening = await _factory.serverDatabase(identity.serverId);
 
+    // Before the first query, which is where the worker reads the stored
+    // file: a tab refused here has read nothing, so it has no stale copy to
+    // write back (#686). That rests on drift offering `unsafeIndexedDb` only
+    // once its dedicated worker answered the probe (2.35.4): its in-page
+    // fallback reads the file during the open, before this hold. From here
+    // on, every way out gives the hold back.
+    final release = await _hold(
+      opening,
+      WebWasmExecutorFactory.databaseName(identity.serverId),
+    );
+
     // WAL off (#288): sqlite3-wasm does not support it. Measured as a
     // silent no-op rather than a throw, so this is explicitness, not a
     // crash fix — see `BgeMigrationDefaults.applyStandardPragmas`.
-    final db = ServerDatabase(opening.executor, enableWriteAheadLog: false);
+    final ServerDatabase db;
+    try {
+      db = ServerDatabase(opening.executor, enableWriteAheadLog: false);
+    } catch (_) {
+      // Nothing was queried, so the connection closes like a refused one.
+      await _closeUnused(opening);
+      release();
+      rethrow;
+    }
 
     // Force the open (and therefore `onCreate`/migrations) here, for the
     // same reason the native installer does: drift would otherwise defer it
@@ -101,6 +155,8 @@ class WebStorageInstaller {
       await db.customSelect('SELECT 1').get();
     } catch (error, stackTrace) {
       await _safeClose(db);
+      // Kept, the hold would lock this tab out of its own retry.
+      release();
       // Typed so the app layer can tell a database that won't open, which
       // deleting it can fix, from any other failure (#793).
       if (_isStoredDataFault(error)) {
@@ -121,7 +177,20 @@ class WebStorageInstaller {
       container
         ..registerSingleton<ServerDatabase>(
           db,
-          dispose: (database) => database.close(),
+          // Released once the database is closed, so the next tab can't open
+          // it while this one may still write. Closing only hangs up on the
+          // worker, which goes on to run what it was already sent, so a held
+          // database first settles those statements.
+          dispose: (database) async {
+            try {
+              if (!identical(release, _releaseNothing)) {
+                await _settle(database);
+              }
+              await database.close();
+            } finally {
+              release();
+            }
+          },
         )
         // Beside the database it reads, and inside this guard for the same
         // reason: a throw here must still close the database. It holds nothing
@@ -131,6 +200,7 @@ class WebStorageInstaller {
         );
     } catch (_) {
       await _safeClose(db);
+      release();
       rethrow;
     }
 
@@ -145,6 +215,61 @@ class WebStorageInstaller {
       _onReport?.call(opening);
     } on Object {
       // Intentionally ignored; see above.
+    }
+  }
+
+  /// Takes the one-tab hold on [databaseName] when [opening] landed on
+  /// storage that needs it (#686), and answers what gives it back: nothing,
+  /// where no hold was taken.
+  ///
+  /// Throws [WebDatabaseInUse] when another tab holds it, after closing the
+  /// connection, which nothing has queried yet.
+  Future<void Function()> _hold(
+    WebDatabaseOpening opening,
+    String databaseName,
+  ) async {
+    if (opening.persistence != WebStoragePersistence.unsafe) {
+      return _releaseNothing;
+    }
+    switch (await _exclusivity.acquire(databaseName, wait: _exclusiveWait)) {
+      case WebDatabaseHeld(:final release):
+        return release;
+      case WebDatabaseHoldUnavailable():
+        return _releaseNothing;
+      case WebDatabaseHeldElsewhere():
+        await _closeUnused(opening);
+        throw WebDatabaseInUse(databaseName);
+    }
+  }
+
+  static void _releaseNothing() {}
+
+  /// How long a dispose waits for the statements already sent to settle
+  /// before it closes the database anyway.
+  static const Duration _settleLimit = Duration(seconds: 5);
+
+  /// Waits until the worker has run, and flushed to storage, every statement
+  /// [database] already sent it (#686).
+  ///
+  /// The worker runs statements one at a time, in the order they arrive, and
+  /// flushes each write before the next starts, so a query sent last finishes
+  /// last. Best-effort: a query that fails or outlasts [_settleLimit] still
+  /// lets the dispose close the database and give the hold back.
+  static Future<void> _settle(ServerDatabase database) async {
+    try {
+      await database.customSelect('SELECT 1').get().timeout(_settleLimit);
+    } on Object catch (_) {
+      // The close below and the release after it matter more.
+    }
+  }
+
+  /// Closes the connection of an [opening] nothing has queried. Best-effort,
+  /// like [_safeClose]: the in-use error is the one that matters.
+  static Future<void> _closeUnused(WebDatabaseOpening opening) async {
+    try {
+      await opening.executor.close();
+    } on Object catch (_) {
+      // Nothing was read or written through it.
     }
   }
 

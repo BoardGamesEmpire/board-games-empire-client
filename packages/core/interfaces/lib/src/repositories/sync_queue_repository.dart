@@ -80,10 +80,12 @@ abstract class SyncQueueRepository {
   /// modes (#430). It is not across tabs on `unsafeIndexedDb`, where each
   /// tab works on its own copy of the database, read when it opened, and
   /// writes it back over the others'. No tab sees another's claim, so no
-  /// lock can make it atomic, the drain's Web Lock included: with two tabs
-  /// open, an op can be delivered twice, one entry's ops can reach the
-  /// server out of order, and a row can be left marked clean that disagrees
-  /// with the server (#447, #686).
+  /// lock can make it atomic, the drain's Web Lock included. Where the
+  /// browser has Web Locks, a second tab can't open the database on that
+  /// mode at all, and shows as in use (#686); without them, two tabs open
+  /// can deliver an op twice, send one entry's ops to the server out of
+  /// order, and leave a row marked clean that disagrees with the server
+  /// (#447, #686).
   ///
   /// The lease is judged by the device's own clock, not the
   /// server-corrected one: the senders sharing the queue share the device,

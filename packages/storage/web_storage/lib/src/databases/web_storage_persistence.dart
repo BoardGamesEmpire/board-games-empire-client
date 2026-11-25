@@ -22,20 +22,27 @@ enum WebStoragePersistence {
   /// origin's storage bucket, which a browser may clear under storage
   /// pressure unless the origin holds a `navigator.storage.persist()` grant
   /// — OPFS on exactly the same terms as IndexedDB, so this is not a reason
-  /// to rank one below the other. Nothing here requests that grant, which
-  /// means [durable] says the data is *stored*, not that the browser has
-  /// promised to keep it. Requesting it is a real improvement and a real
-  /// behaviour change (Firefox prompts the user), so it is a decision to
-  /// take deliberately rather than a detail to slip in here.
+  /// to rank one below the other. This store does not request that grant. The
+  /// app asks for it when the first user session of a page load starts
+  /// (#320), but a grant, or a refusal, changes how likely eviction is, not
+  /// what [durable] says: the data is *stored*, not promised to be kept by the
+  /// browser.
   durable,
 
-  /// Data survives a reload, but a second tab can overwrite it.
+  /// Data survives a reload, but only one tab at a time can have it open.
   ///
   /// `unsafeIndexedDb` — no shared worker is available to serialize access,
   /// so each tab runs its own copy of the database, read from IndexedDB once
   /// when it opened, and writes its changes back over the other tabs'. No
-  /// tab sees another's writes, and no lock can change that (#686). Drift
-  /// names it "unsafe" for that reason, and so does this.
+  /// tab sees another's writes, and no lock around the queries can change
+  /// that. Drift names it "unsafe" for that reason, and so does this.
+  ///
+  /// So the tab that opens it holds it until it closes it, and a second tab
+  /// opens nothing: `WebStorageInstaller` throws `WebDatabaseInUse` before
+  /// that tab's first query, so it reads and writes nothing, and the app
+  /// shows it as open in another tab (#686). A browser context without Web
+  /// Locks can't hold it, and there a second tab can still overwrite the
+  /// first one's writes.
   unsafe,
 
   /// Nothing is stored. A reload starts from empty.

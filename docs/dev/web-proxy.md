@@ -81,9 +81,46 @@ All optional; sensible defaults baked in.
 | `BGE_PROXY_PORT`    | `8080`  | Origin the browser opens.                |
 | `BGE_WEB_PORT`      | `5000`  | Flutter web dev server port.             |
 | `BGE_BACKEND_PORT`  | `33333`  | NestJS backend port.                     |
+| `BGE_CROSS_ORIGIN_ISOLATION` | on | Set to `off` to stop sending the isolation headers (see below). |
 
 Keep `BGE_WEB_PORT` in sync between the Flutter command and the proxy. A fixed
 proxy port also keeps the backend's trusted-origin allow-list stable.
+
+## Cross-origin isolation
+
+The proxy adds two headers to every response it forwards from the Flutter dev
+server (not to `/api`, `/.well-known` or `/socket.io`):
+
+```
+Cross-Origin-Opener-Policy: same-origin
+Cross-Origin-Embedder-Policy: credentialless
+```
+
+That makes the page cross-origin isolated, which lets Chromium open the
+database on OPFS instead of falling back to IndexedDB (#320), so a local run
+gets the storage mode production is to get. Production is to get the same
+headers from the API server, which serves the bundled client (backend#1502).
+
+The embedder policy is `credentialless`, not `require-corp`: cover images load
+from hosts that send no `Cross-Origin-Resource-Policy`, and `require-corp`
+would block every one of them.
+
+Set `BGE_CROSS_ORIGIN_ISOLATION=off` to send neither header. That reproduces
+`unsafeIndexedDb` (Chrome on Android today) and Safari-like storage on a
+device, which is the point of the switch. The proxy banner says whether
+isolation is on.
+
+Switching it off against a browser profile that already opened its database
+under isolation does not bring the data back: the database moved to OPFS, and
+without isolation the client opens a new, empty IndexedDB database. The OPFS
+data is untouched but unreachable until isolation returns. For the same
+reason, removing the header from production after release strands users' data.
+Use a throwaway browser profile when you flip the switch.
+
+On `unsafeIndexedDb` a hot restart shows the "open in another tab" screen. The
+tab holds the database through a Web Lock until the page unloads (#686), and a
+hot restart doesn't unload it, so the restarted app waits behind the run it
+replaced. Reload the page instead.
 
 ## Backend config (required)
 

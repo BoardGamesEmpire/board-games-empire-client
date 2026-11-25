@@ -12,6 +12,7 @@
 library;
 
 export 'src/device_info/web_device_info_reader.dart';
+export 'src/storage/persistent_storage_request.dart';
 export 'src/web_platform_bootstrap.dart';
 export 'src/web_root_module.dart';
 export 'src/web_storage_reset.dart';

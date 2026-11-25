@@ -109,9 +109,15 @@ typedef DriftWasmOpen = Future<WasmDatabaseResult> Function({
 ///
 /// Which mechanism a given browser actually reaches is a live question
 /// rather than a settled one: Firefox is the only browser that can host the
-/// database in a shared worker over OPFS today, and the cross-origin
-/// isolation that would unlock the other OPFS mode for Chrome is not served
-/// anywhere yet. See #323 and #320.
+/// database in a shared worker over OPFS today, and the other OPFS mode,
+/// which Chromium can use, needs the page to be cross-origin isolated. The
+/// dev proxy serves that locally, with
+/// `Cross-Origin-Embedder-Policy: credentialless` so covers from hosts
+/// without CORP still load, and production is to get the same headers from
+/// the API server's static serving (backend#1502). Safari and plain-HTTP
+/// self-hosting stay without it. Once a browser has moved its database to
+/// OPFS under isolation, serving without isolation strands that data. See
+/// #323 and #320.
 ///
 /// What it does *not* do is decide whether the answer is good enough. That
 /// is [WebDatabaseOpening.persistence], and the caller's call.

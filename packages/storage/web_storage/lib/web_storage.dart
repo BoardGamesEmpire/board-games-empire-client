@@ -19,6 +19,8 @@
 /// the executor is built.
 library;
 
+export 'src/composition/web_database_exclusivity.dart';
+export 'src/composition/web_database_in_use.dart';
 export 'src/composition/web_database_open_failure.dart';
 export 'src/composition/web_storage_installer.dart';
 

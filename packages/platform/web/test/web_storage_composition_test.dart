@@ -12,10 +12,16 @@ library;
 
 import 'dart:async';
 
+import 'package:app_shell/app_shell.dart' show LocalDataInUseError;
 import 'package:bge_test_support/domain.dart';
 import 'package:di/di.dart';
 import 'package:drift/drift.dart' show QueryExecutor;
-import 'package:drift/wasm.dart' show WasmStorageImplementation;
+import 'package:drift/wasm.dart'
+    show
+        MissingBrowserFeature,
+        WasmDatabase,
+        WasmDatabaseResult,
+        WasmStorageImplementation;
 import 'package:drift_storage/drift_storage.dart' show ServerDatabase;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/orchestration.dart' show UserSessionScope;
@@ -193,8 +199,12 @@ void main() {
 
       expect(records.single.level, Level.WARNING);
       expect(records.single.message, contains('second tab'));
-      // #686: each tab has its own copy, so no lock keeps the sync queue
+      // #686: one tab at a time when the browser grants the Web Lock, and
+      // otherwise each tab has its own copy, so no lock keeps the sync queue
       // from sending an op twice or out of order.
+      expect(records.single.message, contains('only one tab at a time'));
+      expect(records.single.message, contains('grants this tab its Web Lock'));
+      expect(records.single.message, contains('separate warning'));
       expect(records.single.message, contains('sync queue'));
       expect(records.single.message, contains('twice or out of order'));
     });
@@ -229,6 +239,91 @@ void main() {
         expect(container.get<CrossTabLock>(), isA<WebCrossTabLock>());
       },
     );
+
+    test('a database another tab holds fails the install with '
+        'LocalDataInUseError (#686)', () async {
+      // The in-use screen is the bootstrap's answer to this error, and it
+      // keeps the reset offer away from it. The typed error the storage layer
+      // throws is no use to that screen until it is mapped here.
+      final container = DependencyContainerImpl();
+      addTearDown(container.dispose);
+      final serverId = 'srv-${DateTime.now().microsecondsSinceEpoch}';
+
+      await expectLater(
+        installWebStorage(
+          container,
+          _identity(serverId),
+          installer: WebStorageInstaller(
+            factory: _opensOnUnsafeIndexedDb(),
+            exclusivity: const _HeldElsewhere(),
+            exclusiveWait: const Duration(milliseconds: 100),
+          ),
+        ),
+        throwsA(isA<LocalDataInUseError>()),
+      );
+
+      expect(container.isRegistered<ServerDatabase>(), isFalse);
+      expect(container.isRegistered<CrossTabLock>(), isFalse);
+    });
+  });
+
+  group('WarnedWebDatabaseExclusivity', () {
+    late List<LogRecord> records;
+    late StreamSubscription<LogRecord> subscription;
+
+    setUp(() {
+      records = [];
+      Logger.root.level = Level.ALL;
+      subscription = Logger.root.onRecord
+          .where((r) => r.loggerName == 'bge.platform.web_storage')
+          .listen(records.add);
+    });
+
+    tearDown(() async {
+      await subscription.cancel();
+      Logger.root.level = Level.INFO;
+    });
+
+    Future<WebDatabaseHold> acquireThrough(WebDatabaseHold answer) {
+      return WarnedWebDatabaseExclusivity(
+        _Answering(answer),
+      ).acquire('db', wait: const Duration(milliseconds: 100));
+    }
+
+    test('warns once, and passes the answer through, when no hold can be '
+        'taken (#686)', () async {
+      const unavailable = WebDatabaseHoldUnavailable();
+
+      final hold = await acquireThrough(unavailable);
+
+      expect(hold, same(unavailable));
+      expect(records, hasLength(1));
+      expect(records.single.level, Level.WARNING);
+      expect(records.single.message, contains('without the one-tab hold'));
+      expect(records.single.message, contains('Web Locks'));
+      expect(records.single.message, contains('another tab'));
+    });
+
+    test('says nothing when the hold is taken', () async {
+      var released = false;
+      final held = WebDatabaseHeld(() => released = true);
+
+      final hold = await acquireThrough(held);
+      (hold as WebDatabaseHeld).release();
+
+      expect(hold, same(held));
+      expect(released, isTrue);
+      expect(records, isEmpty);
+    });
+
+    test('says nothing when another tab holds the database', () async {
+      const elsewhere = WebDatabaseHeldElsewhere();
+
+      final hold = await acquireThrough(elsewhere);
+
+      expect(hold, same(elsewhere));
+      expect(records, isEmpty);
+    });
   });
 
   group('registerWebCrossTabLock', () {
@@ -287,3 +382,49 @@ ServerIdentity _identity(String serverId) =>
 /// The report never queries; a mock keeps this suite from needing a real
 /// database to assert a log level.
 class _UnusedExecutor extends Mock implements QueryExecutor {}
+
+/// A factory whose open really opens the wasm database, and reports that it
+/// landed on `unsafeIndexedDb`, as a browser without shared workers does.
+WebWasmExecutorFactory _opensOnUnsafeIndexedDb() => WebWasmExecutorFactory(
+  open:
+      ({
+        required databaseName,
+        required sqlite3Uri,
+        required driftWorkerUri,
+      }) async {
+        final real = await WasmDatabase.open(
+          databaseName: databaseName,
+          sqlite3Uri: sqlite3Uri,
+          driftWorkerUri: driftWorkerUri,
+        );
+        return WasmDatabaseResult(
+          real.resolvedExecutor,
+          WasmStorageImplementation.unsafeIndexedDb,
+          const {MissingBrowserFeature.sharedWorkers},
+        );
+      },
+);
+
+/// Another tab holds every database for the whole wait.
+final class _HeldElsewhere implements WebDatabaseExclusivity {
+  const _HeldElsewhere();
+
+  @override
+  Future<WebDatabaseHold> acquire(
+    String databaseName, {
+    required Duration wait,
+  }) async => const WebDatabaseHeldElsewhere();
+}
+
+/// Answers every request with [answer].
+final class _Answering implements WebDatabaseExclusivity {
+  const _Answering(this.answer);
+
+  final WebDatabaseHold answer;
+
+  @override
+  Future<WebDatabaseHold> acquire(
+    String databaseName, {
+    required Duration wait,
+  }) async => answer;
+}

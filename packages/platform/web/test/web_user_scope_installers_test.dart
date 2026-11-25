@@ -20,12 +20,14 @@ import 'package:web_platform/web.dart';
 void main() {
   group('buildWebUserScopeInstallers', () {
     test('installs the shared user-session tier, re-hydrate seam first', () {
-      final installers = buildWebUserScopeInstallers();
+      final installers = buildWebUserScopeInstallers(
+        requestPersistentStorage: () async {},
+      );
 
       // Order is structural: the re-hydrate registry has to exist before any
       // hydrating installer can register itself with it (#302), and each
       // hydrate installer resolves a repository the tier above it registers.
-      expect(installers, hasLength(10));
+      expect(installers, hasLength(11));
       expect(installers[0], isA<SessionRehydratorInstaller>());
       expect(installers[1], isA<RealtimeInstaller>());
       expect(installers[2], isA<UserSessionScopeInstaller>());
@@ -36,11 +38,14 @@ void main() {
       expect(installers[7], isA<DataGatewaySearchGrantInstaller>());
       expect(installers[8], isA<SyncSenderInstaller>());
       expect(installers[9], isA<SyncQueueDrainInstaller>());
+      expect(installers[10], isA<PersistentStorageRequestInstaller>());
     });
 
     test('has one RealtimeInstaller, after the rehydrator, so the session owns '
         'its socket (#473)', () {
-      final installers = buildWebUserScopeInstallers();
+      final installers = buildWebUserScopeInstallers(
+        requestPersistentStorage: () async {},
+      );
 
       expect(installers.whereType<RealtimeInstaller>(), hasLength(1));
       expect(
@@ -54,7 +59,7 @@ void main() {
     test('has one DataGatewaySearchGrantInstaller, so a refusal ends with '
         'the session (#795)', () {
       expect(
-        buildWebUserScopeInstallers()
+        buildWebUserScopeInstallers(requestPersistentStorage: () async {})
             .whereType<DataGatewaySearchGrantInstaller>(),
         hasLength(1),
       );
@@ -63,7 +68,9 @@ void main() {
     test('has one CallerAccessInstaller, after the rehydrator, asking for the '
         'game, DataGateway, household and settings types (#456, #684, #807, '
         '#713)', () {
-      final installers = buildWebUserScopeInstallers();
+      final installers = buildWebUserScopeInstallers(
+        requestPersistentStorage: () async {},
+      );
 
       final callerAccess = installers.whereType<CallerAccessInstaller>();
 
@@ -87,7 +94,9 @@ void main() {
       // drain over it sends what an inline send could not. On web the drain
       // runs each pass under the Web Lock the server scope registers, so it
       // composes after the sender it wraps.
-      final installers = buildWebUserScopeInstallers();
+      final installers = buildWebUserScopeInstallers(
+        requestPersistentStorage: () async {},
+      );
 
       expect(installers.whereType<SyncSenderInstaller>(), hasLength(1));
       expect(installers.whereType<SyncQueueDrainInstaller>(), hasLength(1));
@@ -104,7 +113,8 @@ void main() {
       // platforms. A web-specific reimplementation is the divergence this
       // epic exists to close.
       expect(
-        buildWebUserScopeInstallers().whereType<UserSessionScopeInstaller>(),
+        buildWebUserScopeInstallers(requestPersistentStorage: () async {})
+            .whereType<UserSessionScopeInstaller>(),
         hasLength(1),
       );
     });
@@ -117,14 +127,17 @@ void main() {
       // be two copies of the #269 status window, the #302 re-hydrate
       // registration and the #300 staleness closure, free to drift apart.
       expect(
-        buildWebUserScopeInstallers().whereType<HouseholdHydrateInstaller>(),
+        buildWebUserScopeInstallers(requestPersistentStorage: () async {})
+            .whereType<HouseholdHydrateInstaller>(),
         hasLength(1),
       );
     });
 
     test('the hydrate installer runs after the tier registering the '
         'repository it resolves', () {
-      final installers = buildWebUserScopeInstallers();
+      final installers = buildWebUserScopeInstallers(
+        requestPersistentStorage: () async {},
+      );
 
       final storage = installers.indexWhere(
         (i) => i is UserSessionScopeInstaller,
@@ -141,7 +154,9 @@ void main() {
 
     test('runs the same collection hydrate installer native does, after the '
         'tiers it depends on (#259)', () {
-      final installers = buildWebUserScopeInstallers();
+      final installers = buildWebUserScopeInstallers(
+        requestPersistentStorage: () async {},
+      );
 
       final rehydrator = installers.indexWhere(
         (i) => i is SessionRehydratorInstaller,
@@ -163,7 +178,9 @@ void main() {
 
     test('runs the same event hydrate installer native does, after the tiers '
         'it depends on (#496)', () {
-      final installers = buildWebUserScopeInstallers();
+      final installers = buildWebUserScopeInstallers(
+        requestPersistentStorage: () async {},
+      );
 
       final rehydrator = installers.indexWhere(
         (i) => i is SessionRehydratorInstaller,
