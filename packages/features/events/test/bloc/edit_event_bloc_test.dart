@@ -429,6 +429,36 @@ void main() {
       expect(bloc.state, const EditEventSaved(changed: false));
     });
 
+    test(
+      'a 401 is unexpected, not offline, and does not remember its fields',
+      () async {
+        final remote = serving(
+          event: (_) => throw const EventRemoteTransientException(
+            'refused',
+            statusCode: 401,
+          ),
+        );
+        final bloc = build(remote);
+        addTearDown(bloc.close);
+
+        bloc.add(EditEventSubmitted(_values(title: 'Renamed')));
+        await pumpEventQueue();
+        expect(bloc.state, const EditEventFailed(EditEventFailure.unexpected));
+        verify(
+          () => logger.warn(
+            'Event edit refused: the session was rejected',
+            error: any(named: 'error'),
+            stackTrace: any(named: 'stackTrace'),
+          ),
+        ).called(1);
+
+        bloc.add(EditEventSubmitted(_values()));
+        await pumpEventQueue();
+        expect(remote.eventEdits, hasLength(1));
+        expect(bloc.state, const EditEventSaved(changed: false));
+      },
+    );
+
     test('a 5xx remembers its fields', () async {
       final remote = serving(
         event: (_) => throw const EventRemoteTransientException(

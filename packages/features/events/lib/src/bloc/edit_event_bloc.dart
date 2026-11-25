@@ -276,6 +276,17 @@ class EditEventBloc extends Bloc<EditEventEvent, EditEventState> {
         );
         _maybeSaved.addAll(sent);
         return EditEventFailure.unexpected;
+      case EventRemoteTransientException(statusCode: 401):
+        // The server answered, so "offline" is false, and it turned the edit
+        // away before writing it. Whether the session is gone is the session
+        // signal's call (#484): it re-reads the session and, if the session
+        // is gone, signs the user out, which leaves the form.
+        _logger.warn(
+          'Event edit refused: the session was rejected',
+          error: error,
+          stackTrace: stackTrace,
+        );
+        return EditEventFailure.unexpected;
       case EventRemoteTransientException(:final statusCode):
         // With no answer, or the server's own failure, the edit may have
         // been written before the connection or the server gave out. A 4xx

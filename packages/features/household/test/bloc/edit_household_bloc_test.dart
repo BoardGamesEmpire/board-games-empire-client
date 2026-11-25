@@ -7,10 +7,13 @@ import 'package:interfaces/repositories.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
+import 'package:observability/observability.dart';
 
 class MockHouseholdRemote extends Mock implements HouseholdRemoteDataSource {}
 
 class MockHouseholdRepository extends Mock implements HouseholdRepository {}
+
+class _MockBgeLogger extends Mock implements BgeLogger {}
 
 Household _household({
   String name = 'Den',
@@ -565,6 +568,40 @@ void main() {
       'a save turned away for a retry leaves nothing to send back',
       error: const HouseholdRemoteTransientException('slow', statusCode: 429),
       reason: EditHouseholdFailure.offline,
+    );
+
+    expectNothingSentBack(
+      'a 401 is reported as unexpected, not offline, and does not count as '
+      'maybe-saved',
+      error: const HouseholdRemoteTransientException('no', statusCode: 401),
+      reason: EditHouseholdFailure.unexpected,
+    );
+
+    late _MockBgeLogger logger;
+    blocTest<EditHouseholdBloc, EditHouseholdState>(
+      'a 401 is logged, like every other unexpected failure',
+      setUp: () {
+        logger = _MockBgeLogger();
+        when(
+          () => remote.updateHousehold(any(), any()),
+        ).thenThrow(
+          const HouseholdRemoteTransientException('no', statusCode: 401),
+        );
+      },
+      build: () => EditHouseholdBloc(
+        original: _household(),
+        remote: remote,
+        repository: repository,
+        logger: logger,
+      ),
+      act: (bloc) => bloc.add(const EditHouseholdSubmitted(name: 'Annex')),
+      verify: (_) => verify(
+        () => logger.warn(
+          'Household edit refused: the session was rejected',
+          error: any(named: 'error'),
+          stackTrace: any(named: 'stackTrace'),
+        ),
+      ).called(1),
     );
 
     expectNothingSentBack(
