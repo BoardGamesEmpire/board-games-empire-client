@@ -4,6 +4,7 @@ import 'package:api_keys/l10n/api_keys_localizations.dart';
 import 'package:api_keys/src/detail/api_key_detail_bloc.dart';
 import 'package:api_keys/src/detail/api_key_detail_event.dart';
 import 'package:api_keys/src/detail/api_key_detail_state.dart';
+import 'package:api_keys/src/detail/scope_edit.dart';
 import 'package:api_keys/src/failure/api_key_failure.dart';
 import 'package:api_keys/src/form/api_key_name_control.dart';
 import 'package:api_keys/src/widgets/api_key_facts.dart';
@@ -14,7 +15,6 @@ import 'package:api_keys/src/widgets/delete_key_dialog.dart';
 import 'package:api_keys/src/widgets/expiry_control.dart';
 import 'package:api_keys/src/widgets/scope_picker.dart';
 import 'package:api_keys/src/widgets/scope_summary.dart';
-import 'package:flutter/foundation.dart' show setEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:interfaces/orchestration.dart';
@@ -38,30 +38,42 @@ import 'package:ui_tokens/ui_tokens.dart';
 ///
 /// ## The form
 ///
-/// It starts from the key: its name, the permissions it holds ticked in a
-/// [ScopePicker], and no new expiry ([ExpiryControl], "Set a new expiry",
-/// with "Keep current" chosen), then Save changes. "Keep current" takes back
-/// an expiry picked by mistake. Save sends only what the user changed, so a
-/// key that holds a permission its owner may no longer give can still be
-/// renamed:
+/// It starts from the key: its name, every permission it holds listed with
+/// what it allows and its risk ([ApiKeyScopeList]), and no new expiry
+/// ([ExpiryControl], "Set a new expiry", with "Keep current" chosen), then
+/// Save changes. "Keep current" takes back an expiry picked by mistake.
 ///
-/// - the name, once trimmed, when it differs from the key's;
-/// - the permissions, when the picks differ from those the key holds that
-///   the user may still give, compared by permission and record. They are
-///   the key's whole new list: the picks, and every scope the key holds
-///   limited to one record, as it was. A permission the user may no longer
-///   give is not sent, and its row says saving removes it;
+/// "Change permissions", under the list, swaps it in place for a
+/// [ScopePicker] ticked as the key holds them, and focus waits on the
+/// permissions' heading. "Keep permissions as they were", under the picker,
+/// swaps the list back and the picks with it. A save that goes through
+/// shows the list again, as the server answered it. While a write is on its
+/// way, either button is read-only, as the fields are.
+///
+/// Save sends only what the user changed, so a key that holds a permission
+/// its owner may no longer give can still be renamed:
+///
+/// - the name, once trimmed, when it differs from the key's. A key made
+///   outside the app can have no name, and needn't be given one: left empty,
+///   its name is unchanged, and never sent empty;
+/// - the permissions, only while the picker shows, and when the picks
+///   differ from those the key holds that the user may still give, compared
+///   by permission and record. They are the key's whole new list: the picks,
+///   and every scope the key holds limited to one record, as it was. A
+///   permission the user may no longer give is not sent, and its row says
+///   saving removes it;
 /// - the expiry, when one is picked and "Keep current" isn't.
 ///
-/// With nothing changed, Save sends nothing and says so. A press the form
-/// refuses moves focus to the first field at fault. A save that goes through
-/// says "Saved", the page shows the key as the server answered it, and the
-/// form starts from that again.
+/// With nothing changed, Save sends nothing and says so, each time it is
+/// pressed. A press the form refuses moves focus to the first field at
+/// fault. A save that goes through says "Saved", the page shows the key as
+/// the server answered it, and the form starts from that again.
 ///
 /// The permissions the user may give also say what each held one allows.
 /// When they can't be read, the key's permissions are shown by their codes,
-/// as facts, and can't be changed until the page is opened again. Renaming
-/// and a new expiry still work, and never send permissions.
+/// as facts, with no "Change permissions": they can't be changed until the
+/// page is opened again. Renaming and a new expiry still work, and never
+/// send permissions.
 ///
 /// ## A Critical permission
 ///
@@ -170,6 +182,12 @@ class ApiKeyDetailScreen extends StatelessWidget {
   /// The banner above Save when a save failed.
   static const Key saveFailedKey = Key('api_key_detail.save_failed');
 
+  /// On "Change permissions", under the key's permissions.
+  static const Key changeScopesKey = Key('api_key_detail.change_scopes');
+
+  /// On "Keep permissions as they were", under the picker.
+  static const Key keepScopesKey = Key('api_key_detail.keep_scopes');
+
   final ApiKeyRemoteDataSource remote;
 
   /// The key to show.
@@ -196,60 +214,6 @@ typedef _Sent = ({
   int? days,
   bool confirmCritical,
 });
-
-/// The scopes [key] holds whose permission [grantable] still has, those
-/// limited to one record among them: what the picker starts from, and what a
-/// change of permissions is measured against (#1028). One the user may no
-/// longer give is left out, so it never rides along in what is sent.
-List<ApiKeyScope> _heldGrantable(
-  ApiKey key,
-  Map<String, GrantablePermission> grantable,
-) => [
-  for (final scope in key.scopes)
-    if (grantable.containsKey(scope.slug)) scope,
-];
-
-/// The scopes a save sends for [picks], or null when they are what [key]
-/// holds: an edit replaces the key's whole list, so it goes only when the
-/// user changed it (#1028).
-///
-/// What goes is the picks, and every scope the key holds limited to one
-/// record, as it was, less any the user may no longer give, which the server
-/// would refuse. They are compared with what the key holds as a set of
-/// permission and record.
-List<ApiKeyScope>? _scopesToSend(
-  ApiKey key,
-  Map<String, GrantablePermission> grantable,
-  List<ApiKeyScope> picks,
-) {
-  final sent = <ApiKeyScope>{
-    for (final scope in picks)
-      if (grantable.containsKey(scope.slug)) scope,
-    for (final scope in key.scopes)
-      if (scope.pinned && grantable.containsKey(scope.slug)) scope,
-  };
-  if (setEquals(sent, _heldGrantable(key, grantable).toSet())) return null;
-  return sent.toList();
-}
-
-/// The Critical permissions among [scopes] that [key] doesn't hold yet, in
-/// [grantable]'s order: what a save must have confirmed (#1028). Matched by
-/// permission, as the server matches them, so one the key holds already,
-/// limited to one record or not, asks for nothing again.
-List<GrantablePermission> _newCritical(
-  ApiKey key,
-  List<ApiKeyScope> scopes,
-  Map<String, GrantablePermission> grantable,
-) {
-  final held = {for (final scope in key.scopes) scope.slug};
-  return [
-    for (final permission in criticalIn(
-      PickedScopes(scopes),
-      grantable.values.toList(),
-    ))
-      if (!held.contains(permission.slug)) permission,
-  ];
-}
 
 /// The page for one key, its form, and its bloc, which outlives the route.
 class _ApiKeyDetail extends StatefulWidget {
@@ -297,6 +261,22 @@ class _ApiKeyDetailState extends State<_ApiKeyDetail> {
   /// Save's focus node, taken the same way, for the Critical question.
   FocusNode? _saveFocus;
 
+  /// Whether the picker shows in place of the key's permissions: from
+  /// "Change permissions" until "Keep permissions as they were" or a save
+  /// that goes through.
+  bool _changingScopes = false;
+
+  /// On the permissions' heading, which takes focus only when sent there:
+  /// where "Change permissions" leaves it, as the button goes with the list.
+  final FocusNode _permissionsHeading = FocusNode(
+    debugLabel: 'API key permissions heading',
+    skipTraversal: true,
+  );
+
+  /// "Change permissions"' focus node, taken from its builder, which
+  /// "Keep permissions as they were" hands focus back to as it goes.
+  FocusNode? _changeScopesFocus;
+
   /// The form's name, and the expiry's custom field: part of this form, so a
   /// bad number there makes the form invalid and is what a refused Save
   /// focuses. Started from the key once it has loaded, and again from what
@@ -326,6 +306,11 @@ class _ApiKeyDetailState extends State<_ApiKeyDetail> {
 
   /// Whether the Critical question is open, so nothing opens a second.
   bool _asking = false;
+
+  /// Counts the presses of Save that found nothing to save. Each builds the
+  /// banner anew, so a screen reader hears it arrive again, as it would not
+  /// from a banner that stayed.
+  int _nothingToSave = 0;
 
   @override
   void initState() {
@@ -368,6 +353,7 @@ class _ApiKeyDetailState extends State<_ApiKeyDetail> {
     unawaited(_edits?.cancel());
     _form.dispose();
     _heading.dispose();
+    _permissionsHeading.dispose();
     super.dispose();
   }
 
@@ -467,13 +453,49 @@ class _ApiKeyDetailState extends State<_ApiKeyDetail> {
     final key = state.key;
     if (key == null) return;
     final grantable = state.grantable;
+    // A key made outside the app can have no name. It needn't be given one
+    // for another edit to save (#1028). Checked again now, as a reset to the
+    // value the control holds checks nothing; quietly, as the reset below
+    // says what changed, and is no edit.
+    _form
+        .control(_nameControl)
+        .setValidators(
+          apiKeyNameValidators(required: key.name != null),
+          autoValidate: true,
+          emitEvent: false,
+        );
     setState(() {
       _form.reset(value: {_nameControl: key.name});
       _days = null;
       _picks = PickedScopes(
-        grantable == null ? const [] : _heldGrantable(key, grantable),
+        grantable == null ? const [] : heldGrantable(key, grantable),
       );
       _picksChanged = false;
+      // Loaded or saved, the key's permissions are what the page lists.
+      _changingScopes = false;
+    });
+  }
+
+  /// "Change permissions": the picker takes the list's place, starting from
+  /// what the key holds, and focus waits on the heading it sits under.
+  void _changeScopes() {
+    setState(() => _changingScopes = true);
+    _permissionsHeading.requestFocus();
+  }
+
+  /// "Keep permissions as they were": the list comes back, and the picks go
+  /// back to what the key holds, so no save sends permissions.
+  void _keepScopes(ApiKey key, Map<String, GrantablePermission> grantable) {
+    setState(() {
+      _changingScopes = false;
+      _picks = PickedScopes(heldGrantable(key, grantable));
+      _picksChanged = false;
+    });
+    // A save's failure may name a permission the picks no longer hold.
+    _retireSaveOutcome();
+    // "Change permissions" comes back where this button was.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _changeScopesFocus?.requestFocus();
     });
   }
 
@@ -521,19 +543,22 @@ class _ApiKeyDetailState extends State<_ApiKeyDetail> {
       _form.rejectSubmit();
       return;
     }
-    final name = (_form.control(_nameControl).value as String?)?.trim() ?? '';
+    final typed = (_form.control(_nameControl).value as String?)?.trim() ?? '';
+    // An unnamed key left unnamed keeps no name: an empty one is never sent.
+    final name = typed.isEmpty && key.name == null ? null : typed;
     final grantable = state.grantable;
-    // Unread, the permissions are not offered, and never sent.
-    final scopes = grantable == null
+    // Unread, the permissions are not offered, and never sent. Listed, they
+    // are as the key holds them.
+    final scopes = grantable == null || !_changingScopes
         ? null
-        : _scopesToSend(key, grantable, _picks.scopes);
+        : scopesToSend(key, grantable, _picks.scopes);
     // A banner left under the question's barrier is read again when the
     // question closes, as news it no longer is.
     _bloc.add(const ApiKeyDetailOutcomeCleared());
 
     final critical = scopes == null || grantable == null
         ? const <GrantablePermission>[]
-        : _newCritical(key, scopes, grantable);
+        : newCritical(key, scopes, grantable);
     final confirmed = critical.isNotEmpty && await _confirmCritical(critical);
     if (!mounted || (critical.isNotEmpty && !confirmed)) return;
     _send((
@@ -596,7 +621,7 @@ class _ApiKeyDetailState extends State<_ApiKeyDetail> {
     final confirmed = await _confirmCritical(
       scopes == null || grantable == null
           ? const []
-          : _newCritical(key, scopes, grantable),
+          : newCritical(key, scopes, grantable),
     );
     if (!mounted) return;
     if (!confirmed) {
@@ -646,6 +671,14 @@ class _ApiKeyDetailState extends State<_ApiKeyDetail> {
           listenWhen: (previous, current) =>
               previous.writing != null && current.writing == null,
           listener: _onWriteEnded,
+        ),
+        // Save retires the banner before it finds nothing again, but both
+        // land before the next frame, which would keep the one banner.
+        BlocListener<ApiKeyDetailBloc, ApiKeyDetailState>(
+          listenWhen: (previous, current) =>
+              previous.outcome is! ApiKeyDetailNothingToSave &&
+              current.outcome is ApiKeyDetailNothingToSave,
+          listener: (_, _) => setState(() => _nothingToSave++),
         ),
       ],
       child: BlocBuilder<ApiKeyDetailBloc, ApiKeyDetailState>(
@@ -842,12 +875,16 @@ class _ApiKeyDetailState extends State<_ApiKeyDetail> {
               ApiKeyNameErrors.tooLong: (_) => l10n.apiKeyNameTooLong(
                 ApiKeyRemoteDataSource.maxNameLength,
               ),
+              ApiKeyNameErrors.nul: (_) => l10n.apiKeyNameNul,
             },
           ),
           const BgeGap.lg(),
-          _Heading(
-            l10n.apiKeyPermissionsHeading,
-            style: Theme.of(context).textTheme.titleMedium,
+          Focus(
+            focusNode: _permissionsHeading,
+            child: _Heading(
+              l10n.apiKeyPermissionsHeading,
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
           ),
           const BgeGap.sm(),
           if (grantable == null) ...[
@@ -856,7 +893,19 @@ class _ApiKeyDetailState extends State<_ApiKeyDetail> {
             ApiKeyScopeList(scopes: key.scopes, grantable: null),
             const BgeGap.sm(),
             Text(l10n.apiKeyScopesNotEditable),
-          ] else
+          ] else if (!_changingScopes) ...[
+            // Every permission the key holds, with what it allows and its
+            // risk (#1028). Unchanged while listed, so a save sends none.
+            ApiKeyScopeList(scopes: key.scopes, grantable: grantable),
+            const BgeGap.sm(),
+            _ScopesSwap(
+              buttonKey: ApiKeyDetailScreen.changeScopesKey,
+              label: l10n.apiKeyScopesChange,
+              readOnly: busy,
+              onPressed: _changeScopes,
+              onFocusNode: (node) => _changeScopesFocus = node,
+            ),
+          ] else ...[
             ScopePicker(
               grantable: grantable.values.toList(),
               selection: _picks,
@@ -868,6 +917,14 @@ class _ApiKeyDetailState extends State<_ApiKeyDetail> {
               refusedMessage: failureMessage,
               announceNoneWarning: _picksChanged,
             ),
+            const BgeGap.sm(),
+            _ScopesSwap(
+              buttonKey: ApiKeyDetailScreen.keepScopesKey,
+              label: l10n.apiKeyScopesKeep,
+              readOnly: busy,
+              onPressed: () => _keepScopes(key, grantable),
+            ),
+          ],
           const BgeGap.lg(),
           ExpiryControl(
             days: _days,
@@ -887,9 +944,12 @@ class _ApiKeyDetailState extends State<_ApiKeyDetail> {
             const BgeGap.md(),
           ],
           if (outcome is ApiKeyDetailNothingToSave) ...[
-            BgeInlineBanner(
-              key: ApiKeyDetailScreen.nothingToSaveKey,
-              message: l10n.apiKeyNothingToSave,
+            KeyedSubtree(
+              key: ValueKey(('nothing to save', _nothingToSave)),
+              child: BgeInlineBanner(
+                key: ApiKeyDetailScreen.nothingToSaveKey,
+                message: l10n.apiKeyNothingToSave,
+              ),
             ),
             const BgeGap.md(),
           ],
@@ -1005,6 +1065,66 @@ class _SavingBar extends StatelessWidget {
             child: const ExcludeSemantics(child: LinearProgressIndicator()),
           )
         : null,
+  );
+}
+
+/// "Change permissions" or "Keep permissions as they were", which swap the
+/// key's permissions and the picker in place (#1028).
+///
+/// Read-only while a write is on its way, as the form's fields are
+/// (STYLE_GUIDE, "In-flight forms"): it stays enabled and in the focus
+/// order, reads as not available, and a press does nothing. Neither is a
+/// write, so neither waits for a connection.
+class _ScopesSwap extends StatelessWidget {
+  const _ScopesSwap({
+    required this.buttonKey,
+    required this.label,
+    required this.readOnly,
+    required this.onPressed,
+    this.onFocusNode,
+  });
+
+  final Key buttonKey;
+  final String label;
+
+  final bool readOnly;
+  final VoidCallback onPressed;
+
+  /// Given the button's focus node as it is built.
+  final ValueChanged<FocusNode>? onFocusNode;
+
+  @override
+  Widget build(BuildContext context) => Align(
+    alignment: AlignmentDirectional.centerStart,
+    child: BgeInertButton(
+      inert: readOnly,
+      label: label,
+      onPressed: onPressed,
+      builder: (context, focusNode, onPressed) {
+        onFocusNode?.call(focusNode);
+        // At 320dp and 200% text the label wraps, and a Material button is
+        // clipped to its shape: the theme's stadium would cut into the
+        // wrapped words at its curved ends. So the corners are the row's,
+        // with the focus ring following them inside the edge, as the
+        // sign-in methods screen's wrapping buttons have it (#764).
+        final shape = RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(BgeTokens.of(context).radiusMd),
+        );
+        return TextButton(
+          key: buttonKey,
+          focusNode: focusNode,
+          onPressed: onPressed,
+          style: ButtonStyle(
+            shape: WidgetStatePropertyAll(shape),
+            backgroundBuilder: BgeButtonFocusRing.builder(
+              shape,
+              placement: BgeButtonFocusRingPlacement.inside,
+            ),
+          ),
+          child: Text(label),
+        );
+      },
+    ),
   );
 }
 

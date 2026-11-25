@@ -16,10 +16,13 @@ act as you, each holding only the permissions you gave it.
   permissions by slug. A failed grantable read never fails the list: the rows
   then give a count of permissions without a risk level.
 - `ApiKeyDetailScreen`: one key's own page, by id. It reads the key and the
-  grantable permissions when it opens. A form renames the key, changes its
-  permissions (`ScopePicker`, the ones it holds ticked) or sets a new expiry
+  grantable permissions when it opens, and lists every permission the key
+  holds with its risk in words (`ApiKeyScopeList`). A form renames the key,
+  changes its permissions (Change permissions swaps the list for a
+  `ScopePicker`, the ones it holds ticked) or sets a new expiry
   (`ExpiryControl`), and Save changes sends only what changed: a key that
-  holds a permission its owner may no longer give can still be renamed. A
+  holds a permission its owner may no longer give can still be renamed, and
+  an unnamed one needn't be named. A
   save that adds a Critical permission the key doesn't hold is asked about
   first. An Enabled switch and Delete, which asks first (`DeleteKeyDialog`),
   write straight to the server. A delete that goes through says so and pops

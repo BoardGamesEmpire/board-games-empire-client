@@ -46,7 +46,7 @@ void main() {
       "Couldn't reach the server. Check your connection, then try again.";
   const noneWarning = 'With no permissions, this key works nowhere.';
   const criticalQuestion = 'Give this key Critical permissions?';
-  const leaveQuestion = 'Leave without copying?';
+  const leaveQuestion = 'Leave this page?';
   const failedTitle = "Couldn't create the key";
 
   setUpAll(
@@ -242,6 +242,29 @@ void main() {
       expect(nameField(), findsOneWidget);
     });
 
+    testWidgets('Everything I can do turned off gives back the picks made '
+        'before it went on', (tester) async {
+      await show(tester);
+      await tick(tester, readGames.description);
+      await tick(tester, changeGames.description);
+      ScopeSelection selection() =>
+          tester.widget<ScopePicker>(find.byType(ScopePicker)).selection;
+
+      await switchEverything(tester);
+      expect(selection(), const EverythingScopes());
+
+      await switchEverything(tester);
+
+      expect(
+        selection(),
+        const PickedScopes([
+          ApiKeyScope(slug: 'collection:read'),
+          ApiKeyScope(slug: 'collection:write'),
+        ]),
+      );
+      expect(find.text(noneWarning), findsNothing);
+    });
+
     testWidgets('an empty name is refused and focused', (tester) async {
       await show(tester);
 
@@ -271,6 +294,25 @@ void main() {
 
       verifyNever(() => remote.create(any()));
       expect(find.text('Use 32 characters at most.'), findsOneWidget);
+      expect(nameInput(tester).focusNode.hasPrimaryFocus, isTrue);
+    });
+
+    testWidgets('a name with a pasted NUL character is refused at the field', (
+      tester,
+    ) async {
+      await show(tester);
+      await enterName(tester, 'CI\u{0}deploy');
+
+      await pressCreate(tester);
+
+      verifyNever(() => remote.create(any()));
+      expect(
+        find.text(
+          "The name has a hidden character that can't be saved. "
+          'Type it again.',
+        ),
+        findsOneWidget,
+      );
       expect(nameInput(tester).focusNode.hasPrimaryFocus, isTrue);
     });
 

@@ -558,6 +558,10 @@
       }
     }
   },
+  "apiKeyNameNul": "The name has a hidden character that can't be saved. Type it again.",
+  "@apiKeyNameNul": {
+    "description": "Error under the name field when the API key's name holds an invisible NUL character, usually brought in by pasting text, which the server refuses."
+  },
   "apiKeyExpiryCreateLabel": "Expires in",
   "@apiKeyExpiryCreateLabel": {
     "description": "Label over the choices of how long a new API key lasts, such as '30 days' or '90 days'."
@@ -626,7 +630,7 @@
   "@apiKeySecretDone": {
     "description": "Button at the end of the page that shows the new API key: leaves the page, for the list of the user's keys."
   },
-  "apiKeyLeaveTitle": "Leave without copying?",
+  "apiKeyLeaveTitle": "Leave this page?",
   "@apiKeyLeaveTitle": {
     "description": "Title of the dialog that asks before the user goes back from the page that shows their new API key for the only time."
   },
@@ -685,6 +689,14 @@
         "example": "CI deploy"
       }
     }
+  },
+  "apiKeyScopesChange": "Change permissions",
+  "@apiKeyScopesChange": {
+    "description": "Button under the permissions an API key holds, on the key's own page. It shows the list of permissions the user may give in their place, to tick and untick before saving."
+  },
+  "apiKeyScopesKeep": "Keep permissions as they were",
+  "@apiKeyScopesKeep": {
+    "description": "Button under the permissions being changed on an API key's own page. It puts back the list of the permissions the key holds, undoing any ticks, so saving leaves the key's permissions as they are."
   },
   "apiKeyScopesNotEditable": "Couldn't load the permissions you can give, so this key's permissions can't be changed now. Open this page again to try.",
   "@apiKeyScopesNotEditable": {

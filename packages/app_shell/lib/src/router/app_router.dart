@@ -1120,6 +1120,13 @@ GoRouter buildAppRouter({
   // nothing. go_router gives a pushed page a new match on each one, takes
   // that for the page leaving, and asks its `onExit`, when the page is
   // going nowhere.
+  //
+  // Neither listener is removed: both live as long as the listenable, which
+  // `BgeApp` disposes with the router. Only a re-read the listenable
+  // starts is bracketed. A re-parse from `Router.didChangeDependencies`, or
+  // a direct `GoRouter.refresh()`, is not, so either would ask the page
+  // once when nothing is leaving: latent, and a needless question at worst,
+  // never a key lost.
   var refreshing = false;
   refreshListenable.addListener(() => refreshing = true);
   late final GoRouter router;

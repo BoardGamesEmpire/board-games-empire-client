@@ -20,6 +20,12 @@ import 'package:ui_tokens/ui_tokens.dart';
 ///
 /// A null [onPressed] disables it, as offline, or while another write no
 /// press of its own started is on its way.
+///
+/// It relies on an enclosing `BgeOnlineOnly`, as both forms give it: that
+/// widget's `MergeSemantics` is what puts the [Semantics] this button sets
+/// above its [BgeInertButton], the live region and the disabled flag, on
+/// the button's own node. Without it they would not land on the button,
+/// and nothing would say why it is disabled offline.
 class ApiKeySubmitButton extends StatelessWidget {
   const ApiKeySubmitButton({
     required this.label,

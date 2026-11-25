@@ -30,7 +30,8 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// "Everything I can do"), how long it lasts ([ExpiryControl], 90 days to
 /// start with) and Create. Online only: the permissions on offer are read
 /// from the server when the page opens, and Create goes straight to it, so
-/// offline Create is disabled and says why (#49).
+/// offline Create is disabled and says why (#49). "Everything I can do"
+/// turned off again gives back the picks made before it went on.
 ///
 /// A key may be made with no permissions. The picker says it will work
 /// nowhere, in a warning that is not read out until the user has changed
@@ -209,6 +210,10 @@ class _ApiKeyCreateState extends State<_ApiKeyCreate> {
 
   ScopeSelection _selection = const PickedScopes([]);
 
+  /// The picks made before "Everything I can do" went on, which it gives
+  /// back when it goes off.
+  PickedScopes _beforeEverything = const PickedScopes([]);
+
   /// Whether the user has changed the picks, which makes the picker's
   /// nothing-picked warning news rather than how the form starts.
   bool _picksChanged = false;
@@ -282,8 +287,21 @@ class _ApiKeyCreateState extends State<_ApiKeyCreate> {
   }
 
   void _onPicked(ScopeSelection selection) {
+    final previous = _selection;
+    // On, what was picked is kept for when it goes off.
+    if (previous is PickedScopes && selection is EverythingScopes) {
+      _beforeEverything = previous;
+    }
     setState(() {
-      _selection = selection;
+      _selection = switch ((previous, selection)) {
+        // Off: the picks made before it went on, and any the picker kept.
+        (EverythingScopes(), PickedScopes(:final scopes)) => PickedScopes([
+          ..._beforeEverything.scopes,
+          for (final scope in scopes)
+            if (!_beforeEverything.scopes.contains(scope)) scope,
+        ]),
+        _ => selection,
+      };
       _picksChanged = true;
     });
     _retireFailure();
@@ -567,6 +585,7 @@ class _ApiKeyCreateState extends State<_ApiKeyCreate> {
               ApiKeyNameErrors.tooLong: (_) => l10n.apiKeyNameTooLong(
                 ApiKeyRemoteDataSource.maxNameLength,
               ),
+              ApiKeyNameErrors.nul: (_) => l10n.apiKeyNameNul,
             },
           ),
           const BgeGap.lg(),

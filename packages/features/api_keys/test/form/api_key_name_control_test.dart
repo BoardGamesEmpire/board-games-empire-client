@@ -40,9 +40,49 @@ void main() {
       expect(long.hasError(ValidationMessage.required), isFalse);
     });
 
+    test('a NUL character is refused, required or not', () {
+      for (final control in [
+        holding('CI\u{0}deploy'),
+        apiKeyNameControl(required: false)..value = '\u{0}',
+      ]) {
+        expect(control.invalid, isTrue);
+        expect(control.hasError(ApiKeyNameErrors.nul), isTrue);
+      }
+      expect(holding('CI deploy').hasError(ApiKeyNameErrors.nul), isFalse);
+    });
+
     test('spaces at either end are not counted, as the server trims them', () {
       expect(holding('  ${'a' * max}  ').valid, isTrue);
       expect(holding('  ${'a' * (max + 1)}  ').invalid, isTrue);
+    });
+
+    test('not required, an empty name is valid and a long one is not', () {
+      for (final empty in [null, '', '   ']) {
+        expect(
+          apiKeyNameControl(required: false, initial: empty).valid,
+          isTrue,
+          reason: '"$empty"',
+        );
+      }
+      expect(
+        apiKeyNameControl(
+          required: false,
+          initial: 'a' * (max + 1),
+        ).hasError(ApiKeyNameErrors.tooLong),
+        isTrue,
+      );
+    });
+
+    test('its validators can be set again, with or without required', () {
+      final control = apiKeyNameControl(initial: '')
+        ..setValidators(
+          apiKeyNameValidators(required: false),
+          autoValidate: true,
+        );
+      expect(control.valid, isTrue);
+
+      control.setValidators(apiKeyNameValidators(), autoValidate: true);
+      expect(control.hasError(ValidationMessage.required), isTrue);
     });
 
     test('length is counted in UTF-16 units, as String.length gives it', () {

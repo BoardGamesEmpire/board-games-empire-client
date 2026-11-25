@@ -185,8 +185,25 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  /// Ticks or unticks the grantable permission [slug].
+  Finder changeScopes() => find.byKey(ApiKeyDetailScreen.changeScopesKey);
+
+  Finder keepScopes() => find.byKey(ApiKeyDetailScreen.keepScopesKey);
+
+  /// Presses "Change permissions", which swaps the picker in for the key's
+  /// permissions, unless the picker shows already.
+  Future<void> openPicker(WidgetTester tester) async {
+    if (find.byType(ScopePicker).evaluate().isNotEmpty) return;
+    await tester.ensureVisible(changeScopes());
+    await tester.pumpAndSettle();
+    await tester.tap(changeScopes());
+    await tester.pumpAndSettle();
+    expect(find.byType(ScopePicker), findsOneWidget);
+  }
+
+  /// Ticks or unticks the grantable permission [slug], opening the picker
+  /// first if it isn't open.
   Future<void> tick(WidgetTester tester, String slug) async {
+    await openPicker(tester);
     final row = scopeRow(ApiKeyScope(slug: slug));
     await tester.ensureVisible(row);
     await tester.pumpAndSettle();
@@ -318,7 +335,15 @@ void main() {
       );
       await show(tester);
 
-      // Its permission may be given unpinned too, which is a row of its own.
+      // Listed, the key's own scopes are its rows.
+      expect(
+        rowLabel(tester, 'Manage your webhook subscriptions'),
+        allOf(contains('Risk: High'), contains('Limited to one record')),
+      );
+
+      // In the picker, its permission may be given unpinned too, which is a
+      // row of its own.
+      await openPicker(tester);
       expect(
         scopeRowLabel(
           tester,
@@ -390,6 +415,8 @@ void main() {
       // Not knowing what a permission allows isn't its being withdrawn.
       expect(find.text('No longer available'), findsNothing);
       expect(find.textContaining('Risk:'), findsNothing);
+      // Nothing to change them with: the picker has no rows to offer.
+      expect(changeScopes(), findsNothing);
       expect(switchTile(tester).onChanged, isNotNull);
     });
 
@@ -398,8 +425,16 @@ void main() {
       answerKey(remote, apiKey('k_1', scopes: const []));
       final semantics = tester.ensureSemantics();
       await show(tester);
+      expect(
+        find.text(
+          'This key has no permissions, so it works nowhere until it is '
+          'given some.',
+        ),
+        findsOneWidget,
+      );
 
       // The permissions to tick say it, under them.
+      await openPicker(tester);
       final warning = find.text('With no permissions, this key works nowhere.');
       expect(warning, findsOneWidget);
       // How the key is, not news: not said over the page as it opens.
@@ -902,6 +937,10 @@ void main() {
       await show(tester);
 
       expect(nameInput(tester).controller.text, 'CI deploy');
+      // The key's permissions are listed, with the way to change them.
+      expect(find.byType(ApiKeyScopeList), findsOneWidget);
+      expect(find.byType(ScopePicker), findsNothing);
+      await openPicker(tester);
       final scopes = picker(tester);
       expect(scopes.offerEverything, isFalse);
       expect(find.byKey(ScopePicker.everythingKey), findsNothing);
@@ -926,6 +965,120 @@ void main() {
         tester.getTopLeft(enabledSwitch()).dy,
         lessThan(tester.getTopLeft(deleteButton()).dy),
       );
+    });
+
+    group('the permissions', () {
+      testWidgets('are listed with what each allows and its risk, and '
+          'Change permissions under them', (tester) async {
+        await show(tester);
+
+        expect(
+          tester.widget<ApiKeyScopeList>(find.byType(ApiKeyScopeList)),
+          isA<ApiKeyScopeList>()
+              .having((list) => list.scopes, 'scopes', key.scopes)
+              .having((list) => list.grantable, 'grantable', isNotNull),
+        );
+        expect(
+          rowLabel(tester, 'Manage every user'),
+          allOf(contains('Risk: Critical'), contains('users:manage')),
+        );
+        expect(find.byType(ScopePicker), findsNothing);
+        expect(find.text('Change permissions'), findsOneWidget);
+        expect(
+          tester.getTopLeft(changeScopes()).dy,
+          greaterThan(
+            tester.getBottomLeft(find.byType(ApiKeyScopeList)).dy - 1,
+          ),
+        );
+      });
+
+      testWidgets('Change permissions swaps in the picker in place, ticked as '
+          'the key holds them, with focus on their heading', (tester) async {
+        await show(tester);
+        // How far under the heading a widget starts.
+        double underHeading(Finder finder) =>
+            tester.getTopLeft(finder).dy -
+            tester.getBottomLeft(find.text('Permissions')).dy;
+        final listAt = underHeading(find.byType(ApiKeyScopeList));
+
+        await openPicker(tester);
+
+        expect(find.byType(ApiKeyScopeList), findsNothing);
+        expect(changeScopes(), findsNothing);
+        expect(underHeading(find.byType(ScopePicker)), listAt);
+        expect(
+          picker(tester).selection,
+          const PickedScopes([
+            ApiKeyScope(slug: 'collection:read'),
+            ApiKeyScope(slug: 'users:manage'),
+          ]),
+        );
+        expect(find.text('Keep permissions as they were'), findsOneWidget);
+        final focused = FocusManager.instance.primaryFocus;
+        expect(
+          find.descendant(
+            of: find.byWidget(focused!.context!.widget),
+            matching: find.text('Permissions'),
+          ),
+          findsOneWidget,
+        );
+      });
+
+      testWidgets('Keep permissions as they were goes back to the list, with '
+          'the picks as the key holds them, and sends no permissions', (
+        tester,
+      ) async {
+        serverApplies(key);
+        await show(tester);
+        await tick(tester, 'webhooks:manage');
+        await tick(tester, 'users:manage');
+
+        await tester.ensureVisible(keepScopes());
+        await tester.pumpAndSettle();
+        await tester.tap(keepScopes());
+        await tester.pumpAndSettle();
+
+        expect(find.byType(ScopePicker), findsNothing);
+        expect(find.byType(ApiKeyScopeList), findsOneWidget);
+        // Focus goes to the button that took its place.
+        expect(
+          tester.widget<TextButton>(changeScopes()).focusNode!.hasPrimaryFocus,
+          isTrue,
+        );
+
+        await rename(tester, 'Renamed');
+        await pressSave(tester);
+        expect(patchSent(), const ApiKeyPatch(name: 'Renamed'));
+
+        await openPicker(tester);
+        expect(
+          picker(tester).selection,
+          const PickedScopes([
+            ApiKeyScope(slug: 'collection:read'),
+            ApiKeyScope(slug: 'users:manage'),
+          ]),
+        );
+      });
+
+      testWidgets('a failed save keeps the picker open, with the picks', (
+        tester,
+      ) async {
+        when(() => remote.update('k_1', any())).thenThrow(transient);
+        await show(tester);
+        await tick(tester, 'webhooks:manage');
+
+        await pressSave(tester);
+
+        expect(saveFailedBanner(), findsOneWidget);
+        expect(
+          picker(tester).selection,
+          const PickedScopes([
+            ApiKeyScope(slug: 'collection:read'),
+            ApiKeyScope(slug: 'users:manage'),
+            ApiKeyScope(slug: 'webhooks:manage'),
+          ]),
+        );
+      });
     });
 
     testWidgets('a rename sends no scopes', (tester) async {
@@ -972,6 +1125,7 @@ void main() {
       serverApplies(key);
       final semantics = tester.ensureSemantics();
       await show(tester);
+      await openPicker(tester);
       // The pin is held, so ticked, and can't be changed here.
       final pinRow = tester.getSemantics(scopeRow(pinned));
       expect(
@@ -1107,6 +1261,34 @@ void main() {
       );
     });
 
+    testWidgets('a second press with nothing changed says so again, in a new '
+        'live region', (tester) async {
+      final semantics = tester.ensureSemantics();
+      await show(tester);
+      await pressSave(tester);
+      final first = tester.element(nothingToSaveBanner());
+      final firstNode = tester.getSemantics(find.text('Nothing to save')).id;
+      expect(
+        tester
+            .getSemantics(find.text('Nothing to save'))
+            .getSemanticsData()
+            .flagsCollection
+            .isLiveRegion,
+        isTrue,
+      );
+
+      await pressSave(tester);
+
+      verifyNever(() => remote.update(any(), any()));
+      expect(nothingToSaveBanner(), findsOneWidget);
+      // Built anew, so a screen reader hears it arrive again.
+      expect(tester.element(nothingToSaveBanner()), isNot(same(first)));
+      final second = tester.getSemantics(find.text('Nothing to save'));
+      expect(second.id, isNot(firstNode));
+      expect(second.getSemanticsData().flagsCollection.isLiveRegion, isTrue);
+      semantics.dispose();
+    });
+
     testWidgets('a name typed back as it was, spaces and all, is nothing to '
         'save', (tester) async {
       await show(tester);
@@ -1152,6 +1334,21 @@ void main() {
       expect(find.text('Renamed'), findsNWidgets(3));
       expect(find.text('Expires Jun 1, 2027'), findsOneWidget);
       expect(find.text('3 permissions, highest risk Critical'), findsOneWidget);
+      // Back to the key's permissions, as the server answered them.
+      expect(find.byType(ScopePicker), findsNothing);
+      expect(
+        tester.widget<ApiKeyScopeList>(find.byType(ApiKeyScopeList)).scopes,
+        const [
+          ApiKeyScope(slug: 'collection:read'),
+          ApiKeyScope(slug: 'users:manage'),
+          ApiKeyScope(slug: 'webhooks:manage'),
+        ],
+      );
+      expect(expiry(tester).days, isNull);
+      // The banner stays: starting the form again is not an edit.
+      await tester.pump(const Duration(seconds: 1));
+      expect(savedBanner(), findsOneWidget);
+      await openPicker(tester);
       expect(
         picker(tester).selection,
         const PickedScopes([
@@ -1160,10 +1357,6 @@ void main() {
           ApiKeyScope(slug: 'webhooks:manage'),
         ]),
       );
-      expect(expiry(tester).days, isNull);
-      // The banner stays: starting the form again is not an edit.
-      await tester.pump(const Duration(seconds: 1));
-      expect(savedBanner(), findsOneWidget);
 
       // So nothing differs from the key any more.
       await pressSave(tester);
@@ -1212,6 +1405,48 @@ void main() {
       await tick(tester, 'webhooks:manage');
 
       expect(find.byKey(ApiKeyDetailScreen.toggleFailedKey), findsOneWidget);
+    });
+
+    testWidgets('an unnamed key saves a new expiry alone, without being '
+        'named', (tester) async {
+      // Keys made outside the app can have no name.
+      final unnamed = key.copyWith(name: null);
+      answerKey(remote, unnamed);
+      serverApplies(unnamed);
+      await show(tester);
+      expect(nameInput(tester).controller.text, isEmpty);
+
+      await pickExpiry(tester, '30 days');
+      await pressSave(tester);
+
+      expect(patchSent(), const ApiKeyPatch(expiresInDays: 30));
+      expect(find.text('Enter a name for the key.'), findsNothing);
+      expect(savedBanner(), findsOneWidget);
+    });
+
+    testWidgets('an unnamed key left unnamed is nothing to save, and never '
+        'sends an empty name', (tester) async {
+      answerKey(remote, key.copyWith(name: null));
+      await show(tester);
+
+      await rename(tester, '   ');
+      await pressSave(tester);
+
+      verifyNever(() => remote.update(any(), any()));
+      expect(find.text('Enter a name for the key.'), findsNothing);
+      expect(nothingToSaveBanner(), findsOneWidget);
+    });
+
+    testWidgets('a name typed on an unnamed key is sent', (tester) async {
+      final unnamed = key.copyWith(name: null);
+      answerKey(remote, unnamed);
+      serverApplies(unnamed);
+      await show(tester);
+
+      await rename(tester, '  Backup  ');
+      await pressSave(tester);
+
+      expect(patchSent(), const ApiKeyPatch(name: 'Backup'));
     });
 
     testWidgets('an empty name is refused and focused, and nothing is sent', (
@@ -1622,12 +1857,17 @@ void main() {
         final semantics = tester.ensureSemantics();
         await show(tester);
         await rename(tester, 'Renamed');
+        await openPicker(tester);
 
         await pressSaveHeld(tester);
 
         // Read-only, not disabled: each stays where a reader left it.
         expect(nameInput(tester).readOnly, isTrue);
         expect(picker(tester).readOnly, isTrue);
+        expect(
+          tester.getSemantics(keepScopes()),
+          isSemantics(isEnabled: false, isFocusable: true, hasTapAction: false),
+        );
         expect(expiry(tester).readOnly, isTrue);
         // Save keeps focus, and says it is saving as it starts.
         expect(find.text('Saving changes…'), findsOneWidget);
@@ -1696,8 +1936,16 @@ void main() {
 
         expect(tester.widget<FilledButton>(saveButton()).onPressed, isNull);
         expect(nameInput(tester).readOnly, isTrue);
-        expect(picker(tester).readOnly, isTrue);
         expect(expiry(tester).readOnly, isTrue);
+        // The swap to the picker is read-only too: a press does nothing.
+        expect(
+          tester.getSemantics(changeScopes()),
+          isSemantics(isEnabled: false, isFocusable: true, hasTapAction: false),
+        );
+        await tester.ensureVisible(changeScopes());
+        await tester.tap(changeScopes());
+        await pumpEvent(tester);
+        expect(find.byType(ScopePicker), findsNothing);
 
         answer.complete(key.copyWith(enabled: false));
         await tester.pumpAndSettle();
@@ -1900,6 +2148,29 @@ void main() {
         await tester.pumpAndSettle();
         await whole(tester);
         expect(deleteButton(), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'the permissions listed, whole, with Change permissions',
+      build: screenWith(everyKind),
+      arrange: (tester) async {
+        await tester.pumpAndSettle();
+        await whole(tester);
+        expect(find.byType(ApiKeyScopeList), findsOneWidget);
+        expect(changeScopes(), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'Change permissions open, whole, with Keep permissions as they were',
+      build: screenWith(everyKind),
+      arrange: (tester) async {
+        await tester.pumpAndSettle();
+        await openPicker(tester);
+        await whole(tester);
+        expect(keepScopes(), findsOneWidget);
+        expectWholePage(tester);
       },
     );
 

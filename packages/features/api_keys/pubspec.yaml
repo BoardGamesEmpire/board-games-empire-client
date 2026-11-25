@@ -1,5 +1,5 @@
 name: api_keys
-description: "Your API keys on a server (#1028): list them, filtered by status, with how many permissions each holds and the highest risk among them"
+description: "Your API keys on a server (#1028): list them, filtered by status, with how many permissions each holds and the highest risk among them; create a key and see its secret once; rename it, change its permissions or expiry, enable, disable or delete it"
 publish_to: none
 
 environment:

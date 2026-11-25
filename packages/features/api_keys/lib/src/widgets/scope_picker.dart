@@ -1,5 +1,6 @@
 import 'package:api_keys/l10n/api_keys_localizations.dart';
 import 'package:api_keys/src/widgets/api_key_scope_list.dart';
+import 'package:api_keys/src/widgets/read_only_focusable.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:models/domain.dart';
@@ -230,14 +231,14 @@ class ScopePicker extends StatelessWidget {
               // Set while read-only too, so the tile stays enabled and
               // focusable; a change then does nothing.
               onChanged: readOnly
-                  ? _ignore
+                  ? _ignoreWhileReadOnly
                   : (on) => onChanged(
                       on ? const EverythingScopes() : PickedScopes(keptPins),
                     ),
             ),
           ),
         for (final permission in bySlug.values)
-          _ScopeRow(
+          _ScopeCheckRow(
             key: rowKey(ApiKeyScope(slug: permission.slug)),
             title: permission.description,
             lines: [
@@ -256,7 +257,7 @@ class ScopePicker extends StatelessWidget {
                 toggle(ApiKeyScope(slug: permission.slug), on: on),
           ),
         for (final scope in heldRows)
-          _ScopeRow(
+          _ScopeCheckRow(
             key: rowKey(scope),
             title: bySlug[scope.slug]?.description ?? scope.slug,
             lines: [
@@ -294,12 +295,13 @@ class ScopePicker extends StatelessWidget {
   }
 }
 
-/// A change a read-only row takes, and does nothing with.
-void _ignore(Object? _) {}
+/// The change a read-only row takes, and does nothing with: a null one
+/// would disable the row, taking it out of the focus order.
+void _ignoreWhileReadOnly(Object? _) {}
 
 /// A row with its checkbox, its [title] and its [lines] read as one.
-class _ScopeRow extends StatelessWidget {
-  const _ScopeRow({
+class _ScopeCheckRow extends StatelessWidget {
+  const _ScopeCheckRow({
     required this.title,
     required this.lines,
     required this.checked,
@@ -332,19 +334,16 @@ class _ScopeRow extends StatelessWidget {
               children: lines,
             ),
       value: checked,
-      onChanged: readOnly ? _ignore : (on) => onChanged(on ?? false),
+      onChanged: readOnly
+          ? _ignoreWhileReadOnly
+          : (on) => onChanged(on ?? false),
     ),
   );
 }
 
 /// A ringed row that reads as one node, and that stays focusable while
-/// [readOnly], as `BgeSwitchField` does.
-///
-/// The tile [builder] builds ignores every change while [readOnly], through
-/// an `onChanged` that is never null, so it stays enabled and in the focus
-/// order. [IgnorePointer] takes the pointer and the semantic tap, and the
-/// focus action, which the node here gives back.
-class _PickerRow extends StatefulWidget {
+/// [readOnly], as `BgeSwitchField` does: see [ReadOnlyFocusable].
+class _PickerRow extends StatelessWidget {
   const _PickerRow({
     required this.readOnly,
     required this.builder,
@@ -355,41 +354,13 @@ class _PickerRow extends StatefulWidget {
   final Widget Function(BuildContext context, BgeRowFocus row) builder;
 
   @override
-  State<_PickerRow> createState() => _PickerRowState();
-}
-
-class _PickerRowState extends State<_PickerRow> {
-  // Owned here so the node can give back the focus action [IgnorePointer]
-  // takes while read-only.
-  final FocusNode _focusNode = FocusNode(debugLabel: 'ScopePicker row');
-
-  @override
-  void dispose() {
-    _focusNode.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final readOnly = widget.readOnly;
-    // One node: the tile's merges into this one, which adds what read-only
-    // changes.
-    return MergeSemantics(
-      child: Semantics(
-        readOnly: readOnly,
-        // As `Focus` has it: withheld on iOS (flutter/flutter#150030).
-        onFocus: readOnly && defaultTargetPlatform != TargetPlatform.iOS
-            ? _focusNode.requestFocus
-            : null,
-        child: IgnorePointer(
-          ignoring: readOnly,
-          child: BgeRowFocusRing(
-            outsideSides: true,
-            focusNode: _focusNode,
-            builder: widget.builder,
-          ),
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => ReadOnlyFocusable(
+    readOnly: readOnly,
+    debugLabel: 'ScopePicker row',
+    builder: (context, focusNode) => BgeRowFocusRing(
+      outsideSides: true,
+      focusNode: focusNode,
+      builder: builder,
+    ),
+  );
 }

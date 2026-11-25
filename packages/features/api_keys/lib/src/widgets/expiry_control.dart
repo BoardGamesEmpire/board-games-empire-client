@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:api_keys/l10n/api_keys_localizations.dart';
-import 'package:flutter/foundation.dart';
+import 'package:api_keys/src/widgets/read_only_focusable.dart';
 import 'package:flutter/material.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:reactive_forms/reactive_forms.dart';
@@ -439,7 +439,7 @@ class _ExpiryControlState extends State<ExpiryControl> {
 /// focus order; while [readOnly] a pick does nothing. [IgnorePointer] takes
 /// the pointer, so no ripple draws, and the semantic tap, and the focus
 /// action, which the node here gives back.
-class _ExpiryChip extends StatefulWidget {
+class _ExpiryChip extends StatelessWidget {
   const _ExpiryChip({
     required this.label,
     required this.selected,
@@ -453,48 +453,17 @@ class _ExpiryChip extends StatefulWidget {
   final VoidCallback onPick;
 
   @override
-  State<_ExpiryChip> createState() => _ExpiryChipState();
-}
-
-class _ExpiryChipState extends State<_ExpiryChip> {
-  // Owned here so the node can give back the focus action [IgnorePointer]
-  // takes while read-only.
-  final FocusNode _focusNode = FocusNode(debugLabel: 'ExpiryControl chip');
-
-  @override
-  void dispose() {
-    _focusNode.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final readOnly = widget.readOnly;
-    // One node: the chip's merges into this one, which adds what read-only
-    // changes.
-    return MergeSemantics(
-      child: Semantics(
-        readOnly: readOnly,
-        // As `Focus` has it: withheld on iOS (flutter/flutter#150030).
-        onFocus: readOnly && defaultTargetPlatform != TargetPlatform.iOS
-            ? _focusNode.requestFocus
-            : null,
-        child: IgnorePointer(
-          ignoring: readOnly,
-          child: ChoiceChip(
-            focusNode: _focusNode,
-            // The label can't wrap in a chip: it scales down to fit instead.
-            label: FittedBox(
-              fit: BoxFit.scaleDown,
-              child: Text(widget.label),
-            ),
-            selected: widget.selected,
-            onSelected: (_) {
-              if (!readOnly) widget.onPick();
-            },
-          ),
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => ReadOnlyFocusable(
+    readOnly: readOnly,
+    debugLabel: 'ExpiryControl chip',
+    builder: (context, focusNode) => ChoiceChip(
+      focusNode: focusNode,
+      // The label can't wrap in a chip: it scales down to fit instead.
+      label: FittedBox(fit: BoxFit.scaleDown, child: Text(label)),
+      selected: selected,
+      onSelected: (_) {
+        if (!readOnly) onPick();
+      },
+    ),
+  );
 }

@@ -557,7 +557,7 @@ void main() {
         await goBack(tester);
         await tester.pumpAndSettle();
 
-        expect(find.text('Leave without copying?'), findsOneWidget);
+        expect(find.text('Leave this page?'), findsOneWidget);
         expect(find.text("You won't see this key again."), findsOneWidget);
         expect(find.byType(ApiKeyCreateScreen), findsOneWidget);
         expect(router.state.uri.toString(), AppRoutes.settingsApiKeyNew);
@@ -591,7 +591,7 @@ void main() {
       await makeKey(tester);
       await tester.binding.handlePopRoute();
       await tester.pumpAndSettle();
-      expect(find.text('Leave without copying?'), findsOneWidget);
+      expect(find.text('Leave this page?'), findsOneWidget);
 
       await tester.binding.handlePopRoute();
       await tester.pumpAndSettle();
@@ -670,7 +670,7 @@ void main() {
 
       await openMenuEntry(tester, 'collection');
 
-      expect(find.text('Leave without copying?'), findsOneWidget);
+      expect(find.text('Leave this page?'), findsOneWidget);
       expect(find.byType(ApiKeyCreateScreen), findsOneWidget);
       expect(router.state.uri.toString(), AppRoutes.settingsApiKeyNew);
 
@@ -745,12 +745,12 @@ void main() {
       await makeKey(tester);
       await tester.pageBack();
       await tester.pumpAndSettle();
-      expect(find.text('Leave without copying?'), findsOneWidget);
+      expect(find.text('Leave this page?'), findsOneWidget);
 
       router.go(AppRoutes.home);
       await tester.pumpAndSettle();
 
-      expect(find.text('Leave without copying?'), findsOneWidget);
+      expect(find.text('Leave this page?'), findsOneWidget);
       expect(router.state.uri.toString(), AppRoutes.settingsApiKeyNew);
 
       await tester.tap(find.byKey(ApiKeyCreateScreen.leaveStayKey));
@@ -828,12 +828,12 @@ void main() {
       // And the page is as guarded as it was.
       router.go(AppRoutes.home);
       await tester.pumpAndSettle();
-      expect(find.text('Leave without copying?'), findsOneWidget);
+      expect(find.text('Leave this page?'), findsOneWidget);
       await tester.tap(find.byKey(ApiKeyCreateScreen.leaveStayKey));
       await tester.pumpAndSettle();
       await tester.pageBack();
       await tester.pumpAndSettle();
-      expect(find.text('Leave without copying?'), findsOneWidget);
+      expect(find.text('Leave this page?'), findsOneWidget);
     });
 
     testWidgets('once the session has ended, a move elsewhere takes the '
@@ -860,7 +860,7 @@ void main() {
       await makeKey(tester);
       await tester.pageBack();
       await tester.pumpAndSettle();
-      expect(find.text('Leave without copying?'), findsOneWidget);
+      expect(find.text('Leave this page?'), findsOneWidget);
 
       states.add(const AppBootstrapNeedsAuth());
       // The sign-in page never settles. The shell leaves over its exit, and
@@ -988,7 +988,7 @@ void main() {
 
       await history.back();
 
-      expect(find.text('Leave without copying?'), findsOneWidget);
+      expect(find.text('Leave this page?'), findsOneWidget);
       expect(find.text("You won't see this key again."), findsOneWidget);
       // Held: the router has taken nothing.
       expect(find.byType(ApiKeyCreateScreen), findsOneWidget);
@@ -1019,7 +1019,7 @@ void main() {
       await tester.pumpAndSettle();
 
       await history.back();
-      expect(find.text('Leave without copying?'), findsOneWidget);
+      expect(find.text('Leave this page?'), findsOneWidget);
       await tester.tap(find.byKey(ApiKeyCreateScreen.leaveConfirmKey));
       await tester.pumpAndSettle();
 
@@ -1055,7 +1055,7 @@ void main() {
       await history.back();
       await history.back();
 
-      expect(find.text('Leave without copying?'), findsOneWidget);
+      expect(find.text('Leave this page?'), findsOneWidget);
       await tester.tap(find.byKey(ApiKeyCreateScreen.leaveStayKey));
       await tester.pumpAndSettle();
 
