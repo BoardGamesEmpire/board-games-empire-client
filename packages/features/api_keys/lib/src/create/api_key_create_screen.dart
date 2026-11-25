@@ -7,6 +7,7 @@ import 'package:api_keys/src/create/api_key_create_leave_guard.dart';
 import 'package:api_keys/src/create/api_key_create_state.dart';
 import 'package:api_keys/src/failure/api_key_failure.dart';
 import 'package:api_keys/src/form/api_key_name_control.dart';
+import 'package:api_keys/src/widgets/api_key_submit_button.dart';
 import 'package:api_keys/src/widgets/critical_confirm_dialog.dart';
 import 'package:api_keys/src/widgets/expiry_control.dart';
 import 'package:api_keys/src/widgets/scope_picker.dart';
@@ -606,8 +607,11 @@ class _ApiKeyCreateState extends State<_ApiKeyCreate> {
                     message: failureMessage,
                   ),
             action: BgeOnlineOnly(
-              child: _CreateButton(
-                submitting: submitting,
+              child: ApiKeySubmitButton(
+                buttonKey: ApiKeyCreateScreen.submitKey,
+                label: l10n.apiKeyCreateSubmit,
+                busyLabel: l10n.apiKeyCreateSubmitting,
+                busy: submitting,
                 onPressed: offline ? null : () => unawaited(_submit()),
                 onFocusNode: (node) => _createFocus = node,
               ),
@@ -617,96 +621,6 @@ class _ApiKeyCreateState extends State<_ApiKeyCreate> {
       ),
     );
   }
-}
-
-/// Create: the form's one filled button. While the create is on its way it
-/// stays enabled and ignores presses, so it keeps focus, and its name says
-/// it is creating (STYLE_GUIDE §5).
-///
-/// It draws as `BgeSubmitButton` does, at rest and busy, but that button
-/// disables itself while busy, and a disabled button can't hold focus: the
-/// press that opened a question, or started the create, would lose its
-/// place. This one is a [BgeInertButton], whose one semantics node is the
-/// same at rest and busy, so nothing a screen reader or a browser holds is
-/// replaced under it.
-///
-/// Its node is a live region while busy, so "Creating key…" is said as it
-/// starts, and not at rest, so that its name coming back after a failure
-/// isn't read over the failure's banner.
-class _CreateButton extends StatelessWidget {
-  const _CreateButton({
-    required this.submitting,
-    required this.onPressed,
-    required this.onFocusNode,
-  });
-
-  final bool submitting;
-
-  /// Checks the form, asks what needs asking, and creates. Null disables
-  /// the button.
-  final VoidCallback? onPressed;
-
-  /// Given the button's focus node as it is built.
-  final ValueChanged<FocusNode> onFocusNode;
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = ApiKeysLocalizations.of(context);
-    final label = submitting
-        ? l10n.apiKeyCreateSubmitting
-        : l10n.apiKeyCreateSubmit;
-
-    // Merged into one node with the button's, by the `BgeOnlineOnly` above.
-    return Semantics(
-      liveRegion: submitting,
-      child: BgeInertButton(
-        inert: submitting,
-        label: label,
-        onPressed: onPressed,
-        builder: (context, focusNode, onPressed) {
-          onFocusNode(focusNode);
-          return SizedBox(
-            width: double.infinity,
-            child: FilledButton(
-              key: ApiKeyCreateScreen.submitKey,
-              focusNode: focusNode,
-              onPressed: onPressed,
-              child: submitting ? _Creating(label: label) : Text(label),
-            ),
-          );
-        },
-      ),
-    );
-  }
-}
-
-/// Create's busy face: a spinner beside its label, which is cut short with
-/// an ellipsis before it overflows the button at a large text size.
-class _Creating extends StatelessWidget {
-  const _Creating({required this.label});
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) => Row(
-    mainAxisAlignment: MainAxisAlignment.center,
-    mainAxisSize: MainAxisSize.min,
-    children: [
-      SizedBox.square(
-        // Scaled with the label it sits beside.
-        dimension: BgeTextScale.clampedOf(
-          context,
-        ).scale(BgeTokens.of(context).spaceMd),
-        child: CircularProgressIndicator(
-          strokeWidth: 2,
-          // The button's own foreground: it is drawn enabled.
-          color: IconTheme.of(context).color,
-        ),
-      ),
-      const BgeGap.sm(axis: Axis.horizontal),
-      Flexible(child: Text(label, overflow: TextOverflow.ellipsis)),
-    ],
-  );
 }
 
 /// Asks before the page that shows a new key's secret is left by Back

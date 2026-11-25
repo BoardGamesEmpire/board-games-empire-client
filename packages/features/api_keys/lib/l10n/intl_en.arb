@@ -641,5 +641,53 @@
   "apiKeyLeaveConfirm": "Leave",
   "@apiKeyLeaveConfirm": {
     "description": "Button in the dialog that asks before leaving the page that shows the new API key: leaves the page. The key is not shown again."
+  },
+  "apiKeyExpiryEditLabel": "Set a new expiry",
+  "@apiKeyExpiryEditLabel": {
+    "description": "Label over the choices of a new lifetime for an existing API key, such as '30 days', on the key's own page. The new expiry is counted from today, and may be earlier or later than the one the key has. 'Keep current' is chosen until the user picks another, and the key keeps its expiry until then."
+  },
+  "apiKeyExpiryKeep": "Keep current",
+  "@apiKeyExpiryKeep": {
+    "description": "First of the choices under 'Set a new expiry' on an API key's own page, beside '30 days' and the others: the key keeps the expiry it has. Chosen until the user picks another, and picking it again takes that pick back."
+  },
+  "apiKeySaveSubmit": "Save changes",
+  "@apiKeySaveSubmit": {
+    "description": "Button at the end of the form on an API key's own page: sends a new name, new permissions or a new expiry to the server."
+  },
+  "apiKeySaveSubmitting": "Saving changes…",
+  "@apiKeySaveSubmitting": {
+    "description": "The name of the 'Save changes' button while the changes to an API key are on their way to the server. Read out by screen readers."
+  },
+  "apiKeySaved": "Saved",
+  "@apiKeySaved": {
+    "description": "Shown above the 'Save changes' button once the server has saved the changes to an API key. The page then shows the key as the server saved it."
+  },
+  "apiKeyNothingToSave": "Nothing to save",
+  "@apiKeyNothingToSave": {
+    "description": "Shown above the 'Save changes' button when it is pressed with nothing changed: the name, the permissions and the expiry are as the API key has them, so nothing is sent."
+  },
+  "apiKeySaveFailed": "Couldn't save changes to {name}",
+  "@apiKeySaveFailed": {
+    "description": "Title of the message shown above the 'Save changes' button when saving the changes to an API key failed. The reason follows it. {name} is the key's name, or 'Unnamed key'.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "CI deploy"
+      }
+    }
+  },
+  "apiKeySavedDone": "Saved changes to {name}",
+  "@apiKeySavedDone": {
+    "description": "Said in a passing message once changes to an API key have been saved, when the user had already left the key's page while they were on their way. {name} is the key's name as saved, or 'Unnamed key'.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "CI deploy"
+      }
+    }
+  },
+  "apiKeyScopesNotEditable": "Couldn't load the permissions you can give, so this key's permissions can't be changed now. Open this page again to try.",
+  "@apiKeyScopesNotEditable": {
+    "description": "Under the permissions on an API key's own page, when the list of permissions the user may give a key couldn't be read from the server. The key's permissions are shown, but can't be changed. Renaming the key and setting a new expiry still work."
   }
 }

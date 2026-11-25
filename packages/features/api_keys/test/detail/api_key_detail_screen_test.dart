@@ -9,6 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
+import 'package:ui/ui.dart';
 
 import '../support/fixtures.dart';
 import '../support/harness.dart';
@@ -49,9 +50,25 @@ void main() {
     lastUsedAt: used,
   ).copyWith(createdAt: DateTime(2026, 11, 1, 12));
 
+  // Critical, and not held by [key]: what an edit that adds one adds.
+  final managePlugins = permission(
+    'plugins:manage',
+    description: 'Manage your plugins',
+    riskLevel: RiskLevel.critical,
+  );
+
+  // The expiry a save that sets a new one answers with.
+  final renewed = DateTime.utc(2027, 6, 1, 12);
+
   const transient = ApiKeyTransientException('down');
+  const needsConfirmation = ApiKeyCriticalNeedsConfirmationException('no');
   const unreachable =
       "Couldn't reach the server. Check your connection, then try again.";
+  const criticalQuestion = 'Give this key Critical permissions?';
+  const saveFailedTitle = "Couldn't save changes to CI deploy";
+  const notEditable =
+      "Couldn't load the permissions you can give, so this key's permissions "
+      "can't be changed now. Open this page again to try.";
 
   setUpAll(() => registerFallbackValue(const ApiKeyPatch()));
 
@@ -90,7 +107,7 @@ void main() {
 
   /// What a screen reader reads for the row whose title is [title].
   String rowLabel(WidgetTester tester, String title) =>
-      tester.getSemantics(find.text(title)).label;
+      tester.getSemantics(find.text(title)).getSemanticsData().label;
 
   Finder enabledSwitch() => find.byKey(ApiKeyDetailScreen.enabledKey);
 
@@ -124,14 +141,132 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  /// Taps the Enabled switch, which sits below the edit form.
+  Future<void> tapSwitch(WidgetTester tester) async {
+    await tester.ensureVisible(enabledSwitch());
+    await tester.pumpAndSettle();
+    await tester.tap(enabledSwitch());
+  }
+
+  Finder nameField() => find.byKey(ApiKeyDetailScreen.nameKey);
+
+  EditableText nameInput(WidgetTester tester) => tester.widget<EditableText>(
+    find.descendant(of: nameField(), matching: find.byType(EditableText)),
+  );
+
+  Finder saveButton() => find.byKey(ApiKeyDetailScreen.saveKey);
+
+  FocusNode saveFocus(WidgetTester tester) =>
+      tester.widget<FilledButton>(saveButton()).focusNode!;
+
+  Finder savedBanner() => find.byKey(ApiKeyDetailScreen.savedKey);
+
+  Finder nothingToSaveBanner() =>
+      find.byKey(ApiKeyDetailScreen.nothingToSaveKey);
+
+  Finder saveFailedBanner() => find.byKey(ApiKeyDetailScreen.saveFailedKey);
+
+  ScopePicker picker(WidgetTester tester) =>
+      tester.widget<ScopePicker>(find.byType(ScopePicker));
+
+  ExpiryControl expiry(WidgetTester tester) =>
+      tester.widget<ExpiryControl>(find.byType(ExpiryControl));
+
+  /// The picker's row for [scope]: a grantable permission's by its unpinned
+  /// scope, a held one's by itself.
+  Finder scopeRow(ApiKeyScope scope) => find.byKey(ScopePicker.rowKey(scope));
+
+  /// What a screen reader reads for the picker's row for [scope].
+  String scopeRowLabel(WidgetTester tester, ApiKeyScope scope) =>
+      tester.getSemantics(scopeRow(scope)).getSemanticsData().label;
+
+  Future<void> rename(WidgetTester tester, String name) async {
+    await tester.enterText(nameField(), name);
+    await tester.pumpAndSettle();
+  }
+
+  /// Ticks or unticks the grantable permission [slug].
+  Future<void> tick(WidgetTester tester, String slug) async {
+    final row = scopeRow(ApiKeyScope(slug: slug));
+    await tester.ensureVisible(row);
+    await tester.pumpAndSettle();
+    await tester.tap(row);
+    await tester.pumpAndSettle();
+  }
+
+  /// Picks the expiry chip labelled [chip].
+  Future<void> pickExpiry(WidgetTester tester, String chip) async {
+    await tester.ensureVisible(find.text(chip));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(chip));
+    await tester.pumpAndSettle();
+  }
+
+  Finder customDaysField() => find.ancestor(
+    of: find.text('Number of days'),
+    matching: find.byType(BgeTextField),
+  );
+
+  /// Presses Save, and lets whatever it opens or answers arrive. For a save
+  /// that is held, use [pressSaveHeld].
+  Future<void> pressSave(WidgetTester tester) async {
+    await tester.ensureVisible(saveButton());
+    await tester.pumpAndSettle();
+    await tester.tap(saveButton());
+    await tester.pumpAndSettle();
+  }
+
+  /// Presses Save from the keyboard, with focus on it, and does not wait for
+  /// a spinner to settle.
+  Future<void> pressSaveHeld(WidgetTester tester) async {
+    await tester.ensureVisible(saveButton());
+    await tester.pumpAndSettle();
+    saveFocus(tester).requestFocus();
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await pumpEvent(tester);
+  }
+
+  /// Every patch sent since the last look, in order.
+  List<ApiKeyPatch> patchesSent() => verify(
+    () => remote.update('k_1', captureAny()),
+  ).captured.cast<ApiKeyPatch>();
+
+  /// The one patch sent since the last look.
+  ApiKeyPatch patchSent() => patchesSent().single;
+
+  /// Answers each update as the server would: [from] with the patch applied,
+  /// and a new expiry of [renewed].
+  void serverApplies(ApiKey from) {
+    var current = from;
+    when(() => remote.update('k_1', any())).thenAnswer((invocation) async {
+      final patch = invocation.positionalArguments[1] as ApiKeyPatch;
+      return current = current.copyWith(
+        name: patch.name ?? current.name,
+        scopes: patch.scopes ?? current.scopes,
+        enabled: patch.enabled ?? current.enabled,
+        expiresAt: patch.expiresInDays == null ? current.expiresAt : renewed,
+      );
+    });
+  }
+
+  /// Offers [managePlugins] beside the permissions every test offers.
+  void offerPlugins() => answerGrantable(remote, [
+    readCollection,
+    manageUsers,
+    manageHooks,
+    managePlugins,
+  ]);
+
   group('reading', () {
     testWidgets('the key reads its name, start, permissions, dates and '
         'whether it works', (tester) async {
       await show(tester);
 
       // The name heads the page as well as the app bar, which cuts a long
-      // one short at 200% text.
-      expect(find.text('CI deploy'), findsNWidgets(2));
+      // one short at 200% text, and starts the name field.
+      expect(find.text('CI deploy'), findsNWidgets(3));
+      expect(nameInput(tester).controller.text, 'CI deploy');
       for (final words in [
         'bge_a1B2…',
         '2 permissions, highest risk Critical',
@@ -183,9 +318,17 @@ void main() {
       );
       await show(tester);
 
+      // Its permission may be given unpinned too, which is a row of its own.
       expect(
-        rowLabel(tester, 'Manage your webhook subscriptions'),
+        scopeRowLabel(
+          tester,
+          const ApiKeyScope(slug: 'webhooks:manage', resourceId: 'wh_1'),
+        ),
         allOf(contains('Risk: High'), contains('Limited to one record')),
+      );
+      expect(
+        scopeRowLabel(tester, const ApiKeyScope(slug: 'webhooks:manage')),
+        isNot(contains('Limited to one record')),
       );
       expect(
         rowLabel(tester, 'Read your game collection'),
@@ -230,7 +373,7 @@ void main() {
       );
       await show(tester);
 
-      expect(find.text('CI deploy'), findsNWidgets(2));
+      expect(find.text('CI deploy'), findsNWidgets(3));
       expect(find.text('2 permissions'), findsOneWidget);
       expect(
         find.text(
@@ -253,15 +396,25 @@ void main() {
     testWidgets('a key with no permissions says it works nowhere until it has '
         'some', (tester) async {
       answerKey(remote, apiKey('k_1', scopes: const []));
+      final semantics = tester.ensureSemantics();
       await show(tester);
 
+      // The permissions to tick say it, under them.
+      final warning = find.text('With no permissions, this key works nowhere.');
+      expect(warning, findsOneWidget);
+      // How the key is, not news: not said over the page as it opens.
       expect(
-        find.text(
-          'This key has no permissions, so it works nowhere until it is '
-          'given some.',
-        ),
-        findsOneWidget,
+        tester
+            .widget<BgeInlineBanner>(
+              find.ancestor(
+                of: warning,
+                matching: find.byType(BgeInlineBanner),
+              ),
+            )
+            .announce,
+        isFalse,
       );
+      semantics.dispose();
     });
 
     testWidgets('an unnamed key and one that never expires or was never used '
@@ -321,7 +474,7 @@ void main() {
       retried.complete(key);
       await tester.pumpAndSettle();
       expect(reads, 2);
-      expect(find.text('CI deploy'), findsNWidgets(2));
+      expect(find.text('CI deploy'), findsNWidgets(3));
     });
 
     testWidgets("a load the server refused says why in the server's words", (
@@ -350,14 +503,15 @@ void main() {
     ) async {
       answerKey(remote, apiKey('k_2', name: 'Backup'));
       await show(tester);
-      expect(find.text('CI deploy'), findsNWidgets(2));
+      expect(find.text('CI deploy'), findsNWidgets(3));
 
       // The router keeps the page for a go to another id of the same route,
       // and builds the screen again with the new id.
       await tester.pumpWidget(screen(id: 'k_2'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Backup'), findsNWidgets(2));
+      // Its form too starts from the new key.
+      expect(find.text('Backup'), findsNWidgets(3));
       expect(find.text('CI deploy'), findsNothing);
       verifyInOrder([() => remote.fetch('k_1'), () => remote.fetch('k_2')]);
     });
@@ -371,7 +525,7 @@ void main() {
       ).thenAnswer((_) async => key.copyWith(enabled: false));
       await show(tester);
 
-      await tester.tap(enabledSwitch());
+      await tapSwitch(tester);
       await tester.pumpAndSettle();
 
       verify(
@@ -394,6 +548,8 @@ void main() {
       ).thenAnswer((_) => answer.future);
       final semantics = tester.ensureSemantics();
       await show(tester);
+      await tester.ensureVisible(enabledSwitch());
+      await tester.pumpAndSettle();
 
       switchFocus(tester).requestFocus();
       await tester.pump();
@@ -478,9 +634,8 @@ void main() {
   });
 
   group('offline', () {
-    testWidgets('offline, the switch and Delete are disabled and say why', (
-      tester,
-    ) async {
+    testWidgets('offline, the switch, Delete and Save are disabled and say '
+        'why', (tester) async {
       final semantics = tester.ensureSemantics();
       await show(tester, offline: true);
 
@@ -494,8 +649,16 @@ void main() {
         tester.getSemantics(deleteButton()).getSemanticsData().hint,
         onlineOnlyCopy,
       );
-      // Drawn once for each control: in the switch's label, under Delete.
-      expect(find.text(onlineOnlyCopy), findsNWidgets(2));
+      expect(tester.widget<FilledButton>(saveButton()).onPressed, isNull);
+      expect(
+        tester.getSemantics(saveButton()).getSemanticsData().hint,
+        onlineOnlyCopy,
+      );
+      // Drawn once for each control: in the switch's label, under Delete,
+      // under Save.
+      expect(find.text(onlineOnlyCopy), findsNWidgets(3));
+      // The form is no direct write: it can be filled in, to save later.
+      expect(nameInput(tester).readOnly, isFalse);
       semantics.dispose();
     });
   });
@@ -633,7 +796,7 @@ void main() {
         'again as news when the dialog closes', (tester) async {
       when(() => remote.update('k_1', any())).thenThrow(transient);
       await show(tester);
-      await tester.tap(enabledSwitch());
+      await tapSwitch(tester);
       await tester.pumpAndSettle();
       expect(find.byKey(ApiKeyDetailScreen.toggleFailedKey), findsOneWidget);
 
@@ -720,7 +883,7 @@ void main() {
         () => remote.update('k_1', any()),
       ).thenAnswer((_) => answer.future);
       await showPushed(tester);
-      await tester.tap(enabledSwitch());
+      await tapSwitch(tester);
       await pumpEvent(tester);
       tester.state<NavigatorState>(find.byType(Navigator)).pop();
       await tester.pumpAndSettle();
@@ -732,42 +895,979 @@ void main() {
     });
   });
 
-  testWidgets('320dp at 2.0 lays out the key without overflow', (
-    tester,
-  ) async {
-    useViewSize(tester, const Size(320, 800));
-    tester.platformDispatcher.textScaleFactorTestValue = 2;
-    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
-    answerKey(
-      remote,
-      apiKey(
-        'k_1',
-        name: 'A rather long name of 32 chars!!',
-        scopes: const [
+  group('editing', () {
+    testWidgets('the form starts from the key: its name, the permissions it '
+        'holds ticked, no new expiry, and Save changes, above Enabled and '
+        'Delete', (tester) async {
+      await show(tester);
+
+      expect(nameInput(tester).controller.text, 'CI deploy');
+      final scopes = picker(tester);
+      expect(scopes.offerEverything, isFalse);
+      expect(find.byKey(ScopePicker.everythingKey), findsNothing);
+      expect(scopes.held, key.scopes);
+      expect(
+        scopes.selection,
+        const PickedScopes([
           ApiKeyScope(slug: 'collection:read'),
           ApiKeyScope(slug: 'users:manage'),
-          ApiKeyScope(slug: 'webhooks:manage', resourceId: 'wh_1'),
-          ApiKeyScope(slug: 'events:delete'),
-        ],
-        expiresAt: expires,
-        lastUsedAt: used,
-      ),
-    );
-    when(() => remote.delete('k_1')).thenThrow(transient);
+        ]),
+      );
+      expect(expiry(tester).days, isNull);
+      expect(expiry(tester).label, 'Set a new expiry');
+      expect(find.text('Save changes'), findsOneWidget);
+      // The facts still say when the key expires now.
+      expect(find.text('Expires Feb 1, 2027'), findsOneWidget);
+      expect(
+        tester.getTopLeft(saveButton()).dy,
+        lessThan(tester.getTopLeft(enabledSwitch()).dy),
+      );
+      expect(
+        tester.getTopLeft(enabledSwitch()).dy,
+        lessThan(tester.getTopLeft(deleteButton()).dy),
+      );
+    });
 
-    await show(tester);
-    await confirmDelete(tester);
+    testWidgets('a rename sends no scopes', (tester) async {
+      // The key holds a permission its owner may no longer give: sending
+      // the key's scopes back would be refused over it.
+      answerKey(
+        remote,
+        apiKey(
+          'k_1',
+          scopes: const [
+            ApiKeyScope(slug: 'events:delete'),
+            ApiKeyScope(slug: 'collection:read'),
+          ],
+        ),
+      );
+      when(
+        () => remote.update('k_1', any()),
+      ).thenAnswer((_) async => key.copyWith(name: 'Renamed'));
+      await show(tester);
 
-    expect(tester.takeException(), isNull);
-    expect(find.byKey(ApiKeyDetailScreen.deleteFailedKey), findsOneWidget);
+      await rename(tester, '  Renamed ');
+      await pressSave(tester);
+
+      // Trimmed, and nothing else: no scopes, expiry, enabled or
+      // confirmCritical.
+      expect(patchSent(), const ApiKeyPatch(name: 'Renamed'));
+    });
+
+    testWidgets('a scope edit drops a no-longer-grantable scope and keeps '
+        'pins', (tester) async {
+      const pinned = ApiKeyScope(slug: 'webhooks:manage', resourceId: 'wh_1');
+      const gone = ApiKeyScope(slug: 'events:delete');
+      answerKey(
+        remote,
+        apiKey(
+          'k_1',
+          scopes: const [
+            pinned,
+            gone,
+            ApiKeyScope(slug: 'collection:read'),
+          ],
+        ),
+      );
+      serverApplies(key);
+      final semantics = tester.ensureSemantics();
+      await show(tester);
+      // The pin is held, so ticked, and can't be changed here.
+      final pinRow = tester.getSemantics(scopeRow(pinned));
+      expect(
+        pinRow.getSemanticsData().label,
+        contains('Limited to one record'),
+      );
+      expect(
+        pinRow,
+        isSemantics(isChecked: true, isReadOnly: true, isEnabled: true),
+      );
+      expect(scopeRowLabel(tester, gone), contains('No longer available'));
+      expect(
+        scopeRowLabel(tester, gone),
+        isNot(contains('saving removes it')),
+      );
+
+      await tick(tester, 'webhooks:manage');
+
+      expect(
+        scopeRowLabel(tester, gone),
+        contains('No longer available; saving removes it'),
+      );
+      await pressSave(tester);
+
+      final patch = patchSent();
+      expect(
+        patch.scopes,
+        unorderedEquals(const [
+          pinned,
+          ApiKeyScope(slug: 'collection:read'),
+          ApiKeyScope(slug: 'webhooks:manage'),
+        ]),
+      );
+      expect(patch.name, isNull);
+      expect(patch.expiresInDays, isNull);
+      // Nothing Critical was added.
+      expect(patch.confirmCritical, isFalse);
+      semantics.dispose();
+    });
+
+    testWidgets('unticking a permission sends the rest, the pin as it was', (
+      tester,
+    ) async {
+      const pinned = ApiKeyScope(slug: 'webhooks:manage', resourceId: 'wh_1');
+      answerKey(
+        remote,
+        apiKey(
+          'k_1',
+          scopes: const [
+            pinned,
+            ApiKeyScope(slug: 'collection:read'),
+          ],
+        ),
+      );
+      serverApplies(key);
+      await show(tester);
+
+      await tick(tester, 'collection:read');
+      await pressSave(tester);
+
+      expect(patchSent(), const ApiKeyPatch(scopes: [pinned]));
+    });
+
+    testWidgets('a new expiry sends expiresInDays alone', (tester) async {
+      serverApplies(key);
+      await show(tester);
+
+      await pickExpiry(tester, '30 days');
+      await pressSave(tester);
+
+      expect(patchSent(), const ApiKeyPatch(expiresInDays: 30));
+    });
+
+    testWidgets('Keep current takes back a mistaken expiry, so a rename sends '
+        'the name alone', (tester) async {
+      serverApplies(key);
+      await show(tester);
+
+      await pickExpiry(tester, '30 days');
+      await rename(tester, 'Renamed');
+      await pickExpiry(tester, 'Keep current');
+      await pressSave(tester);
+
+      expect(patchSent(), const ApiKeyPatch(name: 'Renamed'));
+    });
+
+    testWidgets('a custom expiry sends its days, and once saved the form '
+        'has none chosen', (tester) async {
+      serverApplies(key);
+      await show(tester);
+
+      await pickExpiry(tester, 'Custom');
+      await tester.enterText(customDaysField(), '12');
+      await tester.pumpAndSettle();
+      await pressSave(tester);
+
+      expect(patchSent(), const ApiKeyPatch(expiresInDays: 12));
+      // The key's new expiry is a fact now; the choice starts again empty.
+      expect(find.text('Expires Jun 1, 2027'), findsOneWidget);
+      expect(expiry(tester).days, isNull);
+      expect(customDaysField(), findsNothing);
+      expect(
+        tester
+            .widget<ChoiceChip>(
+              find.ancestor(
+                of: find.text('Custom'),
+                matching: find.byType(ChoiceChip),
+              ),
+            )
+            .selected,
+        isFalse,
+      );
+      await pressSave(tester);
+      expect(nothingToSaveBanner(), findsOneWidget);
+    });
+
+    testWidgets('nothing changed sends nothing', (tester) async {
+      await show(tester);
+
+      await pressSave(tester);
+
+      verifyNever(() => remote.update(any(), any()));
+      expect(
+        find.descendant(
+          of: nothingToSaveBanner(),
+          matching: find.text('Nothing to save'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        tester.getTopLeft(nothingToSaveBanner()).dy,
+        lessThan(tester.getTopLeft(saveButton()).dy),
+      );
+    });
+
+    testWidgets('a name typed back as it was, spaces and all, is nothing to '
+        'save', (tester) async {
+      await show(tester);
+
+      await rename(tester, 'Something else');
+      await rename(tester, ' CI deploy  ');
+      await pressSave(tester);
+
+      verifyNever(() => remote.update(any(), any()));
+      expect(nothingToSaveBanner(), findsOneWidget);
+    });
+
+    testWidgets('a save that goes through says Saved, shows the key as the '
+        'server answered it, and starts the form from it again', (
+      tester,
+    ) async {
+      serverApplies(key);
+      final semantics = tester.ensureSemantics();
+      await show(tester);
+
+      await rename(tester, 'Renamed');
+      await tick(tester, 'webhooks:manage');
+      await pickExpiry(tester, '30 days');
+      await pressSave(tester);
+
+      expect(
+        patchSent(),
+        const ApiKeyPatch(
+          name: 'Renamed',
+          scopes: [
+            ApiKeyScope(slug: 'collection:read'),
+            ApiKeyScope(slug: 'users:manage'),
+            ApiKeyScope(slug: 'webhooks:manage'),
+          ],
+          expiresInDays: 30,
+        ),
+      );
+      expect(
+        find.descendant(of: savedBanner(), matching: find.text('Saved')),
+        findsOneWidget,
+      );
+      // The app bar, the heading and the field.
+      expect(find.text('Renamed'), findsNWidgets(3));
+      expect(find.text('Expires Jun 1, 2027'), findsOneWidget);
+      expect(find.text('3 permissions, highest risk Critical'), findsOneWidget);
+      expect(
+        picker(tester).selection,
+        const PickedScopes([
+          ApiKeyScope(slug: 'collection:read'),
+          ApiKeyScope(slug: 'users:manage'),
+          ApiKeyScope(slug: 'webhooks:manage'),
+        ]),
+      );
+      expect(expiry(tester).days, isNull);
+      // The banner stays: starting the form again is not an edit.
+      await tester.pump(const Duration(seconds: 1));
+      expect(savedBanner(), findsOneWidget);
+
+      // So nothing differs from the key any more.
+      await pressSave(tester);
+      verifyNever(() => remote.update(any(), any()));
+      expect(nothingToSaveBanner(), findsOneWidget);
+      semantics.dispose();
+    });
+
+    testWidgets('an edit retires Saved, Nothing to save and a failed save', (
+      tester,
+    ) async {
+      serverApplies(key);
+      await show(tester);
+
+      await pressSave(tester);
+      expect(nothingToSaveBanner(), findsOneWidget);
+      await rename(tester, 'Renamed');
+      expect(nothingToSaveBanner(), findsNothing);
+
+      await pressSave(tester);
+      expect(savedBanner(), findsOneWidget);
+      await tick(tester, 'webhooks:manage');
+      expect(savedBanner(), findsNothing);
+
+      when(() => remote.update('k_1', any())).thenThrow(transient);
+      await pressSave(tester);
+      expect(saveFailedBanner(), findsOneWidget);
+      await pickExpiry(tester, '30 days');
+      expect(saveFailedBanner(), findsNothing);
+
+      await pressSave(tester);
+      expect(saveFailedBanner(), findsOneWidget);
+      await rename(tester, 'Renamed again');
+      expect(saveFailedBanner(), findsNothing);
+    });
+
+    testWidgets("an edit leaves a failed toggle's banner, which is about the "
+        'switch', (tester) async {
+      when(() => remote.update('k_1', any())).thenThrow(transient);
+      await show(tester);
+      await tapSwitch(tester);
+      await tester.pumpAndSettle();
+      expect(find.byKey(ApiKeyDetailScreen.toggleFailedKey), findsOneWidget);
+
+      await rename(tester, 'Renamed');
+      await tick(tester, 'webhooks:manage');
+
+      expect(find.byKey(ApiKeyDetailScreen.toggleFailedKey), findsOneWidget);
+    });
+
+    testWidgets('an empty name is refused and focused, and nothing is sent', (
+      tester,
+    ) async {
+      await show(tester);
+
+      await rename(tester, '   ');
+      await pressSave(tester);
+
+      verifyNever(() => remote.update(any(), any()));
+      expect(find.text('Enter a name for the key.'), findsOneWidget);
+      expect(nameInput(tester).focusNode.hasFocus, isTrue);
+      expect(nothingToSaveBanner(), findsNothing);
+    });
+
+    testWidgets('a custom expiry that is no number of days is refused and '
+        'focused, and nothing is sent', (tester) async {
+      await show(tester);
+
+      await pickExpiry(tester, 'Custom');
+      await tester.enterText(customDaysField(), '400');
+      await tester.pumpAndSettle();
+      FocusManager.instance.primaryFocus?.unfocus();
+      await tester.pumpAndSettle();
+      await pressSave(tester);
+
+      verifyNever(() => remote.update(any(), any()));
+      expect(
+        find.text('Enter a whole number of days from 1 to 365.'),
+        findsOneWidget,
+      );
+      final field = tester.widget<EditableText>(
+        find.descendant(
+          of: customDaysField(),
+          matching: find.byType(EditableText),
+        ),
+      );
+      expect(field.focusNode.hasFocus, isTrue);
+      expect(nothingToSaveBanner(), findsNothing);
+    });
+
+    group('a Critical permission', () {
+      testWidgets('adding a Critical permission asks; keeping one already '
+          'held does not', (tester) async {
+        offerPlugins();
+        serverApplies(key);
+        await show(tester);
+
+        // The key holds Manage every user, which is Critical: an edit that
+        // keeps it asks nothing.
+        await tick(tester, 'webhooks:manage');
+        await pressSave(tester);
+
+        expect(find.text(criticalQuestion), findsNothing);
+        expect(patchSent().confirmCritical, isFalse);
+
+        // One it doesn't hold asks, and names that one alone.
+        await tick(tester, 'plugins:manage');
+        await pressSave(tester);
+
+        expect(find.text(criticalQuestion), findsOneWidget);
+        final dialog = find.byType(AlertDialog);
+        expect(
+          find.descendant(
+            of: dialog,
+            matching: find.text('Manage your plugins'),
+          ),
+          findsOneWidget,
+        );
+        expect(
+          find.descendant(of: dialog, matching: find.text('Manage every user')),
+          findsNothing,
+        );
+        verifyNever(() => remote.update(any(), any()));
+
+        await tester.tap(find.byKey(CriticalConfirmDialog.confirmKey));
+        await tester.pumpAndSettle();
+
+        final patch = patchSent();
+        expect(patch.confirmCritical, isTrue);
+        expect(
+          patch.scopes,
+          contains(const ApiKeyScope(slug: 'plugins:manage')),
+        );
+        expect(savedBanner(), findsOneWidget);
+      });
+
+      testWidgets('cancelling the question sends nothing, and keeps the '
+          'edits', (tester) async {
+        offerPlugins();
+        await show(tester);
+        await tick(tester, 'plugins:manage');
+
+        await pressSave(tester);
+        await tester.tap(find.byKey(CriticalConfirmDialog.cancelKey));
+        await tester.pumpAndSettle();
+
+        verifyNever(() => remote.update(any(), any()));
+        expect(find.byType(AlertDialog), findsNothing);
+        expect(saveFailedBanner(), findsNothing);
+        expect(
+          (picker(tester).selection as PickedScopes).scopes,
+          contains(const ApiKeyScope(slug: 'plugins:manage')),
+        );
+      });
+
+      testWidgets('pressing Save again retires a failed save before a '
+          'question opens over it', (tester) async {
+        offerPlugins();
+        when(() => remote.update('k_1', any())).thenThrow(transient);
+        await show(tester);
+        await tick(tester, 'plugins:manage');
+        await pressSave(tester);
+        await tester.tap(find.byKey(CriticalConfirmDialog.confirmKey));
+        await tester.pumpAndSettle();
+        expect(saveFailedBanner(), findsOneWidget);
+
+        await pressSave(tester);
+
+        // Left under the question's barrier, it would be read again as news
+        // when the question closes.
+        expect(find.text(criticalQuestion), findsOneWidget);
+        expect(saveFailedBanner(), findsNothing);
+      });
+
+      testWidgets("a failed toggle's banner goes too before a question opens "
+          'over it', (tester) async {
+        offerPlugins();
+        when(() => remote.update('k_1', any())).thenThrow(transient);
+        await show(tester);
+        await tapSwitch(tester);
+        await tester.pumpAndSettle();
+        await tick(tester, 'plugins:manage');
+        expect(find.byKey(ApiKeyDetailScreen.toggleFailedKey), findsOneWidget);
+
+        await pressSave(tester);
+
+        expect(find.text(criticalQuestion), findsOneWidget);
+        expect(find.byKey(ApiKeyDetailScreen.toggleFailedKey), findsNothing);
+      });
+
+      testWidgets("a screen reader's Save has focus back when the question "
+          'closes', (tester) async {
+        offerPlugins();
+        final semantics = tester.ensureSemantics();
+        await show(tester);
+        await tick(tester, 'plugins:manage');
+        await tester.ensureVisible(saveButton());
+        await tester.pumpAndSettle();
+
+        // A double tap with a screen reader moves no input focus of its own.
+        tester.semantics.tap(find.semantics.byLabel('Save changes'));
+        await tester.pumpAndSettle();
+        expect(find.text(criticalQuestion), findsOneWidget);
+        await tester.tap(find.byKey(CriticalConfirmDialog.cancelKey));
+        await tester.pumpAndSettle();
+
+        expect(saveFocus(tester).hasPrimaryFocus, isTrue);
+        semantics.dispose();
+      });
+
+      group('the server finds one the page did not', () {
+        // The page was read before the permission became Critical.
+        final wasHigh = permission(
+          'plugins:manage',
+          description: 'Manage your plugins',
+          riskLevel: RiskLevel.high,
+        );
+
+        void permissionsChangeUnderThePage() {
+          var reads = 0;
+          when(remote.fetchGrantable).thenAnswer(
+            (_) async => [
+              readCollection,
+              manageUsers,
+              manageHooks,
+              if (reads++ == 0) wasHigh else managePlugins,
+            ],
+          );
+        }
+
+        testWidgets('a server CRITICAL_NEEDS_CONFIRMATION asks, then saves '
+            'once more, confirmed', (tester) async {
+          permissionsChangeUnderThePage();
+          var calls = 0;
+          when(() => remote.update('k_1', any())).thenAnswer((_) async {
+            if (calls++ == 0) throw needsConfirmation;
+            return key;
+          });
+          await show(tester);
+          await tick(tester, 'plugins:manage');
+
+          await pressSave(tester);
+
+          // Nothing new was Critical when the page asked, so it sent
+          // unconfirmed; the server's answer asks, naming the permission
+          // from the list read again.
+          expect(find.text(criticalQuestion), findsOneWidget);
+          expect(
+            find.descendant(
+              of: find.byType(AlertDialog),
+              matching: find.text('Manage your plugins'),
+            ),
+            findsOneWidget,
+          );
+          // The question says it: no banner under it says it again.
+          expect(saveFailedBanner(), findsNothing);
+
+          await tester.tap(find.byKey(CriticalConfirmDialog.confirmKey));
+          await tester.pumpAndSettle();
+
+          final patches = patchesSent();
+          expect(patches.map((patch) => patch.confirmCritical), [false, true]);
+          expect(patches.last.scopes, patches.first.scopes);
+          expect(savedBanner(), findsOneWidget);
+        });
+
+        testWidgets('a second one is a failure, not another question', (
+          tester,
+        ) async {
+          permissionsChangeUnderThePage();
+          when(
+            () => remote.update('k_1', any()),
+          ).thenThrow(needsConfirmation);
+          await show(tester);
+          await tick(tester, 'plugins:manage');
+          await pressSave(tester);
+
+          await tester.tap(find.byKey(CriticalConfirmDialog.confirmKey));
+          await tester.pumpAndSettle();
+
+          expect(find.byType(AlertDialog), findsNothing);
+          expect(
+            find.descendant(
+              of: saveFailedBanner(),
+              matching: find.text(
+                'A Critical permission needs your confirmation first.',
+              ),
+            ),
+            findsOneWidget,
+          );
+          expect(patchesSent(), hasLength(2));
+        });
+
+        testWidgets('cancelling it sends nothing more and leaves no failure', (
+          tester,
+        ) async {
+          permissionsChangeUnderThePage();
+          when(
+            () => remote.update('k_1', any()),
+          ).thenThrow(needsConfirmation);
+          await show(tester);
+          await tick(tester, 'plugins:manage');
+          await pressSave(tester);
+
+          await tester.tap(find.byKey(CriticalConfirmDialog.cancelKey));
+          await tester.pumpAndSettle();
+
+          expect(patchesSent(), hasLength(1));
+          expect(saveFailedBanner(), findsNothing);
+          expect(find.text('Save changes'), findsOneWidget);
+        });
+      });
+    });
+
+    group('a refusal', () {
+      testWidgets('needs recent sign-in on save says sign out and in again', (
+        tester,
+      ) async {
+        offerPlugins();
+        when(() => remote.update('k_1', any())).thenThrow(
+          const ApiKeyNeedsRecentSignInException('stale', apiMessage: 'Again.'),
+        );
+        await show(tester);
+        await tick(tester, 'plugins:manage');
+        await pressSave(tester);
+
+        await tester.tap(find.byKey(CriticalConfirmDialog.confirmKey));
+        await tester.pumpAndSettle();
+
+        final banner = saveFailedBanner();
+        expect(banner, findsOneWidget);
+        expect(
+          find.descendant(of: banner, matching: find.text(saveFailedTitle)),
+          findsOneWidget,
+        );
+        expect(
+          find.descendant(
+            of: banner,
+            matching: find.text(
+              'Giving a key a Critical permission needs a recent sign-in. '
+              'Sign out, sign in again, then try once more.',
+            ),
+          ),
+          findsOneWidget,
+        );
+        // Text only: signing in again without leaving the page is #1113.
+        expect(tester.widget<BgeInlineBanner>(banner).action, isNull);
+        // On the button it answers.
+        expect(
+          tester.getTopLeft(banner).dy,
+          lessThan(tester.getTopLeft(saveButton()).dy),
+        );
+      });
+
+      testWidgets('a save failure keeps the edits on screen', (tester) async {
+        when(() => remote.update('k_1', any())).thenThrow(transient);
+        await show(tester);
+        await rename(tester, 'Renamed');
+        await tick(tester, 'webhooks:manage');
+        await pickExpiry(tester, '30 days');
+
+        await pressSave(tester);
+
+        expect(
+          find.descendant(
+            of: saveFailedBanner(),
+            matching: find.text(saveFailedTitle),
+          ),
+          findsOneWidget,
+        );
+        expect(
+          find.descendant(
+            of: saveFailedBanner(),
+            matching: find.text(unreachable),
+          ),
+          findsOneWidget,
+        );
+        expect(nameInput(tester).controller.text, 'Renamed');
+        expect(
+          picker(tester).selection,
+          const PickedScopes([
+            ApiKeyScope(slug: 'collection:read'),
+            ApiKeyScope(slug: 'users:manage'),
+            ApiKeyScope(slug: 'webhooks:manage'),
+          ]),
+        );
+        expect(expiry(tester).days, 30);
+        // The key is as it was.
+        expect(find.text('CI deploy'), findsNWidgets(2));
+        expect(find.text('Expires Feb 1, 2027'), findsOneWidget);
+
+        // Sent again as it stands.
+        when(
+          () => remote.update('k_1', any()),
+        ).thenAnswer((_) async => key);
+        await pressSave(tester);
+        final patches = patchesSent();
+        expect(patches, hasLength(2));
+        expect(patches.last, patches.first);
+      });
+
+      testWidgets('one that names a permission is said on its row too', (
+        tester,
+      ) async {
+        when(() => remote.update('k_1', any())).thenThrow(
+          const ApiKeyScopeNotGrantableException('no', slug: 'webhooks:manage'),
+        );
+        final semantics = tester.ensureSemantics();
+        await show(tester);
+        await tick(tester, 'webhooks:manage');
+
+        await pressSave(tester);
+
+        const words =
+            "You can't give a key the permission Manage your webhook "
+            'subscriptions.';
+        expect(
+          find.descendant(of: saveFailedBanner(), matching: find.text(words)),
+          findsOneWidget,
+        );
+        expect(
+          scopeRowLabel(tester, const ApiKeyScope(slug: 'webhooks:manage')),
+          contains(words),
+        );
+        expect(
+          scopeRowLabel(tester, const ApiKeyScope(slug: 'collection:read')),
+          isNot(contains(words)),
+        );
+        semantics.dispose();
+      });
+
+      testWidgets('a 404 on a save says the key is gone', (tester) async {
+        when(
+          () => remote.update('k_1', any()),
+        ).thenThrow(const ApiKeyNotFoundException('gone'));
+        await show(tester);
+        await rename(tester, 'Renamed');
+
+        await pressSave(tester);
+
+        expect(find.byKey(ApiKeyDetailScreen.goneKey), findsOneWidget);
+        final focused = FocusManager.instance.primaryFocus;
+        expect(focused, isNot(isA<FocusScopeNode>()));
+        expect(focused?.context?.mounted, isTrue);
+      });
+    });
+
+    group('while a write is on its way', () {
+      testWidgets('fields go read-only while saving, not disabled', (
+        tester,
+      ) async {
+        final answer = Completer<ApiKey>();
+        when(
+          () => remote.update('k_1', any()),
+        ).thenAnswer((_) => answer.future);
+        final semantics = tester.ensureSemantics();
+        await show(tester);
+        await rename(tester, 'Renamed');
+
+        await pressSaveHeld(tester);
+
+        // Read-only, not disabled: each stays where a reader left it.
+        expect(nameInput(tester).readOnly, isTrue);
+        expect(picker(tester).readOnly, isTrue);
+        expect(expiry(tester).readOnly, isTrue);
+        // Save keeps focus, and says it is saving as it starts.
+        expect(find.text('Saving changes…'), findsOneWidget);
+        final node = tester.getSemantics(saveButton()).getSemanticsData();
+        expect(node.label, 'Saving changes…');
+        expect(node.flagsCollection.isLiveRegion, isTrue);
+        expect(saveFocus(tester).hasPrimaryFocus, isTrue);
+        // The writes no press of their own started wait, disabled.
+        expect(switchTile(tester).onChanged, isNull);
+        expect(tester.widget<TextButton>(deleteButton()).onPressed, isNull);
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+        await pumpEvent(tester);
+        expect(patchesSent(), hasLength(1));
+
+        answer.complete(key.copyWith(name: 'Renamed'));
+        await tester.pumpAndSettle();
+
+        expect(nameInput(tester).readOnly, isFalse);
+        expect(saveFocus(tester).hasPrimaryFocus, isTrue);
+        expect(savedBanner(), findsOneWidget);
+        expect(switchTile(tester).onChanged, isNotNull);
+        // At rest Save is no live region, so its name coming back is not
+        // read over the banner.
+        expect(
+          tester
+              .getSemantics(saveButton())
+              .getSemanticsData()
+              .flagsCollection
+              .isLiveRegion,
+          isFalse,
+        );
+        semantics.dispose();
+      });
+
+      testWidgets('a failure leaves focus on Save, to send it again', (
+        tester,
+      ) async {
+        final answer = Completer<ApiKey>();
+        when(
+          () => remote.update('k_1', any()),
+        ).thenAnswer((_) => answer.future);
+        await show(tester);
+        await rename(tester, 'Renamed');
+
+        await pressSaveHeld(tester);
+        answer.completeError(transient);
+        await tester.pumpAndSettle();
+
+        expect(saveFailedBanner(), findsOneWidget);
+        expect(saveFocus(tester).hasPrimaryFocus, isTrue);
+        expect(nameInput(tester).readOnly, isFalse);
+      });
+
+      testWidgets('while a toggle is on its way Save waits, disabled, and the '
+          'fields are read-only', (tester) async {
+        final answer = Completer<ApiKey>();
+        when(
+          () => remote.update('k_1', any()),
+        ).thenAnswer((_) => answer.future);
+        await show(tester);
+        await rename(tester, 'Renamed');
+
+        await tapSwitch(tester);
+        await pumpEvent(tester);
+
+        expect(tester.widget<FilledButton>(saveButton()).onPressed, isNull);
+        expect(nameInput(tester).readOnly, isTrue);
+        expect(picker(tester).readOnly, isTrue);
+        expect(expiry(tester).readOnly, isTrue);
+
+        answer.complete(key.copyWith(enabled: false));
+        await tester.pumpAndSettle();
+        expect(tester.widget<FilledButton>(saveButton()).onPressed, isNotNull);
+        // The edit is kept through it.
+        expect(nameInput(tester).controller.text, 'Renamed');
+      });
+    });
+
+    testWidgets('when the permissions you can give could not be read, they '
+        'are not offered, and a rename still saves', (tester) async {
+      when(remote.fetchGrantable).thenThrow(transient);
+      when(
+        () => remote.update('k_1', any()),
+      ).thenAnswer((_) async => key.copyWith(name: 'Renamed'));
+      await show(tester);
+
+      expect(find.byType(ScopePicker), findsNothing);
+      expect(find.text(notEditable), findsOneWidget);
+      // The scopes still show, by their codes.
+      expect(find.text('collection:read'), findsOneWidget);
+
+      await rename(tester, 'Renamed');
+      await pickExpiry(tester, '90 days');
+      await pressSave(tester);
+
+      expect(
+        patchSent(),
+        const ApiKeyPatch(name: 'Renamed', expiresInDays: 90),
+      );
+      expect(savedBanner(), findsOneWidget);
+    });
+
+    group('after the screen has gone', () {
+      testWidgets('a save that lands says it was saved, on the page beneath', (
+        tester,
+      ) async {
+        final answer = Completer<ApiKey>();
+        when(
+          () => remote.update('k_1', any()),
+        ).thenAnswer((_) => answer.future);
+        await showPushed(tester);
+        await rename(tester, 'Renamed');
+        await pressSaveHeld(tester);
+        tester.state<NavigatorState>(find.byType(Navigator)).pop();
+        await tester.pumpAndSettle();
+
+        answer.complete(key.copyWith(name: 'Renamed'));
+        await tester.pumpAndSettle();
+
+        expect(find.text(pageBeneathCopy), findsOneWidget);
+        expect(find.text('Saved changes to Renamed'), findsOneWidget);
+      });
+
+      testWidgets('a failed one says why, since its banner went with the '
+          'screen', (tester) async {
+        final answer = Completer<ApiKey>();
+        when(
+          () => remote.update('k_1', any()),
+        ).thenAnswer((_) => answer.future);
+        await showPushed(tester);
+        await rename(tester, 'Renamed');
+        await pressSaveHeld(tester);
+        tester.state<NavigatorState>(find.byType(Navigator)).pop();
+        await tester.pumpAndSettle();
+
+        answer.completeError(transient);
+        await tester.pumpAndSettle();
+
+        expect(find.text('$saveFailedTitle: $unreachable'), findsOneWidget);
+      });
+    });
+  });
+
+  group('small', () {
+    Future<void> at320x2(WidgetTester tester) async {
+      useViewSize(tester, const Size(320, 800));
+      tester.platformDispatcher.textScaleFactorTestValue = 2;
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      answerKey(
+        remote,
+        apiKey(
+          'k_1',
+          name: 'A rather long name of 32 chars!!',
+          scopes: const [
+            ApiKeyScope(slug: 'collection:read'),
+            ApiKeyScope(slug: 'users:manage'),
+            ApiKeyScope(slug: 'webhooks:manage', resourceId: 'wh_1'),
+            ApiKeyScope(slug: 'events:delete'),
+          ],
+          expiresAt: expires,
+          lastUsedAt: used,
+        ),
+      );
+    }
+
+    testWidgets('320dp at 2.0 lays out the key without overflow', (
+      tester,
+    ) async {
+      await at320x2(tester);
+      when(() => remote.delete('k_1')).thenThrow(transient);
+
+      await show(tester);
+      await confirmDelete(tester);
+
+      expect(tester.takeException(), isNull);
+      expect(find.byKey(ApiKeyDetailScreen.deleteFailedKey), findsOneWidget);
+    });
+
+    testWidgets('320dp at 2.0 lays out the edit form, a custom expiry and a '
+        'refusal on a row without overflow', (tester) async {
+      await at320x2(tester);
+      when(() => remote.update('k_1', any())).thenThrow(
+        const ApiKeyScopeNotGrantableException('no', slug: 'webhooks:manage'),
+      );
+      await show(tester);
+
+      await tick(tester, 'webhooks:manage');
+      await pickExpiry(tester, 'Custom');
+      await tester.enterText(customDaysField(), '12');
+      await tester.pumpAndSettle();
+      await pressSave(tester);
+
+      expect(tester.takeException(), isNull);
+      expect(saveFailedBanner(), findsOneWidget);
+    });
+
+    testWidgets('320dp at 2.0 lays out Save while it is busy without '
+        'overflow', (tester) async {
+      await at320x2(tester);
+      final answer = Completer<ApiKey>();
+      when(
+        () => remote.update('k_1', any()),
+      ).thenAnswer((_) => answer.future);
+      await show(tester);
+      await rename(tester, 'Renamed');
+
+      await pressSaveHeld(tester);
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('Saving changes…'), findsOneWidget);
+      answer.complete(key);
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    });
   });
 
   group('accessibility audit', () {
     // Names the screen for tool/check_a11y_audit.dart: ApiKeyDetailScreen.
-    Widget Function(ThemeData) screenWith(void Function() seed) => (theme) {
+    //
+    // With the edit form the page runs well below the fold at 320dp × 2.0,
+    // and a scroll to a control down it can leave another cut by the top
+    // edge, which the tap-target check fails at its cut size. A state
+    // reached down the page is audited whole instead, in a view tall enough
+    // to hold it.
+    Widget Function(ThemeData) screenWith(
+      void Function() seed, {
+      bool offline = false,
+    }) => (theme) {
       seed();
-      return screen(theme: theme);
+      return screen(theme: theme, offline: offline);
     };
+
+    void nothing() {}
+
+    /// Audits the page with nothing below the fold.
+    Future<void> whole(WidgetTester tester) async {
+      await useWholePage(tester);
+      expectWholePage(tester);
+    }
 
     void everyKind() => answerKey(
       remote,
@@ -794,11 +1894,136 @@ void main() {
     );
 
     auditScreen(
-      'loaded, scrolled to Delete',
+      'loaded, whole, to Delete',
       build: screenWith(everyKind),
       arrange: (tester) async {
         await tester.pumpAndSettle();
-        await tester.ensureVisible(deleteButton());
+        await whole(tester);
+        expect(deleteButton(), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'edit form, whole, with a permission ticked and a custom expiry',
+      build: screenWith(everyKind),
+      arrange: (tester) async {
+        await tester.pumpAndSettle();
+        await whole(tester);
+        await rename(tester, 'Renamed');
+        await tick(tester, 'users:manage');
+        await pickExpiry(tester, 'Custom');
+        await tester.enterText(customDaysField(), '12');
+        await tester.pumpAndSettle();
+        expect(
+          find.text('No longer available; saving removes it'),
+          findsOneWidget,
+        );
+        expectWholePage(tester);
+      },
+    );
+
+    auditScreen(
+      'edit form, refused: no name, and a custom expiry that is no number',
+      build: screenWith(nothing),
+      arrange: (tester) async {
+        await tester.pumpAndSettle();
+        await whole(tester);
+        await rename(tester, '');
+        await pickExpiry(tester, 'Custom');
+        await tester.enterText(customDaysField(), '0');
+        await tester.pumpAndSettle();
+        await pressSave(tester);
+        expect(find.text('Enter a name for the key.'), findsOneWidget);
+        expect(
+          find.text('Enter a whole number of days from 1 to 365.'),
+          findsOneWidget,
+        );
+        expectWholePage(tester);
+      },
+    );
+
+    auditScreen(
+      'nothing to save',
+      build: screenWith(nothing),
+      arrange: (tester) async {
+        await tester.pumpAndSettle();
+        await whole(tester);
+        await pressSave(tester);
+        expect(nothingToSaveBanner(), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'saving',
+      build: screenWith(
+        () => when(
+          () => remote.update('k_1', any()),
+        ).thenAnswer((_) => Completer<ApiKey>().future),
+      ),
+      settle: false,
+      arrange: (tester) async {
+        await tester.pumpAndSettle();
+        await whole(tester);
+        await rename(tester, 'Renamed');
+        await pressSaveHeld(tester);
+        expect(find.text('Saving changes…'), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'saved',
+      build: screenWith(() => serverApplies(key)),
+      arrange: (tester) async {
+        await tester.pumpAndSettle();
+        await whole(tester);
+        await rename(tester, 'Renamed');
+        await pickExpiry(tester, '30 days');
+        await pressSave(tester);
+        expect(savedBanner(), findsOneWidget);
+        expectWholePage(tester);
+      },
+    );
+
+    auditScreen(
+      'save failed, with the refused permission named on its row',
+      build: screenWith(
+        () => when(() => remote.update('k_1', any())).thenThrow(
+          const ApiKeyScopeNotGrantableException(
+            'no',
+            slug: 'webhooks:manage',
+          ),
+        ),
+      ),
+      arrange: (tester) async {
+        await tester.pumpAndSettle();
+        await whole(tester);
+        await tick(tester, 'webhooks:manage');
+        await pressSave(tester);
+        expect(saveFailedBanner(), findsOneWidget);
+        expectWholePage(tester);
+      },
+    );
+
+    auditScreen(
+      'Critical confirmation',
+      build: screenWith(offerPlugins),
+      arrange: (tester) async {
+        await tester.pumpAndSettle();
+        await whole(tester);
+        await tick(tester, 'plugins:manage');
+        await pressSave(tester);
+        expect(find.text(criticalQuestion), findsOneWidget);
+        expectWholePage(tester, within: find.byType(AlertDialog));
+      },
+    );
+
+    auditScreen(
+      'offline',
+      build: screenWith(nothing, offline: true),
+      arrange: (tester) async {
+        await tester.pumpAndSettle();
+        await whole(tester);
+        expect(find.text(onlineOnlyCopy), findsNWidgets(3));
       },
     );
 
@@ -815,18 +2040,30 @@ void main() {
     );
 
     auditScreen(
+      'grantable failed, whole',
+      build: screenWith(() {
+        everyKind();
+        when(remote.fetchGrantable).thenThrow(transient);
+      }),
+      arrange: (tester) async {
+        await tester.pumpAndSettle();
+        await whole(tester);
+        expect(find.text(notEditable), findsOneWidget);
+      },
+    );
+
+    auditScreen(
       'toggle failed',
       build: screenWith(
         () => when(() => remote.update('k_1', any())).thenThrow(transient),
       ),
       arrange: (tester) async {
         await tester.pumpAndSettle();
-        // At 200% text the switch starts below the fold.
-        await tester.ensureVisible(enabledSwitch());
-        await tester.pumpAndSettle();
+        await whole(tester);
         await tester.tap(enabledSwitch());
         await tester.pumpAndSettle();
         expect(find.byKey(ApiKeyDetailScreen.toggleFailedKey), findsOneWidget);
+        expectWholePage(tester);
       },
     );
 
@@ -837,8 +2074,10 @@ void main() {
       ),
       arrange: (tester) async {
         await tester.pumpAndSettle();
+        await whole(tester);
         await confirmDelete(tester);
         expect(find.byKey(ApiKeyDetailScreen.deleteFailedKey), findsOneWidget);
+        expectWholePage(tester);
       },
     );
 

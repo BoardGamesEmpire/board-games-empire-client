@@ -31,12 +31,14 @@ void main() {
     int? days = 90,
     bool readOnly = false,
     String label = 'Expires in',
+    String? keepLabel,
   }) => pumpOnPage(
     tester,
     _Host(
       days: days,
       readOnly: readOnly,
       label: label,
+      keepLabel: keepLabel,
       now: () => _today,
       onReported: reported.add,
     ),
@@ -106,6 +108,107 @@ void main() {
 
       expect(reported, [180]);
       expect(selected(tester, '180 days'), isTrue);
+    });
+
+    testWidgets('no choice to keep the expiry unless one is named', (
+      tester,
+    ) async {
+      await pump(tester);
+
+      expect(find.byType(ChoiceChip), findsNWidgets(5));
+      expect(find.text('Keep current'), findsNothing);
+    });
+
+    testWidgets('a keep choice is chosen on edit and takes a pick back', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        days: null,
+        label: 'Set a new expiry',
+        keepLabel: 'Keep current',
+      );
+
+      expect(selected(tester, 'Keep current'), isTrue);
+      expect(_anyDate, findsNothing);
+
+      await tester.tap(chip('30 days'));
+      await tester.pumpAndSettle();
+      expect(selected(tester, 'Keep current'), isFalse);
+      expect(_anyDate, findsOneWidget);
+
+      await tester.tap(chip('Keep current'));
+      await tester.pumpAndSettle();
+
+      expect(reported, [30, null]);
+      expect(selected(tester, 'Keep current'), isTrue);
+      expect(selected(tester, '30 days'), isFalse);
+      expect(_anyDate, findsNothing);
+
+      // Chosen already, it reports nothing more.
+      await tester.tap(chip('Keep current'));
+      await tester.pumpAndSettle();
+      expect(reported, [30, null]);
+    });
+
+    testWidgets('keep after a custom number ends Custom and its field', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        days: null,
+        label: 'Set a new expiry',
+        keepLabel: 'Keep current',
+      );
+      await tester.tap(chip('Custom'));
+      await tester.pumpAndSettle();
+      await typeDays(tester, '12');
+
+      await tester.tap(chip('Keep current'));
+      await tester.pumpAndSettle();
+
+      expect(reported, [12, null]);
+      expect(find.byType(TextField), findsNothing);
+      expect(selected(tester, 'Custom'), isFalse);
+      expect(host(tester).form.valid, isTrue);
+    });
+
+    testWidgets('keep after an invalid custom entry makes the form valid', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        days: null,
+        label: 'Set a new expiry',
+        keepLabel: 'Keep current',
+      );
+      await tester.tap(chip('Custom'));
+      await tester.pumpAndSettle();
+      await typeDays(tester, '400');
+      expect(host(tester).form.valid, isFalse);
+
+      await tester.tap(chip('Keep current'));
+      await tester.pumpAndSettle();
+
+      expect(host(tester).form.valid, isTrue);
+      expect(selected(tester, 'Keep current'), isTrue);
+      expect(find.text(_invalid), findsNothing);
+    });
+
+    testWidgets('read-only, the keep choice ignores a pick', (tester) async {
+      await pump(
+        tester,
+        days: 30,
+        label: 'Set a new expiry',
+        keepLabel: 'Keep current',
+        readOnly: true,
+      );
+
+      await tester.tap(chip('Keep current'), warnIfMissed: false);
+      await tester.pumpAndSettle();
+
+      expect(reported, isEmpty);
+      expect(selected(tester, '30 days'), isTrue);
     });
 
     testWidgets('custom 12 reports 12', (tester) async {
@@ -522,6 +625,7 @@ class _Host extends StatefulWidget {
     required this.days,
     required this.readOnly,
     required this.label,
+    required this.keepLabel,
     required this.now,
     required this.onReported,
   });
@@ -529,6 +633,7 @@ class _Host extends StatefulWidget {
   final int? days;
   final bool readOnly;
   final String label;
+  final String? keepLabel;
   final DateTime Function() now;
   final ValueChanged<int?> onReported;
 
@@ -571,6 +676,7 @@ class _HostState extends State<_Host> {
     child: ExpiryControl(
       days: _days,
       label: widget.label,
+      keepLabel: widget.keepLabel,
       customDaysName: customDays,
       now: widget.now,
       readOnly: widget.readOnly,

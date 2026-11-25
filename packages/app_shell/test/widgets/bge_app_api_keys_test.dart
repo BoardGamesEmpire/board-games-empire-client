@@ -348,6 +348,9 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(ApiKeyDetailScreen), findsOneWidget);
 
+      // Delete sits below the key's edit form.
+      await tester.ensureVisible(find.byKey(ApiKeyDetailScreen.deleteKey));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(ApiKeyDetailScreen.deleteKey));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(DeleteKeyDialog.confirmKey));
@@ -386,6 +389,9 @@ void main() {
       await tester.pumpAndSettle();
       final readsBefore = remote.pageReads;
 
+      // Below the key's form, so out of view.
+      await tester.ensureVisible(find.byKey(ApiKeyDetailScreen.deleteKey));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(ApiKeyDetailScreen.deleteKey));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(DeleteKeyDialog.confirmKey));
@@ -404,6 +410,9 @@ void main() {
       await tester.pumpAndSettle();
       final readsBefore = remote.pageReads;
 
+      // Below the key's form, so out of view.
+      await tester.ensureVisible(find.byKey(ApiKeyDetailScreen.enabledKey));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(ApiKeyDetailScreen.enabledKey));
       await tester.pumpAndSettle();
       expect(

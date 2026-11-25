@@ -16,6 +16,7 @@ export 'src/list/api_key_list_screen.dart';
 export 'src/list/api_key_list_state.dart';
 export 'src/widgets/api_key_row.dart';
 export 'src/widgets/api_key_scope_list.dart';
+export 'src/widgets/api_key_submit_button.dart';
 export 'src/widgets/critical_confirm_dialog.dart';
 export 'src/widgets/delete_key_dialog.dart';
 export 'src/widgets/expiry_control.dart';

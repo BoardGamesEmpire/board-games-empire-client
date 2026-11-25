@@ -16,15 +16,21 @@ act as you, each holding only the permissions you gave it.
   permissions by slug. A failed grantable read never fails the list: the rows
   then give a count of permissions without a risk level.
 - `ApiKeyDetailScreen`: one key's own page, by id. It reads the key and the
-  grantable permissions when it opens, and lists every permission the key
-  holds with its risk in words (`ApiKeyScopeList`). An Enabled switch and
-  Delete, which asks first (`DeleteKeyDialog`), write straight to the server.
-  A delete that goes through says so and pops the page. It owns its bloc
-  past the route, and says a write the user walked away from only while the
-  session it was opened in is live.
-- `ApiKeyDetailBloc`: the read, the toggle and the delete, one write at a
-  time. A 404 is gone; a failed grantable read never fails the page, whose
-  permissions then show their codes.
+  grantable permissions when it opens. A form renames the key, changes its
+  permissions (`ScopePicker`, the ones it holds ticked) or sets a new expiry
+  (`ExpiryControl`), and Save changes sends only what changed: a key that
+  holds a permission its owner may no longer give can still be renamed. A
+  save that adds a Critical permission the key doesn't hold is asked about
+  first. An Enabled switch and Delete, which asks first (`DeleteKeyDialog`),
+  write straight to the server. A delete that goes through says so and pops
+  the page. It owns its bloc past the route, and says a write the user
+  walked away from only while the session it was opened in is live.
+- `ApiKeyDetailBloc`: the read, the save, the toggle and the delete, one
+  write at a time. A 404 is gone; a failed grantable read never fails the
+  page, whose permissions then show their codes, and can't be changed.
+- `ApiKeySubmitButton`: the create and edit forms' one filled button. While
+  what it sent is on its way it stays enabled and ignores presses, so it
+  keeps focus.
 - `ApiKeyCreateScreen`: the page that makes a key. A name
   (`apiKeyNameControl`), the permissions it is to hold (`ScopePicker`, with
   "Everything I can do") and how long it lasts (`ExpiryControl`). A key that

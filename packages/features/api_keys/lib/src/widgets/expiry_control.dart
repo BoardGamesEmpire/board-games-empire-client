@@ -121,6 +121,12 @@ FormControl<String> expiryCustomDaysControl() => ExpiryCustomDaysControl();
 /// them, "Expires {date}" for the day [days] from [now] in the device's own
 /// time zone, whenever [days] is set.
 ///
+/// With a [keepLabel], the row starts with one more choice, to keep the
+/// expiry there is: chosen while [days] is null and "Custom" isn't. An edit
+/// offers it, so that a pick made by mistake can be taken back without
+/// leaving the page. Without one, as on create, a pick can't be undone,
+/// only changed.
+///
 /// "Custom" shows a field for a whole number of days from
 /// [ApiKeyRemoteDataSource.minExpiryDays] to
 /// [ApiKeyRemoteDataSource.maxExpiryDays]. A [days] that isn't a preset
@@ -140,11 +146,11 @@ FormControl<String> expiryCustomDaysControl() => ExpiryCustomDaysControl();
 /// ## What it reports
 ///
 /// [onChanged] is asked with the number of days a pick or the field now
-/// holds: null while nothing is picked **or** "Custom" is chosen and holds no
-/// valid number. The two are told apart by the form: the second makes it
-/// invalid. A parent that reads null as "unchanged" must therefore check
-/// the form's validity first. It is told nothing about a [days] its parent
-/// set.
+/// holds: null while nothing is picked, or the [keepLabel] choice is, **or**
+/// "Custom" is chosen and holds no valid number. The two are told apart by
+/// the form: the second makes it invalid. A parent that reads null as
+/// "unchanged" must therefore check the form's validity first. It is told
+/// nothing about a [days] its parent set.
 ///
 /// The parent owns the value, so a [days] that differs from what was last
 /// reported is shown as it is: a parent that refuses a change snaps the
@@ -170,6 +176,7 @@ class ExpiryControl extends StatefulWidget {
     required this.onChanged,
     required this.label,
     required this.customDaysName,
+    this.keepLabel,
     this.now,
     this.readOnly = false,
     super.key,
@@ -189,6 +196,10 @@ class ExpiryControl extends StatefulWidget {
   /// The name, in the enclosing `ReactiveForm`, of the control made by
   /// [expiryCustomDaysControl].
   final String customDaysName;
+
+  /// The name of the choice that keeps the expiry there is, such as "Keep
+  /// current", or null to offer none.
+  final String? keepLabel;
 
   /// The time the date is counted from; [DateTime.now] when null. For tests.
   final DateTime Function()? now;
@@ -313,6 +324,16 @@ class _ExpiryControlState extends State<ExpiryControl> {
     if (days != _known) _report(days);
   }
 
+  void _pickKeep() {
+    if (widget.readOnly) return;
+    final wasCustom = _custom;
+    setState(() => _custom = false);
+    _control!.release();
+    // From "Custom" with no valid number the report was null already, but
+    // the form is valid again, which the parent hears of this way.
+    if (_known != null || wasCustom) _report(null);
+  }
+
   void _pickCustom() {
     // Already chosen: what is typed stays.
     if (widget.readOnly || _custom) return;
@@ -354,6 +375,13 @@ class _ExpiryControlState extends State<ExpiryControl> {
             spacing: tokens.spaceSm,
             runSpacing: tokens.spaceSm,
             children: [
+              if (widget.keepLabel case final keep?)
+                _ExpiryChip(
+                  label: keep,
+                  selected: !_custom && days == null,
+                  readOnly: widget.readOnly,
+                  onPick: _pickKeep,
+                ),
               for (final preset in kExpiryPresets)
                 _ExpiryChip(
                   label: l10n.apiKeyExpiryPreset(preset),
