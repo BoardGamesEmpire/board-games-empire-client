@@ -57,8 +57,9 @@ void main() {
     riskLevel: RiskLevel.critical,
   );
 
-  // The expiry a save that sets a new one answers with.
-  final renewed = DateTime.utc(2027, 6, 1, 12);
+  // The expiry a save that sets a new one answers with, at local noon as the
+  // other dates are.
+  final renewed = DateTime(2027, 6, 1, 12);
 
   const transient = ApiKeyTransientException('down');
   const needsConfirmation = ApiKeyCriticalNeedsConfirmationException('no');
