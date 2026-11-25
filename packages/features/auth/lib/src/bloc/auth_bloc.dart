@@ -640,13 +640,22 @@ class AuthBloc extends Bloc<AuthEvent, AuthBlocState> {
   ///
   /// Checked by TYPE: if the bloc is already unauthenticated, a state
   /// differing only in cause is not a new fact, and emitting it would
-  /// relabel the one the shell has acted on (#142). Otherwise the cause is
-  /// that of the bloc's own sign-out in flight. Failing that, the user
-  /// didn't ask here: the server ended the session (a session read that
-  /// found it over, or the sync drain's 401 check), another tab signed out
-  /// on web (#432), or the repository signed out without this bloc.
+  /// relabel the one the shell has acted on (#142). The same goes for a
+  /// failure state ([AuthOperationFailure]): it already means "signed out,
+  /// with a reason", so the repository saying no one is signed in adds
+  /// nothing, and emitting over it would erase the reason (#1033). The web
+  /// repository says it on every session re-read while signed out, so a
+  /// startup provider-return failure, or a password failure after a tab
+  /// switch, would otherwise lose its banner. A sign-out flips a failure
+  /// state itself, in `_onSignOut`, not through here.
+  ///
+  /// Otherwise the cause is that of the bloc's own sign-out in flight.
+  /// Failing that, the user didn't ask here: the server ended the session (a
+  /// session read that found it over, or the sync drain's 401 check),
+  /// another tab signed out on web (#432), or the repository signed out
+  /// without this bloc.
   void _mirrorUnauthenticated(Emitter<AuthBlocState> emit) {
-    if (state is AuthUnauthenticated) return;
+    if (state is AuthUnauthenticated || state is AuthOperationFailure) return;
     emit(
       AuthUnauthenticated(
         cause: _inFlightSignOutCause ?? SignOutCause.sessionLost,
