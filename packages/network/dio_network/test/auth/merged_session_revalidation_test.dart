@@ -100,6 +100,36 @@ void main() {
       expect(gates, hasLength(3));
     });
 
+    test(
+      'a report as the running re-read settles joins the queued one',
+      () async {
+        // A listener on the first report runs after the running slot is
+        // cleared but before the queued re-read starts.
+        final gates = <Completer<Object?>>[];
+        final signal = MergedSessionRevalidation(() {
+          gates.add(Completer<Object?>());
+          return gates.last.future;
+        });
+
+        Future<void>? inGap;
+        unawaited(signal.report().then((_) => inGap = signal.report()));
+        final queued = signal.report();
+
+        gates[0].complete('a session');
+        await pumpEventQueue();
+        expect(inGap, isNotNull);
+        expect(
+          gates,
+          hasLength(2),
+          reason: 'the report in the gap shares the queued re-read',
+        );
+
+        gates[1].complete('a session');
+        await Future.wait([queued, inGap!]);
+        expect(gates, hasLength(2));
+      },
+    );
+
     test('a re-read that failed still runs the queued one', () async {
       var calls = 0;
       final first = Completer<Object?>();

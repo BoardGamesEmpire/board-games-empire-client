@@ -43,9 +43,14 @@ final class MergedSessionRevalidation implements SessionRejectionSignal {
   /// stick, so the next report tries again.
   @override
   Future<void> report() {
+    // Checked first: the running slot is cleared just before the queued
+    // re-read starts, and a listener on the running re-read can report in
+    // between. The queued one starts after this report, so it answers it.
+    final queued = _queued;
+    if (queued != null) return queued;
     final running = _inFlight;
     if (running == null) return _start();
-    return _queued ??= running.then((gone) async {
+    return _queued = running.then((gone) async {
       // Cleared before starting, so a report during the queued re-read
       // queues behind it in turn.
       _queued = null;
