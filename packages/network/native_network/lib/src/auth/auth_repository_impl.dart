@@ -92,7 +92,9 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
 
   AuthState _currentState = const AuthStateUnknown();
 
-  /// Bumped by [signOut] synchronously, before any await. [getSession]
+  /// Bumped by [signOut] synchronously, before any await, and likewise by
+  /// [_abandonUnstorableGrant], which ends a session as a sign-out does
+  /// (#726). [getSession]
   /// captures it in its own synchronous prologue — before the storage load,
   /// not merely before the HTTP call — and re-checks it once the response
   /// lands, so a response that resolves *after* the user signed out is
@@ -426,7 +428,9 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
   /// best-effort with [token], which only this method still holds: left
   /// alone, it would sit live in the user's session list until it expired.
   /// The revoke is fire-and-forget like [signOut]'s, and its failure is
-  /// ignored. The repository then settles on unauthenticated.
+  /// ignored. The repository then settles on unauthenticated. Like
+  /// [signOut], it moves [_sessionEpoch] first, so a session read already in
+  /// flight cannot write the ended session back or publish it.
   ///
   /// A sign-out that landed meanwhile, the clear here included, is the newer
   /// intent, so that case is reported as [AuthSupersededException] rather
@@ -441,16 +445,24 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
     required Object error,
     required StackTrace stackTrace,
   }) async {
+    // A sign-out that landed during the failed write.
+    final supersededEarlier = epoch != _sessionEpoch;
+
+    // Retire every session read in flight, before the first await: one that
+    // lands after this, during the clear included, would otherwise store the
+    // session this method ends and publish it (see [_sessionEpoch]).
+    final abandonEpoch = ++_sessionEpoch;
+
     await _clearQuietly(
-      epoch != _sessionEpoch
+      supersededEarlier
           ? 'a superseded credential grant'
           : 'a credential grant this device could not store',
     );
     unawaited(_bestEffortSignOutPost(token));
 
-    // Read after the clear, not before it: a sign-out landing during the
-    // clear is still the newer intent.
-    if (epoch != _sessionEpoch) {
+    // Read again after the clear: a sign-out landing during the clear is
+    // still the newer intent.
+    if (supersededEarlier || abandonEpoch != _sessionEpoch) {
       _log.info(
         'This device could not store the session granted by $context, and '
         'a sign-out overtook it; revoking it',

@@ -756,6 +756,103 @@ void main() {
         expect(states.last, isA<AuthStateUnauthenticated>());
       });
 
+      /// Fails the grant's own store, and lets every later one succeed, so a
+      /// read that outlives the abandon could write its session back.
+      List<int> stubOnlyGrantStoreFails() {
+        final stores = <int>[];
+        when(
+          () => mockStorage.store(
+            token: any(named: 'token'),
+            expiresAt: any(named: 'expiresAt'),
+            persistedAt: any(named: 'persistedAt'),
+            user: any(named: 'user'),
+          ),
+        ).thenAnswer((_) {
+          stores.add(stores.length + 1);
+          return stores.length == 1
+              ? Future.error(storageFault)
+              : Future.value();
+        });
+        return stores;
+      }
+
+      /// Holds every session read's response until the returned completer
+      /// completes.
+      Completer<Response<String>> holdSessionReads() {
+        final gate = Completer<Response<String>>();
+        when(
+          () => mockDio.get<String>(
+            '$testAuthBasePath/get-session',
+            options: any(named: 'options'),
+          ),
+        ).thenAnswer((_) => gate.future);
+        return gate;
+      }
+
+      test('a session read in flight when the grant is abandoned does not '
+          'store or publish its session afterwards', () async {
+        stubGrant();
+        stubRetrieve();
+        stubClear();
+        stubSignOutPost(() async => _status(200));
+        final stores = stubOnlyGrantStoreFails();
+        final readGate = holdSessionReads();
+        final states = recordStates();
+
+        final read = repo.getSession();
+        await pumpEventQueue();
+        await expectLater(
+          repo.signIn(email: 'a@b.com', password: 'pass'),
+          throwsA(deviceStorageFault()),
+        );
+        readGate.complete(_ok(_sessionJson()));
+
+        expect(await read, isNull);
+        await pumpEventQueue();
+
+        expect(stores, hasLength(1), reason: 'only the grant store ran');
+        expect(repo.currentAuthState, isA<AuthStateUnauthenticated>());
+        expect(states, isNot(contains(isA<AuthStateAuthenticated>())));
+      });
+
+      test(
+        'a session read landing while an abandoned grant is cleared does not '
+        'write its session back, and the grant still fails on storage',
+        () async {
+          stubGrant();
+          stubRetrieve();
+          stubSignOutPost(() async => _status(200));
+          final stores = stubOnlyGrantStoreFails();
+          final readGate = holdSessionReads();
+          final clearReached = Completer<void>();
+          final clearGate = Completer<void>();
+          when(() => mockStorage.clear()).thenAnswer((_) {
+            if (clearReached.isCompleted) return Future.value();
+            clearReached.complete();
+            return clearGate.future;
+          });
+          final states = recordStates();
+
+          final read = repo.getSession();
+          await pumpEventQueue();
+          final signIn = repo.signIn(email: 'a@b.com', password: 'pass');
+          await clearReached.future;
+          readGate.complete(_ok(_sessionJson()));
+
+          expect(await read, isNull);
+          clearGate.complete();
+
+          // The abandon itself is not a sign-out: the grant still reports the
+          // storage fault, not supersession.
+          await expectLater(signIn, throwsA(deviceStorageFault()));
+          await pumpEventQueue();
+
+          expect(stores, hasLength(1), reason: 'only the grant store ran');
+          expect(repo.currentAuthState, isA<AuthStateUnauthenticated>());
+          expect(states, isNot(contains(isA<AuthStateAuthenticated>())));
+        },
+      );
+
       test('a raw failure storing the confirmed session during the reconcile '
           'throws AuthDeviceStorageException', () async {
         stubGrant();
