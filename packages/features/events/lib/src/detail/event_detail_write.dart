@@ -36,10 +36,15 @@ final class SkipWrite extends DetailWriteCheck {
 
 /// [detail]'s state once no read is running: now, or when the running one
 /// ends. Its last state if it closes first. Every write [sendDetailWrite]
-/// sends waits on it.
+/// sends waits on it. A read's end waits too for the dates' policies it
+/// carried to reach the cache
+/// ([EventDetailReady.occurrencePoliciesArriving]), which they are sure to,
+/// so a press held for the read is checked under the modes the read gives
+/// (#1063).
 Future<EventDetailState> readEnded(EventDetailBloc detail) {
   bool ended(EventDetailState state) =>
-      state is! EventDetailReady || !state.reading;
+      state is! EventDetailReady ||
+      !state.reading && !state.occurrencePoliciesArriving;
 
   if (ended(detail.state)) return Future.value(detail.state);
   return detail.stream.firstWhere(ended, orElse: () => detail.state);

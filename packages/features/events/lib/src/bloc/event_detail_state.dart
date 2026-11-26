@@ -32,7 +32,12 @@ final class EventDetailLoading extends EventDetailState {
 /// [refreshing] says a read **the user asked for** is running. The read
 /// every open makes is not narrated. [reading] says a read is running
 /// whoever asked for it, which is what the screen holds Delete and the date
-/// writes on (#501, #506).
+/// writes on (#501, #506). [occurrencePoliciesArriving] says a read has
+/// carried the dates' policies that [detail] holds unread, and they are on
+/// their way to the cache (#1063);
+/// [occurrencePoliciesArrivingAfterFailure], that the read before that one
+/// failed; [occurrencePoliciesWithheld], that the latest read to succeed
+/// carried none, so a read running isn't expected to.
 /// [refreshFailed] says the last read to finish failed, so this is the
 /// cache, possibly stale. A read starting does not clear it; one succeeding
 /// does.
@@ -48,6 +53,9 @@ final class EventDetailReady extends EventDetailState {
     this.householdName,
     this.refreshing = false,
     this.reading = false,
+    this.occurrencePoliciesArriving = false,
+    this.occurrencePoliciesArrivingAfterFailure = false,
+    this.occurrencePoliciesWithheld = false,
     this.refreshFailed = false,
     this.canRetry = false,
     this.attendeeReach = AttendeeReach.none,
@@ -64,6 +72,32 @@ final class EventDetailReady extends EventDetailState {
   /// date writes wait on it, because a read's 200 landing after a write
   /// would cache the event as it was (#501, #506).
   final bool reading;
+
+  /// Whether a read that carried the dates' policies has settled, its answer
+  /// written to the cache, while [detail], the cache's from before it,
+  /// holds them unread (`occurrencePolicies` null): from the read's settle,
+  /// which ends [reading], until the cache next answers, which it is sure
+  /// to, with them read (#1063). False after a read that failed, carried no
+  /// policies, as one refused them, found them read already, or whose write
+  /// the cache declined, as for an event the sync queue owns, since the
+  /// cache may then never answer.
+  final bool occurrencePoliciesArriving;
+
+  /// Whether [occurrencePoliciesArriving] is set by a read that followed one
+  /// that failed, a retry's say. Through the failure and the retry the
+  /// screen kept the event's mode for a date whose policy is unread
+  /// ([refreshFailed]), and it keeps it until the policies land, rather than
+  /// take the controls away for the moment between (#1063). False whenever
+  /// [occurrencePoliciesArriving] is.
+  final bool occurrencePoliciesArrivingAfterFailure;
+
+  /// Whether the latest read to succeed on this screen carried no dates'
+  /// policies, as a read refused the event's policy carries none (#1063). A
+  /// read then running isn't expected to bring them either, so a date's
+  /// policy unread while it runs isn't waited on. False until a read has
+  /// succeeded, after one that carried them, and once the screen follows a
+  /// move (#499). A failed read leaves it as it was.
+  final bool occurrencePoliciesWithheld;
   final bool refreshFailed;
   final bool canRetry;
 
@@ -77,6 +111,9 @@ final class EventDetailReady extends EventDetailState {
     actions,
     refreshing,
     reading,
+    occurrencePoliciesArriving,
+    occurrencePoliciesArrivingAfterFailure,
+    occurrencePoliciesWithheld,
     refreshFailed,
     canRetry,
     attendeeReach,

@@ -8,6 +8,7 @@
 library;
 
 import 'package:equatable/equatable.dart';
+import 'package:events/src/bloc/event_detail_state.dart';
 import 'package:events/src/detail/event_nominations.dart';
 import 'package:models/domain.dart';
 
@@ -93,11 +94,43 @@ GamesDateView? dateViewOf(
   return defaultDateView(d, now: now);
 }
 
-/// The game-addition mode of [view] on [s] (#519): a date's effective mode
-/// in that date's view, and the event's under Every date or where there is
-/// no row (null).
-GameAdditionMode viewMode(EventSnapshot s, GamesDateView? view) =>
-    s.gamePolicyFor(switch (view) {
+/// The game-addition mode of [occurrenceId]'s date on [d] (#519), or of the
+/// whole event where it is null: the event's own for the whole event, and
+/// for a date, its effective mode (`gamePolicyFor`), its own override where
+/// it sets one, else the event's.
+///
+/// Null, unknown, for a date whose policy is unread while a detail read
+/// runs, or while a read has carried the dates' policies and they are on
+/// their way to the cache (`occurrencePoliciesArriving`) (#1063): until they
+/// land, the event's mode may not be the date's, and nothing that depends on
+/// the mode is built. No read running, one that failed, or one that carried
+/// no policies, as for a viewer refused them, leaves the event's mode, so
+/// nothing waits for policies that aren't coming; the server enforces the
+/// date's own. So does a read running after one that carried none
+/// (`occurrencePoliciesWithheld`): it won't bring them either. And so does
+/// a read running after one that failed (`refreshFailed`, which holds until
+/// a read succeeds), and the policies that retry carried on their way to the
+/// cache (`occurrencePoliciesArrivingAfterFailure`): the controls the
+/// failure left stay through the retry rather than going and coming back.
+/// A press held meanwhile still waits for the policies (`readEnded`).
+GameAdditionMode? scopeMode(EventDetailReady d, String? occurrenceId) {
+  final snapshot = d.detail.snapshot;
+  final coming =
+      d.occurrencePoliciesArriving &&
+          !d.occurrencePoliciesArrivingAfterFailure ||
+      d.reading && !d.occurrencePoliciesWithheld && !d.refreshFailed;
+  if (occurrenceId != null && coming && snapshot.occurrencePolicies == null) {
+    return null;
+  }
+  return snapshot.gamePolicyFor(occurrenceId).gameAdditionMode;
+}
+
+/// The game-addition mode of [view] on [d] (#519, [scopeMode]): a date's in
+/// that date's view, unknown (null) while its policy is unread and a read
+/// runs or it is on its way to the cache (#1063), and the event's
+/// under Every date or where there is no row (null).
+GameAdditionMode? viewMode(EventDetailReady d, GamesDateView? view) =>
+    scopeMode(d, switch (view) {
       OneDateView(:final occurrenceId) => occurrenceId,
       EveryDateView() || null => null,
-    }).gameAdditionMode;
+    });

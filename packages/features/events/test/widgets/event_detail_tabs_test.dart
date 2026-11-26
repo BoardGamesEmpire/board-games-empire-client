@@ -126,7 +126,7 @@ void main() {
     when(() => repository.watchEvent(any())).thenAnswer((_) => cache.stream);
     when(
       () => repository.cacheEvent(any(), source: any(named: 'source')),
-    ).thenAnswer((_) async {});
+    ).thenAnswer((_) async => true);
     when(() => repository.lastWrite(any())).thenAnswer((_) async => 7);
   });
 
@@ -629,6 +629,17 @@ void main() {
         expect(visibleSections(mode: mode, nominationsInViewExist: true), all);
       });
     }
+
+    // A date's mode is unknown while its rules are unread (#1063), and
+    // Nominations then follows the host-only rule.
+    test('under an unknown mode, Nominations shows only with nominations in '
+        'view', () {
+      expect(
+        visibleSections(mode: null, nominationsInViewExist: false),
+        withoutNominations,
+      );
+      expect(visibleSections(mode: null, nominationsInViewExist: true), all);
+    });
   });
 
   group('the location (#856)', () {

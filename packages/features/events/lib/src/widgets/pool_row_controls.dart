@@ -130,20 +130,24 @@ Future<bool> takeBackGame(
 
 /// What Nominate is in [view], the date view in use (#1042), on [detail] as
 /// of [now]: null where the viewer isn't offered it under that view's mode
-/// ([nominateGate], [viewMode], #519); otherwise the choices it nominates
-/// for ([nominateScopes]), none where the view's date can no longer be
-/// nominated for, which leaves it offered but with nothing to nominate.
-/// One rule for the pool's rows, their quick looks, a press's re-check
-/// ([nominateGame]) and the Nominations sub-tab's pointer to the Pool.
+/// ([nominateGate], [viewMode], #519), or while that mode is unknown, its
+/// date's rules still to come from a read (#1063); otherwise the choices it
+/// nominates for ([nominateScopes]), none where the view's date can no
+/// longer be nominated for, which leaves it offered but with nothing to
+/// nominate. One rule for the pool's rows, their quick looks, a press's
+/// re-check ([nominateGame]) and the Nominations sub-tab's pointer to the
+/// Pool.
 List<NominateScope>? nominateChoicesIn(
   EventDetailReady detail, {
   required GamesDateView? view,
   required DateTime now,
-}) =>
-    nominateGate(detail, mode: viewMode(detail.detail.snapshot, view)) ==
-        NominateGate.open
-    ? nominateScopes(detail.detail, now: now, view: view)
-    : null;
+}) {
+  // Not passed on unknown: the gate takes a null mode as the event's.
+  final mode = viewMode(detail, view);
+  return mode != null && nominateGate(detail, mode: mode) == NominateGate.open
+      ? nominateScopes(detail.detail, now: now, view: view)
+      : null;
+}
 
 /// Whether the nominations [state] holds say what a pool row supplies
 /// (#517): there are some, or the last read to end, as [controller] draws
@@ -397,9 +401,10 @@ PoolRowGates poolRowGates(
             enabled: !detail.reading && !acting && !lineup.busy,
             runOver: !lineup.busy,
             // Under a host-only view, where nothing can be nominated, it is
-            // the row's main action, in Nominate's place (#519).
+            // the row's main action, in Nominate's place (#519). Never under
+            // an unknown mode (#1063), where it isn't built at all.
             onRow:
-                viewMode(detail.detail.snapshot, controller.dateView) ==
+                viewMode(detail, controller.dateView) ==
                 GameAdditionMode.hostOnly,
           ),
     takeBack: !takesBack

@@ -240,7 +240,7 @@ void main() {
     lease = FakeSessionLease();
     when(() => repository.watchEvent(any())).thenAnswer((_) => cache.stream);
     when(() => repository.cacheEvent(any(), source: any(named: 'source')))
-        .thenAnswer((_) async {});
+        .thenAnswer((_) async => true);
     when(() => repository.lastWrite(any())).thenAnswer((_) async => 7);
     when(
       () => repository.forgetEvent(any(), lastWrite: any(named: 'lastWrite')),
@@ -4421,6 +4421,7 @@ void main() {
         final snapshot = invocation.positionalArguments.single as EventSnapshot;
         cached = EventDetail(snapshot: snapshot, attendance: cached.attendance);
         cache.add(cached);
+        return true;
       });
       await showStatus(tester, viewed(EventStatus.scheduled), remote: remote);
       expect(
@@ -6588,6 +6589,7 @@ void main() {
             attendance: me(),
           ),
         );
+        return true;
       });
       final remote = serving(
         read: (_) => served[read++ == 0 ? 0 : 1].snapshot,
@@ -6636,6 +6638,7 @@ void main() {
             attendance: me(),
           ),
         );
+        return true;
       });
       final remote = serving(
         read: (_) {
@@ -8200,6 +8203,7 @@ void main() {
         final row = snapshot.attendees!.firstWhere((a) => a.id == 'att-me');
         cached = EventDetail(snapshot: snapshot, attendance: row);
         cache.add(cached);
+        return true;
       });
       final held = viewed(me(status: going));
       final saved = viewed(me(status: maybe));
@@ -8745,6 +8749,7 @@ void main() {
               attendance: cached.attendance,
             );
             cache.add(cached);
+            return true;
           });
       var served = viewed().snapshot;
       final remote = answering(

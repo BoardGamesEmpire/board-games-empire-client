@@ -68,19 +68,21 @@ List<NominateScope> lineupAddScopes(
 
 /// What a direct add is in [view], the date view in use (#1042), on
 /// [detail]: null where the viewer isn't offered it under that view's mode
-/// ([lineupAddGate], [viewMode], #519); otherwise what it can be for
-/// ([lineupAddScopes]), none where the view's date was called off, which
-/// leaves it offered but with nothing to add for. One rule for the pool's
-/// rows, their quick looks, the Lineup sub-tab's Add a game and a press's
-/// re-check ([addToLineup]).
+/// ([lineupAddGate], [viewMode], #519), or while that mode is unknown, its
+/// date's rules still to come from a read (#1063); otherwise what it can be
+/// for ([lineupAddScopes]), none where the view's date was called off,
+/// which leaves it offered but with nothing to add for. One rule for the
+/// pool's rows, their quick looks, the Lineup sub-tab's Add a game and a
+/// press's re-check ([addToLineup]).
 List<NominateScope>? lineupAddChoicesIn(
   EventDetailReady detail, {
   required GamesDateView? view,
-}) =>
-    lineupAddGate(detail, mode: viewMode(detail.detail.snapshot, view)) ==
-        LineupAddGate.open
-    ? lineupAddScopes(detail.detail, view: view)
-    : null;
+}) {
+  final mode = viewMode(detail, view);
+  return mode != null && lineupAddGate(detail, mode: mode) == LineupAddGate.open
+      ? lineupAddScopes(detail.detail, view: view)
+      : null;
+}
 
 /// Why a direct add (#519) in [view], the date view in use (#1042), can't be
 /// made on [detail], where [lineupAddScopes] offers nothing there: the

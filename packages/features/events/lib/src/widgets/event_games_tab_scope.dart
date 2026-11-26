@@ -1601,7 +1601,7 @@ class _EventGamesTabScopeState extends State<EventGamesTabScope>
     final detail = _detailBloc?.state;
     if (detail is! EventDetailReady) return _controller.visibleSections;
     return visibleSections(
-      mode: viewMode(detail.detail.snapshot, _controller.dateView),
+      mode: viewMode(detail, _controller.dateView),
       nominationsInViewExist: _controller.nominationsInViewExist(
         _lastNominations,
       ),

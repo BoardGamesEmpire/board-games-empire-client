@@ -217,7 +217,9 @@ void main() {
 
     /// The event with [dates], ready, made offline where [localOnly], with a
     /// read running where [reading], and the last read failed where
-    /// [refreshFailed]. By default a read has ended with these dates.
+    /// [refreshFailed]. By default a read has ended with these dates, and
+    /// with their rules, so a read running leaves each date's mode known
+    /// (#1063).
     EventDetailReady ready(
       List<EventOccurrence> dates, {
       bool localOnly = false,
@@ -232,6 +234,7 @@ void main() {
             title: title,
           ).event.copyWith(isLocalOnly: localOnly),
           occurrences: dates,
+          occurrencePolicies: const [],
         ),
       ),
       actions: const {},

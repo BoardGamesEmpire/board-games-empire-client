@@ -67,7 +67,7 @@ void main() {
     cache = StreamController<EventDetail?>();
     when(() => repository.watchEvent('e-1')).thenAnswer((_) => cache.stream);
     when(() => repository.cacheEvent(any(), source: any(named: 'source')))
-        .thenAnswer((_) async {});
+        .thenAnswer((_) async => true);
     when(() => repository.lastWrite(any())).thenAnswer((_) async => 7);
     when(
       () => repository.forgetEvent(any(), lastWrite: any(named: 'lastWrite')),
@@ -123,6 +123,9 @@ void main() {
     Object? reading = anything,
     Object? refreshFailed = anything,
     Object? canRetry = anything,
+    Object? occurrencePoliciesArriving = anything,
+    Object? occurrencePoliciesArrivingAfterFailure = anything,
+    Object? occurrencePoliciesWithheld = anything,
   }) => isA<EventDetailReady>()
       .having((s) => s.detail, 'detail', detail)
       .having((s) => s.householdName, 'householdName', householdName)
@@ -130,7 +133,22 @@ void main() {
       .having((s) => s.refreshing, 'refreshing', refreshing)
       .having((s) => s.reading, 'reading', reading)
       .having((s) => s.refreshFailed, 'refreshFailed', refreshFailed)
-      .having((s) => s.canRetry, 'canRetry', canRetry);
+      .having((s) => s.canRetry, 'canRetry', canRetry)
+      .having(
+        (s) => s.occurrencePoliciesArriving,
+        'occurrencePoliciesArriving',
+        occurrencePoliciesArriving,
+      )
+      .having(
+        (s) => s.occurrencePoliciesArrivingAfterFailure,
+        'occurrencePoliciesArrivingAfterFailure',
+        occurrencePoliciesArrivingAfterFailure,
+      )
+      .having(
+        (s) => s.occurrencePoliciesWithheld,
+        'occurrencePoliciesWithheld',
+        occurrencePoliciesWithheld,
+      );
 
   Set<EventAction> actionsOf(EventDetailState state) =>
       (state as EventDetailReady).actions;
@@ -1207,7 +1225,7 @@ void main() {
 
     test('keeps reading until the read has been written', () async {
       // The 200 that undoes a delete is the cache write, not the response.
-      final write = Completer<void>();
+      final write = Completer<bool>();
       when(() => repository.cacheEvent(any(), source: any(named: 'source')))
           .thenAnswer((_) => write.future);
       final bloc = build(remote: FakeEventRemote.detail((_) => _snapshot()));
@@ -1220,7 +1238,7 @@ void main() {
           .called(1);
       expect(bloc.state, readyWith(reading: true));
 
-      write.complete();
+      write.complete(true);
       await settle();
 
       expect(bloc.state, readyWith(reading: false));
@@ -1277,6 +1295,390 @@ void main() {
       await settle();
 
       expect(bloc.state, readyWith(detail: _detail(), reading: false));
+    });
+  });
+
+  // A read settles once its answer is written, before the cache delivers
+  // it: until then the detail is the cache's from before the read. Where
+  // the read carried the dates' rules and the cache held none, the cache is
+  // sure to answer with them, and until it does they are still unread
+  // (#1063).
+  group("a read's rules on their way to the cache (#1063)", () {
+    /// `e-1`'s rules, as a read serves them to a viewer shown them.
+    final policy = EventPolicy(
+      id: 'p-1',
+      eventId: 'e-1',
+      allowMemberInvites: true,
+      allowGuestInvites: false,
+      restrictToGameCategories: false,
+      requireHostApprovalToJoin: false,
+      allowSpectators: false,
+      strictCapacity: false,
+      gameAdditionMode: GameAdditionMode.direct,
+      restrictToAttendeePool: false,
+      voteThresholdType: VoteThresholdType.simpleMajority,
+      voteQuorumType: VoteQuorumType.none,
+      voteEligibility: VoteEligibility.allAttendees,
+      interestedWeight: InterestedWeight.asAbstain,
+      createdAt: DateTime.utc(2026),
+      updatedAt: DateTime.utc(2026),
+    );
+
+    /// A read that carries the rules and the dates' rules, none of their own.
+    final withRules = _snapshot().copyWith(
+      policy: policy,
+      occurrencePolicies: const [],
+    );
+
+    /// Opens with the cache holding [cached] and a read answering [read],
+    /// and the read settled with no cache answer since.
+    Future<EventDetailBloc> settleOver(
+      EventDetail cached,
+      EventSnapshot read, {
+      Stream<List<Household>>? households,
+    }) async {
+      final bloc = build(
+        remote: FakeEventRemote.detail((_) => read),
+        households: households,
+      );
+      addTearDown(bloc.close);
+      cache.add(cached);
+      await settle();
+      expect(bloc.state, readyWith(detail: cached, reading: false));
+      return bloc;
+    }
+
+    test('a read that carried rules over none cached has them arriving '
+        'until the cache answers', () async {
+      final read = Completer<EventSnapshot>();
+      final bloc = build(remote: FakeEventRemote.detail((_) => read.future));
+      addTearDown(bloc.close);
+
+      cache.add(_detail());
+      await settle();
+      expect(
+        bloc.state,
+        readyWith(reading: true, occurrencePoliciesArriving: false),
+      );
+
+      read.complete(withRules);
+      await settle();
+      expect(
+        bloc.state,
+        readyWith(
+          detail: _detail(),
+          reading: false,
+          occurrencePoliciesArriving: true,
+        ),
+      );
+
+      cache.add(_detail(snapshot: withRules));
+      await settle();
+      expect(
+        bloc.state,
+        readyWith(
+          detail: _detail(snapshot: withRules),
+          occurrencePoliciesArriving: false,
+        ),
+      );
+    });
+
+    test('a read refused the policy has nothing arriving: the cache may '
+        'never answer', () async {
+      // The server serves `occurrencePolicies: []` beside `policy: null`,
+      // and the cache keeps neither, so nothing it holds changes.
+      final bloc = await settleOver(
+        _detail(),
+        _snapshot().copyWith(occurrencePolicies: const []),
+      );
+
+      expect(bloc.state, readyWith(occurrencePoliciesArriving: false));
+    });
+
+    test('a read over rules cached already has nothing arriving', () async {
+      final bloc = await settleOver(_detail(snapshot: withRules), withRules);
+
+      expect(bloc.state, readyWith(occurrencePoliciesArriving: false));
+    });
+
+    test('a failed read has nothing arriving', () async {
+      final read = Completer<EventSnapshot>();
+      final bloc = build(remote: FakeEventRemote.detail((_) => read.future));
+      addTearDown(bloc.close);
+
+      cache.add(_detail());
+      await settle();
+      read.completeError(const EventRemoteTransientException('offline'));
+      await settle();
+
+      expect(
+        bloc.state,
+        readyWith(
+          reading: false,
+          refreshFailed: true,
+          occurrencePoliciesArriving: false,
+        ),
+      );
+    });
+
+    test('a read whose write the cache declined, as for an event the sync '
+        'queue owns, has nothing arriving: the cache never answers', () async {
+      when(
+        () => repository.cacheEvent(any(), source: any(named: 'source')),
+      ).thenAnswer((_) async => false);
+
+      final bloc = await settleOver(_detail(), withRules);
+
+      expect(bloc.state, readyWith(occurrencePoliciesArriving: false));
+    });
+
+    test('a retry after a failed read has its rules arriving after the '
+        'failure, until the cache answers', () async {
+      final reads = <Completer<EventSnapshot>>[];
+      final bloc = build(
+        remote: FakeEventRemote.detail((_) {
+          final read = Completer<EventSnapshot>();
+          reads.add(read);
+          return read.future;
+        }),
+      );
+      addTearDown(bloc.close);
+
+      cache.add(_detail());
+      await settle();
+      reads.single.completeError(const EventRemoteTransientException('off'));
+      await settle();
+      bloc.add(const EventDetailRetryRequested());
+      await settle();
+      reads.last.complete(withRules);
+      await settle();
+
+      expect(
+        bloc.state,
+        readyWith(
+          refreshFailed: false,
+          occurrencePoliciesArriving: true,
+          occurrencePoliciesArrivingAfterFailure: true,
+        ),
+      );
+
+      cache.add(_detail(snapshot: withRules));
+      await settle();
+
+      expect(
+        bloc.state,
+        readyWith(
+          occurrencePoliciesArriving: false,
+          occurrencePoliciesArrivingAfterFailure: false,
+        ),
+      );
+    });
+
+    test(
+      'a read on open has its rules arriving, but not after a failure',
+      () async {
+        final bloc = await settleOver(_detail(), withRules);
+
+        expect(
+          bloc.state,
+          readyWith(
+            occurrencePoliciesArriving: true,
+            occurrencePoliciesArrivingAfterFailure: false,
+          ),
+        );
+      },
+    );
+
+    // A viewer refused the rules gets none from any read, so a read running
+    // says nothing of what a date's are, and the screen needn't wait on it.
+    group('withheld', () {
+      final refused = _snapshot().copyWith(occurrencePolicies: const []);
+
+      test('a read refused the rules says so, and a later read that carries '
+          'them unsays it', () async {
+        final reads = <Completer<EventSnapshot>>[];
+        final bloc = build(
+          remote: FakeEventRemote.detail((_) {
+            final read = Completer<EventSnapshot>();
+            reads.add(read);
+            return read.future;
+          }),
+        );
+        addTearDown(bloc.close);
+
+        cache.add(_detail());
+        await settle();
+        // Nothing is known on a first open.
+        expect(
+          bloc.state,
+          readyWith(reading: true, occurrencePoliciesWithheld: false),
+        );
+
+        reads.single.complete(refused);
+        await settle();
+        expect(
+          bloc.state,
+          readyWith(reading: false, occurrencePoliciesWithheld: true),
+        );
+
+        // A retry runs with it still said.
+        bloc.add(const EventDetailRetryRequested());
+        await settle();
+        expect(
+          bloc.state,
+          readyWith(reading: true, occurrencePoliciesWithheld: true),
+        );
+
+        // The viewer has been granted the rules meanwhile.
+        reads.last.complete(withRules);
+        await settle();
+        expect(
+          bloc.state,
+          readyWith(reading: false, occurrencePoliciesWithheld: false),
+        );
+      });
+
+      test('a failed read leaves it as it was', () async {
+        final reads = <Completer<EventSnapshot>>[];
+        final bloc = build(
+          remote: FakeEventRemote.detail((_) {
+            final read = Completer<EventSnapshot>();
+            reads.add(read);
+            return read.future;
+          }),
+        );
+        addTearDown(bloc.close);
+
+        cache.add(_detail());
+        await settle();
+        reads.single.complete(refused);
+        await settle();
+        bloc.add(const EventDetailRetryRequested());
+        await settle();
+        reads.last.completeError(
+          const EventRemoteTransientException('offline'),
+        );
+        await settle();
+
+        expect(
+          bloc.state,
+          readyWith(refreshFailed: true, occurrencePoliciesWithheld: true),
+        );
+      });
+
+      test('a move followed onto the server id unsays it', () async {
+        final households = StreamController<List<Household>>();
+        addTearDown(households.close);
+        final moved = StreamController<EventDetail?>();
+        addTearDown(() => unawaited(moved.close()));
+        when(
+          () => repository.watchEvent('ev-server'),
+        ).thenAnswer((_) => moved.stream);
+        final bloc = await settleOver(
+          _detail(),
+          refused,
+          households: households.stream,
+        );
+        expect(bloc.state, readyWith(occurrencePoliciesWithheld: true));
+
+        when(() => repository.reconciledEventId('e-1')).thenReturn('ev-server');
+        cache.add(null);
+        await settle();
+        households.add([_household('h-1', 'The Smiths')]);
+        await settle();
+
+        expect(bloc.state, readyWith(occurrencePoliciesWithheld: false));
+      });
+    });
+
+    group('ends', () {
+      /// Opens over unread rules with a read that carries them, which
+      /// settles with no cache answer: the rules are arriving.
+      Future<EventDetailBloc> arriving({
+        Stream<List<Household>>? households,
+      }) async {
+        final bloc = await settleOver(
+          _detail(),
+          withRules,
+          households: households,
+        );
+        expect(bloc.state, readyWith(occurrencePoliciesArriving: true));
+        return bloc;
+      }
+
+      test('on a cache failure', () async {
+        final bloc = await arriving();
+
+        cache.addError(StateError('read failed'));
+        await settle();
+
+        expect(
+          bloc.state,
+          readyWith(detail: _detail(), occurrencePoliciesArriving: false),
+        );
+      });
+
+      test('as the cache ends', () async {
+        final bloc = await arriving();
+
+        await cache.close();
+        await settle();
+
+        expect(
+          bloc.state,
+          readyWith(detail: _detail(), occurrencePoliciesArriving: false),
+        );
+      });
+
+      test('never starts once the cache has ended', () async {
+        final read = Completer<EventSnapshot>();
+        final bloc = build(remote: FakeEventRemote.detail((_) => read.future));
+        addTearDown(bloc.close);
+
+        cache.add(_detail());
+        await settle();
+        expect(bloc.state, readyWith(reading: true));
+
+        // The cache ends with the read still out; nothing will answer the
+        // write the read makes.
+        await cache.close();
+        await settle();
+        read.complete(withRules);
+        await settle();
+
+        expect(
+          bloc.state,
+          readyWith(
+            detail: _detail(),
+            reading: false,
+            occurrencePoliciesArriving: false,
+          ),
+        );
+      });
+
+      test('as the detail follows a reconcile onto the server id', () async {
+        final households = StreamController<List<Household>>();
+        addTearDown(households.close);
+        final moved = StreamController<EventDetail?>();
+        addTearDown(() => unawaited(moved.close()));
+        when(
+          () => repository.watchEvent('ev-server'),
+        ).thenAnswer((_) => moved.stream);
+        final bloc = await arriving(households: households.stream);
+
+        // The local id's watch answers as the reconcile moves the event, and
+        // the detail follows it; the server id's watch hasn't answered yet.
+        when(() => repository.reconciledEventId('e-1')).thenReturn('ev-server');
+        cache.add(null);
+        await settle();
+        households.add([_household('h-1', 'The Smiths')]);
+        await settle();
+
+        expect(
+          bloc.state,
+          readyWith(detail: _detail(), occurrencePoliciesArriving: false),
+        );
+      });
     });
   });
 
@@ -1733,6 +2135,41 @@ void main() {
           EventDetailReady(detail: _detail(), actions: const {}, reading: true),
         ),
       );
+      expect(
+        EventDetailReady(detail: _detail(), actions: const {}),
+        isNot(
+          EventDetailReady(
+            detail: _detail(),
+            actions: const {},
+            occurrencePoliciesArriving: true,
+          ),
+        ),
+      );
+      expect(
+        EventDetailReady(
+          detail: _detail(),
+          actions: const {},
+          occurrencePoliciesArriving: true,
+        ),
+        isNot(
+          EventDetailReady(
+            detail: _detail(),
+            actions: const {},
+            occurrencePoliciesArriving: true,
+            occurrencePoliciesArrivingAfterFailure: true,
+          ),
+        ),
+      );
+      expect(
+        EventDetailReady(detail: _detail(), actions: const {}),
+        isNot(
+          EventDetailReady(
+            detail: _detail(),
+            actions: const {},
+            occurrencePoliciesWithheld: true,
+          ),
+        ),
+      );
     });
 
     test('events compare by value', () {
@@ -1810,6 +2247,19 @@ void main() {
             EventDetailReadOutcome.succeeded,
             eventId: 'e-1',
             rosterWithheld: true,
+          ),
+        ),
+      );
+      expect(
+        const EventDetailReadSettled(
+          EventDetailReadOutcome.succeeded,
+          eventId: 'e-1',
+        ),
+        isNot(
+          const EventDetailReadSettled(
+            EventDetailReadOutcome.succeeded,
+            eventId: 'e-1',
+            cacheWritten: true,
           ),
         ),
       );

@@ -194,12 +194,146 @@ void main() {
     });
   });
 
+  /// [d] as the screen holds it, with a detail read running where
+  /// [reading], one settled with the dates' rules it carried still on their
+  /// way to the cache where [arriving], and that one following a failed one
+  /// where [afterFailure], an earlier one that carried no dates' rules where
+  /// [withheld], and the last one failed where [failed].
+  EventDetailReady ready(
+    EventDetail d, {
+    bool reading = false,
+    bool arriving = false,
+    bool afterFailure = false,
+    bool withheld = false,
+    bool failed = false,
+  }) => EventDetailReady(
+    detail: d,
+    actions: const {},
+    reading: reading,
+    occurrencePoliciesArriving: arriving,
+    occurrencePoliciesArrivingAfterFailure: afterFailure,
+    occurrencePoliciesWithheld: withheld,
+    refreshFailed: failed,
+  );
+
+  group('scopeMode (#1063)', () {
+    final twoDates = [date('d-1', soon), date('d-2', later, order: 1)];
+
+    test("a date's mode is unknown while its rules are unread and a read "
+        'runs', () {
+      final d = ready(
+        detail(twoDates, eventPolicy: policy(GameAdditionMode.direct)),
+        reading: true,
+      );
+
+      expect(scopeMode(d, 'd-1'), isNull);
+      expect(viewMode(d, const OneDateView('d-1')), isNull);
+    });
+
+    test("a date's mode is unknown while a read's rules are on their way to "
+        'the cache', () {
+      final d = ready(
+        detail(twoDates, eventPolicy: policy(GameAdditionMode.direct)),
+        arriving: true,
+      );
+
+      expect(scopeMode(d, 'd-1'), isNull);
+      expect(viewMode(d, const OneDateView('d-1')), isNull);
+      // The whole event's is known all the same.
+      expect(scopeMode(d, null), GameAdditionMode.direct);
+    });
+
+    test("a date's own mode once its rules are read", () {
+      final d = ready(
+        detail(
+          twoDates,
+          eventPolicy: policy(GameAdditionMode.direct),
+          overrides: [override('d-1', GameAdditionMode.hostOnly)],
+        ),
+        reading: true,
+      );
+
+      expect(scopeMode(d, 'd-1'), GameAdditionMode.hostOnly);
+      expect(
+        viewMode(d, const OneDateView('d-1')),
+        GameAdditionMode.hostOnly,
+      );
+    });
+
+    test("unread rules with no read running fall back to the event's "
+        'mode', () {
+      final unread = detail(
+        twoDates,
+        eventPolicy: policy(GameAdditionMode.direct),
+      );
+
+      // None started, and one that failed.
+      for (final d in [ready(unread), ready(unread, failed: true)]) {
+        expect(scopeMode(d, 'd-1'), GameAdditionMode.direct);
+        expect(
+          viewMode(d, const OneDateView('d-1')),
+          GameAdditionMode.direct,
+        );
+      }
+    });
+
+    test('a read running for a viewer refused the rules leaves the '
+        "event's mode", () {
+      final d = ready(
+        detail(twoDates, eventPolicy: policy(GameAdditionMode.direct)),
+        reading: true,
+        withheld: true,
+      );
+
+      expect(scopeMode(d, 'd-1'), GameAdditionMode.direct);
+      expect(viewMode(d, const OneDateView('d-1')), GameAdditionMode.direct);
+    });
+
+    test("a read running after one that failed leaves the event's mode, so "
+        'the controls the failure left stay through the retry', () {
+      final d = ready(
+        detail(twoDates, eventPolicy: policy(GameAdditionMode.direct)),
+        reading: true,
+        failed: true,
+      );
+
+      expect(scopeMode(d, 'd-1'), GameAdditionMode.direct);
+      expect(viewMode(d, const OneDateView('d-1')), GameAdditionMode.direct);
+    });
+
+    test("a retry's rules on their way to the cache after a failure leave "
+        "the event's mode, so the controls the failure left stay until they "
+        'land', () {
+      final d = ready(
+        detail(twoDates, eventPolicy: policy(GameAdditionMode.direct)),
+        arriving: true,
+        afterFailure: true,
+      );
+
+      expect(scopeMode(d, 'd-1'), GameAdditionMode.direct);
+      expect(viewMode(d, const OneDateView('d-1')), GameAdditionMode.direct);
+    });
+
+    test("Every date and no row take the event's mode, even mid-read", () {
+      final d = ready(
+        detail(twoDates, eventPolicy: policy(GameAdditionMode.hostOnly)),
+        reading: true,
+      );
+
+      expect(scopeMode(d, null), GameAdditionMode.hostOnly);
+      expect(viewMode(d, const EveryDateView()), GameAdditionMode.hostOnly);
+      expect(viewMode(d, null), GameAdditionMode.hostOnly);
+    });
+  });
+
   group('viewMode', () {
-    final dated = detail(
-      [date('soon', soon), date('later', later, order: 1)],
-      eventPolicy: policy(GameAdditionMode.requiresVote),
-      overrides: [override('soon', GameAdditionMode.hostOnly)],
-    ).snapshot;
+    final dated = ready(
+      detail(
+        [date('soon', soon), date('later', later, order: 1)],
+        eventPolicy: policy(GameAdditionMode.requiresVote),
+        overrides: [override('soon', GameAdditionMode.hostOnly)],
+      ),
+    );
 
     test('a date that overrides the mode to HostOnly has that mode in its '
         'view', () {

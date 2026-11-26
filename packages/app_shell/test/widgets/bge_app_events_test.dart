@@ -285,7 +285,7 @@ void main() {
           ),
     );
     when(() => repository.cacheEvent(any(), source: any(named: 'source')))
-        .thenAnswer((_) async {});
+        .thenAnswer((_) async => true);
     when(() => repository.lastWrite(any())).thenAnswer((_) async => 7);
     when(
       () => repository.forgetEvent(any(), lastWrite: any(named: 'lastWrite')),
@@ -1152,6 +1152,7 @@ void main() {
           when(() => repository.cacheEvent(any(), source: any(named: 'source')))
               .thenAnswer((call) async {
                 publish(call.positionalArguments.first as EventSnapshot);
+                return true;
               });
           when(() => repository.cacheOccurrence(any()))
               .thenAnswer((call) async {

@@ -562,6 +562,10 @@ class EventGamesTab extends StatelessWidget {
     // of the pool's writes is out.
     final writable = !detail.reading && !acting && !games.busy;
     final nominations = this.nominations;
+    // Whether the view's mode is known (#1063): until it is, a pool row's
+    // main action is not yet known either, Take back included, which is
+    // its main action only where neither Nominate nor Add to lineup is.
+    final modeKnown = viewMode(detail, controller.dateView) != null;
 
     return SliverMainAxisGroup(
       slivers: [
@@ -756,7 +760,9 @@ class EventGamesTab extends StatelessWidget {
                   // label doesn't draw it already, as Nominated does (#947).
                   // Take back's, where it is that action, says what the game
                   // still supplies (#905).
-                  note: add != null
+                  note: !modeKnown
+                      ? null
+                      : add != null
                       ? gates.addToLineup?.reason
                       : nominate != null
                       ? gates.nominate?.drawnReason
@@ -764,8 +770,11 @@ class EventGamesTab extends StatelessWidget {
                   // One main action (#946): Nominate where the viewer is
                   // offered it, or Add to lineup in its place, else Take back
                   // where they may take it back. Take back beside either is
-                  // the quick look's.
-                  action: add ?? nominate ?? buttons.takeBack,
+                  // the quick look's, and so is every one while the view's
+                  // mode is unknown (#1063): none shows, then gives way.
+                  action: !modeKnown
+                      ? null
+                      : add ?? nominate ?? buttons.takeBack,
                 );
               },
             ),

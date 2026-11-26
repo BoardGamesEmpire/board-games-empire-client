@@ -184,7 +184,12 @@ abstract class EventRepository {
   /// server acknowledges it, and a server copy written over it would undo
   /// what the queue is about to send. Nothing of it is written, whatever the
   /// snapshot says. A read after the flags clear writes it as any other.
-  Future<void> cacheEvent(
+  ///
+  /// Returns whether it wrote the snapshot: false for an event it left alone
+  /// as queue-owned, judged in the write's own transaction. A caller waiting
+  /// for [watchEvent] to answer with what it wrote waits only on true
+  /// (#1063).
+  Future<bool> cacheEvent(
     EventSnapshot snapshot, {
     required EventAccessSource source,
   });

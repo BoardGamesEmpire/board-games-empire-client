@@ -100,21 +100,37 @@ enum EventDetailReadOutcome {
 ///
 /// [rosterWithheld] says a read that succeeded carried an empty roster, one
 /// the viewer may not see, which the cache can't keep (`EventDetailBloc`
-/// has why). [eventId] is the id it read, which the bloc may have followed
-/// a move off since (#499): the answer is about that id alone.
+/// has why). [carriedOccurrencePolicies] says it carried the event's policy
+/// and its dates' own policies, which the cache then holds as read (#1063);
+/// a read refused the policy carries neither. [cacheWritten] says the
+/// cache wrote what a read that succeeded carried, which it doesn't for an
+/// event the sync queue owns (`EventRepository.cacheEvent`), so that only a
+/// written read waits for the cache to answer (#1063). [eventId] is the id
+/// it read, which the bloc may have followed a move off since (#499): the
+/// answer is about that id alone.
 final class EventDetailReadSettled extends EventDetailEvent {
   const EventDetailReadSettled(
     this.outcome, {
     required this.eventId,
     this.rosterWithheld = false,
+    this.carriedOccurrencePolicies = false,
+    this.cacheWritten = false,
   });
 
   final EventDetailReadOutcome outcome;
   final String eventId;
   final bool rosterWithheld;
+  final bool carriedOccurrencePolicies;
+  final bool cacheWritten;
 
   @override
-  List<Object?> get props => [outcome, eventId, rosterWithheld];
+  List<Object?> get props => [
+    outcome,
+    eventId,
+    rosterWithheld,
+    carriedOccurrencePolicies,
+    cacheWritten,
+  ];
 }
 
 /// The user asked for the event to be read from the server again.

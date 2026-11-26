@@ -276,7 +276,7 @@ void main() {
     when(() => repository.watchEvent(any())).thenAnswer((_) => cache.stream);
     when(
       () => repository.cacheEvent(any(), source: any(named: 'source')),
-    ).thenAnswer((_) async {});
+    ).thenAnswer((_) async => true);
     when(() => repository.lastWrite(any())).thenAnswer((_) async => 7);
     served = [catanMine, azul, catanAdas, root];
     poolAnswer = (_) => served;
@@ -8529,6 +8529,512 @@ void main() {
       expect(inQuickLook(find.text(closed)), findsOneWidget);
       expect(inQuickLook(find.text(notGoing)), findsNothing);
       handle.dispose();
+    });
+  });
+
+  // A date's mode is unknown while its rules are unread and a read runs
+  // (#1063): nothing that depends on it is built until the read lands, and
+  // the Nominations sub-tab follows the host-only rule meanwhile.
+  group("a date's rules unread (#1063)", () {
+    final host = _row('att-me', name: 'Me', role: EventRole.host);
+    final all = [catanMine, azul, catanAdas, root];
+    final quickLook = find.byKey(EventDetailScreen.quickLookKey);
+    Finder inQuickLook(Key key) =>
+        find.descendant(of: quickLook, matching: find.byKey(key));
+    final nominateInQuickLook = inQuickLook(
+      EventDetailScreen.quickLookNominateKey,
+    );
+    final addInQuickLook = inQuickLook(
+      EventDetailScreen.quickLookAddToLineupKey,
+    );
+
+    /// A row's Add to lineup, its main action under a host-only view.
+    Finder addOn(String id) => find.byKey(
+      EventDetailScreen.poolAddToLineupKey(id),
+      skipOffstage: false,
+    );
+
+    /// Friday the 6th, the view the tab opens on, and Saturday the 7th, at
+    /// seven.
+    final friday = confirmed(
+      'd-1',
+      DateTime(2026, 11, 6, 19),
+    ).copyWith(eventId: 'e-1');
+    final saturday = confirmed(
+      'd-2',
+      DateTime(2026, 11, 7, 19),
+      sortOrder: 1,
+    ).copyWith(eventId: 'e-1');
+
+    /// `e-1` on Friday and Saturday as [viewer] sees it, its games added as
+    /// [eventMode] says. Friday's own rules add them as [fridayMode] once
+    /// read; unread (null) as a list read caches the event.
+    EventDetail twoDated({
+      required EventAttendee viewer,
+      required GameAdditionMode eventMode,
+      GameAdditionMode? fridayMode,
+    }) {
+      final detail = detailOf(
+        viewer: viewer,
+        occurrences: [friday, saturday],
+        policy: policyOf(eventMode),
+      );
+      return detail.copyWith(
+        snapshot: detail.snapshot.copyWith(
+          occurrencePolicies: fridayMode == null
+              ? null
+              : [
+                  EventOccurrencePolicy(
+                    id: 'op-d-1',
+                    occurrenceId: 'd-1',
+                    allowedCategoryIds: const [],
+                    allowedPlatformIds: const [],
+                    allowedPlatformTypes: const [],
+                    platformTypesUnrestricted: false,
+                    platformsUnrestricted: false,
+                    capacityUnrestricted: false,
+                    gameAdditionMode: fridayMode,
+                    createdAt: kItemInstant,
+                    updatedAt: kItemInstant,
+                  ),
+                ],
+        ),
+      );
+    }
+
+    /// Opens [unread] on Pool with the opening read held, its dates' rules
+    /// unread, and reads the pool, the nominations and the lineup
+    /// meanwhile, so the rows and their controls' states are there.
+    Future<void> openUnread(WidgetTester tester, EventDetail unread) async {
+      expect(unread.snapshot.occurrencePolicies, isNull);
+      heldRead = Completer<EventSnapshot>();
+      await showGames(tester, detail: unread);
+      expect(
+        (blocOf<EventDetailBloc>(tester).state as EventDetailReady).reading,
+        isTrue,
+      );
+      blocOf<EventNominationsBloc>(
+        tester,
+      ).add(const EventNominationsRequested('e-1'));
+      blocOf<EventLineupBloc>(tester).add(const EventLineupRequested('e-1'));
+      await readPool(tester);
+      expect(row(azul.id), findsOneWidget);
+    }
+
+    /// The opening read lands with [read], as the cache delivers it.
+    Future<void> readLands(WidgetTester tester, EventDetail read) async {
+      cache.add(read);
+      heldRead!.complete(read.snapshot);
+      heldRead = null;
+      await animate(tester);
+      await animate(tester);
+    }
+
+    Future<void> openQuickLook(WidgetTester tester, String id) async {
+      await press(tester, head(id));
+      await animate(tester);
+      expect(quickLook, findsOneWidget);
+    }
+
+    Future<void> closeQuickLook(WidgetTester tester) async {
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await animate(tester);
+      expect(quickLook, findsNothing);
+    }
+
+    testWidgets('event Direct, date HostOnly: no Nominate or Add to lineup '
+        'until the read lands, then Add to lineup', (tester) async {
+      lineupAnswer = (_) => const [];
+      await openUnread(
+        tester,
+        twoDated(viewer: host, eventMode: GameAdditionMode.direct),
+      );
+
+      for (final game in all) {
+        expect(nominateOn(game.id), findsNothing, reason: game.id);
+        expect(addOn(game.id), findsNothing, reason: game.id);
+      }
+      // Nor Take back in their place on the viewer's own row: the row's main
+      // action waits for the mode, whatever it turns out to be.
+      expect(takeBack(catanMine.id), findsNothing);
+      // No nomination is in view, so Nominations follows the host-only rule.
+      expect(sectionTab(EventGamesSection.nominations), findsNothing);
+      // The same controls in the quick look, which builds its own.
+      await openQuickLook(tester, azul.id);
+      expect(nominateInQuickLook, findsNothing);
+      expect(addInQuickLook, findsNothing);
+      await closeQuickLook(tester);
+      // Take back stays the quick look's, which doesn't depend on the mode.
+      await openQuickLook(tester, catanMine.id);
+      expect(
+        inQuickLook(EventDetailScreen.quickLookTakeBackKey),
+        findsOneWidget,
+      );
+      await closeQuickLook(tester);
+      // Nor the Lineup sub-tab's Add a game.
+      await chooseSection(tester, EventGamesSection.lineup);
+      expect(
+        find.byKey(EventDetailScreen.lineupAddKey, skipOffstage: false),
+        findsNothing,
+      );
+
+      await readLands(
+        tester,
+        twoDated(
+          viewer: host,
+          eventMode: GameAdditionMode.direct,
+          fridayMode: GameAdditionMode.hostOnly,
+        ),
+      );
+
+      expect(
+        find.byKey(EventDetailScreen.lineupAddKey, skipOffstage: false),
+        findsOneWidget,
+      );
+      await chooseSection(tester, EventGamesSection.pool);
+      for (final game in all) {
+        expect(addOn(game.id), findsOneWidget, reason: game.id);
+        expect(nominateOn(game.id), findsNothing, reason: game.id);
+      }
+      expect(sectionTab(EventGamesSection.nominations), findsNothing);
+      await openQuickLook(tester, azul.id);
+      expect(addInQuickLook, findsOneWidget);
+      expect(nominateInQuickLook, findsNothing);
+    });
+
+    // As a participant, the mode the test is named for; as a host too, for
+    // whom the event's mode would build Add to lineup in Nominate's place.
+    for (final (viewer, who) in [(me, 'a participant'), (host, 'a host')]) {
+      testWidgets('event HostOnly, date Direct: no control until the read '
+          'lands, then Nominate, for $who', (tester) async {
+        lineupAnswer = (_) => const [];
+        await openUnread(
+          tester,
+          twoDated(viewer: viewer, eventMode: GameAdditionMode.hostOnly),
+        );
+
+        for (final game in all) {
+          expect(nominateOn(game.id), findsNothing, reason: game.id);
+          expect(addOn(game.id), findsNothing, reason: game.id);
+        }
+        expect(sectionTab(EventGamesSection.nominations), findsNothing);
+        await openQuickLook(tester, azul.id);
+        expect(nominateInQuickLook, findsNothing);
+        expect(addInQuickLook, findsNothing);
+        await closeQuickLook(tester);
+
+        await readLands(
+          tester,
+          twoDated(
+            viewer: viewer,
+            eventMode: GameAdditionMode.hostOnly,
+            fridayMode: GameAdditionMode.direct,
+          ),
+        );
+
+        // Nominate is the row's main action, as it is under Direct.
+        for (final game in all) {
+          expect(nominateOn(game.id), findsOneWidget, reason: game.id);
+          expect(addOn(game.id), findsNothing, reason: game.id);
+        }
+        expect(sectionTab(EventGamesSection.nominations), findsOneWidget);
+        await openQuickLook(tester, azul.id);
+        expect(nominateInQuickLook, findsOneWidget);
+      });
+    }
+
+    testWidgets("a failed read shows the event's mode", (tester) async {
+      lineupAnswer = (_) => const [];
+      // Never read: Friday may override the event's rules, but nothing
+      // says so, and the server enforces them.
+      await openUnread(
+        tester,
+        twoDated(viewer: host, eventMode: GameAdditionMode.direct),
+      );
+      expect(nominateOn(azul.id), findsNothing);
+
+      heldRead!.completeError(_offline);
+      heldRead = null;
+      await animate(tester);
+      await animate(tester);
+
+      expect(
+        (blocOf<EventDetailBloc>(tester).state as EventDetailReady)
+            .refreshFailed,
+        isTrue,
+      );
+      // Direct: Nominate is the row's, and Add to lineup the quick look's.
+      for (final game in all) {
+        expect(nominateOn(game.id), findsOneWidget, reason: game.id);
+        expect(addOn(game.id), findsNothing, reason: game.id);
+      }
+      expect(sectionTab(EventGamesSection.nominations), findsOneWidget);
+      await openQuickLook(tester, azul.id);
+      expect(nominateInQuickLook, findsOneWidget);
+      expect(addInQuickLook, findsOneWidget);
+    });
+
+    testWidgets("a retry after a failed read keeps the event's controls "
+        'while it runs', (tester) async {
+      lineupAnswer = (_) => const [];
+      await openUnread(
+        tester,
+        twoDated(viewer: host, eventMode: GameAdditionMode.direct),
+      );
+      heldRead!.completeError(_offline);
+      heldRead = null;
+      await animate(tester);
+      await animate(tester);
+      expect(nominateOn(azul.id), findsOneWidget);
+      final nominate = nominateFocus(tester, azul.id);
+
+      heldRead = Completer<EventSnapshot>();
+      blocOf<EventDetailBloc>(tester).add(const EventDetailRetryRequested());
+      await animate(tester);
+      final retrying =
+          blocOf<EventDetailBloc>(tester).state as EventDetailReady;
+      expect(retrying.reading, isTrue);
+      expect(retrying.refreshFailed, isTrue);
+
+      // The same Nominate, not one gone and built again.
+      expect(nominateOn(azul.id), findsOneWidget);
+      expect(nominateFocus(tester, azul.id), same(nominate));
+      expect(sectionTab(EventGamesSection.nominations), findsOneWidget);
+
+      heldRead!.completeError(_offline);
+      heldRead = null;
+      await animate(tester);
+      expect(nominateFocus(tester, azul.id), same(nominate));
+    });
+
+    // The retry's answer is written a beat before the cache delivers it,
+    // and the date's rules come with that delivery.
+    testWidgets("a retry after a failed read that succeeds keeps the event's "
+        'controls until its rules land', (tester) async {
+      lineupAnswer = (_) => const [];
+      await openUnread(
+        tester,
+        twoDated(viewer: host, eventMode: GameAdditionMode.direct),
+      );
+      heldRead!.completeError(_offline);
+      heldRead = null;
+      await animate(tester);
+      await animate(tester);
+      final nominate = nominateFocus(tester, azul.id);
+
+      heldRead = Completer<EventSnapshot>();
+      blocOf<EventDetailBloc>(tester).add(const EventDetailRetryRequested());
+      await animate(tester);
+      final read = twoDated(
+        viewer: host,
+        eventMode: GameAdditionMode.direct,
+        fridayMode: GameAdditionMode.direct,
+      );
+      heldRead!.complete(read.snapshot);
+      heldRead = null;
+      await animate(tester);
+      await animate(tester);
+
+      final settled = blocOf<EventDetailBloc>(tester).state as EventDetailReady;
+      expect(settled.refreshFailed, isFalse);
+      expect(settled.occurrencePoliciesArriving, isTrue);
+      expect(settled.detail.snapshot.occurrencePolicies, isNull);
+      // The same Nominate, not one gone and built again.
+      expect(nominateFocus(tester, azul.id), same(nominate));
+      expect(sectionTab(EventGamesSection.nominations), findsOneWidget);
+
+      cache.add(read);
+      await animate(tester);
+
+      expect(nominateFocus(tester, azul.id), same(nominate));
+    });
+
+    // A read settles once its answer is written, a beat before the cache
+    // delivers it, and the date's rules come with that delivery.
+    testWidgets('a read that settles before the cache delivers its answer '
+        "builds nothing in between, then the date's control", (tester) async {
+      lineupAnswer = (_) => const [];
+      await openUnread(
+        tester,
+        twoDated(viewer: host, eventMode: GameAdditionMode.direct),
+      );
+      final read = twoDated(
+        viewer: host,
+        eventMode: GameAdditionMode.direct,
+        fridayMode: GameAdditionMode.hostOnly,
+      );
+
+      heldRead!.complete(read.snapshot);
+      heldRead = null;
+      await animate(tester);
+      await animate(tester);
+
+      final settled = blocOf<EventDetailBloc>(tester).state as EventDetailReady;
+      expect(settled.reading, isFalse);
+      expect(settled.detail.snapshot.occurrencePolicies, isNull);
+      for (final game in all) {
+        expect(nominateOn(game.id), findsNothing, reason: game.id);
+        expect(addOn(game.id), findsNothing, reason: game.id);
+      }
+      expect(sectionTab(EventGamesSection.nominations), findsNothing);
+
+      cache.add(read);
+      await animate(tester);
+
+      for (final game in all) {
+        expect(addOn(game.id), findsOneWidget, reason: game.id);
+        expect(nominateOn(game.id), findsNothing, reason: game.id);
+      }
+      expect(sectionTab(EventGamesSection.nominations), findsNothing);
+    });
+
+    testWidgets('a viewer refused the rules, opening an event read before, '
+        "has the event's controls once the read ends, with no cache answer", (
+      tester,
+    ) async {
+      // Neither the rules nor the dates' are served to this viewer, so the
+      // read changes nothing the cache holds, and the cache doesn't answer.
+      final refused = detailOf(occurrences: [friday, saturday]);
+      expect(refused.snapshot.policy, isNull);
+      heldRead = Completer<EventSnapshot>();
+      await showGames(tester, detail: refused);
+      blocOf<EventNominationsBloc>(
+        tester,
+      ).add(const EventNominationsRequested('e-1'));
+      await readPool(tester);
+      expect(nominateOn(azul.id), findsNothing);
+
+      heldRead!.complete(
+        refused.snapshot.copyWith(occurrencePolicies: const []),
+      );
+      heldRead = null;
+      await animate(tester);
+      await animate(tester);
+
+      expect(nominateOn(azul.id), findsOneWidget);
+      expect(sectionTab(EventGamesSection.nominations), findsOneWidget);
+    });
+
+    // Nominate itself is disabled while any read runs, and a disabled
+    // button gives up focus (#589, #607), so focus is held on its row.
+    testWidgets('a viewer refused the rules keeps Nominate through a read '
+        'again, and focus on its row', (tester) async {
+      final refused = detailOf(occurrences: [friday, saturday]);
+      final served = refused.snapshot.copyWith(occurrencePolicies: const []);
+      // The first read serves no rules.
+      heldRead = Completer<EventSnapshot>();
+      await show(tester, detail: refused);
+      heldRead!.complete(served);
+      heldRead = null;
+      await animate(tester);
+      await chooseGames(tester);
+      await animate(tester);
+      expect(nominateOn(azul.id), findsOneWidget);
+      final nominate = nominateFocus(tester, azul.id);
+      await tester.ensureVisible(head(azul.id));
+      await tester.pump();
+      final focus = headFocus(tester, azul.id)..requestFocus();
+      await tester.pump();
+      expect(focus.hasPrimaryFocus, isTrue);
+
+      // A refresh, held.
+      heldRead = Completer<EventSnapshot>();
+      blocOf<EventDetailBloc>(tester).add(const EventDetailRetryRequested());
+      await animate(tester);
+      expect(
+        (blocOf<EventDetailBloc>(tester).state as EventDetailReady).reading,
+        isTrue,
+      );
+
+      // The same Nominate, not one gone and built again. These two carry the
+      // test: focus on the row head would hold through a regression.
+      expect(nominateOn(azul.id), findsOneWidget);
+      expect(nominateFocus(tester, azul.id), same(nominate));
+      expect(focus.hasPrimaryFocus, isTrue);
+
+      heldRead!.complete(served);
+      heldRead = null;
+      await animate(tester);
+      expect(nominateFocus(tester, azul.id), same(nominate));
+      expect(focus.hasPrimaryFocus, isTrue);
+    });
+
+    testWidgets('a Nominate held for a read goes under the mode the read '
+        'gives, once the cache delivers its rules', (tester) async {
+      // Read before, but the dates' rules not yet: the event's mode stands
+      // in while no read runs.
+      final unread = twoDated(viewer: me, eventMode: GameAdditionMode.direct);
+      await showGames(tester, detail: unread);
+      await tester.ensureVisible(nominateOn(azul.id));
+      await tester.pump();
+      final detail = blocOf<EventDetailBloc>(tester);
+      heldRead = Completer<EventSnapshot>();
+
+      // A read starts, and the press lands before a frame shows it.
+      detail.add(const EventDetailRetryRequested());
+      for (var i = 0; i < 20; i++) {
+        await Future<void>.value();
+      }
+      expect((detail.state as EventDetailReady).reading, isTrue);
+      await tester.tap(nominateOn(azul.id));
+
+      // The read carries Friday's rules, which allow it, and settles before
+      // the cache delivers them.
+      final read = twoDated(
+        viewer: me,
+        eventMode: GameAdditionMode.direct,
+        fridayMode: GameAdditionMode.direct,
+      );
+      heldRead!.complete(read.snapshot);
+      heldRead = null;
+      await animate(tester);
+
+      expect((detail.state as EventDetailReady).reading, isFalse);
+      expect(remote.nominates, isEmpty);
+      expect(
+        find.textContaining("Azul wasn't nominated", skipOffstage: false),
+        findsNothing,
+      );
+
+      cache.add(read);
+      await animate(tester);
+
+      expect(remote.nominates, [
+        (
+          eventId: 'e-1',
+          platformGameId: 'pg-o-2',
+          suppliedFromId: 'o-2',
+          occurrenceId: 'd-1',
+        ),
+      ]);
+    });
+
+    testWidgets('focus on a pool row is kept as its controls appear', (
+      tester,
+    ) async {
+      lineupAnswer = (_) => const [];
+      await openUnread(
+        tester,
+        twoDated(viewer: host, eventMode: GameAdditionMode.direct),
+      );
+      await tester.ensureVisible(head(azul.id));
+      await tester.pump();
+      final focus = headFocus(tester, azul.id)..requestFocus();
+      await tester.pump();
+      expect(focus.hasPrimaryFocus, isTrue);
+
+      await readLands(
+        tester,
+        twoDated(
+          viewer: host,
+          eventMode: GameAdditionMode.direct,
+          fridayMode: GameAdditionMode.hostOnly,
+        ),
+      );
+
+      expect(addOn(azul.id), findsOneWidget);
+      expect(headFocus(tester, azul.id), same(focus));
+      expect(focus.hasPrimaryFocus, isTrue);
     });
   });
 

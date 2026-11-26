@@ -59,6 +59,30 @@ import 'package:observability/observability.dart';
 /// cache the event again after the write (#501), and a write waiting on it
 /// is never sent to an event the forget is taking away (#506).
 ///
+/// [EventDetailReady.occurrencePoliciesArriving] says a read that carried
+/// the dates' policies has settled, its write made, over a cached detail
+/// that holds them unread, and the cache has yet to answer (#1063). The
+/// detail is the cache's from before the read until then. The write turns
+/// the cached policies from unread to read, so the cache is sure to answer:
+/// its watch drops only an answer equal to the last. Any answer ends it, as
+/// do a cache failure, the cache ending and a move followed (#499), and
+/// once the cache has ended nothing sets it again. An answer read before the
+/// write can't end it early: the cache's reads and writes take turns, each
+/// a round trip to the database's isolate or worker, so an answer read
+/// before the write reaches the bloc before the write returns, and so
+/// before the read settles. A read that carried no policies, as one refused
+/// them, that found them read already, or whose write the cache declined,
+/// as it does for an event the sync queue owns (`EventRepository.cacheEvent`),
+/// may change nothing the cache holds and so get no answer, and leaves it
+/// unset. [EventDetailReady.occurrencePoliciesArrivingAfterFailure] says the
+/// read before that one failed.
+///
+/// [EventDetailReady.occurrencePoliciesWithheld] says the latest read to
+/// succeed on this screen carried no dates' policies, as for a viewer
+/// refused them (#1063), so a read running isn't waited on for them. A
+/// failed read keeps it, one that carries the policies clears it, and so
+/// does a move followed, whose id nothing has been read for yet.
+///
 /// ## The read on open
 ///
 /// Every open reads the event (#498), on the cache's first answer. Waiting
@@ -267,6 +291,27 @@ class EventDetailBloc extends Bloc<EventDetailEvent, EventDetailState> {
   /// window in which the cache's null is from before the write.
   bool _writePending = false;
 
+  /// Set when a read that carried the dates' policies, and whose write the
+  /// cache made, settles over a cached detail that holds them unread, while
+  /// the cache is still watched;
+  /// cleared by the cache's next answer, its failure or its end, or a move
+  /// followed: the window in which the cache's detail still holds the
+  /// policies unread, and is sure to answer with them read
+  /// ([EventDetailReady.occurrencePoliciesArriving], #1063).
+  bool _occurrencePoliciesArriving = false;
+
+  /// Whether the read that set [_occurrencePoliciesArriving] followed one
+  /// that failed. Read only beside it, so it needs no clearing of its own
+  /// ([EventDetailReady.occurrencePoliciesArrivingAfterFailure]).
+  bool _arrivingAfterFailure = false;
+
+  /// Whether the latest read to succeed on this screen carried no dates'
+  /// policies, as for a viewer refused them
+  /// ([EventDetailReady.occurrencePoliciesWithheld], #1063). Kept through a
+  /// failed read; cleared by one that carries them and by a move followed
+  /// (#499).
+  bool _occurrencePoliciesWithheld = false;
+
   /// Whether the latest read to succeed carried an empty roster; see the
   /// class doc.
   bool _rosterWithheld = false;
@@ -335,6 +380,7 @@ class EventDetailBloc extends Bloc<EventDetailEvent, EventDetailState> {
     _cacheAnswered = true;
     _cacheFailed = false;
     _writePending = false;
+    _occurrencePoliciesArriving = false;
     _detail = detail;
     if (detail != null) {
       _localOnly = detail.snapshot.event.isLocalOnly;
@@ -364,8 +410,9 @@ class EventDetailBloc extends Bloc<EventDetailEvent, EventDetailState> {
   /// delivers one, in whichever tab the reconcile ran.
   ///
   /// What the bloc knew of the old id's reads goes with it: whether one is
-  /// running, how the last ended, a write waiting on the cache and a
-  /// withheld roster. The local event is never read, so these are only ever
+  /// running, how the last ended, a write waiting on the cache, dates'
+  /// policies on their way to it, withheld dates' policies and a withheld
+  /// roster. The local event is never read, so these are only ever
   /// set for a local id read before its move, whose answer is about that id
   /// alone. The detail and the cache's failure stay, so the screen keeps
   /// what it shows, and a retry the user pressed keeps its read theirs.
@@ -379,6 +426,8 @@ class EventDetailBloc extends Bloc<EventDetailEvent, EventDetailState> {
     _userRead = false;
     _outcome = null;
     _writePending = false;
+    _occurrencePoliciesArriving = false;
+    _occurrencePoliciesWithheld = false;
     _rosterWithheld = false;
     final left = _cache;
     _cache = _watchCache();
@@ -395,6 +444,7 @@ class EventDetailBloc extends Bloc<EventDetailEvent, EventDetailState> {
     _cacheRetry = false;
     // The cache's next answer, though not the one the write was waiting on.
     _writePending = false;
+    _occurrencePoliciesArriving = false;
     _emitDerived(emit);
   }
 
@@ -404,6 +454,8 @@ class EventDetailBloc extends Bloc<EventDetailEvent, EventDetailState> {
   ) {
     _cacheEnded = true;
     _cacheRetry = false;
+    // Nothing more will answer.
+    _occurrencePoliciesArriving = false;
     _emitDerived(emit);
   }
 
@@ -433,11 +485,25 @@ class EventDetailBloc extends Bloc<EventDetailEvent, EventDetailState> {
     if (event.eventId != _eventId) return;
     _reading = false;
     _userRead = false;
+    final failedBefore = _outcome == EventDetailReadOutcome.failed;
     _outcome = event.outcome;
     final succeeded = event.outcome == EventDetailReadOutcome.succeeded;
     _writePending = succeeded;
-    // A failed read says nothing about the roster.
-    if (succeeded) _rosterWithheld = event.rosterWithheld;
+    // Sure to change what the cache holds, so sure to be answered, unless
+    // the cache declined the write, as an event the sync queue owns, or has
+    // ended and nothing answers any more.
+    _occurrencePoliciesArriving =
+        succeeded &&
+        event.cacheWritten &&
+        !_cacheEnded &&
+        event.carriedOccurrencePolicies &&
+        _detail?.snapshot.occurrencePolicies == null;
+    _arrivingAfterFailure = failedBefore;
+    // A failed read says nothing about the dates' policies or the roster.
+    if (succeeded) {
+      _occurrencePoliciesWithheld = !event.carriedOccurrencePolicies;
+      _rosterWithheld = event.rosterWithheld;
+    }
     _emitDerived(emit);
   }
 
@@ -518,8 +584,12 @@ class EventDetailBloc extends Bloc<EventDetailEvent, EventDetailState> {
     if (!await _confirmed()) {
       return _settle(eventId, EventDetailReadOutcome.failed);
     }
+    final bool written;
     try {
-      await _repository.cacheEvent(snapshot, source: EventAccessSource.read);
+      written = await _repository.cacheEvent(
+        snapshot,
+        source: EventAccessSource.read,
+      );
     } on Object catch (error, stackTrace) {
       _logger.warn(
         'Event detail read could not be written to the cache',
@@ -533,6 +603,11 @@ class EventDetailBloc extends Bloc<EventDetailEvent, EventDetailState> {
       eventId,
       EventDetailReadOutcome.succeeded,
       rosterWithheld: snapshot.attendees?.isEmpty ?? false,
+      // The cache keeps the dates' policies only beside the event's
+      // (#1009).
+      carriedOccurrencePolicies:
+          snapshot.policy != null && snapshot.occurrencePolicies != null,
+      cacheWritten: written,
     );
   }
 
@@ -540,6 +615,8 @@ class EventDetailBloc extends Bloc<EventDetailEvent, EventDetailState> {
     String eventId,
     EventDetailReadOutcome outcome, {
     bool rosterWithheld = false,
+    bool carriedOccurrencePolicies = false,
+    bool cacheWritten = false,
   }) {
     if (_closing) return;
     add(
@@ -547,6 +624,8 @@ class EventDetailBloc extends Bloc<EventDetailEvent, EventDetailState> {
         outcome,
         eventId: eventId,
         rosterWithheld: rosterWithheld,
+        carriedOccurrencePolicies: carriedOccurrencePolicies,
+        cacheWritten: cacheWritten,
       ),
     );
   }
@@ -693,6 +772,10 @@ class EventDetailBloc extends Bloc<EventDetailEvent, EventDetailState> {
       // A 404's forget is still the read: until it ends, the screen can't
       // tell a gone event from one a newer write kept (#506).
       reading: _reading || _outcome == EventDetailReadOutcome.forgetting,
+      occurrencePoliciesArriving: _occurrencePoliciesArriving,
+      occurrencePoliciesArrivingAfterFailure:
+          _occurrencePoliciesArriving && _arrivingAfterFailure,
+      occurrencePoliciesWithheld: _occurrencePoliciesWithheld,
       refreshFailed: _outcome == EventDetailReadOutcome.failed,
       canRetry: _canRetry,
     );

@@ -183,7 +183,7 @@ void main() {
     when(() => repository.watchEvent(any())).thenAnswer((_) => cache.stream);
     when(
       () => repository.cacheEvent(any(), source: any(named: 'source')),
-    ).thenAnswer((_) async {});
+    ).thenAnswer((_) async => true);
     when(() => repository.lastWrite(any())).thenAnswer((_) async => 7);
     when(
       () => repository.forgetEvent(any(), lastWrite: any(named: 'lastWrite')),
