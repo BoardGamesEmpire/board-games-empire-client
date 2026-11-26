@@ -779,6 +779,15 @@ each moving focus only if focus is then free, as #517's do:
   control of the next row shown, else of the row before it, else Filters,
   however it was pressed, the reader's double-tap included.
 
+### Focus hand-offs from #1065
+
+The same check, for the Nominations section's Filters sheet. The hand-off
+moves focus only if focus is then free, as #517's do.
+
+- The date facet, taken away while it holds focus, as a row of dates
+  appears with the sheet open: the next stop after it, Mine, else Not
+  voted yet, else the stop before it, the last status chip.
+
 ### #850's list from #517
 
 #850's device pass takes these too, from the same build: the Nominations

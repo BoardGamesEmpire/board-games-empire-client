@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' show Tristate;
 
 import 'package:bge_test_support/session.dart';
 import 'package:bge_test_support/widgets.dart';
@@ -3583,6 +3584,144 @@ void main() {
         ),
         findsOneWidget,
       );
+    });
+  });
+
+  // A second date arriving while the filters are open takes the date facet
+  // out of them, as the row of dates takes its place (#1042). Focus on one
+  // of its radios goes to the next stop after it, else the one before it.
+  group("the filters' date facet leaving (#1065)", () {
+    Finder filters() => find.byKey(
+      EventDetailScreen.nominationsFiltersKey,
+      skipOffstage: false,
+    );
+    final lastStatus = find.byKey(
+      EventDetailScreen.nominationsStatusKey(NominationStatusGroup.values.last),
+    );
+
+    /// The element primary focus is on.
+    final focused = find.byElementPredicate(
+      (element) => element == FocusManager.instance.primaryFocus?.context,
+      description: 'the element with primary focus',
+    );
+
+    /// Shows one-date `e-1` as [detail] gives it, and opens Filters.
+    Future<void> openFilters(WidgetTester tester, EventDetail detail) async {
+      useViewSize(tester, const Size(800, 2400));
+      nominationsAnswer = (_) => [_nomination('n-1')];
+      await showGames(tester, detail: detail);
+      await press(tester, filters());
+      await animate(tester);
+    }
+
+    /// Puts focus on Any date, the date facet's first radio.
+    Future<void> focusAnyDate(WidgetTester tester) async {
+      tester
+          .widget<RadioListTile<NominationScope?>>(
+            find.byKey(EventDetailScreen.nominationsDateKey(null)),
+          )
+          .focusNode!
+          .requestFocus();
+      await tester.pump();
+      expect(
+        find.descendant(
+          of: find.byKey(EventDetailScreen.nominationsDateKey(null)),
+          matching: focused,
+        ),
+        findsOneWidget,
+      );
+    }
+
+    /// The one semantics node marked focused, which is [target]'s, and not
+    /// the sheet's route.
+    void expectFocusedNode(WidgetTester tester, Finder target) {
+      final node = find.semantics
+          .byPredicate(
+            (node) =>
+                node.getSemanticsData().flagsCollection.isFocused ==
+                Tristate.isTrue,
+            describeMatch: (_) => 'a focused node',
+          )
+          .evaluate()
+          .single;
+      final flags = node.getSemanticsData().flagsCollection;
+      expect(flags.scopesRoute || flags.namesRoute, isFalse);
+      expect(node, same(tester.getSemantics(target)));
+    }
+
+    testWidgets('focus goes to Mine', (tester) async {
+      final handle = tester.ensureSemantics();
+      await openFilters(tester, detailOf());
+      await focusAnyDate(tester);
+
+      // A second date is added.
+      cache.add(detailOf(dates: [friday, saturday]));
+      await animate(tester);
+
+      expect(
+        find.byKey(EventDetailScreen.nominationsDateKey(null)),
+        findsNothing,
+      );
+      final mine = find.byKey(EventDetailScreen.nominationsMineKey);
+      expect(find.descendant(of: mine, matching: focused), findsOneWidget);
+      expectFocusedNode(tester, mine);
+      handle.dispose();
+    });
+
+    testWidgets('with no switch, focus goes to the last status chip', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      // With no row on the roster, the viewer is offered neither Mine nor
+      // Not voted yet.
+      await openFilters(tester, detailOf(viewerGiven: false));
+      expect(find.byKey(EventDetailScreen.nominationsMineKey), findsNothing);
+      expect(
+        find.byKey(EventDetailScreen.nominationsNotVotedKey),
+        findsNothing,
+      );
+      await focusAnyDate(tester);
+
+      cache.add(detailOf(viewerGiven: false, dates: [friday, saturday]));
+      await animate(tester);
+
+      expect(
+        find.byKey(EventDetailScreen.nominationsDateKey(null)),
+        findsNothing,
+      );
+      expect(
+        find.descendant(of: lastStatus, matching: focused),
+        findsOneWidget,
+      );
+      expectFocusedNode(tester, lastStatus);
+      handle.dispose();
+    });
+
+    testWidgets('focus off the facet stays where it is', (tester) async {
+      final handle = tester.ensureSemantics();
+      await openFilters(tester, detailOf());
+      final voting = find.byKey(
+        EventDetailScreen.nominationsStatusKey(NominationStatusGroup.voting),
+      );
+      Focus.of(
+        tester.element(
+          find.descendant(of: voting, matching: find.byType(Text)).first,
+        ),
+      ).requestFocus();
+      await tester.pump();
+      final held = FocusManager.instance.primaryFocus;
+      expect(find.descendant(of: voting, matching: focused), findsOneWidget);
+
+      cache.add(detailOf(dates: [friday, saturday]));
+      await animate(tester);
+
+      expect(
+        find.byKey(EventDetailScreen.nominationsDateKey(null)),
+        findsNothing,
+      );
+      expect(FocusManager.instance.primaryFocus, same(held));
+      expectFocusedNode(tester, voting);
+      handle.dispose();
     });
   });
 
