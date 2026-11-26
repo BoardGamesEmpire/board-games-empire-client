@@ -6,7 +6,7 @@ import 'package:app_shell/src/router/app_router.dart' show AppRoutes;
 import 'package:app_shell/src/screens/home_menu_entry.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:ui/ui.dart' show BgeMenuButton, BgeNavigationMenu;
+import 'package:ui/ui.dart' show BgeMenuButton, BgeNavigationMenu, anyRouteOver;
 import 'package:ui_tokens/ui_tokens.dart'
     show BgeNavigationFocus, BgeWindowClass;
 
@@ -358,8 +358,10 @@ class _NavigationShellState extends State<NavigationShell> {
   Future<bool> _back() async {
     if (widget.deferBack?.call() ?? false) return false;
     // A dialog or pop-up on a navigator above the shell's is what Back
-    // closes, even with the drawer open beneath it.
-    if (_underModal()) return false;
+    // closes, even with the drawer open beneath it. The shell's own route
+    // is the current one on its navigator whatever the root navigator
+    // holds, as that navigator may be another shell's.
+    if (anyRouteOver(context)) return false;
     // The pick has closed the drawer already, so Back while it closes reads
     // as "never mind": the pick is dropped, and Back does nothing else.
     if (_afterClose != null) {
@@ -380,23 +382,6 @@ class _NavigationShellState extends State<NavigationShell> {
         !router.canPop()) {
       router.go(AppRoutes.home);
       return true;
-    }
-    return false;
-  }
-
-  /// Whether a route is over the shell on a navigator above it, such as a
-  /// dialog on the root navigator.
-  ///
-  /// The shell's own route is the current one on its navigator whatever the
-  /// root navigator holds, as that navigator may be another shell's, so each
-  /// enclosing route is asked in turn, up to the root.
-  bool _underModal() {
-    BuildContext? at = context;
-    while (at != null && at.mounted) {
-      final route = ModalRoute.of(at);
-      if (route == null) return false;
-      if (!route.isCurrent) return true;
-      at = route.navigator?.context;
     }
     return false;
   }

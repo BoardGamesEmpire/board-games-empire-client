@@ -11,6 +11,7 @@ import 'package:events/src/detail/event_detail_write.dart';
 import 'package:events/src/detail/event_lineup.dart';
 import 'package:events/src/detail/event_nominations.dart';
 import 'package:events/src/detail/games_date_view.dart';
+import 'package:events/src/detail/nominate_scopes.dart';
 import 'package:events/src/screens/event_detail_screen.dart';
 import 'package:events/src/widgets/add_to_lineup_dialog.dart';
 import 'package:events/src/widgets/confirm_dialog.dart';
@@ -18,7 +19,6 @@ import 'package:events/src/widgets/event_games_tab_scope.dart';
 import 'package:events/src/widgets/game_name.dart';
 import 'package:events/src/widgets/held_press.dart';
 import 'package:events/src/widgets/held_spinner.dart';
-import 'package:events/src/widgets/pool_row_controls.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:models/domain.dart';
@@ -48,8 +48,9 @@ List<EventOccurrence> lineupAddDates(EventDetail detail) {
 /// date, that date, while it is live ([lineupAddDates]), and nothing once it
 /// is called off; under Every date, the whole event. With no view, as on an
 /// event of one date or none, the whole event, then the one date where it
-/// is live: the add dialog asks which (#519), where Nominate, on such an
-/// event, nominates for the whole event alone ([nominateScopes]).
+/// is live: the add dialog asks which (#519), of those whose own rules take
+/// the add ([lineupAddChoicesIn], #1070), where Nominate, on such an event,
+/// nominates for the whole event alone ([nominateScopes]).
 List<NominateScope> lineupAddScopes(
   EventDetail detail, {
   GamesDateView? view,
@@ -67,20 +68,29 @@ List<NominateScope> lineupAddScopes(
 };
 
 /// What a direct add is in [view], the date view in use (#1042), on
-/// [detail]: null where the viewer isn't offered it under that view's mode
-/// ([lineupAddGate], [viewMode], #519); otherwise what it can be for
-/// ([lineupAddScopes]), none where the view's date was called off, which
-/// leaves it offered but with nothing to add for. One rule for the pool's
-/// rows, their quick looks, the Lineup sub-tab's Add a game and a press's
-/// re-check ([addToLineup]).
+/// [detail]: what it can be for ([lineupAddScopes]), each choice where the
+/// viewer is offered the add under its own scope's mode ([lineupAddGate],
+/// [scopeMode], #519, #1070), or null where none is.
+///
+/// Under a view there is one scope, the view's, so the view's mode decides
+/// ([viewMode]): null where it refuses the add, or while it is unknown, its
+/// date's rules still to come from a read (#1063); otherwise the view's
+/// choice, none where its date was called off, which leaves the add offered
+/// but with nothing to add for. With no view, as on an event of one date,
+/// the whole event is checked against the event's mode and the date against
+/// its own, which is left out while unknown, until its rules are read
+/// (#1063), the check Nominate shares ([openChoicesIn]). One rule for the
+/// pool's rows, their quick looks, the Lineup sub-tab's Add a game and a
+/// press's re-check ([addToLineup]).
 List<NominateScope>? lineupAddChoicesIn(
   EventDetailReady detail, {
   required GamesDateView? view,
-}) =>
-    lineupAddGate(detail, mode: viewMode(detail.detail.snapshot, view)) ==
-        LineupAddGate.open
-    ? lineupAddScopes(detail.detail, view: view)
-    : null;
+}) => openChoicesIn(
+  detail,
+  view: view,
+  scopes: lineupAddScopes(detail.detail, view: view),
+  open: (mode) => lineupAddGate(detail, mode: mode) == LineupAddGate.open,
+);
 
 /// Why a direct add (#519) in [view], the date view in use (#1042), can't be
 /// made on [detail], where [lineupAddScopes] offers nothing there: the
@@ -119,12 +129,6 @@ int? fillerMaxPlayTimeFor(EventSnapshot snapshot, String? occurrenceId) {
   return date?.fillerMaxPlayTime ?? snapshot.policy?.fillerMaxPlayTime;
 }
 
-/// The date [scope] names, or null for the whole event.
-String? _occurrenceOf(NominationScope scope) => switch (scope) {
-  WholeEventScope() => null,
-  DateScope(:final occurrenceId) => occurrenceId,
-};
-
 /// Adds [game], a row of the pool, anyone's copy, straight to the lineup
 /// (#519): for the one choice the date view in use as it is pressed offers
 /// ([lineupAddChoicesIn], #1042), its date or the whole event, or where
@@ -139,21 +143,21 @@ String? _occurrenceOf(NominationScope scope) => switch (scope) {
 /// It goes once any running detail read and any other lineup write have
 /// ended ([_writable]), for the event as the detail shows it then, whose id
 /// a reconcile can have moved (#499). Nothing is sent if, by then, the
-/// viewer isn't offered the add under the view's mode ([lineupAddGate],
-/// [viewMode]), the game has left the pool, or the choice is no longer
-/// offered, as a date called off meanwhile isn't: the page already shows
-/// that, and the footer says the add was dropped, or a screen reader would
-/// hear nothing happen. So too where the view offers no choice as it is
-/// pressed. A date that has started still takes it (#519), and the dialog
-/// says up front that a game added to it can't then be taken out
-/// ([lineupStartedFor], #520). Where the choice made has started by the
-/// time the add would go, and the dialog didn't say so as it closed, as
-/// where the date started while it was open, it asks again first, with the
-/// same words: Don't add sends nothing, and the checks above are made again
-/// once it is answered. The view is the one it was pressed under,
-/// whatever is chosen meanwhile, and [clock] names the dates the dialog
-/// offers. Whoever brings it not going is the server's to refuse, which the
-/// outcome says.
+/// viewer isn't offered the add for the choice made under its own scope's
+/// mode, as the read left it ([lineupAddChoicesIn], #1070), the game has
+/// left the pool, or the choice is no longer offered, as a date called off
+/// meanwhile isn't: the page already shows that, and the footer says the
+/// add was dropped, or a screen reader would hear nothing happen. So too
+/// where the view offers no choice as it is pressed. A date that has
+/// started still takes it (#519), and the dialog says up front that a game
+/// added to it can't then be taken out ([lineupStartedFor], #520). Where
+/// the choice made has started by the time the add would go, and the
+/// dialog didn't say so as it closed, as where the date started while it
+/// was open, it asks again first, with the same words: Don't add sends
+/// nothing, and the checks above are made again once it is answered. The
+/// view is the one it was pressed under, whatever is chosen meanwhile, and
+/// [clock] names the dates the dialog offers. Whoever brings it not going
+/// is the server's to refuse, which the outcome says.
 Future<bool> addToLineup(
   BuildContext context,
   OfferedGame game, {
@@ -207,9 +211,9 @@ Future<bool> _addToLineup(
     scopes: choices,
     now: clock(),
     fillerMaxPlayTimeOf: (scope) =>
-        fillerMaxPlayTimeFor(snapshot, _occurrenceOf(scope)),
+        fillerMaxPlayTimeFor(snapshot, scope.occurrenceId),
     startedOf: (scope) {
-      final occurrenceId = _occurrenceOf(scope);
+      final occurrenceId = scope.occurrenceId;
       return warned[occurrenceId] = lineupStartedFor(
         shown.detail,
         occurrenceId,
@@ -225,12 +229,12 @@ Future<bool> _addToLineup(
     final state = await _writable(detail, lineup);
     if (state is! EventDetailReady) return false;
     final inPool = pool.state.games.any((each) => each.id == game.id);
-    // Offered still, under the view's mode, and for the choice made.
+    // Offered still, for the choice made, under its own scope's mode.
     final offered =
         lineupAddChoicesIn(
           state,
           view: view,
-        )?.any((each) => _occurrenceOf(each.scope) == occurrenceId) ??
+        )?.any((each) => each.scope.occurrenceId == occurrenceId) ??
         false;
     if (!inPool || !offered) {
       dropped();

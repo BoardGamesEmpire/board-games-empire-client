@@ -589,6 +589,7 @@ void main() {
             attendance: cached.attendance,
           ),
         );
+        return true;
       });
     }
 
@@ -672,7 +673,10 @@ void main() {
         'the answers', (tester) async {
       // The cache keeps no rows for an empty roster, so it reads back as none.
       when(() => repository.cacheEvent(any(), source: any(named: 'source')))
-          .thenAnswer((_) async => cache.add(_poll(_dates)));
+          .thenAnswer((_) async {
+            cache.add(_poll(_dates));
+            return true;
+          });
       await open(
         tester,
         _poll(_dates),

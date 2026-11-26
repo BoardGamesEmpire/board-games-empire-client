@@ -71,14 +71,20 @@ bool canTakeBackAnyGame(EventDetailReady state) {
 
 /// What the Offer games page needs from the event beneath it: the games the
 /// viewer has already offered, by collection id, so the page can leave them
-/// out of what it offers.
+/// out of what it offers; and the date the Games tab is on (#1064).
 final class OfferGamesArgs extends Equatable {
-  const OfferGamesArgs({this.offeredCollectionIds = const {}});
+  const OfferGamesArgs({this.offeredCollectionIds = const {}, this.date});
 
   final Set<String> offeredCollectionIds;
 
+  /// The date the Games tab is on, as its location names it (#1042): null
+  /// where it names none. The page's location carries it, so a restored
+  /// history entry of the page, which has no args, goes back to the event
+  /// on that date (#1064).
+  final String? date;
+
   @override
-  List<Object?> get props => [offeredCollectionIds];
+  List<Object?> get props => [offeredCollectionIds, date];
 }
 
 /// One game picked to offer: its [collectionId] is what the server is asked

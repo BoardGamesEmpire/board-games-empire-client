@@ -21,6 +21,9 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// [controller]'s filter as it is made, so the nominations behind it are
 /// already narrowed when it closes; there is nothing to apply. It scrolls,
 /// and sits above the keyboard, so every control is reachable at 200% text.
+/// Where a row of dates appears while it is open, taking the date facet
+/// away under focus, focus goes to the next stop after the date facet, else
+/// the one before it (#1065).
 ///
 /// Completes once it has closed. The caller puts focus back on the button
 /// that opened it.
@@ -87,7 +90,7 @@ String nominationScopeLabel(
   };
 }
 
-class _FiltersSheet extends StatelessWidget {
+class _FiltersSheet extends StatefulWidget {
   const _FiltersSheet({
     required this.controller,
     required this.dates,
@@ -104,16 +107,94 @@ class _FiltersSheet extends StatelessWidget {
   final bool offersMine;
   final bool offersNotVoted;
 
+  @override
+  State<_FiltersSheet> createState() => _FiltersSheetState();
+}
+
+class _FiltersSheetState extends State<_FiltersSheet> {
+  /// The date facet's radios, as one node, so the sheet can tell whether one
+  /// holds focus as the facet leaves. No stop of its own.
+  final FocusNode _facet = FocusNode(
+    debugLabel: 'Nomination filters date',
+    skipTraversal: true,
+    canRequestFocus: false,
+  );
+
+  /// Where focus goes when the date facet leaves under it (#1065): the next
+  /// stop after it, Mine, else Not voted yet, else the one before it, the
+  /// last status chip.
+  final FocusNode _mine = FocusNode(debugLabel: 'Nomination filters Mine');
+  final FocusNode _notVoted = FocusNode(
+    debugLabel: 'Nomination filters Not voted yet',
+  );
+  final FocusNode _lastStatus = FocusNode(
+    debugLabel: 'Nomination filters last status',
+  );
+
+  /// Whether a row of dates showed ([EventGamesTabController.dateView]) as
+  /// the sheet last heard from the controller.
+  late bool _rowShown;
+
+  @override
+  void initState() {
+    super.initState();
+    _rowShown = widget.controller.dateView != null;
+    widget.controller.addListener(_changed);
+  }
+
+  @override
+  void didUpdateWidget(_FiltersSheet oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.controller == oldWidget.controller) return;
+    oldWidget.controller.removeListener(_changed);
+    _rowShown = widget.controller.dateView != null;
+    widget.controller.addListener(_changed);
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_changed);
+    _facet.dispose();
+    _mine.dispose();
+    _notVoted.dispose();
+    _lastStatus.dispose();
+    super.dispose();
+  }
+
+  /// Where a row of dates has just appeared while one of the date facet's
+  /// radios holds focus, hands focus on as the facet goes (#1065), once
+  /// focus is free.
+  void _changed() {
+    final shown = widget.controller.dateView != null;
+    final appeared = shown && !_rowShown;
+    _rowShown = shown;
+    if (!appeared || !_facet.hasFocus) return;
+    // The facet is still built, and goes with this frame.
+    final held = FocusManager.instance.primaryFocus;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !focusIsFree(context, untouched: held)) return;
+      (widget.offersMine
+              ? _mine
+              : widget.offersNotVoted
+              ? _notVoted
+              : _lastStatus)
+          .requestFocus();
+    });
+  }
+
   /// Changes the filter as it stands when [change] runs, not as it stood at
   /// the last build, so two changes in one frame both hold.
   void _change(NominationFilter Function(NominationFilter filter) change) =>
-      controller.setNominationFilter(change(controller.nominationFilter));
+      widget.controller.setNominationFilter(
+        change(widget.controller.nominationFilter),
+      );
 
   @override
   Widget build(BuildContext context) {
     final l10n = EventsLocalizations.of(context);
     final theme = Theme.of(context);
     final tokens = BgeTokens.of(context);
+    final controller = widget.controller;
 
     return ListenableBuilder(
       listenable: controller,
@@ -148,6 +229,9 @@ class _FiltersSheet extends StatelessWidget {
                     for (final group in NominationStatusGroup.values)
                       FilterChip(
                         key: EventDetailScreen.nominationsStatusKey(group),
+                        focusNode: group == NominationStatusGroup.values.last
+                            ? _lastStatus
+                            : null,
                         // A chip's label can't wrap, so it scales down.
                         label: GameFilterChipLabel(
                           nominationStatusGroupLabel(l10n, group),
@@ -167,50 +251,55 @@ class _FiltersSheet extends StatelessWidget {
                 if (controller.dateView == null) ...[
                   const BgeGap.md(),
                   _Heading(l10n.eventsNominationsDate),
-                  RadioGroup<NominationScope?>(
-                    groupValue: filter.scope,
-                    onChanged: (scope) => _change(
-                      (filter) => scope == null
-                          ? filter.copyWith(clearScope: true)
-                          : filter.copyWith(scope: scope),
-                    ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        for (final scope in <NominationScope?>[
-                          null,
-                          const WholeEventScope(),
-                          for (final date in dates) DateScope(date.id),
-                        ])
-                          BgeRowFocusRing(
-                            outsideSides: true,
-                            builder: (context, tile) =>
-                                RadioListTile<NominationScope?>(
-                                  key: EventDetailScreen.nominationsDateKey(
-                                    scope,
+                  Focus(
+                    focusNode: _facet,
+                    includeSemantics: false,
+                    child: RadioGroup<NominationScope?>(
+                      groupValue: filter.scope,
+                      onChanged: (scope) => _change(
+                        (filter) => scope == null
+                            ? filter.copyWith(clearScope: true)
+                            : filter.copyWith(scope: scope),
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          for (final scope in <NominationScope?>[
+                            null,
+                            const WholeEventScope(),
+                            for (final date in widget.dates) DateScope(date.id),
+                          ])
+                            BgeRowFocusRing(
+                              outsideSides: true,
+                              builder: (context, tile) =>
+                                  RadioListTile<NominationScope?>(
+                                    key: EventDetailScreen.nominationsDateKey(
+                                      scope,
+                                    ),
+                                    focusNode: tile.focusNode,
+                                    onFocusChange: tile.onFocusChange,
+                                    value: scope,
+                                    contentPadding: EdgeInsets.zero,
+                                    title: Text(
+                                      scope == null
+                                          ? l10n.eventsNominationsAnyDate
+                                          : nominationScopeLabel(
+                                              context,
+                                              scope,
+                                              dates: widget.dates,
+                                              now: widget.now,
+                                            ),
+                                    ),
                                   ),
-                                  focusNode: tile.focusNode,
-                                  onFocusChange: tile.onFocusChange,
-                                  value: scope,
-                                  contentPadding: EdgeInsets.zero,
-                                  title: Text(
-                                    scope == null
-                                        ? l10n.eventsNominationsAnyDate
-                                        : nominationScopeLabel(
-                                            context,
-                                            scope,
-                                            dates: dates,
-                                            now: now,
-                                          ),
-                                  ),
-                                ),
-                          ),
-                      ],
+                            ),
+                        ],
+                      ),
                     ),
                   ),
                 ],
-                if (offersMine)
+                if (widget.offersMine)
                   BgeRowFocusRing(
+                    focusNode: _mine,
                     outsideSides: true,
                     builder: (context, tile) => SwitchListTile(
                       key: EventDetailScreen.nominationsMineKey,
@@ -223,8 +312,9 @@ class _FiltersSheet extends StatelessWidget {
                           _change((filter) => filter.copyWith(mine: on)),
                     ),
                   ),
-                if (offersNotVoted)
+                if (widget.offersNotVoted)
                   BgeRowFocusRing(
+                    focusNode: _notVoted,
                     outsideSides: true,
                     builder: (context, tile) => SwitchListTile(
                       key: EventDetailScreen.nominationsNotVotedKey,

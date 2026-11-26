@@ -8,13 +8,13 @@ import 'package:events/src/create/event_create_controls.dart'
     show trimmedOrNull;
 import 'package:events/src/detail/event_games_pool.dart';
 import 'package:events/src/detail/event_nominations.dart';
+import 'package:events/src/detail/nominate_scopes.dart';
 import 'package:events/src/screens/event_detail_screen.dart';
 import 'package:events/src/widgets/event_games_footer.dart';
 import 'package:events/src/widgets/event_games_tab.dart';
 import 'package:events/src/widgets/event_games_tab_scope.dart';
 import 'package:events/src/widgets/event_labels.dart';
 import 'package:events/src/widgets/game_name.dart';
-import 'package:events/src/widgets/pool_row_controls.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:models/domain.dart';
@@ -40,9 +40,10 @@ typedef AddToLineupChoice = ({
 /// - **The date**, only where [scopes] holds more than one: a radio button
 ///   each, in order, named for the whole event or the date as [now] names
 ///   it, the first chosen as it opens. That is an event with no row of
-///   dates, where the add can be for the whole event or its one date. Under
-///   a row the view's choice is the add's (#1042), so with one scope it asks
-///   nothing.
+///   dates, where the add can be for the whole event or its one date, each
+///   where its own rules take it (#1070). Under a row the view's choice is
+///   the add's (#1042), so with one scope it asks nothing; nor where one of
+///   the two is left.
 /// - **What it is played as**: Primary or Filler, Primary as it opens.
 /// - **A Filler's longest play**, shown only once Filler is chosen: a whole
 ///   number of minutes, at least one, filled in with the rules' one for the
@@ -162,10 +163,7 @@ class _AddToLineupDialogState extends State<_AddToLineupDialog> {
     if (!_form.valid) return _form.rejectSubmit();
     final filler = _role == ScheduledGameRole.filler;
     Navigator.of(context).pop<AddToLineupChoice>((
-      occurrenceId: switch (_scope) {
-        DateScope(:final occurrenceId) => occurrenceId,
-        WholeEventScope() || null => null,
-      },
+      occurrenceId: _scope?.occurrenceId,
       role: _role,
       notes: trimmedOrNull(_form.control(_notes).value),
       maxPlayTime: filler

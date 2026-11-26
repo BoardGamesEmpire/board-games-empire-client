@@ -1,8 +1,8 @@
 import 'package:bge_test_support/widgets.dart';
 import 'package:events/events.dart';
 import 'package:events/l10n/events_localizations.dart';
+import 'package:events/src/detail/nominate_scopes.dart' show NominateScope;
 import 'package:events/src/widgets/add_to_lineup_dialog.dart';
-import 'package:events/src/widgets/pool_row_controls.dart' show NominateScope;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';

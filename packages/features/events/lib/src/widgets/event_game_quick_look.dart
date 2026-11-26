@@ -211,7 +211,13 @@ Future<void> showEventGameQuickLook(
 /// take focus again until the next such write hands it to them. Their ring
 /// shows for focus a key press gave, and not for a press of a mouse or a
 /// trackpad on the button ([BgePointerFocus]). A write that leaves its
-/// button there, refused or failed, leaves focus on it.
+/// button there, refused or failed, leaves focus on it. Where a read takes
+/// the game out of the lineup while *See in lineup* has focus, the lines
+/// take it from See in lineup in the same way (#1073). Where See in lineup
+/// went while the lineup game's quick look was open over this one, the
+/// lines take focus as that closes, once the frame has ended, from where
+/// the closing put it back here: on the quick look, or on the control here
+/// that had it before.
 ///
 /// ## A lineup game
 ///
@@ -886,8 +892,8 @@ class _NominationLook extends StatefulWidget {
 class _NominationLookState extends State<_NominationLook>
     with BgePointerFocus<_NominationLook> {
   /// The lines, as one node: where focus goes once the button whose write
-  /// just ended has gone with it. They take focus only then, and are no stop
-  /// of their own.
+  /// just ended has gone with it, or once See in lineup has gone from under
+  /// it (#1073). They take focus only then, and are no stop of their own.
   final FocusNode _lines = FocusNode(
     debugLabel: 'Quick look nomination',
     canRequestFocus: false,
@@ -908,12 +914,27 @@ class _NominationLookState extends State<_NominationLook>
       ),
   };
 
+  /// Holds *See in lineup*, so the quick look can tell whether it holds
+  /// focus as a lineup read takes its game out (#1073).
+  final FocusNode _openLineupArea = FocusNode(
+    debugLabel: 'Quick look see in lineup',
+    canRequestFocus: false,
+    skipTraversal: true,
+  );
+
   /// The write a button's press sent, which hasn't ended yet.
   NominationWrite? _sent;
 
   @override
   void didUpdateWidget(_NominationLook oldWidget) {
     super.didUpdateWidget(oldWidget);
+    // Built again with the lineup as read no longer known to hold the game:
+    // See in lineup is still built, and goes with this frame (#1073).
+    if (oldWidget.onOpenLineupGame != null &&
+        widget.onOpenLineupGame == null &&
+        _openLineupArea.hasFocus) {
+      _toLines(FocusManager.instance.primaryFocus);
+    }
     // Built again with no nominations write out: the write the press sent
     // has ended, and its answer, if any, is in this quick look.
     final sent = _sent;
@@ -923,9 +944,28 @@ class _NominationLookState extends State<_NominationLook>
     if (widget.offers(sent)) return;
     // The button is still built, and goes with this frame, as may the
     // other write buttons.
-    final held = _areas.values.any((area) => area.hasFocus)
-        ? FocusManager.instance.primaryFocus
-        : null;
+    _toLines(
+      _areas.values.any((area) => area.hasFocus)
+          ? FocusManager.instance.primaryFocus
+          : null,
+    );
+  }
+
+  @override
+  void dispose() {
+    _lines.dispose();
+    _openLineupArea.dispose();
+    for (final area in _areas.values) {
+      area.dispose();
+    }
+    super.dispose();
+  }
+
+  /// Hands focus to the lines once the frame that took a control away has
+  /// ended, while focus is free then: on nothing, on the quick look, or
+  /// still on [held], where it was when this was set off, so that only focus
+  /// moved since keeps it.
+  void _toLines(FocusNode? held) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !focusIsFree(context, untouched: held)) return;
       _lines
@@ -934,13 +974,18 @@ class _NominationLookState extends State<_NominationLook>
     });
   }
 
-  @override
-  void dispose() {
-    _lines.dispose();
-    for (final area in _areas.values) {
-      area.dispose();
-    }
-    super.dispose();
+  /// The lineup game's quick look, opened by See in lineup, has closed with
+  /// that See in lineup gone meanwhile: the lines take the focus it would
+  /// have taken back (#1073), whether a read took the game out or one put
+  /// it back since under a new See in lineup.
+  void _lineupLookClosed() {
+    if (!mounted) return;
+    // Its route, closing, has handed focus back to this one's, which puts
+    // it, before the frame, on the control here that last had it, or with
+    // none on the quick look itself. No move of the user's: the upper look
+    // is modal, so the user can't have moved focus in this one while it was
+    // open, and focus still there is free.
+    _toLines(FocusScope.of(context, createDependency: false).focusedChild);
   }
 
   /// The press of the button that sends [write], Withdraw or a host's
@@ -1042,7 +1087,15 @@ class _NominationLookState extends State<_NominationLook>
     final onOpenLineupGame = widget.onOpenLineupGame;
     final inLineup = onOpenLineupGame == null
         ? null
-        : _OpenLineupButton(title: title, onPressed: onOpenLineupGame);
+        : Focus(
+            focusNode: _openLineupArea,
+            includeSemantics: false,
+            child: _OpenLineupButton(
+              title: title,
+              onPressed: onOpenLineupGame,
+              onClosed: _lineupLookClosed,
+            ),
+          );
 
     return _QuickLookFrame(
       thumbnail: nomination.thumbnail,
@@ -1089,16 +1142,26 @@ class _NominationLookState extends State<_NominationLook>
 /// quick look of the lineup game the nomination became ([onPressed]), and
 /// takes focus back once that has closed, as *Who voted* does, however it
 /// was pressed: a screen reader's activation moves no focus by itself.
+/// Gone by then, it tells the nomination's quick look ([onClosed]), whose
+/// lines take focus in its place (#1073).
 /// Named for its game to a screen reader, starting with its visible text.
 /// Not a write, so not online-only.
 class _OpenLineupButton extends StatefulWidget {
-  const _OpenLineupButton({required this.title, required this.onPressed});
+  const _OpenLineupButton({
+    required this.title,
+    required this.onPressed,
+    required this.onClosed,
+  });
 
   /// The game's name, as the quick look's heading gives it.
   final String title;
 
   /// Opens the lineup game's quick look, and completes once it has closed.
   final Future<void> Function() onPressed;
+
+  /// Told once the lineup game's quick look has closed with this button
+  /// gone meanwhile, so there is nothing here to take focus back (#1073).
+  final VoidCallback onClosed;
 
   @override
   State<_OpenLineupButton> createState() => _OpenLineupButtonState();
@@ -1114,8 +1177,14 @@ class _OpenLineupButtonState extends State<_OpenLineupButton> {
   }
 
   Future<void> _open() async {
+    // Read now: this button can be gone by the time the look has closed.
+    final onClosed = widget.onClosed;
     await widget.onPressed();
-    if (mounted && _focus.context != null) _focus.requestFocus();
+    if (mounted && _focus.context != null) {
+      _focus.requestFocus();
+    } else {
+      onClosed();
+    }
   }
 
   @override

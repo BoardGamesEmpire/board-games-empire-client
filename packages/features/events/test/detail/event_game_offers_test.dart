@@ -257,6 +257,18 @@ void main() {
         isNot(const OfferGamesArgs(offeredCollectionIds: {'b'})),
       );
     });
+
+    test("compares by the Games tab's date (#1064)", () {
+      expect(
+        const OfferGamesArgs(date: 'd-2'),
+        const OfferGamesArgs(date: 'd-2'),
+      );
+      expect(
+        const OfferGamesArgs(date: 'd-1'),
+        isNot(const OfferGamesArgs(date: 'd-2')),
+      );
+      expect(const OfferGamesArgs(), isNot(const OfferGamesArgs(date: 'd-2')));
+    });
   });
 
   group('OfferPick', () {

@@ -292,8 +292,8 @@ The same flows as the keyboard tests, plus the screens they don't reach:
    and the count is read as it changes. Remove that chip with the reader's
    double-tap: focus goes to Filters. On an event with a game that has a
    subtitle, check its row, its Take back and its Nominate say it ("Catan:
-   Seafarers"), and so do Nominate's dialog and its outcome. Take one of your
-   games back and check the footer reads "… is off your games."
+   Seafarers"), and so does Nominate's outcome. Take one of your games back
+   and check the footer reads "… is off your games."
    Then stop the server, and on Details change your answer (Going to Maybe,
    say): the change fails, so the event is read again, and that read fails, so
    the games are read again, and fail too. Back on Games, check the footer
@@ -748,9 +748,9 @@ it came arms it, the reader's double-tap included.
   another control moves no focus.
 - Clear filters, in "No nominations match", however it is pressed:
   Filters.
-- Nominate, through its dialog and its nomination: Nominate, which keeps
-  focus, read as unavailable once the row is nominated for everything it
-  could be, until focus moves on.
+- Nominate, through its nomination: Nominate, which keeps focus, read as
+  unavailable once the row is nominated for everything it could be, until
+  focus moves on.
 
 ### Focus hand-offs from #518
 
@@ -779,6 +779,26 @@ each moving focus only if focus is then free, as #517's do:
   control of the next row shown, else of the row before it, else Filters,
   however it was pressed, the reader's double-tap included.
 
+### Focus hand-offs from #1065
+
+The same check, for the Nominations section's Filters sheet. The hand-off
+moves focus only if focus is then free, as #517's do.
+
+- The date facet, taken away while it holds focus, as a row of dates
+  appears with the sheet open: the next stop after it, Mine, else Not
+  voted yet, else the stop before it, the last status chip.
+
+### Focus hand-offs from #1073
+
+The same check, for See in lineup in a passed nomination's quick look,
+under the same guard.
+
+- See in lineup, gone while it holds focus, as a lineup read takes its
+  game out: the quick look's lines, as one node, as when the look's own
+  Withdraw or decision leaves.
+- The lineup game's quick look, opened by See in lineup and closed after a
+  read took the game out: the same lines, rather than nowhere.
+
 ### #850's list from #517
 
 #850's device pass takes these too, from the same build: the Nominations
@@ -787,8 +807,8 @@ at 320dp and 200% text.
 
 - Flow 7, from "Then the Nominations section (#517)": the rows read as one
   item each, the vote choices and their in-progress label, Who voted and
-  its pop-up, Withdraw and its dialog, Nominate and its dialog, Filters,
-  Sort and the count, and the offline hints.
+  its pop-up, Withdraw and its dialog, Nominate, Filters, Sort and the
+  count, and the offline hints.
 - "Focus hand-offs from #517": whether the reader's cursor lands where
   input focus is handed, the next row's vote after a vote under Not voted
   yet above all.

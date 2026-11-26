@@ -162,6 +162,48 @@ void main() {
     },
   );
 
+  test('a read says it wrote nothing for a queue-owned event, and that it '
+      'wrote one the queue has let go', () async {
+    for (final id in ['e-1', 'e-2', 'e-3']) {
+      await repo.cacheEvent(
+        testSnapshot(id),
+        source: EventAccessSource.attending,
+      );
+    }
+    await markDirty('e-1');
+    await markLocalOnly('e-2');
+
+    expect(
+      await repo.cacheEvent(
+        testSnapshot('e-1'),
+        source: EventAccessSource.read,
+      ),
+      isFalse,
+    );
+    expect(
+      await repo.cacheEvent(
+        testSnapshot('e-2'),
+        source: EventAccessSource.read,
+      ),
+      isFalse,
+    );
+    expect(
+      await repo.cacheEvent(
+        testSnapshot('e-3'),
+        source: EventAccessSource.read,
+      ),
+      isTrue,
+    );
+    // One not cached at all is written.
+    expect(
+      await repo.cacheEvent(
+        testSnapshot('e-4'),
+        source: EventAccessSource.read,
+      ),
+      isTrue,
+    );
+  });
+
   test('a read does not take a generation for the event it leaves '
       'alone', () async {
     await cacheOwned('e-1', markLocalOnly);

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' show Tristate;
 
 import 'package:bge_test_support/session.dart';
 import 'package:bge_test_support/widgets.dart';
@@ -253,7 +254,7 @@ void main() {
     when(() => repository.watchEvent(any())).thenAnswer((_) => cache.stream);
     when(
       () => repository.cacheEvent(any(), source: any(named: 'source')),
-    ).thenAnswer((_) async {});
+    ).thenAnswer((_) async => true);
     when(() => repository.lastWrite(any())).thenAnswer((_) async => 7);
     pool = [catanAdas, azulMine];
     nominationsAnswer = (_) => const [];
@@ -3586,6 +3587,144 @@ void main() {
     });
   });
 
+  // A second date arriving while the filters are open takes the date facet
+  // out of them, as the row of dates takes its place (#1042). Focus on one
+  // of its radios goes to the next stop after it, else the one before it.
+  group("the filters' date facet leaving (#1065)", () {
+    Finder filters() => find.byKey(
+      EventDetailScreen.nominationsFiltersKey,
+      skipOffstage: false,
+    );
+    final lastStatus = find.byKey(
+      EventDetailScreen.nominationsStatusKey(NominationStatusGroup.values.last),
+    );
+
+    /// The element primary focus is on.
+    final focused = find.byElementPredicate(
+      (element) => element == FocusManager.instance.primaryFocus?.context,
+      description: 'the element with primary focus',
+    );
+
+    /// Shows one-date `e-1` as [detail] gives it, and opens Filters.
+    Future<void> openFilters(WidgetTester tester, EventDetail detail) async {
+      useViewSize(tester, const Size(800, 2400));
+      nominationsAnswer = (_) => [_nomination('n-1')];
+      await showGames(tester, detail: detail);
+      await press(tester, filters());
+      await animate(tester);
+    }
+
+    /// Puts focus on Any date, the date facet's first radio.
+    Future<void> focusAnyDate(WidgetTester tester) async {
+      tester
+          .widget<RadioListTile<NominationScope?>>(
+            find.byKey(EventDetailScreen.nominationsDateKey(null)),
+          )
+          .focusNode!
+          .requestFocus();
+      await tester.pump();
+      expect(
+        find.descendant(
+          of: find.byKey(EventDetailScreen.nominationsDateKey(null)),
+          matching: focused,
+        ),
+        findsOneWidget,
+      );
+    }
+
+    /// The one semantics node marked focused, which is [target]'s, and not
+    /// the sheet's route.
+    void expectFocusedNode(WidgetTester tester, Finder target) {
+      final node = find.semantics
+          .byPredicate(
+            (node) =>
+                node.getSemanticsData().flagsCollection.isFocused ==
+                Tristate.isTrue,
+            describeMatch: (_) => 'a focused node',
+          )
+          .evaluate()
+          .single;
+      final flags = node.getSemanticsData().flagsCollection;
+      expect(flags.scopesRoute || flags.namesRoute, isFalse);
+      expect(node, same(tester.getSemantics(target)));
+    }
+
+    testWidgets('focus goes to Mine', (tester) async {
+      final handle = tester.ensureSemantics();
+      await openFilters(tester, detailOf());
+      await focusAnyDate(tester);
+
+      // A second date is added.
+      cache.add(detailOf(dates: [friday, saturday]));
+      await animate(tester);
+
+      expect(
+        find.byKey(EventDetailScreen.nominationsDateKey(null)),
+        findsNothing,
+      );
+      final mine = find.byKey(EventDetailScreen.nominationsMineKey);
+      expect(find.descendant(of: mine, matching: focused), findsOneWidget);
+      expectFocusedNode(tester, mine);
+      handle.dispose();
+    });
+
+    testWidgets('with no switch, focus goes to the last status chip', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      // With no row on the roster, the viewer is offered neither Mine nor
+      // Not voted yet.
+      await openFilters(tester, detailOf(viewerGiven: false));
+      expect(find.byKey(EventDetailScreen.nominationsMineKey), findsNothing);
+      expect(
+        find.byKey(EventDetailScreen.nominationsNotVotedKey),
+        findsNothing,
+      );
+      await focusAnyDate(tester);
+
+      cache.add(detailOf(viewerGiven: false, dates: [friday, saturday]));
+      await animate(tester);
+
+      expect(
+        find.byKey(EventDetailScreen.nominationsDateKey(null)),
+        findsNothing,
+      );
+      expect(
+        find.descendant(of: lastStatus, matching: focused),
+        findsOneWidget,
+      );
+      expectFocusedNode(tester, lastStatus);
+      handle.dispose();
+    });
+
+    testWidgets('focus off the facet stays where it is', (tester) async {
+      final handle = tester.ensureSemantics();
+      await openFilters(tester, detailOf());
+      final voting = find.byKey(
+        EventDetailScreen.nominationsStatusKey(NominationStatusGroup.voting),
+      );
+      Focus.of(
+        tester.element(
+          find.descendant(of: voting, matching: find.byType(Text)).first,
+        ),
+      ).requestFocus();
+      await tester.pump();
+      final held = FocusManager.instance.primaryFocus;
+      expect(find.descendant(of: voting, matching: focused), findsOneWidget);
+
+      cache.add(detailOf(dates: [friday, saturday]));
+      await animate(tester);
+
+      expect(
+        find.byKey(EventDetailScreen.nominationsDateKey(null)),
+        findsNothing,
+      );
+      expect(FocusManager.instance.primaryFocus, same(held));
+      expectFocusedNode(tester, voting);
+      handle.dispose();
+    });
+  });
+
   group('quick look (#957)', () {
     final host = me.copyWith(role: EventRole.host);
 
@@ -3806,6 +3945,198 @@ void main() {
           expect(lineupIn, findsNothing, reason: id);
           await closeQuickLook(tester);
         }
+      });
+
+      // Where See in lineup leaves while it holds focus, the lines take it,
+      // as they do from a write button that goes with its write (#1073).
+      group('leaving under focus (#1073)', () {
+        setUp(() {
+          nominationsAnswer = (_) => [
+            _nomination(
+              'n-1',
+              status: NominationStatus.passed,
+              elevatedTo: (id: 'l-1', occurrenceId: null),
+            ),
+          ];
+          lineupAnswer = (_) => [_lineupGame('l-1', nominationId: 'n-1')];
+        });
+
+        /// A lineup read that no longer holds the game.
+        Future<void> takeGameOut(WidgetTester tester) async {
+          lineupAnswer = (_) => [_lineupGame('l-2')];
+          blocOf<EventLineupBloc>(
+            tester,
+          ).add(const EventLineupRequested('e-1'));
+          await animate(tester);
+        }
+
+        /// Focus is on the nomination quick look's lines, as one node, and
+        /// not on its route's scope; a screen reader has it there too.
+        void expectOnLines(WidgetTester tester) {
+          expect(
+            FocusManager.instance.primaryFocus?.debugLabel,
+            'Quick look nomination',
+          );
+          expect(
+            linesNode(tester),
+            isSemantics(isFocusable: true, isFocused: true),
+          );
+          expect(
+            linesNode(tester).getSemanticsData().label,
+            contains('Passed'),
+          );
+        }
+
+        testWidgets('See in lineup leaving under focus hands focus to the '
+            'lines', (tester) async {
+          final handle = tester.ensureSemantics();
+          await showGames(tester);
+          await openQuickLook(tester, 'n-1');
+          final focus = focusOf(tester, lineupIn)..requestFocus();
+          await tester.pump();
+          expect(focus.hasPrimaryFocus, isTrue);
+
+          await takeGameOut(tester);
+
+          expect(quickLook, findsOneWidget);
+          expect(lineupIn, findsNothing);
+          expectOnLines(tester);
+          // Nothing under the pop-up took it.
+          expect(headFocus(tester, 'n-1').hasFocus, isFalse);
+          handle.dispose();
+        });
+
+        testWidgets('the game leaving while the lineup look is open hands '
+            'focus to the lines on close', (tester) async {
+          final handle = tester.ensureSemantics();
+          await showGames(tester);
+          await openQuickLook(tester, 'n-1');
+          focusOf(tester, lineupIn).requestFocus();
+          await tester.pump();
+          await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+          await animate(tester);
+          expect(quickLook, findsNWidgets(2));
+
+          await takeGameOut(tester);
+          expect(inQuickLook(lineupGone), findsOneWidget);
+          expect(lineupIn, findsNothing);
+
+          await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+          await animate(tester);
+
+          expect(quickLook, findsOneWidget);
+          expectOnLines(tester);
+          expect(headFocus(tester, 'n-1').hasFocus, isFalse);
+          handle.dispose();
+        });
+
+        testWidgets('the look closing with the button takes no hand-off', (
+          tester,
+        ) async {
+          final handle = tester.ensureSemantics();
+          await showGames(tester);
+          await openQuickLook(tester, 'n-1');
+          final focus = focusOf(tester, lineupIn)..requestFocus();
+          await tester.pump();
+          expect(focus.hasPrimaryFocus, isTrue);
+
+          await closeQuickLook(tester);
+
+          expect(tester.takeException(), isNull);
+          expect(FocusManager.instance.primaryFocus, isNot(same(focus)));
+          // The row's head has it, as after any quick look.
+          expect(headFocus(tester, 'n-1').hasPrimaryFocus, isTrue);
+          handle.dispose();
+        });
+
+        testWidgets('with another control here focused before it, the lines '
+            'still take focus as the lineup look closes', (tester) async {
+          nominationsAnswer = (_) => [
+            _nomination(
+              'n-1',
+              status: NominationStatus.passed,
+              elevatedTo: (id: 'l-1', occurrenceId: null),
+              votes: [_vote('att-ada', VoteType.forGame)],
+            ),
+          ];
+          final handle = tester.ensureSemantics();
+          await showGames(tester);
+          await openQuickLook(tester, 'n-1');
+          // Who voted, then See in lineup, as Tab reaches them.
+          final voters = focusOf(tester, votersIn)..requestFocus();
+          await tester.pump();
+          focusOf(tester, lineupIn).requestFocus();
+          await tester.pump();
+          await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+          await animate(tester);
+          expect(quickLook, findsNWidgets(2));
+
+          await takeGameOut(tester);
+          await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+          await animate(tester);
+
+          // Not Who voted, where the closing put it back.
+          expect(voters.hasFocus, isFalse);
+          expectOnLines(tester);
+          handle.dispose();
+        });
+
+        testWidgets('the game leaving and coming back while the lineup look '
+            'is open hands focus to the lines on close', (tester) async {
+          final handle = tester.ensureSemantics();
+          await showGames(tester);
+          await openQuickLook(tester, 'n-1');
+          screenReaderTap(tester, 'See in lineup: Catan');
+          await animate(tester);
+          expect(quickLook, findsNWidgets(2));
+
+          await takeGameOut(tester);
+          expect(lineupIn, findsNothing);
+          // A later read has it again, under a new See in lineup.
+          lineupAnswer = (_) => [_lineupGame('l-1', nominationId: 'n-1')];
+          blocOf<EventLineupBloc>(
+            tester,
+          ).add(const EventLineupRequested('e-1'));
+          await animate(tester);
+          expect(lineupIn, findsOneWidget);
+
+          await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+          await animate(tester);
+
+          expect(quickLook, findsOneWidget);
+          expectOnLines(tester);
+          handle.dispose();
+        });
+
+        testWidgets('the nomination leaving while the lineup look is open '
+            'takes no hand-off on close', (tester) async {
+          final handle = tester.ensureSemantics();
+          await showGames(tester);
+          await openQuickLook(tester, 'n-1');
+          final lines = tester.widget<Focus>(quickLookLines).focusNode!;
+          focusOf(tester, lineupIn).requestFocus();
+          await tester.pump();
+          await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+          await animate(tester);
+          expect(quickLook, findsNWidgets(2));
+
+          // Gone from the next read, so the nomination's look, its lines
+          // and See in lineup go with it.
+          nominationsAnswer = (_) => const [];
+          blocOf<EventNominationsBloc>(
+            tester,
+          ).add(const EventNominationsRequested('e-1'));
+          await animate(tester);
+          expect(quickLookLines, findsNothing);
+
+          await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+          await animate(tester);
+
+          expect(tester.takeException(), isNull);
+          expect(inQuickLook(gone), findsOneWidget);
+          expect(FocusManager.instance.primaryFocus, isNot(same(lines)));
+          handle.dispose();
+        });
       });
     });
 

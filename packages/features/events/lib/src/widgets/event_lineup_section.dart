@@ -4,6 +4,7 @@ import 'package:events/l10n/events_localizations.dart';
 import 'package:events/src/bloc/event_detail_state.dart';
 import 'package:events/src/bloc/event_lineup_state.dart';
 import 'package:events/src/detail/event_lineup.dart';
+import 'package:events/src/detail/nominate_scopes.dart';
 import 'package:events/src/screens/event_detail_screen.dart';
 import 'package:events/src/widgets/event_game_quick_look.dart';
 import 'package:events/src/widgets/event_game_row_head.dart';
@@ -15,7 +16,6 @@ import 'package:events/src/widgets/game_name.dart';
 import 'package:events/src/widgets/held_press.dart';
 import 'package:events/src/widgets/held_spinner.dart';
 import 'package:events/src/widgets/lineup_row_controls.dart';
-import 'package:events/src/widgets/pool_row_controls.dart';
 import 'package:flutter/material.dart';
 import 'package:models/domain.dart';
 import 'package:ui/ui.dart';
@@ -85,10 +85,10 @@ String lineupSupplierLine(
 ///
 /// Its slivers, as one group under the sub-tabs' bar, with no heading of
 /// their own, as the sub-tab's label names the list (#946). First, for a
-/// viewer offered a direct add under the date view's mode ([addScopes],
-/// [lineupAddChoicesIn]), Add a game, above every state but the lineup being
-/// hidden ([_AddGameButton]). Where a game's
-/// date is no longer among the event's ([lineupDrawsHeaders]), each group is
+/// viewer offered a direct add for some choice, each under its own scope's
+/// mode ([addScopes], [lineupAddChoicesIn]), Add a game, above every state
+/// but the lineup being hidden ([_AddGameButton]). Where a game's date is
+/// no longer among the event's ([lineupDrawsHeaders]), each group is
 /// headed by what it is for: "Every date", the date's name
 /// ([eventDateName]), or that the date is no longer on the event. Each
 /// heading is a header to a screen reader. Otherwise the lineup is one list

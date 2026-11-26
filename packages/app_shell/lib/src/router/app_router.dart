@@ -332,14 +332,22 @@ abstract final class AppRoutes {
   ///
   /// The page is opened only from the detail's Games tab, which hands it
   /// what to leave out as the push's `extra`. A deep link carries none, and
-  /// is sent to the detail's Pool: see [EventOfferGamesScreenBuilder].
+  /// is sent to the detail's Pool, on the date its [eventDateParam] names:
+  /// see [EventOfferGamesScreenBuilder].
   static const eventOfferGames = '$eventDetail/$_eventOfferGamesSegment';
 
   static const _eventOfferGamesSegment = 'games/offer';
 
-  /// The location of one event's Offer games page.
-  static String eventOfferGamesOf(String eventId) =>
-      '${eventDetailOf(eventId)}/$_eventOfferGamesSegment';
+  /// The location of one event's Offer games page, with the date the Games
+  /// tab was on, [date], as its [eventDateParam] (#1064), encoded as
+  /// [eventDetailOf]'s is. Null leaves it out. The location carries it, as
+  /// a restored history entry of the page has no `extra`.
+  static String eventOfferGamesOf(String eventId, {String? date}) {
+    final location = '${eventDetailOf(eventId)}/$_eventOfferGamesSegment';
+    return date == null
+        ? location
+        : '$location?$eventDateParam=${Uri.encodeQueryComponent(date)}';
+  }
 
   /// The changes that couldn't sync, each with a retry and a discard
   /// (#190). Always the active session's own, like [collection].
@@ -917,11 +925,12 @@ typedef EventAddAttendeeScreenBuilder = Widget? Function(
 /// Everything else is [EventAddAttendeeScreenBuilder]'s: [args] is `Object`
 /// so this file stays free of feature packages; a location that carries no
 /// `extra`, a deep link or a `go`, is redirected to the event's detail, on
-/// the Pool its Offer games is on (#856); the page's own browser history
-/// entry, restored once the page has closed, builds nothing and leaves for
-/// the detail beneath it at once, in that entry's place, or for its Pool
-/// where nothing is beneath it; and only `extra` the builder doesn't
-/// recognise, which nothing pushes, falls back to [NotYetAvailableScreen].
+/// the Pool its Offer games is on (#856) and the date the location names
+/// (#1064); the page's own browser history entry, restored once the page
+/// has closed, builds nothing and leaves for the detail beneath it at once,
+/// in that entry's place, or for its Pool on that date where nothing is
+/// beneath it; and only `extra` the builder doesn't recognise, which nothing
+/// pushes, falls back to [NotYetAvailableScreen].
 typedef EventOfferGamesScreenBuilder = Widget? Function(
   BuildContext context,
   String eventId,
@@ -1827,6 +1836,10 @@ GoRouter buildAppRouter({
                           );
                         },
                       ),
+                      // Without args it goes back to the event's Pool, on
+                      // the date the Games tab was on, which the location
+                      // carries (#1064). Query parameters arrive decoded,
+                      // and eventDetailOf encodes again.
                       GoRoute(
                         path: AppRoutes._eventOfferGamesSegment,
                         redirect: (context, state) => state.extra == null
@@ -1834,6 +1847,9 @@ GoRouter buildAppRouter({
                                 state.pathParameters[AppRoutes.eventIdParam] ??
                                     '',
                                 tab: AppRoutes.eventPoolTab,
+                                date: state
+                                    .uri
+                                    .queryParameters[AppRoutes.eventDateParam],
                               )
                             : null,
                         pageBuilder: (context, state) {
@@ -1849,6 +1865,9 @@ GoRouter buildAppRouter({
                               _LeaveForEvent(
                                 eventId: id,
                                 tab: AppRoutes.eventPoolTab,
+                                date: state
+                                    .uri
+                                    .queryParameters[AppRoutes.eventDateParam],
                               ),
                             );
                           }
@@ -2114,16 +2133,21 @@ Page<void> _passThroughPage(GoRouterState state, Widget child) => _page(
 /// Reported as a new entry instead, the event would follow the restored one
 /// in the history, and Back from it would come straight back here.
 class _LeaveForEvent extends StatefulWidget {
-  const _LeaveForEvent({required this.eventId, this.tab});
+  const _LeaveForEvent({required this.eventId, this.tab, this.date});
 
   final String eventId;
 
   /// The tab the `go` opens the event on, as its [AppRoutes.eventTabParam]
   /// (#856): the Offer games route's is the pool, where the page was opened
   /// from. Null opens Details. A pop leaves the event on the tab it was left
-  /// on, and on the date (#1042). The `go` names no date, as the page's own
-  /// location carries none.
+  /// on, and on the date (#1042).
   final String? tab;
+
+  /// The date the `go` opens the event on, as its [AppRoutes.eventDateParam]
+  /// (#1042): the Offer games route's is the one its own location names,
+  /// the date the Games tab was on (#1064). Null names none, and the event
+  /// opens on its default.
+  final String? date;
 
   @override
   State<_LeaveForEvent> createState() => _LeaveForEventState();
@@ -2144,7 +2168,13 @@ class _LeaveForEventState extends State<_LeaveForEvent> {
         if (navigator.canPop()) {
           navigator.pop();
         } else {
-          context.go(AppRoutes.eventDetailOf(widget.eventId, tab: widget.tab));
+          context.go(
+            AppRoutes.eventDetailOf(
+              widget.eventId,
+              tab: widget.tab,
+              date: widget.date,
+            ),
+          );
         }
       });
     });

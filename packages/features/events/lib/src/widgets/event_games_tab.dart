@@ -15,6 +15,7 @@ import 'package:events/src/detail/event_games_pool.dart';
 import 'package:events/src/detail/event_lineup.dart';
 import 'package:events/src/detail/event_nominations.dart';
 import 'package:events/src/detail/games_date_view.dart';
+import 'package:events/src/detail/nominate_scopes.dart';
 import 'package:events/src/screens/event_detail_screen.dart';
 import 'package:events/src/widgets/event_detail_tabs.dart';
 import 'package:events/src/widgets/event_game_filter_options.dart';
@@ -545,8 +546,8 @@ class EventGamesTab extends StatelessWidget {
       now: now,
     );
     // Add to lineup's (#519), the same for every row and for Lineup's Add a
-    // game: none where the view's mode takes no direct add from this viewer,
-    // or there is no lineup to add to.
+    // game: none where no choice's mode takes a direct add from this viewer
+    // (#1070), or there is no lineup to add to.
     final addScopes = lineup == null
         ? null
         : lineupAddChoicesIn(detail, view: controller.dateView);
@@ -561,6 +562,10 @@ class EventGamesTab extends StatelessWidget {
     // of the pool's writes is out.
     final writable = !detail.reading && !acting && !games.busy;
     final nominations = this.nominations;
+    // Whether the view's mode is known (#1063): until it is, a pool row's
+    // main action is not yet known either, Take back included, which is
+    // its main action only where neither Nominate nor Add to lineup is.
+    final modeKnown = viewMode(detail, controller.dateView) != null;
 
     return SliverMainAxisGroup(
       slivers: [
@@ -604,172 +609,197 @@ class EventGamesTab extends StatelessWidget {
                   key: EventDetailScreen.sectionBarKey,
                   sections: controller.visibleSections,
                   controller: controller.sections,
+                  // The sub-tab already shown, chosen, ends a hold too,
+                  // which changes no index (#1066).
+                  onTap: (_) => controller.releaseSection(),
                 ),
                 const BgeGap.lg(),
               ],
             ),
           ),
-        if (_body.lineup case final shown?)
-          EventLineupSection(
-            key: _lineupKey,
-            body: shown.body,
-            groups: shown.groups,
-            detail: detail,
-            state: shown.state,
-            controller: controller,
-            now: now,
-            names: names,
-            addScopes: addScopes,
-            acting: acting,
-            clock: this.now,
-          ),
-        if (_body.nominations case final shown?)
-          EventNominationsSection(
-            key: _nominationsKey,
-            body: shown.body,
-            rows: shown.rows,
-            total: shown.total,
-            detail: detail,
-            state: shown.state,
-            controller: controller,
-            pool: games.games,
-            poolRead: controller.isPoolRead(games),
-            acting: acting,
-            now: now,
-          ),
-        if (_body.pool case (:final body, :final rows)) ...[
-          if (body != EventPoolBody.hidden && body != EventPoolBody.loading)
-            SliverToBoxAdapter(
-              key: _headerKey,
-              child: _PoolHeader(
-                controller: controller,
-                games: games,
-                gate: gate,
-                anyGame: anyGame,
-                viewerId: viewerId,
-                names: names,
-                writable: writable,
-                shown: rows.length,
-                onOfferGames: onOfferGames,
-              ),
-            ),
-          switch (body) {
-            EventPoolBody.hidden => BgeStateSliver(
-              child: BgeEmptyState(
-                icon: Icons.visibility_off_outlined,
-                title: l10n.eventsGamesHiddenTitle,
-              ),
-            ),
-            EventPoolBody.loading => BgeStateSliver(
-              child: BgeLoadingState(label: l10n.eventsGamesLoading),
-            ),
-            EventPoolBody.failed => BgeStateSliver(
-              child: BgeErrorState(
-                icon: Icons.cloud_off_outlined,
-                title: l10n.eventsGamesFailedTitle,
-                body: l10n.eventsGamesFailedBody,
-                retryLabel: l10n.eventsRefreshRetry,
-                retryProgressLabel: l10n.eventsRefreshInProgress,
-                retryKey: EventDetailScreen.poolRetryKey,
-                retrying: games.refreshing,
-                onRetry: () => retryEventGamesPool(context),
-              ),
-            ),
-            EventPoolBody.rosterFailed => BgeStateSliver(
-              child: BgeErrorState(
-                icon: Icons.cloud_off_outlined,
-                title: l10n.eventsGamesFailedTitle,
-                body: l10n.eventsGamesFailedBody,
-                retryLabel: l10n.eventsRefreshRetry,
-                retryProgressLabel: l10n.eventsRefreshInProgress,
-                retryKey: EventDetailScreen.poolRetryKey,
-                retrying: detail.refreshing,
-                // The event's read brings the roster, whose end reads the pool.
-                onRetry: () => context.read<EventDetailBloc>().add(
-                  const EventDetailRetryRequested(),
-                ),
-              ),
-            ),
-            EventPoolBody.empty => BgeStateSliver(
-              child: BgeEmptyState(
-                icon: Icons.casino_outlined,
-                title: l10n.eventsGamesEmptyTitle,
-                body: l10n.eventsGamesEmptyBody,
-              ),
-            ),
-            EventPoolBody.noMatches => BgeStateSliver(
-              child: BgeEmptyState(
-                icon: Icons.search_off_outlined,
-                title: l10n.eventsGamesNoMatchesTitle,
-                action: OutlinedButton(
-                  key: EventDetailScreen.poolClearFiltersKey,
-                  focusNode: controller.clearFiltersFocus,
-                  onPressed: () => controller.clearFilters(context),
-                  child: Text(l10n.eventsGamesClearFilters),
-                ),
-              ),
-            ),
-            EventPoolBody.rows => EventGamesRowLines<OfferedGame>(
-              items: rows,
-              keyOf: (game) => EventDetailScreen.poolRowKey(game.id),
-              identityOf: (game) => OfferedCopyEntry(game.id),
-              itemBuilder: (context, game) {
-                // The row's rules, which its quick look builds by too (#957).
-                final gates = poolRowGates(
-                  l10n,
-                  game: game,
+        // What the sub-tab shown shows, in one focus area: focus in it is
+        // the user at work there, which a held sub-tab's move waits for
+        // (#1066). It draws nothing, and adds no node to the semantics tree.
+        Focus(
+          focusNode: controller.sectionArea,
+          includeSemantics: false,
+          child: SliverMainAxisGroup(
+            slivers: [
+              if (_body.lineup case final shown?)
+                EventLineupSection(
+                  key: _lineupKey,
+                  body: shown.body,
+                  groups: shown.groups,
                   detail: detail,
-                  games: games,
-                  nominations: nominations,
+                  state: shown.state,
                   controller: controller,
-                  names: names,
-                  acting: acting,
-                  scopes: scopes,
-                  addScopes: addScopes,
                   now: now,
-                  lineup: lineup,
-                );
-                final buttons = poolRowButtons(
-                  context,
-                  game: game,
-                  gates: gates,
-                  controller: controller,
-                  viewerId: viewerId,
                   names: names,
+                  addScopes: addScopes,
+                  acting: acting,
                   clock: this.now,
-                );
-                // Under a host-only view, Add to lineup takes Nominate's
-                // place (#519).
-                final add = gates.addToLineup?.onRow ?? false
-                    ? buttons.addToLineup
-                    : null;
-                final nominate = buttons.nominate;
-                return _PoolRow(
-                  game: game,
-                  area: controller.poolRowArea(game.id),
-                  head: controller.rowHeadFocus(OfferedCopyEntry(game.id)),
-                  who: gates.who,
-                  nominated: gates.nominatedLine,
-                  // Why the main action can't be pressed: the one reason
-                  // its hint says for the ear (STYLE_GUIDE §4), where its
-                  // label doesn't draw it already, as Nominated does (#947).
-                  // Take back's, where it is that action, says what the game
-                  // still supplies (#905).
-                  note: add != null
-                      ? gates.addToLineup?.reason
-                      : nominate != null
-                      ? gates.nominate?.drawnReason
-                      : gates.takeBack?.blockedReason,
-                  // One main action (#946): Nominate where the viewer is
-                  // offered it, or Add to lineup in its place, else Take back
-                  // where they may take it back. Take back beside either is
-                  // the quick look's.
-                  action: add ?? nominate ?? buttons.takeBack,
-                );
-              },
-            ),
-          },
-        ],
+                ),
+              if (_body.nominations case final shown?)
+                EventNominationsSection(
+                  key: _nominationsKey,
+                  body: shown.body,
+                  rows: shown.rows,
+                  total: shown.total,
+                  detail: detail,
+                  state: shown.state,
+                  controller: controller,
+                  pool: games.games,
+                  poolRead: controller.isPoolRead(games),
+                  acting: acting,
+                  now: now,
+                ),
+              if (_body.pool case (:final body, :final rows)) ...[
+                if (body != EventPoolBody.hidden &&
+                    body != EventPoolBody.loading)
+                  SliverToBoxAdapter(
+                    key: _headerKey,
+                    child: _PoolHeader(
+                      controller: controller,
+                      games: games,
+                      gate: gate,
+                      anyGame: anyGame,
+                      viewerId: viewerId,
+                      names: names,
+                      writable: writable,
+                      shown: rows.length,
+                      onOfferGames: onOfferGames,
+                    ),
+                  ),
+                switch (body) {
+                  EventPoolBody.hidden => BgeStateSliver(
+                    child: BgeEmptyState(
+                      icon: Icons.visibility_off_outlined,
+                      title: l10n.eventsGamesHiddenTitle,
+                    ),
+                  ),
+                  EventPoolBody.loading => BgeStateSliver(
+                    child: BgeLoadingState(label: l10n.eventsGamesLoading),
+                  ),
+                  EventPoolBody.failed => BgeStateSliver(
+                    child: BgeErrorState(
+                      icon: Icons.cloud_off_outlined,
+                      title: l10n.eventsGamesFailedTitle,
+                      body: l10n.eventsGamesFailedBody,
+                      retryLabel: l10n.eventsRefreshRetry,
+                      retryProgressLabel: l10n.eventsRefreshInProgress,
+                      retryKey: EventDetailScreen.poolRetryKey,
+                      retrying: games.refreshing,
+                      onRetry: () => retryEventGamesPool(context),
+                    ),
+                  ),
+                  EventPoolBody.rosterFailed => BgeStateSliver(
+                    child: BgeErrorState(
+                      icon: Icons.cloud_off_outlined,
+                      title: l10n.eventsGamesFailedTitle,
+                      body: l10n.eventsGamesFailedBody,
+                      retryLabel: l10n.eventsRefreshRetry,
+                      retryProgressLabel: l10n.eventsRefreshInProgress,
+                      retryKey: EventDetailScreen.poolRetryKey,
+                      retrying: detail.refreshing,
+                      // The event's read brings the roster, whose end reads
+                      // the pool.
+                      onRetry: () => context.read<EventDetailBloc>().add(
+                        const EventDetailRetryRequested(),
+                      ),
+                    ),
+                  ),
+                  EventPoolBody.empty => BgeStateSliver(
+                    child: BgeEmptyState(
+                      icon: Icons.casino_outlined,
+                      title: l10n.eventsGamesEmptyTitle,
+                      body: l10n.eventsGamesEmptyBody,
+                    ),
+                  ),
+                  EventPoolBody.noMatches => BgeStateSliver(
+                    child: BgeEmptyState(
+                      icon: Icons.search_off_outlined,
+                      title: l10n.eventsGamesNoMatchesTitle,
+                      action: OutlinedButton(
+                        key: EventDetailScreen.poolClearFiltersKey,
+                        focusNode: controller.clearFiltersFocus,
+                        onPressed: () => controller.clearFilters(context),
+                        child: Text(l10n.eventsGamesClearFilters),
+                      ),
+                    ),
+                  ),
+                  EventPoolBody.rows => EventGamesRowLines<OfferedGame>(
+                    items: rows,
+                    keyOf: (game) => EventDetailScreen.poolRowKey(game.id),
+                    identityOf: (game) => OfferedCopyEntry(game.id),
+                    itemBuilder: (context, game) {
+                      // The row's rules, which its quick look builds by too
+                      // (#957).
+                      final gates = poolRowGates(
+                        l10n,
+                        game: game,
+                        detail: detail,
+                        games: games,
+                        nominations: nominations,
+                        controller: controller,
+                        names: names,
+                        acting: acting,
+                        scopes: scopes,
+                        addScopes: addScopes,
+                        now: now,
+                        lineup: lineup,
+                      );
+                      final buttons = poolRowButtons(
+                        context,
+                        game: game,
+                        gates: gates,
+                        controller: controller,
+                        viewerId: viewerId,
+                        names: names,
+                        clock: this.now,
+                      );
+                      // Under a host-only view, Add to lineup takes Nominate's
+                      // place (#519).
+                      final add = gates.addToLineup?.onRow ?? false
+                          ? buttons.addToLineup
+                          : null;
+                      final nominate = buttons.nominate;
+                      return _PoolRow(
+                        game: game,
+                        area: controller.poolRowArea(game.id),
+                        head: controller.rowHeadFocus(
+                          OfferedCopyEntry(game.id),
+                        ),
+                        who: gates.who,
+                        nominated: gates.nominatedLine,
+                        // Why the main action can't be pressed: the one
+                        // reason its hint says for the ear (STYLE_GUIDE §4),
+                        // where its label doesn't draw it already, as
+                        // Nominated does (#947). Take back's, where it is that
+                        // action, says what the game still supplies (#905).
+                        note: !modeKnown
+                            ? null
+                            : add != null
+                            ? gates.addToLineup?.reason
+                            : nominate != null
+                            ? gates.nominate?.drawnReason
+                            : gates.takeBack?.blockedReason,
+                        // One main action (#946): Nominate where the viewer
+                        // is offered it, or Add to lineup in its place, else
+                        // Take back where they may take it back. Take back
+                        // beside either is the quick look's, and so is every
+                        // one while the view's mode is unknown (#1063): none
+                        // shows, then gives way.
+                        action: !modeKnown
+                            ? null
+                            : add ?? nominate ?? buttons.takeBack,
+                      );
+                    },
+                  ),
+                },
+              ],
+            ],
+          ),
+        ),
       ],
     );
   }
@@ -1000,8 +1030,9 @@ class _PoolHeader extends StatelessWidget {
 
   /// Opens the Offer games page with the collection entries the viewer's
   /// own rows hold, so it can show them as already offered and pick none of
-  /// them twice, and sends the games it answers with (#516). Completes true
-  /// when a run was sent, and false when nothing was.
+  /// them twice, and the date the tab is on, which the page's location
+  /// keeps (#1064); and sends the games it answers with (#516). Completes
+  /// true when a run was sent, and false when nothing was.
   ///
   /// No picks, or Back, send nothing and say nothing. With picks, the send
   /// waits for any running detail read to end ([readEnded]), then goes for
@@ -1022,6 +1053,7 @@ class _PoolHeader extends StatelessWidget {
           for (final game in games.games)
             if (game.attendeeId == viewerId) game.collectionId,
         },
+        date: controller.dateQuery,
       ),
     );
     if (picks == null || picks.isEmpty || pool.isClosed) return false;

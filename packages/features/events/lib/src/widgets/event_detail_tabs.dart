@@ -34,14 +34,16 @@ enum EventGamesSection {
 /// game-addition mode of the view in use (`viewMode`, #519): all three, but
 /// for Nominations under a host-only mode, where nothing can be nominated,
 /// while no nomination is in the view ([nominationsInViewExist]). One made
-/// before the mode turned host-only keeps it, so it stays reachable.
+/// before the mode turned host-only keeps it, so it stays reachable. An
+/// unknown mode (null), as a date's is while its rules are still to come
+/// from a read (#1063), follows the host-only rule.
 List<EventGamesSection> visibleSections({
-  required GameAdditionMode mode,
+  required GameAdditionMode? mode,
   required bool nominationsInViewExist,
 }) => [
   for (final section in EventGamesSection.values)
     if (section != EventGamesSection.nominations ||
-        mode != GameAdditionMode.hostOnly ||
+        (mode != null && mode != GameAdditionMode.hostOnly) ||
         nominationsInViewExist)
       section,
 ];
@@ -176,6 +178,7 @@ class EventGamesSectionBar extends StatefulWidget {
   const EventGamesSectionBar({
     required this.sections,
     required this.controller,
+    this.onTap,
     super.key,
   });
 
@@ -184,6 +187,10 @@ class EventGamesSectionBar extends StatefulWidget {
 
   /// As long as [sections], each tab at its place among them.
   final TabController controller;
+
+  /// Called with the place of each sub-tab the user chooses, however it is
+  /// pressed, the one already chosen included, which changes no index.
+  final ValueChanged<int>? onTap;
 
   @override
   State<EventGamesSectionBar> createState() => _EventGamesSectionBarState();
@@ -257,6 +264,7 @@ class _EventGamesSectionBarState extends State<EventGamesSectionBar> {
 
     return TabBar.secondary(
       controller: widget.controller,
+      onTap: widget.onTap,
       tabs: [
         for (final section in widget.sections)
           Tab(

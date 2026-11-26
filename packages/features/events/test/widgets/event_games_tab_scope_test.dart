@@ -41,9 +41,11 @@ class _MockLineup extends MockBloc<EventLineupEvent, EventLineupState>
 /// the controller it holds handed to [onBuild] on each build. The detail's
 /// bloc starts on [initialDetail] and emits [details], and the scope opens
 /// on [initialDate], the date the location names (#1042), by the clock
-/// [now].
+/// [now]. With a [child], that is built under the scope in place of the
+/// widget that hands the controller to [onBuild].
 Widget _harness({
   required void Function(EventGamesTabController controller) onBuild,
+  Widget? child,
   EventGamesSection initialSection = EventGamesSection.nominations,
   bool disableAnimations = false,
   Stream<EventDetailState> details = const Stream.empty(),
@@ -89,12 +91,14 @@ Widget _harness({
             initialSection: initialSection,
             initialDate: initialDate,
             now: now,
-            child: Builder(
-              builder: (context) {
-                onBuild(EventGamesTabScope.of(context));
-                return const SizedBox();
-              },
-            ),
+            child:
+                child ??
+                Builder(
+                  builder: (context) {
+                    onBuild(EventGamesTabScope.of(context));
+                    return const SizedBox();
+                  },
+                ),
           ),
         ),
       ),
@@ -213,7 +217,9 @@ void main() {
 
     /// The event with [dates], ready, made offline where [localOnly], with a
     /// read running where [reading], and the last read failed where
-    /// [refreshFailed]. By default a read has ended with these dates.
+    /// [refreshFailed]. By default a read has ended with these dates, and
+    /// with their rules, so a read running leaves each date's mode known
+    /// (#1063).
     EventDetailReady ready(
       List<EventOccurrence> dates, {
       bool localOnly = false,
@@ -228,6 +234,7 @@ void main() {
             title: title,
           ).event.copyWith(isLocalOnly: localOnly),
           occurrences: dates,
+          occurrencePolicies: const [],
         ),
       ),
       actions: const {},
@@ -473,61 +480,61 @@ void main() {
       expect(notified, 1);
     });
 
-    // A detail can be ready as the scope is made, as one handed in already
-    // read could be: the sub-tabs it opens with follow the date the location
-    // names, not the event's own rules, so a link to Nominations on a date
-    // that takes nominations lands there (#519).
+    /// Ready as the scope is made, as one handed in already read could be:
+    /// only the hosts add games to the event, but its later date takes
+    /// nominations.
+    final hostOnlyButLater = EventDetailReady(
+      detail: EventDetail(
+        snapshot: EventSnapshot(
+          event: item('e').event,
+          occurrences: [soon, later],
+          policy: EventPolicy(
+            id: 'p',
+            eventId: 'e',
+            allowMemberInvites: true,
+            allowGuestInvites: false,
+            restrictToGameCategories: false,
+            requireHostApprovalToJoin: false,
+            allowSpectators: false,
+            strictCapacity: false,
+            gameAdditionMode: GameAdditionMode.hostOnly,
+            restrictToAttendeePool: false,
+            voteThresholdType: VoteThresholdType.simpleMajority,
+            voteQuorumType: VoteQuorumType.none,
+            voteEligibility: VoteEligibility.allAttendees,
+            interestedWeight: InterestedWeight.asAbstain,
+            createdAt: now,
+            updatedAt: now,
+          ),
+          occurrencePolicies: [
+            EventOccurrencePolicy(
+              id: 'op-later',
+              occurrenceId: 'later',
+              allowedCategoryIds: const [],
+              allowedPlatformIds: const [],
+              allowedPlatformTypes: const [],
+              platformTypesUnrestricted: false,
+              platformsUnrestricted: false,
+              capacityUnrestricted: false,
+              gameAdditionMode: GameAdditionMode.requiresVote,
+              createdAt: now,
+              updatedAt: now,
+            ),
+          ],
+        ),
+      ),
+      actions: const {},
+    );
+
+    // A detail can be ready as the scope is made: the sub-tabs it opens with
+    // follow the date the location names, not the event's own rules, so a
+    // link to Nominations on a date that takes nominations lands there
+    // (#519).
     testWidgets('a detail ready as the scope is made opens on the sub-tabs of '
         'the date the location names', (tester) async {
-      final at = now;
-      // Only the hosts add games to the event, but its later date takes
-      // nominations.
-      final detail = EventDetailReady(
-        detail: EventDetail(
-          snapshot: EventSnapshot(
-            event: item('e').event,
-            occurrences: [soon, later],
-            policy: EventPolicy(
-              id: 'p',
-              eventId: 'e',
-              allowMemberInvites: true,
-              allowGuestInvites: false,
-              restrictToGameCategories: false,
-              requireHostApprovalToJoin: false,
-              allowSpectators: false,
-              strictCapacity: false,
-              gameAdditionMode: GameAdditionMode.hostOnly,
-              restrictToAttendeePool: false,
-              voteThresholdType: VoteThresholdType.simpleMajority,
-              voteQuorumType: VoteQuorumType.none,
-              voteEligibility: VoteEligibility.allAttendees,
-              interestedWeight: InterestedWeight.asAbstain,
-              createdAt: at,
-              updatedAt: at,
-            ),
-            occurrencePolicies: [
-              EventOccurrencePolicy(
-                id: 'op-later',
-                occurrenceId: 'later',
-                allowedCategoryIds: const [],
-                allowedPlatformIds: const [],
-                allowedPlatformTypes: const [],
-                platformTypesUnrestricted: false,
-                platformsUnrestricted: false,
-                capacityUnrestricted: false,
-                gameAdditionMode: GameAdditionMode.requiresVote,
-                createdAt: at,
-                updatedAt: at,
-              ),
-            ],
-          ),
-        ),
-        actions: const {},
-      );
-
       await tester.pumpWidget(
         _harness(
-          initialDetail: detail,
+          initialDetail: hostOnlyButLater,
           initialDate: 'later',
           now: () => now,
           onBuild: (c) => controller = c,
@@ -537,6 +544,89 @@ void main() {
       expect(controller.dateView, const OneDateView('later'));
       expect(controller.visibleSections, EventGamesSection.values);
       expect(controller.section, EventGamesSection.nominations);
+    });
+
+    // A link to Nominations on the host-only date, with the nominations not
+    // yet read: the bar opens on Lineup, and Nominations is held for the
+    // location until the answer is in (#1066).
+    testWidgets('a detail ready as the scope is made holds a sub-tab it '
+        'leaves out before the nominations answer', (tester) async {
+      await tester.pumpWidget(
+        _harness(
+          initialDetail: hostOnlyButLater,
+          initialDate: 'soon',
+          now: () => now,
+          onBuild: (c) => controller = c,
+        ),
+      );
+
+      expect(controller.dateView, const OneDateView('soon'));
+      expect(controller.visibleSections, [
+        EventGamesSection.lineup,
+        EventGamesSection.pool,
+      ]);
+      expect(controller.section, EventGamesSection.lineup);
+      expect(controller.sectionsAnswered, isFalse);
+      expect(controller.locationSection, EventGamesSection.nominations);
+    });
+
+    // Nominate's "which date?" dialog asked only where the date view was
+    // null on a multi-date event (#1062). That holds only if the view exists
+    // before any pool row builds. A pool row builds under the scope only on a
+    // Ready detail, as the screen's page does (`_ReadyPage`, under a
+    // `BlocBuilder` on the detail's bloc), so the stand-in below builds on
+    // the same terms and records the view it finds there.
+    group('before any pool row builds (#1062)', () {
+      /// What stands in for a pool row: built under the scope only once the
+      /// detail is Ready, recording the controller's date view each time.
+      Widget poolRow(List<GamesDateView?> seen) =>
+          BlocBuilder<EventDetailBloc, EventDetailState>(
+            builder: (context, state) {
+              if (state is! EventDetailReady) return const SizedBox();
+              seen.add(EventGamesTabScope.of(context).dateView);
+              return const SizedBox();
+            },
+          );
+
+      testWidgets("a multi-date event's first Ready detail has a date view "
+          'before any pool row builds (#1062)', (tester) async {
+        final seen = <GamesDateView?>[];
+        final details = StreamController<EventDetailState>();
+        addTearDown(() => unawaited(details.close()));
+        await tester.pumpWidget(
+          _harness(
+            details: details.stream,
+            now: () => now,
+            child: poolRow(seen),
+            onBuild: (_) {},
+          ),
+        );
+        expect(seen, isEmpty);
+
+        details.add(ready([soon, later]));
+        // Once for the event to reach the builder, once for its frame.
+        await tester.pump();
+        await tester.pump();
+
+        expect(seen, isNotEmpty);
+        expect(seen.first, isNotNull);
+      });
+
+      testWidgets('a detail already Ready as the scope mounts has a date '
+          'view on the first build (#1062)', (tester) async {
+        final seen = <GamesDateView?>[];
+        await tester.pumpWidget(
+          _harness(
+            initialDetail: ready([soon, later]),
+            now: () => now,
+            child: poolRow(seen),
+            onBuild: (_) {},
+          ),
+        );
+
+        expect(seen, isNotEmpty);
+        expect(seen.first, isNotNull);
+      });
     });
 
     // The row takes the place of the nominations' date facet: a date set

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:app_shell/app_shell.dart';
 import 'package:bloc_test/bloc_test.dart';
 import 'package:events/events.dart';
@@ -206,6 +208,88 @@ void main() {
         '/events/e-1?${AppRoutes.eventTabParam}=pool',
       );
       expect(AppRoutes.eventDetailOf('e-1'), '/events/e-1');
+    });
+
+    test('eventOfferGamesOf names the date', () {
+      // So a restored history entry of the page still has it (#1064).
+      expect(
+        AppRoutes.eventOfferGamesOf('e-0', date: 'o-2'),
+        '${AppRoutes.eventDetailOf('e-0')}/games/offer?'
+        '${AppRoutes.eventDateParam}=o-2',
+      );
+      // Encoded as eventDetailOf's is.
+      const date = 'a b&c=d#e+f';
+      expect(
+        Uri.parse(
+          AppRoutes.eventOfferGamesOf('e-0', date: date),
+        ).queryParameters,
+        {AppRoutes.eventDateParam: date},
+      );
+      // Without one it is unchanged.
+      expect(
+        AppRoutes.eventOfferGamesOf('e-0'),
+        '${AppRoutes.eventDetailOf('e-0')}/games/offer',
+      );
+    });
+
+    /// Restores the Offer games page's own history entry, with [date] in
+    /// its location, as a push over the servers page (#1064).
+    ///
+    /// Restored, the entry has no `extra`, so the route builds the page that
+    /// leaves for the event. A restored entry built in the app always has
+    /// the event beneath it, so that page pops. Here the base, the servers
+    /// page, is outside the navigation shell the push goes into, which then
+    /// holds the pushed page alone: nothing is beneath it to pop, and it
+    /// leaves with a `go`.
+    Future<void> restoreOfferOverServers(
+      WidgetTester tester,
+      GoRouter router, {
+      String? date,
+    }) async {
+      router.go(AppRoutes.servers);
+      await tester.pumpAndSettle();
+      detailBuilds.clear();
+
+      router.restore(
+        router.configuration
+            .findMatch(Uri.parse(AppRoutes.servers))
+            .push(
+              ImperativeRouteMatch(
+                pageKey: const ValueKey<String>('restored-offer'),
+                completer: Completer<Object?>(),
+                matches: router.configuration.findMatch(
+                  Uri.parse(AppRoutes.eventOfferGamesOf('e-0', date: date)),
+                ),
+              ),
+            ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('a restored Offer games entry with nothing beneath it goes '
+        'to the event on its Pool and the date it names', (tester) async {
+      final router = await pumpRouter(tester);
+
+      await restoreOfferOverServers(tester, router, date: 'o-2');
+
+      expect(
+        router.state.uri.toString(),
+        AppRoutes.eventDetailOf('e-0', tab: 'pool', date: 'o-2'),
+      );
+      expect(detailBuilds.last, (tab: 'pool', date: 'o-2'));
+    });
+
+    testWidgets('a restored Offer games entry that names no date goes to the '
+        'event on its Pool with none', (tester) async {
+      final router = await pumpRouter(tester);
+
+      await restoreOfferOverServers(tester, router);
+
+      expect(
+        router.state.uri.toString(),
+        AppRoutes.eventDetailOf('e-0', tab: 'pool'),
+      );
+      expect(detailBuilds.last, (tab: 'pool', date: null));
     });
 
     testWidgets('/events/create is the form, not an event called create', (

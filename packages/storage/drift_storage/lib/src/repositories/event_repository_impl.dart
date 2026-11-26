@@ -89,12 +89,13 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
   // ── Writes ─────────────────────────────────────────────────────────────
 
   @override
-  Future<void> cacheEvent(
+  Future<bool> cacheEvent(
     EventSnapshot snapshot, {
     required EventAccessSource source,
   }) async {
     checkNotDisposed();
-    await _writeSnapshots([snapshot], source);
+    final written = await _writeSnapshots([snapshot], source);
+    return written.isNotEmpty;
   }
 
   @override
@@ -119,23 +120,26 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
   /// One transaction, so the flags are read in the state the write sees. It
   /// also joins the caller's, where there is one, as Drift nests it in a
   /// savepoint.
-  Future<void> _writeSnapshots(
+  ///
+  /// Returns the ids it wrote: [snapshots]' less the queue-owned ones.
+  Future<Set<String>> _writeSnapshots(
     List<EventSnapshot> snapshots,
     EventAccessSource source,
   ) async {
     // An event named twice is written from its later snapshot alone, so its
     // occurrences and roster aren't inserted twice.
     final named = {for (final s in snapshots) s.event.id: s};
-    if (named.isEmpty) return;
+    if (named.isEmpty) return const {};
 
-    await _db.transaction(() async {
+    return _db.transaction(() async {
       final owned = await _queueOwnedIds(named.keys);
       final byId = {
         for (final entry in named.entries)
           if (!owned.contains(entry.key)) entry.key: entry.value,
       };
-      if (byId.isEmpty) return;
+      if (byId.isEmpty) return const <String>{};
       await _writeBatch(byId, source);
+      return byId.keys.toSet();
     });
   }
 

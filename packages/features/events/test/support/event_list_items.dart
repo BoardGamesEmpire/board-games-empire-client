@@ -69,3 +69,24 @@ EventAttendee attendance(EventParticipationStatus status) => EventAttendee(
 /// [status].
 EventAttendance listAttendance(EventParticipationStatus status) =>
     EventAttendance.fromAttendee(attendance(status));
+
+/// [occurrenceId]'s own policy: its games under [mode], and fillers of
+/// [filler] minutes at most, where they are set.
+EventOccurrencePolicy occurrencePolicyOn(
+  String occurrenceId, {
+  GameAdditionMode? mode,
+  int? filler,
+}) => EventOccurrencePolicy(
+  id: 'op-$occurrenceId',
+  occurrenceId: occurrenceId,
+  allowedCategoryIds: const [],
+  allowedPlatformIds: const [],
+  allowedPlatformTypes: const [],
+  platformTypesUnrestricted: false,
+  platformsUnrestricted: false,
+  capacityUnrestricted: false,
+  gameAdditionMode: mode,
+  fillerMaxPlayTime: filler,
+  createdAt: kItemInstant,
+  updatedAt: kItemInstant,
+);

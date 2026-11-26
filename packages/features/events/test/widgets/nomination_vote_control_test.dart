@@ -181,7 +181,7 @@ void main() {
     when(() => repository.watchEvent(any())).thenAnswer((_) => cache.stream);
     when(
       () => repository.cacheEvent(any(), source: any(named: 'source')),
-    ).thenAnswer((_) async {});
+    ).thenAnswer((_) async => true);
     when(() => repository.lastWrite(any())).thenAnswer((_) async => 7);
     nominationsAnswer = (_) => [_nomination('n-1')];
     nominationAnswer = (request) => _nomination(request.nominationId);
