@@ -484,11 +484,11 @@ switch a mode: a `SegmentedButton` is for that, such as a layout or a filter.
   on naming it instead. Once the answer is in, the bar moves to it, without
   moving focus, where it now shows and the user hasn't chosen meanwhile:
   picked a sub-tab, changed the top-level tab, set to work in the sub-tab
-  shown, or opened a pop-up over the page. Otherwise the location is told
-  the sub-tab shown. One that leaves while chosen gives way to the first,
-  and one still shown stays chosen as another comes or goes; focus on a
-  sub-tab stays on it, and focus on one that left goes to the sub-tab
-  chosen.
+  shown, or opened a pop-up or another page over this one. Otherwise the
+  location is told the sub-tab shown. One that leaves while chosen gives
+  way to the first, and one still shown stays chosen as another comes or
+  goes; focus on a sub-tab stays on it, and focus on one that left goes to
+  the sub-tab chosen.
 - **A tab of two or more destinations of its own takes a second bar.** Its
   first sliver is a `TabBar.secondary` under the screen's own bar, as the
   event's Games tab holds Lineup, Nominations and Pool (#945, #519). The same
