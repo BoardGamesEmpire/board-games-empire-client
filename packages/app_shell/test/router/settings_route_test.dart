@@ -15,6 +15,8 @@ class _MockAppBootstrapCubit extends MockCubit<AppBootstrapState>
 const _settingsMarkerKey = Key('settings_route_marker');
 const _exportMarkerKey = Key('export_route_marker');
 const _signInMethodsMarkerKey = Key('sign_in_methods_route_marker');
+const _apiKeysMarkerKey = Key('api_keys_route_marker');
+const _apiKeyCreateMarkerKey = Key('api_key_create_route_marker');
 
 void main() {
   late _MockAppBootstrapCubit cubit;
@@ -29,6 +31,9 @@ void main() {
     SettingsScreenBuilder? settingsBuilder,
     DataExportScreenBuilder? dataExportBuilder,
     SignInMethodsScreenBuilder? signInMethodsBuilder,
+    ApiKeysScreenBuilder? apiKeysBuilder,
+    ApiKeyDetailScreenBuilder? apiKeyDetailBuilder,
+    ApiKeyCreateScreenBuilder? apiKeyCreateBuilder,
   }) async {
     whenListen(
       cubit,
@@ -42,6 +47,9 @@ void main() {
       settingsBuilder: settingsBuilder,
       dataExportBuilder: dataExportBuilder,
       signInMethodsBuilder: signInMethodsBuilder,
+      apiKeysBuilder: apiKeysBuilder,
+      apiKeyDetailBuilder: apiKeyDetailBuilder,
+      apiKeyCreateBuilder: apiKeyCreateBuilder,
     );
     addTearDown(() {
       router.dispose();
@@ -260,6 +268,177 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byKey(_signInMethodsMarkerKey), findsNothing);
+      expect(find.text('Sign in'), findsOneWidget);
+    });
+  });
+  group('buildAppRouter — API key routes (#1028)', () {
+    /// The ids the detail builder was handed, in order.
+    late List<String> detailIds;
+
+    Widget detailMarker(String id) =>
+        Scaffold(body: SizedBox(key: ValueKey('api_key_detail_marker.$id')));
+
+    setUp(() => detailIds = []);
+
+    Widget? recordDetail(BuildContext _, String id) {
+      detailIds.add(id);
+      return detailMarker(id);
+    }
+
+    testWidgets('/settings/api-keys builds the list', (tester) async {
+      final router = await pumpRouter(
+        tester,
+        initialState: const AppBootstrapReady(),
+        apiKeysBuilder: (_) =>
+            const Scaffold(body: SizedBox(key: _apiKeysMarkerKey)),
+      );
+
+      router.go(AppRoutes.settingsApiKeys);
+      await tester.pumpAndSettle();
+
+      expect(AppRoutes.settingsApiKeys, '/settings/api-keys');
+      expect(find.byKey(_apiKeysMarkerKey), findsOneWidget);
+    });
+
+    testWidgets('the list falls back to NotYetAvailableScreen when its '
+        'builder returns null', (tester) async {
+      final router = await pumpRouter(
+        tester,
+        initialState: const AppBootstrapReady(),
+        apiKeysBuilder: (_) => null,
+      );
+
+      router.go(AppRoutes.settingsApiKeys);
+      await tester.pumpAndSettle();
+
+      expect(find.byType(NotYetAvailableScreen), findsOneWidget);
+    });
+
+    testWidgets('/settings/api-keys/k_1 passes k_1 to the detail builder', (
+      tester,
+    ) async {
+      final router = await pumpRouter(
+        tester,
+        initialState: const AppBootstrapReady(),
+        apiKeysBuilder: (_) =>
+            const Scaffold(body: SizedBox(key: _apiKeysMarkerKey)),
+        apiKeyDetailBuilder: recordDetail,
+      );
+
+      router.go(AppRoutes.settingsApiKeyOf('k_1'));
+      await tester.pumpAndSettle();
+
+      expect(AppRoutes.settingsApiKeyOf('k_1'), '/settings/api-keys/k_1');
+      expect(detailIds.toSet(), {'k_1'});
+      expect(
+        find.byKey(const ValueKey('api_key_detail_marker.k_1')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('an id is encoded into the location and decoded for the '
+        'builder', (tester) async {
+      final router = await pumpRouter(
+        tester,
+        initialState: const AppBootstrapReady(),
+        apiKeyDetailBuilder: recordDetail,
+      );
+
+      router.go(AppRoutes.settingsApiKeyOf('a/b c'));
+      await tester.pumpAndSettle();
+
+      expect(
+        AppRoutes.settingsApiKeyOf('a/b c'),
+        '/settings/api-keys/a%2Fb%20c',
+      );
+      expect(detailIds.toSet(), {'a/b c'});
+    });
+
+    testWidgets('a key reached directly has the list beneath it, and Back '
+        'returns to the list', (tester) async {
+      final router = await pumpRouter(
+        tester,
+        initialState: const AppBootstrapReady(),
+        apiKeysBuilder: (_) =>
+            const Scaffold(body: SizedBox(key: _apiKeysMarkerKey)),
+        apiKeyDetailBuilder: recordDetail,
+      );
+
+      router.go(AppRoutes.settingsApiKeyOf('k_1'));
+      await tester.pumpAndSettle();
+      expect(router.canPop(), isTrue);
+
+      router.pop();
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(_apiKeysMarkerKey), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('api_key_detail_marker.k_1')),
+        findsNothing,
+      );
+    });
+
+    testWidgets('the detail falls back to NotYetAvailableScreen when its '
+        'builder returns null', (tester) async {
+      final router = await pumpRouter(
+        tester,
+        initialState: const AppBootstrapReady(),
+        apiKeyDetailBuilder: (_, _) => null,
+      );
+
+      router.go(AppRoutes.settingsApiKeyOf('k_1'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(NotYetAvailableScreen), findsOneWidget);
+    });
+
+    testWidgets('/settings/api-keys/new is not read as an id', (tester) async {
+      final router = await pumpRouter(
+        tester,
+        initialState: const AppBootstrapReady(),
+        apiKeyDetailBuilder: recordDetail,
+        apiKeyCreateBuilder: (_) =>
+            const Scaffold(body: SizedBox(key: _apiKeyCreateMarkerKey)),
+      );
+
+      router.go(AppRoutes.settingsApiKeyNew);
+      await tester.pumpAndSettle();
+
+      expect(AppRoutes.settingsApiKeyNew, '/settings/api-keys/new');
+      expect(find.byKey(_apiKeyCreateMarkerKey), findsOneWidget);
+      expect(detailIds, isEmpty);
+    });
+
+    testWidgets('/settings/api-keys/new falls back to NotYetAvailableScreen '
+        'with no create builder, still not as an id', (tester) async {
+      final router = await pumpRouter(
+        tester,
+        initialState: const AppBootstrapReady(),
+        apiKeyDetailBuilder: recordDetail,
+      );
+
+      router.go(AppRoutes.settingsApiKeyNew);
+      await tester.pumpAndSettle();
+
+      expect(find.byType(NotYetAvailableScreen), findsOneWidget);
+      expect(detailIds, isEmpty);
+    });
+
+    testWidgets('is gated behind bootstrap: visiting it while unauthenticated '
+        'redirects to auth', (tester) async {
+      final router = await pumpRouter(
+        tester,
+        initialState: const AppBootstrapNeedsAuth(),
+        apiKeysBuilder: (_) =>
+            const Scaffold(body: SizedBox(key: _apiKeysMarkerKey)),
+        apiKeyDetailBuilder: recordDetail,
+      );
+
+      router.go(AppRoutes.settingsApiKeyOf('k_1'));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(_apiKeysMarkerKey), findsNothing);
+      expect(detailIds, isEmpty);
       expect(find.text('Sign in'), findsOneWidget);
     });
   });

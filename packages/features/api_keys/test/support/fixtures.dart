@@ -1,0 +1,89 @@
+import 'package:mocktail/mocktail.dart';
+import 'package:models/domain.dart';
+import 'package:network_interface/network_interface.dart';
+
+class MockApiKeyRemoteDataSource extends Mock
+    implements ApiKeyRemoteDataSource {}
+
+/// A key as the server answers one, with the fields a test names.
+ApiKey apiKey(
+  String id, {
+  String? name = 'CI deploy',
+  String? start = 'bge_a1B2',
+  List<ApiKeyScope> scopes = const [ApiKeyScope(slug: 'collection:read')],
+  bool enabled = true,
+  DateTime? expiresAt,
+  DateTime? lastUsedAt,
+}) => ApiKey(
+  id: id,
+  name: name,
+  start: start,
+  scopes: scopes,
+  enabled: enabled,
+  createdAt: DateTime.utc(2026, 11),
+  expiresAt: expiresAt,
+  lastUsedAt: lastUsedAt,
+);
+
+/// How many keys a page says the server has, unless a test says otherwise.
+/// The same on every page, as a listing that nothing changed between reads.
+const int listingTotal = 100;
+
+/// One page of [items], saying [hasMore] or not, and that the server has
+/// [total] keys.
+PaginatedResult<ApiKey> pageOf(
+  List<ApiKey> items, {
+  int page = 1,
+  bool hasMore = false,
+  int total = listingTotal,
+}) => PaginatedResult(
+  items: items,
+  meta: PaginationMeta(
+    page: page,
+    limit: ApiKeyRemoteDataSource.defaultPageSize,
+    total: total,
+    totalPages: hasMore ? page + 1 : page,
+    hasMore: hasMore,
+  ),
+);
+
+/// A permission the caller may grant, at [riskLevel].
+GrantablePermission permission(
+  String slug, {
+  RiskLevel riskLevel = RiskLevel.low,
+  String? description,
+  bool pinnable = false,
+}) => GrantablePermission(
+  slug: slug,
+  description: description ?? 'Do $slug',
+  riskLevel: riskLevel,
+  pinnable: pinnable,
+);
+
+/// Answers [MockApiKeyRemoteDataSource.fetchGrantable] with [permissions].
+void answerGrantable(
+  MockApiKeyRemoteDataSource remote, [
+  List<GrantablePermission> permissions = const [],
+]) => when(remote.fetchGrantable).thenAnswer((_) async => permissions);
+
+/// Answers [MockApiKeyRemoteDataSource.fetch] for [key]'s id with [key].
+void answerKey(MockApiKeyRemoteDataSource remote, ApiKey key) =>
+    when(() => remote.fetch(key.id)).thenAnswer((_) async => key);
+
+/// Answers page [page] with [keys], saying the server has [total]. The list
+/// always names the page it asks for.
+void answerPage(
+  MockApiKeyRemoteDataSource remote,
+  List<ApiKey> keys, {
+  int page = 1,
+  bool hasMore = false,
+  int total = listingTotal,
+}) =>
+    when(
+      () => remote.fetchPage(
+        page: page,
+        limit: any(named: 'limit'),
+      ),
+    ).thenAnswer(
+      (_) async => pageOf(keys, page: page, hasMore: hasMore, total: total),
+    );

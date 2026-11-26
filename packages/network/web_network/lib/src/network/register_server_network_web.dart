@@ -3,6 +3,7 @@ import 'package:dio/dio.dart';
 import 'package:dio_network/dio_network.dart'
     show
         AdminHouseholdRemoteDataSourceImpl,
+        ApiKeyRemoteDataSourceImpl,
         ClockSkewInterceptor,
         DataGatewayRemoteDataSourceImpl,
         DioFactory,
@@ -26,6 +27,7 @@ import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart'
     show
         AdminHouseholdRemoteDataSource,
+        ApiKeyRemoteDataSource,
         DataGatewayRemoteDataSource,
         EventRemoteDataSource,
         GameCollectionRemoteDataSource,
@@ -200,6 +202,11 @@ void registerServerNetworkWeb({
     ..registerSingleton<HouseholdInviteRemoteDataSource>(
       HouseholdInviteRemoteDataSourceImpl(dio),
     )
+    // #1028: the per-origin API key remote. Same convention, placement and
+    // reuse argument as the remotes above: native's implementation over this
+    // origin's Dio, whose permissive validateStatus is what lets it read a
+    // refusal's envelope.
+    ..registerSingleton<ApiKeyRemoteDataSource>(ApiKeyRemoteDataSourceImpl(dio))
     // #480: the per-origin household member remote. Same convention, placement
     // and reuse argument as the remotes above: native's implementation over
     // this origin's Dio, whose permissive validateStatus is what lets it read

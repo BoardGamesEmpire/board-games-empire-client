@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:api_keys/api_keys.dart';
 import 'package:app_shell/l10n/shell_localizations.dart';
 import 'package:app_shell/src/admin/admin_section.dart';
 import 'package:app_shell/src/bootstrap/app_bootstrap_cubit.dart';
@@ -25,6 +26,7 @@ import 'package:app_shell/src/screens/splash_screen.dart';
 import 'package:app_shell/src/servers/server_activation.dart';
 import 'package:app_shell/src/servers/server_list_cubit.dart';
 import 'package:app_shell/src/servers/servers_screen.dart';
+import 'package:app_shell/src/settings/entries/api_keys_settings_entry.dart';
 import 'package:app_shell/src/settings/entries/data_export_settings_entry.dart';
 import 'package:app_shell/src/settings/entries/sign_in_methods_settings_entry.dart';
 import 'package:app_shell/src/settings/locale_cubit.dart';
@@ -104,6 +106,7 @@ const List<LocalizationsDelegate<dynamic>> bgeFeatureLocalizationsDelegates = [
   ProfileLocalizations.delegate,
   UserSearchLocalizations.delegate,
   DataExportLocalizations.delegate,
+  ApiKeysLocalizations.delegate,
 ];
 
 /// The shared application widget.
@@ -489,6 +492,8 @@ class _BgeAppState extends State<BgeApp> {
       settingsBuilder: _buildSettingsRoute,
       dataExportBuilder: _buildDataExportRoute,
       signInMethodsBuilder: _buildSignInMethodsRoute,
+      apiKeysBuilder: _buildApiKeysRoute,
+      apiKeyDetailBuilder: _buildApiKeyDetailRoute,
       householdListBuilder: _buildHouseholdListRoute,
       householdDetailBuilder: _buildHouseholdDetailRoute,
       householdInvitesBuilder: _buildHouseholdInvitesRoute,
@@ -3226,14 +3231,15 @@ class _BgeAppState extends State<BgeApp> {
   /// only when >1 supported locale) and passes the active server's alias
   /// so the per-server section is shown/omitted correctly. The per-server
   /// section holds the sign-in methods entry (#582) while
-  /// [_signInMethodsDeps] answers and the export entry (#93) while
-  /// [_dataExportDeps] does, and is otherwise empty and omitted by
-  /// [SettingsScreen].
+  /// [_signInMethodsDeps] answers, the API keys entry (#1028) while
+  /// [_apiKeysDeps] does, and the export entry (#93) while [_dataExportDeps]
+  /// does, and is otherwise empty and omitted by [SettingsScreen].
   Widget? _buildSettingsRoute(BuildContext context) {
     final themeModeCubit = _themeModeCubit;
     final localeCubit = _localeCubit;
     if (themeModeCubit == null || localeCubit == null) return null;
     final signInMethods = _signInMethodsDeps();
+    final apiKeys = _apiKeysDeps();
     final export = _dataExportDeps();
     return SettingsScreen(
       sections: buildSettingsSections(
@@ -3245,6 +3251,8 @@ class _BgeAppState extends State<BgeApp> {
             SignInMethodsSettingsEntry(
               serverName: signInMethods.active.identity.name,
             ),
+          if (apiKeys != null)
+            ApiKeysSettingsEntry(serverName: apiKeys.active.identity.name),
           if (export != null)
             DataExportSettingsEntry(serverName: export.active.identity.name),
         ],
@@ -3325,6 +3333,53 @@ class _BgeAppState extends State<BgeApp> {
       passwordSignInOffered:
           deps.active.identity.emailAndPasswordStrategy != null,
       returnPath: AppRoutes.settingsSignInMethods,
+    );
+  }
+
+  /// What the API key screens (#1028) need, or null when they cannot be
+  /// offered: no active server, or its container lacks the
+  /// [ApiKeyRemoteDataSource]. One check for the Settings entry and the
+  /// routes, so the entry is never offered for a route that would fall back.
+  ({ActiveServer active, ApiKeyRemoteDataSource remote})? _apiKeysDeps() {
+    final active = widget.bootstrapCubit.activeServerScope?.active;
+    if (active == null) return null;
+    final container = active.container;
+    if (!container.isRegistered<ApiKeyRemoteDataSource>()) return null;
+    return (active: active, remote: container.get<ApiKeyRemoteDataSource>());
+  }
+
+  /// The API key list (#1028), keyed by the server and the user session's
+  /// lease ([_sessionLease]) for [_buildDataExportRoute]'s reasons. The
+  /// server's remote is the same object for every user who signs in to it,
+  /// so the list's own key, the remote, can't tell their sessions apart.
+  ///
+  /// A key's page is pushed, and the list reads itself again once it pops.
+  /// Making a key is not offered yet.
+  Widget? _buildApiKeysRoute(BuildContext context) {
+    final deps = _apiKeysDeps();
+    if (deps == null) return null;
+    // Taken now: the push happens later, from a tap on the list.
+    final router = GoRouter.of(context);
+    return ApiKeyListScreen(
+      key: ValueKey((deps.active, _sessionLease(deps.active.container))),
+      remote: deps.remote,
+      openKey: (id) => router.push<void>(AppRoutes.settingsApiKeyOf(id)),
+    );
+  }
+
+  /// One API key's own page (#1028), keyed as [_buildApiKeysRoute] keys the
+  /// list. It is a child of the list route, so its pop after a delete, and
+  /// its Back once the key is found gone, land on the list, a list reached
+  /// directly too.
+  Widget? _buildApiKeyDetailRoute(BuildContext context, String apiKeyId) {
+    final deps = _apiKeysDeps();
+    if (deps == null) return null;
+    final lease = _sessionLease(deps.active.container);
+    return ApiKeyDetailScreen(
+      key: ValueKey((deps.active, lease)),
+      remote: deps.remote,
+      id: apiKeyId,
+      sessionLease: lease,
     );
   }
 

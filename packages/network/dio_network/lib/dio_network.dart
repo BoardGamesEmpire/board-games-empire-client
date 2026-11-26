@@ -1,3 +1,5 @@
+export 'src/api_key/api_key_remote_data_source_impl.dart';
+
 export 'src/auth/auth_wire_errors.dart';
 export 'src/auth/credential_grant_requests.dart';
 export 'src/auth/rate_limited.dart';

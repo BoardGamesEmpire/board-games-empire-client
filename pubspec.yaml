@@ -107,6 +107,7 @@ workspace:
   - packages/core/hydration
   - packages/core/access
   - packages/core/analytics
+  - packages/features/api_keys
   - packages/features/auth
   - packages/features/catalog
   - packages/features/collection

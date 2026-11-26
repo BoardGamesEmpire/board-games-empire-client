@@ -54,6 +54,7 @@ export 'src/screens/shell_placeholder_screen.dart';
 export 'src/screens/splash_screen.dart';
 export 'src/screens/unknown_server_link_screen.dart';
 export 'src/servers/registered_servers.dart';
+export 'src/settings/entries/api_keys_settings_entry.dart';
 export 'src/settings/entries/data_export_settings_entry.dart';
 export 'src/settings/entries/language_settings_entry.dart';
 export 'src/settings/entries/sign_in_methods_settings_entry.dart';
