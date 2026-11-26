@@ -129,25 +129,29 @@ Future<bool> takeBackGame(
 }
 
 /// What Nominate is in [view], the date view in use (#1042), on [detail] as
-/// of [now]: null where the viewer isn't offered it under that view's mode
-/// ([nominateGate], [viewMode], #519), or while that mode is unknown, its
-/// date's rules still to come from a read (#1063); otherwise the choices it
-/// nominates for ([nominateScopes]), none where the view's date can no
-/// longer be nominated for, which leaves it offered but with nothing to
-/// nominate. One rule for the pool's rows, their quick looks, a press's
-/// re-check ([nominateGame]) and the Nominations sub-tab's pointer to the
-/// Pool.
+/// of [now]: the choices it nominates for ([nominateScopes]), each where
+/// the viewer is offered Nominate under its own scope's mode
+/// ([nominateGate], [scopeMode], #519, #1070), or null where none is.
+///
+/// Under a view there is one scope, the view's, so the view's mode decides
+/// ([viewMode]): null where it offers no Nominate, or while it is unknown,
+/// its date's rules still to come from a read (#1063); otherwise the view's
+/// choice, none where its date can no longer be nominated for, which leaves
+/// Nominate offered but with nothing to nominate. With no view the one
+/// choice is the whole event (#1062), checked against the event's mode.
+/// The check per choice is the add's ([openChoicesIn]). One rule for the
+/// pool's rows, their quick looks, a press's re-check ([nominateGame]) and
+/// the Nominations sub-tab's pointer to the Pool.
 List<NominateScope>? nominateChoicesIn(
   EventDetailReady detail, {
   required GamesDateView? view,
   required DateTime now,
-}) {
-  // Not passed on unknown: the gate takes a null mode as the event's.
-  final mode = viewMode(detail, view);
-  return mode != null && nominateGate(detail, mode: mode) == NominateGate.open
-      ? nominateScopes(detail.detail, now: now, view: view)
-      : null;
-}
+}) => openChoicesIn(
+  detail,
+  view: view,
+  scopes: nominateScopes(detail.detail, now: now, view: view),
+  open: (mode) => nominateGate(detail, mode: mode) == NominateGate.open,
+);
 
 /// Whether the nominations [state] holds say what a pool row supplies
 /// (#517): there are some, or the last read to end, as [controller] draws
@@ -533,7 +537,8 @@ String? _nominateUnread(
 /// It goes once any running detail read has ended ([readEnded]), for the
 /// event as the detail shows it then, whose id a reconcile can have moved
 /// (#499). Nothing is sent if, by then, the viewer isn't offered Nominate
-/// under the view's mode ([viewMode], #519), the game has left the pool,
+/// for the choice under its own scope's mode, as the read left it
+/// ([nominateChoicesIn], #519, #1070), the game has left the pool,
 /// the choice is no longer offered, as a date cancelled meanwhile isn't, or
 /// one that started meanwhile isn't, or the row supplies a live nomination
 /// for it, or its game is in the lineup for it: the page already shows
@@ -578,7 +583,7 @@ Future<bool> nominateGame(
   final state = await readEnded(detail);
   if (state is! EventDetailReady || nominations.isClosed) return false;
   final inPool = pool.state.games.any((shown) => shown.id == game.id);
-  // Offered still, under the view's mode, and for the choice made.
+  // Offered still, for the choice made, under its own scope's mode.
   final offered =
       nominateChoicesIn(
         state,
@@ -606,10 +611,7 @@ Future<bool> nominateGame(
     GameNominated(
       state.detail.snapshot.event.id,
       game,
-      occurrenceId: switch (scope) {
-        WholeEventScope() => null,
-        DateScope(:final occurrenceId) => occurrenceId,
-      },
+      occurrenceId: scope.occurrenceId,
     ),
   );
   return true;

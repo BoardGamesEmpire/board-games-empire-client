@@ -56,32 +56,14 @@ void main() {
     updatedAt: kItemInstant,
   );
 
-  /// [occurrenceId]'s own rules: [mode], and [filler] minutes at most.
-  EventOccurrencePolicy rulesOn(
-    String occurrenceId, {
-    GameAdditionMode? mode,
-    int? filler,
-  }) => EventOccurrencePolicy(
-    id: 'op-$occurrenceId',
-    occurrenceId: occurrenceId,
-    allowedCategoryIds: const [],
-    allowedPlatformIds: const [],
-    allowedPlatformTypes: const [],
-    platformTypesUnrestricted: false,
-    platformsUnrestricted: false,
-    capacityUnrestricted: false,
-    gameAdditionMode: mode,
-    fillerMaxPlayTime: filler,
-    createdAt: kItemInstant,
-    updatedAt: kItemInstant,
-  );
-
   /// The event on [dates], its games under [mode], with the dates' own
-  /// [overrides], as an attending host sees it.
+  /// [overrides], null where they are unread, as an attending host sees it,
+  /// while a detail read runs where [reading].
   EventDetailReady ready(
     List<EventOccurrence> dates, {
     GameAdditionMode mode = GameAdditionMode.hostOnly,
-    List<EventOccurrencePolicy> overrides = const [],
+    List<EventOccurrencePolicy>? overrides = const [],
+    bool reading = false,
   }) => EventDetailReady(
     detail: EventDetail(
       snapshot: EventSnapshot(
@@ -93,6 +75,7 @@ void main() {
       attendance: attendance(EventParticipationStatus.attending),
     ),
     actions: const {EventAction.addToLineup},
+    reading: reading,
   );
 
   /// What [scopes] are for: null for the whole event, else the date's id.
@@ -155,7 +138,9 @@ void main() {
       final detail = ready(
         [started, soon],
         mode: GameAdditionMode.requiresVote,
-        overrides: [rulesOn('soon', mode: GameAdditionMode.hostOnly)],
+        overrides: [
+          occurrencePolicyOn('soon', mode: GameAdditionMode.hostOnly),
+        ],
       );
 
       expect(
@@ -167,6 +152,73 @@ void main() {
         forWhat(lineupAddChoicesIn(detail, view: const OneDateView('soon'))!),
         ['soon'],
       );
+    });
+
+    // With no row of dates, each choice under its own scope's rule: the
+    // whole event under the event's, the date under the date's (#1070).
+    group('with no view, each choice by its own rule (#1070)', () {
+      test('the event allows the add and its date refuses it: the date is '
+          'left out', () {
+        final detail = ready(
+          [soon],
+          mode: GameAdditionMode.direct,
+          overrides: [
+            occurrencePolicyOn('soon', mode: GameAdditionMode.requiresVote),
+          ],
+        );
+
+        expect(forWhat(lineupAddChoicesIn(detail, view: null)!), [null]);
+      });
+
+      test('the event refuses the add and its date allows it: the date '
+          'alone', () {
+        final detail = ready(
+          [soon],
+          mode: GameAdditionMode.requiresVote,
+          overrides: [
+            occurrencePolicyOn('soon', mode: GameAdditionMode.direct),
+          ],
+        );
+
+        expect(forWhat(lineupAddChoicesIn(detail, view: null)!), ['soon']);
+      });
+
+      test('both refuse: not offered', () {
+        final detail = ready(
+          [soon],
+          mode: GameAdditionMode.requiresVote,
+          overrides: [
+            occurrencePolicyOn('soon', mode: GameAdditionMode.hostApproval),
+          ],
+        );
+
+        expect(lineupAddChoicesIn(detail, view: null), isNull);
+      });
+
+      test('a date whose rules are unread mid-read is left out, and offered '
+          'once read', () {
+        // Its mode unknown (#1063): no rules, and a read running that may
+        // bring them.
+        final reading = ready(
+          [soon],
+          mode: GameAdditionMode.direct,
+          overrides: null,
+          reading: true,
+        );
+        expect(forWhat(lineupAddChoicesIn(reading, view: null)!), [null]);
+
+        final read = ready(
+          [soon],
+          mode: GameAdditionMode.direct,
+          overrides: [
+            occurrencePolicyOn('soon', mode: GameAdditionMode.direct),
+          ],
+        );
+        expect(forWhat(lineupAddChoicesIn(read, view: null)!), [
+          null,
+          'soon',
+        ]);
+      });
     });
   });
 
@@ -204,7 +256,7 @@ void main() {
         event: item('e').event,
         occurrences: [soon, proposed],
         policy: policy(GameAdditionMode.hostOnly, filler: 20),
-        occurrencePolicies: [rulesOn('soon', filler: 15)],
+        occurrencePolicies: [occurrencePolicyOn('soon', filler: 15)],
       );
 
       expect(fillerMaxPlayTimeFor(snapshot, null), 20);

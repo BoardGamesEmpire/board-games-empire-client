@@ -1,3 +1,4 @@
+import 'package:events/src/bloc/event_detail_state.dart';
 import 'package:events/src/detail/event_nominations.dart';
 import 'package:events/src/detail/games_date_view.dart';
 import 'package:models/domain.dart';
@@ -25,6 +26,43 @@ List<NominateScope> nominateScopes(
   ],
   EveryDateView() || null => const [(scope: WholeEventScope(), date: null)],
 };
+
+/// The date a [NominationScope] names.
+extension NominationScopeDate on NominationScope {
+  /// The date this scope names, or null for the whole event: what a choice
+  /// is checked by ([scopeMode], #1070) and sent for.
+  String? get occurrenceId => switch (this) {
+    WholeEventScope() => null,
+    DateScope(:final occurrenceId) => occurrenceId,
+  };
+}
+
+/// The per-choice check Nominate and the direct add share (#1070): which of
+/// [scopes], what a control offers in [view] on [detail], it is offered
+/// for, by whether [open] says the control is offered under the mode it is
+/// checked by. Null where none is.
+///
+/// Under a view there is one scope, the view's, so the view's mode decides
+/// ([viewMode]): all of [scopes] where the control is offered under it, and
+/// null where it isn't or while the mode is unknown, its date's policy
+/// still to come from a read (#1063). With no view each choice is checked
+/// under its own scope's mode ([scopeMode]): the whole event under the
+/// event's, a date under its own, and left out while that is unknown.
+List<NominateScope>? openChoicesIn(
+  EventDetailReady detail, {
+  required GamesDateView? view,
+  required List<NominateScope> scopes,
+  required bool Function(GameAdditionMode mode) open,
+}) {
+  // Not passed on unknown: the gates take a null mode as the event's.
+  bool offered(GameAdditionMode? mode) => mode != null && open(mode);
+  if (view != null) return offered(viewMode(detail, view)) ? scopes : null;
+  final choices = [
+    for (final choice in scopes)
+      if (offered(scopeMode(detail, choice.scope.occurrenceId))) choice,
+  ];
+  return choices.isEmpty ? null : choices;
+}
 
 /// Whether whoever brings [game] has answered Not going (#517), which the
 /// server refuses a nomination for: the viewer, by their own answer on

@@ -8471,6 +8471,160 @@ void main() {
       expect(remote.directAdds.single.occurrenceId, 'd-2');
     });
 
+    // On an event of one date there is no row of dates, and the add dialog
+    // checks each choice by its own rule: the whole event by the event's,
+    // the date by the date's (#1070).
+    group("on a one-date event, each choice by its own scope's rule "
+        '(#1070)', () {
+      /// The default event, its one date o-1, under [event] as a whole and
+      /// [date] on o-1, as the host sees it.
+      EventDetail oneDate({
+        required GameAdditionMode event,
+        required GameAdditionMode date,
+      }) {
+        final detail = detailOf(viewer: host, policy: policyOf(event));
+        return detail.copyWith(
+          snapshot: detail.snapshot.copyWith(
+            occurrencePolicies: [
+              EventOccurrencePolicy(
+                id: 'op-o-1',
+                occurrenceId: 'o-1',
+                allowedCategoryIds: const [],
+                allowedPlatformIds: const [],
+                allowedPlatformTypes: const [],
+                platformTypesUnrestricted: false,
+                platformsUnrestricted: false,
+                capacityUnrestricted: false,
+                gameAdditionMode: date,
+                createdAt: kItemInstant,
+                updatedAt: kItemInstant,
+              ),
+            ],
+          ),
+        );
+      }
+
+      testWidgets('on a one-date event the add dialog offers the date by its '
+          'own rule', (tester) async {
+        lineupAnswer = (_) => const [];
+        await showGames(
+          tester,
+          detail: oneDate(
+            event: GameAdditionMode.requiresVote,
+            date: GameAdditionMode.direct,
+          ),
+        );
+        // The row follows the event's rule: Nominate is its main action.
+        expect(nominateOn(azul.id), findsOneWidget);
+        expect(addOn(azul.id), findsNothing);
+
+        await openQuickLook(tester, azul.id);
+        await tester.tap(inQuickLook(addInQuickLook));
+        await animate(tester);
+
+        // The date alone, so the dialog asks nothing: the whole event, under
+        // a rule that takes a vote, isn't offered.
+        expect(find.byType(AlertDialog), findsOneWidget);
+        expect(scopeChoice(null), findsNothing);
+        expect(scopeChoice('o-1'), findsNothing);
+        await press(tester, confirm);
+        await animate(tester);
+
+        expect(remote.directAdds.single.occurrenceId, 'o-1');
+      });
+
+      testWidgets("the date's rule refusing the add leaves it out: the add "
+          'is for the whole event', (tester) async {
+        lineupAnswer = (_) => const [];
+        await showGames(
+          tester,
+          detail: oneDate(
+            event: GameAdditionMode.direct,
+            date: GameAdditionMode.requiresVote,
+          ),
+        );
+        expect(nominateOn(azul.id), findsOneWidget);
+        expect(addOn(azul.id), findsNothing);
+
+        await openQuickLook(tester, azul.id);
+        await tester.tap(inQuickLook(addInQuickLook));
+        await animate(tester);
+
+        // The whole event alone: the date is never offered.
+        expect(find.byType(AlertDialog), findsOneWidget);
+        expect(scopeChoice('o-1'), findsNothing);
+        expect(scopeChoice(null), findsNothing);
+        await press(tester, confirm);
+        await animate(tester);
+
+        expect(remote.directAdds.single.occurrenceId, isNull);
+      });
+
+      // The date's rules are read already, so a read running leaves its
+      // mode known and its choice offered. The press waits for the read and
+      // is checked again, choice by choice, under the modes the detail holds
+      // as it ends: here the date's own, which the cache delivers while the
+      // read runs.
+      for (final (dateAfter, sent, outcome) in [
+        (
+          GameAdditionMode.requiresVote,
+          false,
+          'dropped once the date refuses it',
+        ),
+        (GameAdditionMode.direct, true, 'sent while the date still takes it'),
+      ]) {
+        testWidgets('a press for the date held for a read is $outcome', (
+          tester,
+        ) async {
+          lineupAnswer = (_) => const [];
+          await showGames(
+            tester,
+            detail: oneDate(
+              event: GameAdditionMode.direct,
+              date: GameAdditionMode.direct,
+            ),
+          );
+          await openQuickLook(tester, azul.id);
+          await tester.tap(inQuickLook(addInQuickLook));
+          await animate(tester);
+          expect(scopeChoice(null), findsOneWidget);
+          await press(tester, scopeChoice('o-1'));
+          await animate(tester);
+
+          // A read starts, and the press lands while it runs.
+          final detail = blocOf<EventDetailBloc>(tester);
+          heldRead = Completer<EventSnapshot>();
+          detail.add(const EventDetailRetryRequested());
+          for (var i = 0; i < 20; i++) {
+            await Future<void>.value();
+          }
+          expect((detail.state as EventDetailReady).reading, isTrue);
+          await press(tester, confirm);
+          await animate(tester);
+          expect(remote.directAdds, isEmpty);
+
+          final read = oneDate(event: GameAdditionMode.direct, date: dateAfter);
+          cache.add(read);
+          await animate(tester);
+          expect(remote.directAdds, isEmpty);
+          heldRead!.complete(read.snapshot);
+          heldRead = null;
+          await animate(tester);
+
+          if (sent) {
+            expect(remote.directAdds.single.occurrenceId, 'o-1');
+          } else {
+            expect(remote.directAdds, isEmpty);
+            // Said in the footer, and in the quick look's still open.
+            expect(
+              find.textContaining("Azul wasn't added", skipOffstage: false),
+              findsWidgets,
+            );
+          }
+        });
+      }
+    });
+
     testWidgets("a date called off under a supplier who isn't going draws the "
         'reason Add to lineup says, on the row and in its quick look', (
       tester,

@@ -546,8 +546,8 @@ class EventGamesTab extends StatelessWidget {
       now: now,
     );
     // Add to lineup's (#519), the same for every row and for Lineup's Add a
-    // game: none where the view's mode takes no direct add from this viewer,
-    // or there is no lineup to add to.
+    // game: none where no choice's mode takes a direct add from this viewer
+    // (#1070), or there is no lineup to add to.
     final addScopes = lineup == null
         ? null
         : lineupAddChoicesIn(detail, view: controller.dateView);

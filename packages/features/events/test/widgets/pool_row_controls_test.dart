@@ -40,31 +40,21 @@ void main() {
 
   /// [occurrenceId]'s own rules: only the hosts add games.
   EventOccurrencePolicy hostOnlyOn(String occurrenceId) =>
-      EventOccurrencePolicy(
-        id: 'op-$occurrenceId',
-        occurrenceId: occurrenceId,
-        allowedCategoryIds: const [],
-        allowedPlatformIds: const [],
-        allowedPlatformTypes: const [],
-        platformTypesUnrestricted: false,
-        platformsUnrestricted: false,
-        capacityUnrestricted: false,
-        gameAdditionMode: GameAdditionMode.hostOnly,
-        createdAt: kItemInstant,
-        updatedAt: kItemInstant,
-      );
+      occurrencePolicyOn(occurrenceId, mode: GameAdditionMode.hostOnly);
 
-  /// The event on [dates], needing a vote, with the dates' own [overrides],
-  /// as an attending viewer who may nominate sees it.
+  /// The event on [dates], its games under [mode], needing a vote unless
+  /// it says otherwise, with the dates' own [overrides], as an attending
+  /// viewer who may nominate sees it.
   EventDetailReady ready(
     List<EventOccurrence> dates, {
+    GameAdditionMode mode = GameAdditionMode.requiresVote,
     List<EventOccurrencePolicy> overrides = const [],
   }) => EventDetailReady(
     detail: EventDetail(
       snapshot: EventSnapshot(
         event: item('e').event,
         occurrences: dates,
-        policy: policy(GameAdditionMode.requiresVote),
+        policy: policy(mode),
         occurrencePolicies: overrides,
       ),
       attendance: attendance(EventParticipationStatus.attending),
@@ -115,6 +105,21 @@ void main() {
         nominateChoicesIn(detail, view: const OneDateView('passed'), now: now),
         isEmpty,
       );
+    });
+
+    test("with no view, Nominate checks the whole event against the event's "
+        'rule', () {
+      // One date, so no row of dates: Nominate offers the whole event alone
+      // (#1062), and a date that would take a vote doesn't open it (#1070).
+      final detail = ready(
+        [soon],
+        mode: GameAdditionMode.hostOnly,
+        overrides: [
+          occurrencePolicyOn('soon', mode: GameAdditionMode.requiresVote),
+        ],
+      );
+
+      expect(nominateChoicesIn(detail, view: null, now: now), isNull);
     });
   });
 }

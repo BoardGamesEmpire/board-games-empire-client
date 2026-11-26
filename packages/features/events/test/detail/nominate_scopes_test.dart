@@ -24,65 +24,33 @@ void main() {
     order: 3,
   ).copyWith(status: OccurrenceStatus.cancelled);
 
-  EventPolicy policy(GameAdditionMode mode) => EventPolicy(
-    id: 'p',
-    eventId: 'e',
-    allowMemberInvites: true,
-    allowGuestInvites: false,
-    restrictToGameCategories: false,
-    requireHostApprovalToJoin: false,
-    allowSpectators: false,
-    strictCapacity: false,
-    gameAdditionMode: mode,
-    restrictToAttendeePool: false,
-    voteThresholdType: VoteThresholdType.simpleMajority,
-    voteQuorumType: VoteQuorumType.none,
-    voteEligibility: VoteEligibility.allAttendees,
-    interestedWeight: InterestedWeight.asAbstain,
-    createdAt: kItemInstant,
-    updatedAt: kItemInstant,
-  );
-
-  /// The event on [dates], needing a vote, as an attending viewer who may
-  /// nominate sees it.
-  EventDetailReady ready(List<EventOccurrence> dates) => EventDetailReady(
-    detail: EventDetail(
-      snapshot: EventSnapshot(
-        event: item('e').event,
-        occurrences: dates,
-        policy: policy(GameAdditionMode.requiresVote),
-      ),
-      attendance: attendance(EventParticipationStatus.attending),
-    ),
-    actions: const {EventAction.nominateGame},
+  /// The event on [dates]: all [nominateScopes] reads.
+  EventDetail eventOn(List<EventOccurrence> dates) => EventDetail(
+    snapshot: EventSnapshot(event: item('e').event, occurrences: dates),
   );
 
   /// What [scopes] are for: null for the whole event, else the date's id.
   List<String?> forWhat(List<NominateScope> scopes) => [
-    for (final each in scopes)
-      switch (each.scope) {
-        WholeEventScope() => null,
-        DateScope(:final occurrenceId) => occurrenceId,
-      },
+    for (final each in scopes) each.scope.occurrenceId,
   ];
 
   group('nominateScopes', () {
     test('with no view, an event of one date offers the whole event alone', () {
       expect(
-        forWhat(nominateScopes(ready([soon]).detail, now: now)),
+        forWhat(nominateScopes(eventOn([soon]), now: now)),
         [null],
       );
     });
 
     test('with no view, an event of more dates offers the whole event alone '
         '(#1062)', () {
-      final detail = ready([later, cancelled, passed, soon]).detail;
+      final detail = eventOn([later, cancelled, passed, soon]);
 
       expect(forWhat(nominateScopes(detail, now: now)), [null]);
     });
 
     test('Every date offers the whole event alone', () {
-      final detail = ready([passed, soon, later]).detail;
+      final detail = eventOn([passed, soon, later]);
 
       expect(
         forWhat(
@@ -93,7 +61,7 @@ void main() {
     });
 
     test('a date offers itself alone', () {
-      final detail = ready([passed, soon, later]).detail;
+      final detail = eventOn([passed, soon, later]);
 
       final scopes = nominateScopes(
         detail,
@@ -106,7 +74,7 @@ void main() {
     });
 
     test('a date started, or cancelled, offers nothing', () {
-      final detail = ready([passed, soon, cancelled]).detail;
+      final detail = eventOn([passed, soon, cancelled]);
 
       for (final id in ['passed', 'cancelled']) {
         expect(
