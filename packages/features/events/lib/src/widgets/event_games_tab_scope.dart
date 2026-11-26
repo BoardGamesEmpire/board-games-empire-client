@@ -1750,8 +1750,11 @@ class _EventGamesTabScopeState extends State<EventGamesTabScope>
   /// take from under them, whatever the nominations answered. Unless
   /// Lineup's own read failed: its Try again may have taken that focus as
   /// the page opened, not the user, so the bar moves whatever it is doing.
+  /// A retry the user asked for is theirs, though: while it runs, the bar
+  /// stays, with Try again in progress and focus given up as it disabled.
   void _moveToHeld(int index) {
     if (anyRouteOver(context)) return;
+    if (_lastLineup.refreshing) return;
     if (!_lineupFailedShown() && _controller.sectionArea.hasFocus) return;
     _sections!.animateTo(index);
   }

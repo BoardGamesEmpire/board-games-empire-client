@@ -9285,55 +9285,74 @@ void main() {
       expect(focus.hasPrimaryFocus, isTrue);
     });
 
-    testWidgets('a Nominate held for a read goes under the mode the read '
-        'gives, once the cache delivers its rules', (tester) async {
-      // Read before, but the dates' rules not yet: the event's mode stands
-      // in while no read runs.
-      final unread = twoDated(viewer: me, eventMode: GameAdditionMode.direct);
-      await showGames(tester, detail: unread);
-      await tester.ensureVisible(nominateOn(azul.id));
-      await tester.pump();
-      final detail = blocOf<EventDetailBloc>(tester);
-      heldRead = Completer<EventSnapshot>();
+    // The press waits for the cache to deliver the dates' rules the read
+    // carried, and is checked again under them: the mode the read gives,
+    // not the event's that stood in.
+    for (final (fridayMode, sent, outcome) in [
+      (GameAdditionMode.direct, true, 'goes under'),
+      (GameAdditionMode.hostOnly, false, 'is dropped under'),
+    ]) {
+      testWidgets('a Nominate held for a read $outcome the mode the read '
+          'gives, once the cache delivers its rules', (tester) async {
+        // Read before, but the dates' rules not yet: the event's mode stands
+        // in while no read runs.
+        final unread = twoDated(
+          viewer: me,
+          eventMode: GameAdditionMode.direct,
+        );
+        await showGames(tester, detail: unread);
+        await tester.ensureVisible(nominateOn(azul.id));
+        await tester.pump();
+        final detail = blocOf<EventDetailBloc>(tester);
+        heldRead = Completer<EventSnapshot>();
 
-      // A read starts, and the press lands before a frame shows it.
-      detail.add(const EventDetailRetryRequested());
-      for (var i = 0; i < 20; i++) {
-        await Future<void>.value();
-      }
-      expect((detail.state as EventDetailReady).reading, isTrue);
-      await tester.tap(nominateOn(azul.id));
+        // A read starts, and the press lands before a frame shows it.
+        detail.add(const EventDetailRetryRequested());
+        for (var i = 0; i < 20; i++) {
+          await Future<void>.value();
+        }
+        expect((detail.state as EventDetailReady).reading, isTrue);
+        await tester.tap(nominateOn(azul.id));
 
-      // The read carries Friday's rules, which allow it, and settles before
-      // the cache delivers them.
-      final read = twoDated(
-        viewer: me,
-        eventMode: GameAdditionMode.direct,
-        fridayMode: GameAdditionMode.direct,
-      );
-      heldRead!.complete(read.snapshot);
-      heldRead = null;
-      await animate(tester);
+        // The read carries Friday's rules, and settles before the cache
+        // delivers them.
+        final read = twoDated(
+          viewer: me,
+          eventMode: GameAdditionMode.direct,
+          fridayMode: fridayMode,
+        );
+        heldRead!.complete(read.snapshot);
+        heldRead = null;
+        await animate(tester);
 
-      expect((detail.state as EventDetailReady).reading, isFalse);
-      expect(remote.nominates, isEmpty);
-      expect(
-        find.textContaining("Azul wasn't nominated", skipOffstage: false),
-        findsNothing,
-      );
+        expect((detail.state as EventDetailReady).reading, isFalse);
+        expect(remote.nominates, isEmpty);
+        expect(
+          find.textContaining("Azul wasn't nominated", skipOffstage: false),
+          findsNothing,
+        );
 
-      cache.add(read);
-      await animate(tester);
+        cache.add(read);
+        await animate(tester);
 
-      expect(remote.nominates, [
-        (
-          eventId: 'e-1',
-          platformGameId: 'pg-o-2',
-          suppliedFromId: 'o-2',
-          occurrenceId: 'd-1',
-        ),
-      ]);
-    });
+        if (sent) {
+          expect(remote.nominates, [
+            (
+              eventId: 'e-1',
+              platformGameId: 'pg-o-2',
+              suppliedFromId: 'o-2',
+              occurrenceId: 'd-1',
+            ),
+          ]);
+        } else {
+          expect(remote.nominates, isEmpty);
+          expect(
+            find.textContaining("Azul wasn't nominated", skipOffstage: false),
+            findsWidgets,
+          );
+        }
+      });
+    }
 
     testWidgets('focus on a pool row is kept as its controls appear', (
       tester,

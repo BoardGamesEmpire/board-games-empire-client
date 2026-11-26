@@ -1931,6 +1931,48 @@ void main() {
         expect(reports, isEmpty);
       });
 
+      // A retry the user started is the user at work in Lineup, though its
+      // Try again, disabled while it runs, gives up focus: the bar stays.
+      // Its spinner never settles, so the frames are pumped by time.
+      testWidgets("Lineup's own retry running as the answer comes in keeps "
+          'the bar on Lineup', (tester) async {
+        final read = Completer<List<EventNomination>>();
+        final retried = Completer<List<LineupGame>>();
+        var lineupReads = 0;
+        await open(
+          tester,
+          'nominations',
+          remote: FakeEventRemote.detail(
+            (_) => hostOnly.snapshot,
+            pool: (_) => const [],
+            nominations: (_) => read.future,
+            lineup: (_) => lineupReads++ == 0
+                ? throw const EventRemoteTransientException('offline')
+                : retried.future,
+          ),
+        );
+        cache.add(hostOnly);
+        await tester.pumpAndSettle();
+        expect(shown(tester), EventScreenTab.lineup);
+        final tryAgain = find.byKey(EventDetailScreen.lineupRetryKey);
+        expect(tryAgain, findsOneWidget);
+        await tester.tap(tryAgain);
+        await tester.pump();
+        expect(lineupReads, 2);
+
+        read.complete([nominationFor(null)]);
+        await tester.pump();
+        await tester.pump(const Duration(seconds: 1));
+
+        expect(section(EventGamesSection.nominations), findsOneWidget);
+        expect(shown(tester), EventScreenTab.lineup);
+        expect(reports, [EventScreenTab.lineup]);
+
+        retried.complete(const []);
+        await tester.pumpAndSettle();
+        expect(shown(tester), EventScreenTab.lineup);
+      });
+
       // A pop-up opened from what Lineup shows, as a row's quick look, is the
       // user at work there too: its close hands focus back into it.
       testWidgets("a Lineup row's quick look open as the answer comes in "

@@ -1827,6 +1827,15 @@ void main() {
           tester.widget<EventDetailScreen>(find.byType(EventDetailScreen)).date,
           'o-2',
         );
+        // The Games tab shows that date, not the default first one.
+        expect(
+          tester
+              .widget<ChoiceChip>(
+                find.byKey(EventDetailScreen.dateChipKey('o-2')),
+              )
+              .selected,
+          isTrue,
+        );
       });
 
       testWidgets('with args and a collection it builds the page', (

@@ -482,13 +482,14 @@ switch a mode: a `SegmentedButton` is for that, such as a layout or a filter.
   read answers, as Nominations is before the first nominations read, or
   before the date's own policy is read (#1066, #1063), the location goes
   on naming it instead. Once the answer is in, the bar moves to it, without
-  moving focus, where it now shows and the user hasn't chosen meanwhile:
-  picked a sub-tab, changed the top-level tab, set to work in the sub-tab
-  shown, or opened a pop-up or another page over this one. Otherwise the
-  location is told the sub-tab shown. One that leaves while chosen gives
-  way to the first, and one still shown stays chosen as another comes or
-  goes; focus on a sub-tab stays on it, and focus on one that left goes to
-  the sub-tab chosen.
+  moving focus, where it now shows, the user hasn't picked a sub-tab or
+  changed the top-level tab meanwhile, and as the answer comes in, focus
+  isn't in the sub-tab shown, no retry the user asked for is running
+  there, and no pop-up or other page is over this one.
+  Otherwise the location is told the sub-tab shown. One that leaves while
+  chosen gives way to the first, and one still shown stays chosen as
+  another comes or goes; focus on a sub-tab stays on it, and focus on one
+  that left goes to the sub-tab chosen.
 - **A tab of two or more destinations of its own takes a second bar.** Its
   first sliver is a `TabBar.secondary` under the screen's own bar, as the
   event's Games tab holds Lineup, Nominations and Pool (#945, #519). The same
