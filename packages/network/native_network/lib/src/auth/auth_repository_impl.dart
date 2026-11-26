@@ -426,7 +426,7 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
   /// best-effort with [token], which only this method still holds: left
   /// alone, it would sit live in the user's session list until it expired.
   /// The revoke is fire-and-forget like [signOut]'s, and its failure is
-  /// ignored.
+  /// ignored. The repository then settles on unauthenticated.
   ///
   /// A sign-out that landed meanwhile, the clear here included, is the newer
   /// intent, so that case is reported as [AuthSupersededException] rather
@@ -460,6 +460,11 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
       throw const AuthSupersededException();
     }
 
+    // Another read may have confirmed the grant before the reconcile failed,
+    // and published it. The clear and the revoke above have ended that
+    // session, so the state must say so: left authenticated, AuthBloc keeps
+    // the live session and drops this failure.
+    _setState(const AuthStateUnauthenticated());
     _log.warn(
       'This device could not store the session granted by $context; '
       'revoking it',

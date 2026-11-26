@@ -711,6 +711,51 @@ void main() {
         );
       });
 
+      test('a raw reconcile failure after another read confirmed the grant '
+          'leaves the repository unauthenticated', () async {
+        stubGrant();
+        stubStore();
+        stubClear();
+        when(
+          () => mockDio.get<String>(
+            '$testAuthBasePath/get-session',
+            options: any(named: 'options'),
+          ),
+        ).thenAnswer((_) async => _ok(_sessionJson()));
+        stubSignOutPost(() async => _status(200));
+        final readReached = Completer<void>();
+        final readGate = Completer<StoredSession?>();
+        when(() => mockStorage.retrieve()).thenAnswer((_) {
+          // The reconcile's read is held, then fails; the other read finds
+          // the grant's token.
+          if (readReached.isCompleted) {
+            return Future.value(
+              StoredSession(
+                token: 'session-tok-abc',
+                persistedAt: DateTime.utc(2026),
+              ),
+            );
+          }
+          readReached.complete();
+          return readGate.future;
+        });
+        final states = recordStates();
+
+        final signIn = repo.signIn(email: 'a@b.com', password: 'pass');
+        await readReached.future;
+        await repo.getSession();
+        expect(repo.currentAuthState, isA<AuthStateAuthenticated>());
+        readGate.completeError(storageFault);
+
+        await expectLater(signIn, throwsA(deviceStorageFault()));
+        await pumpEventQueue();
+
+        // Storage is cleared and the session revoked, so a live state would
+        // be a session nothing backs.
+        expect(repo.currentAuthState, isA<AuthStateUnauthenticated>());
+        expect(states.last, isA<AuthStateUnauthenticated>());
+      });
+
       test('a raw failure storing the confirmed session during the reconcile '
           'throws AuthDeviceStorageException', () async {
         stubGrant();
