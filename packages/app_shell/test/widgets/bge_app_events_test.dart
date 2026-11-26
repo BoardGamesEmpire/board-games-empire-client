@@ -1654,6 +1654,21 @@ void main() {
         occurrences: _upcoming('e-0').occurrences,
         attendees: [me],
       );
+
+      /// [hosted] with a second date, `o-2`, a week after its first, and so
+      /// a row of dates whose choice the location keeps (#1042).
+      final twoDated = hosted.copyWith(
+        occurrences: [
+          hosted.occurrences.single,
+          hosted.occurrences.single.copyWith(
+            id: 'o-2',
+            startDate: hosted.occurrences.single.startDate!.add(
+              const Duration(days: 7),
+            ),
+            sortOrder: 1,
+          ),
+        ],
+      );
       final azul = GameCollectionListItem(
         entry: GameCollection(
           id: 'c-azul',
@@ -1672,11 +1687,13 @@ void main() {
           tester.widget<MaterialApp>(find.byType(MaterialApp)).routerConfig!
               as GoRouter;
 
-      /// A server that reads [hosted], an empty pool, and offers every game
-      /// a batch sends.
-      _MockEventRemote hosting() {
+      /// A server that reads [snapshot] ([hosted] by default), an empty
+      /// pool, and offers every game a batch sends.
+      _MockEventRemote hosting({EventSnapshot? snapshot}) {
         final remote = _MockEventRemote();
-        when(() => remote.fetchEvent(any())).thenAnswer((_) async => hosted);
+        when(
+          () => remote.fetchEvent(any()),
+        ).thenAnswer((_) async => snapshot ?? hosted);
         when(
           () => remote.fetchGamesPool(
             any(),
@@ -1704,18 +1721,22 @@ void main() {
       }
 
       /// Opens e-0's detail, which the viewer hosts, on its Games tab's Pool
-      /// sub-tab, where Offer games is (#945).
+      /// sub-tab, where Offer games is (#945). The cache holds [snapshot],
+      /// [hosted] by default.
       Future<void> openGames(
         WidgetTester tester, {
         required EventRemoteDataSource remote,
         GameCollectionRepository? collection,
+        EventSnapshot? snapshot,
       }) async {
         await pumpHome(
           tester,
           remote: remote,
           collection: collection,
           detailCache: Stream.multi(
-            (cache) => cache.add(EventDetail(snapshot: hosted, attendance: me)),
+            (cache) => cache.add(
+              EventDetail(snapshot: snapshot ?? hosted, attendance: me),
+            ),
           ),
         );
         await openTheOverview(tester);
@@ -1781,6 +1802,33 @@ void main() {
         }
       });
 
+      testWidgets('the offer route with no args and a date goes back to the '
+          'event on that date', (tester) async {
+        // The date the Games tab was on, which the page's location carries
+        // (#1064).
+        final history = FakeBrowserHistory.install(tester);
+        await openGames(
+          tester,
+          remote: hosting(snapshot: twoDated),
+          collection: _Collection([azul]),
+          snapshot: twoDated,
+        );
+
+        routerOf(tester).go(AppRoutes.eventOfferGamesOf('e-0', date: 'o-2'));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(OfferGamesScreen), findsNothing);
+        expect(find.byType(EventDetailScreen), findsOneWidget);
+        expect(
+          history.locations.last,
+          AppRoutes.eventDetailOf('e-0', tab: 'pool', date: 'o-2'),
+        );
+        expect(
+          tester.widget<EventDetailScreen>(find.byType(EventDetailScreen)).date,
+          'o-2',
+        );
+      });
+
       testWidgets('with args and a collection it builds the page', (
         tester,
       ) async {
@@ -1844,6 +1892,49 @@ void main() {
         expect(find.byType(OfferGamesScreen), findsNothing);
         expect(find.byType(NotYetAvailableScreen), findsNothing);
         expect(find.byType(EventDetailScreen), findsOneWidget);
+        // Replaced, not followed by a new entry.
+        expect(history.allLocations, [
+          ...before.sublist(0, before.length - 2),
+          detail,
+          detail,
+        ]);
+      });
+
+      testWidgets("the closed page's own history entry gives way to the "
+          'event, in its place, and keeps the date (#1064)', (tester) async {
+        // The page's history entry names the date the Games tab was on
+        // (#1064), as a restored push has no extra. Here the event is
+        // beneath the restored page, which pops back to it; the restored
+        // page's go, where nothing is beneath it, is events_route_test's.
+        final history = FakeBrowserHistory.install(tester);
+        await openGames(
+          tester,
+          remote: hosting(snapshot: twoDated),
+          collection: _Collection([azul]),
+          snapshot: twoDated,
+        );
+        await tapShown(
+          tester,
+          find.byKey(EventDetailScreen.dateChipKey('o-2')),
+        );
+        await tapShown(tester, find.byKey(EventDetailScreen.offerGamesKey));
+        expect(find.byType(OfferGamesScreen), findsOneWidget);
+        await tester.pageBack();
+        await tester.pumpAndSettle();
+        final detail = AppRoutes.eventDetailOf('e-0', tab: 'pool', date: 'o-2');
+        final page = AppRoutes.eventOfferGamesOf('e-0', date: 'o-2');
+        final before = history.allLocations;
+        expect(before.sublist(before.length - 3), [detail, page, detail]);
+
+        await history.back();
+
+        expect(find.byType(OfferGamesScreen), findsNothing);
+        expect(find.byType(NotYetAvailableScreen), findsNothing);
+        expect(find.byType(EventDetailScreen), findsOneWidget);
+        expect(
+          tester.widget<EventDetailScreen>(find.byType(EventDetailScreen)).date,
+          'o-2',
+        );
         // Replaced, not followed by a new entry.
         expect(history.allLocations, [
           ...before.sublist(0, before.length - 2),

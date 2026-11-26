@@ -7134,6 +7134,30 @@ void main() {
       expect(remote.nominates.last.suppliedFromId, root.id);
     });
 
+    testWidgets("Offer games is opened with the view's date", (tester) async {
+      // The page's location carries it, so a restored history entry of the
+      // page goes back to the event on that date (#1064).
+      await showGames(tester, detail: twoDated());
+      await chooseDate(tester, 'd-2');
+      final controller = EventGamesTabScope.of(tester.element(offerGames()));
+      expect(controller.dateQuery, 'd-2');
+
+      await tester.tap(offerGames());
+      await animate(tester);
+
+      expect(offerArgs.single.date, controller.dateQuery);
+    });
+
+    testWidgets('Offer games on a one-date event names no date', (
+      tester,
+    ) async {
+      await showGames(tester);
+      await tester.tap(offerGames());
+      await animate(tester);
+
+      expect(offerArgs.single.date, isNull);
+    });
+
     testWidgets('a pool row under a HostOnly date offers no Nominate', (
       tester,
     ) async {

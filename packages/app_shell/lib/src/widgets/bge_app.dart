@@ -2476,7 +2476,7 @@ class _BgeAppState extends State<BgeApp> {
           : null,
       onOfferGames: container.isRegistered<GameCollectionRepository>()
           ? (ctx, args) => ctx.push<List<OfferPick>>(
-              AppRoutes.eventOfferGamesOf(eventId),
+              AppRoutes.eventOfferGamesOf(eventId, date: args.date),
               extra: args,
             )
           : null,

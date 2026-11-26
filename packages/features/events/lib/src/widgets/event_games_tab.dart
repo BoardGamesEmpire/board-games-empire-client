@@ -1030,8 +1030,9 @@ class _PoolHeader extends StatelessWidget {
 
   /// Opens the Offer games page with the collection entries the viewer's
   /// own rows hold, so it can show them as already offered and pick none of
-  /// them twice, and sends the games it answers with (#516). Completes true
-  /// when a run was sent, and false when nothing was.
+  /// them twice, and the date the tab is on, which the page's location
+  /// keeps (#1064); and sends the games it answers with (#516). Completes
+  /// true when a run was sent, and false when nothing was.
   ///
   /// No picks, or Back, send nothing and say nothing. With picks, the send
   /// waits for any running detail read to end ([readEnded]), then goes for
@@ -1052,6 +1053,7 @@ class _PoolHeader extends StatelessWidget {
           for (final game in games.games)
             if (game.attendeeId == viewerId) game.collectionId,
         },
+        date: controller.dateQuery,
       ),
     );
     if (picks == null || picks.isEmpty || pool.isClosed) return false;
