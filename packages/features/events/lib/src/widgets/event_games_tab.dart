@@ -15,6 +15,7 @@ import 'package:events/src/detail/event_games_pool.dart';
 import 'package:events/src/detail/event_lineup.dart';
 import 'package:events/src/detail/event_nominations.dart';
 import 'package:events/src/detail/games_date_view.dart';
+import 'package:events/src/detail/nominate_scopes.dart';
 import 'package:events/src/screens/event_detail_screen.dart';
 import 'package:events/src/widgets/event_detail_tabs.dart';
 import 'package:events/src/widgets/event_game_filter_options.dart';

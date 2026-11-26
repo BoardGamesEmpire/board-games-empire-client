@@ -1,7 +1,7 @@
 import 'package:events/events.dart';
 import 'package:events/l10n/events_localizations.dart';
+import 'package:events/src/detail/nominate_scopes.dart' show NominateScope;
 import 'package:events/src/widgets/lineup_row_controls.dart';
-import 'package:events/src/widgets/pool_row_controls.dart' show NominateScope;
 import 'package:flutter/widgets.dart' show Locale;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:models/domain.dart';

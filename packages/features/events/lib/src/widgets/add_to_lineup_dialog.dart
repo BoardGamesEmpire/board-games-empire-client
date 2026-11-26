@@ -8,13 +8,13 @@ import 'package:events/src/create/event_create_controls.dart'
     show trimmedOrNull;
 import 'package:events/src/detail/event_games_pool.dart';
 import 'package:events/src/detail/event_nominations.dart';
+import 'package:events/src/detail/nominate_scopes.dart';
 import 'package:events/src/screens/event_detail_screen.dart';
 import 'package:events/src/widgets/event_games_footer.dart';
 import 'package:events/src/widgets/event_games_tab.dart';
 import 'package:events/src/widgets/event_games_tab_scope.dart';
 import 'package:events/src/widgets/event_labels.dart';
 import 'package:events/src/widgets/game_name.dart';
-import 'package:events/src/widgets/pool_row_controls.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:models/domain.dart';
