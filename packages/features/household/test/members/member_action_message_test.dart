@@ -104,6 +104,21 @@ void main() {
       }
     });
 
+    test('a 401 is unexpected, not unreachable: the server answered', () {
+      for (final action in HouseholdMemberAction.values) {
+        expect(
+          message(
+            action,
+            HouseholdMemberActionResult.failed,
+            const HouseholdMemberTransientException('refused', statusCode: 401),
+          ),
+          'Something went wrong. The household is being read again to show '
+          'where things stand.',
+          reason: action.name,
+        );
+      }
+    });
+
     test('a permanent failure, or any other error, is unexpected', () {
       const unexpected =
           'Something went wrong. The household is being read again to show '

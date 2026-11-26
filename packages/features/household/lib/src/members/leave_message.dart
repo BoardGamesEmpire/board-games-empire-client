@@ -27,6 +27,13 @@ String leaveFailureMessage(
     l10n.householdLeaveErrorLastOwner,
   (result: HouseholdMemberActionResult.refused, error: _) =>
     l10n.householdMemberErrorRejected,
+  // The server answered and refused the session (#484), so "couldn't reach
+  // the server" would be false.
+  (
+    result: HouseholdMemberActionResult.failed,
+    error: HouseholdMemberTransientException(statusCode: 401),
+  ) =>
+    l10n.householdMemberErrorUnexpected,
   (
     result: HouseholdMemberActionResult.failed,
     error: HouseholdMemberTransientException(),

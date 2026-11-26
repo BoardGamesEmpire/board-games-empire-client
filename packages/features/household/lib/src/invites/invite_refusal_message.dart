@@ -17,6 +17,10 @@ String inviteRefusalMessage(
   HouseholdInviteAction action,
   Object error,
 ) => switch (error) {
+  // The server answered and refused the session (#484), so "couldn't reach
+  // the server" would be false.
+  HouseholdInviteTransientException(statusCode: 401) =>
+    l10n.inviteErrorUnexpected,
   HouseholdInviteTransientException() => l10n.inviteErrorOffline,
   HouseholdInviteRefusedException(:final statusCode, :final quota) => _refusal(
     l10n,
