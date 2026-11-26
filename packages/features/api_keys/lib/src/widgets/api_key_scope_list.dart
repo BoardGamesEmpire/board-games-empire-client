@@ -77,21 +77,15 @@ class _ScopeRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = ApiKeysLocalizations.of(context);
-    final theme = Theme.of(context);
-    final small = theme.textTheme.bodySmall?.copyWith(
-      color: theme.colorScheme.onSurfaceVariant,
-    );
     final permission = this.permission;
-    final lines = [
-      if (permission != null) ...[
-        Text(
-          l10n.apiKeyScopeRisk(riskLevelLabel(l10n, permission.riskLevel)),
-        ),
-        Text(scope.slug, style: small),
-      ] else if (described)
-        Text(l10n.apiKeyScopeNoLongerAvailable),
-      if (scope.pinned) Text(l10n.apiKeyScopePinned),
-    ];
+    final lines = scopeLines(
+      context,
+      scope,
+      permission: permission,
+      unavailable: permission == null && described
+          ? l10n.apiKeyScopeNoLongerAvailable
+          : null,
+    );
 
     return MergeSemantics(
       child: ListTile(
@@ -109,4 +103,36 @@ class _ScopeRow extends StatelessWidget {
       ),
     );
   }
+}
+
+/// What a scope's row says under its title, a line each (#1028), on the
+/// key's page and in the scope picker alike:
+///
+/// - with [permission], what the user may give: its risk level in words
+///   ("Risk: Critical"), never by colour alone, then its code in the small
+///   style;
+/// - [unavailable], when given: why the user may no longer give it;
+/// - for a scope limited to one record, "Limited to one record".
+///
+/// The row's title is [permission]'s description, or the scope's code
+/// without one.
+List<Widget> scopeLines(
+  BuildContext context,
+  ApiKeyScope scope, {
+  GrantablePermission? permission,
+  String? unavailable,
+}) {
+  final l10n = ApiKeysLocalizations.of(context);
+  final theme = Theme.of(context);
+  final small = theme.textTheme.bodySmall?.copyWith(
+    color: theme.colorScheme.onSurfaceVariant,
+  );
+  return [
+    if (permission != null) ...[
+      Text(l10n.apiKeyScopeRisk(riskLevelLabel(l10n, permission.riskLevel))),
+      Text(scope.slug, style: small),
+    ],
+    if (unavailable != null) Text(unavailable),
+    if (scope.pinned) Text(l10n.apiKeyScopePinned),
+  ];
 }

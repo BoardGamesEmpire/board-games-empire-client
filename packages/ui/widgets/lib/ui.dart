@@ -7,13 +7,15 @@
 ///
 /// Everything here is justified by duplication that already existed, and the
 /// migration is complete rather than aspirational — `BgePage` is used by
-/// every page-shaped screen, at 70 call sites in `lib/`, `BgeSubmitButton` by
+/// every page-shaped screen, at 71 call sites in `lib/`, `BgeSubmitButton` by
 /// all 6 submit controls,
-/// `BgeTextField` by every form field in 5 files (#165), `BgeDropdownField`
+/// `BgeTextField` by every form field in 29 files (#165), `BgeDropdownField`
 /// by all 4 form menus (#649), `BgeErrorState` by every whole-surface retry
-/// view, at 31 call sites in `lib/` (#102), `BgeFormActions` by all 4 forms
-/// that show a submit's failure (#211), `rejectSubmit` by all 5 forms
-/// (#230), `ReadAgainWhenUncovered` by all 3 screens that read the
+/// view, at 32 call sites in `lib/` (#102), `BgeFormActions` by every form
+/// that shows a submit's failure, at 16 call sites in `lib/` (#211),
+/// `rejectSubmit` by the forms that refuse a submit, at 23 call sites in
+/// `lib/` (#230),
+/// `ReadAgainWhenUncovered` by all 3 screens that read the
 /// server again when uncovered (#41, #455), `BgeKeyedSliverList` by the
 /// nine row lists #549 covers and the lists built since, at 16 call sites in
 /// `lib/`, `BgeShelf` by the home page's game sections and
@@ -21,7 +23,7 @@
 /// cards on them (#669), `BgePointerFocus` by those covers, which take focus
 /// from a tap (#707), and by every `BgeRowFocusRing`, whose rows take focus
 /// from a tap only with `focusOnTap` (#709, #758), `BgeRowFocusRing` by
-/// every tappable `ListTile` and selection tile outside `packages/ui`, 44
+/// every tappable `ListTile` and selection tile outside `packages/ui`, 45
 /// call sites (#758),
 /// `BgeCoverTile` by
 /// the home shelves' covers and the Games and Collection grids' tiles (#707,
@@ -38,8 +40,8 @@
 /// action: the household and collection lists, which a pull refreshes too,
 /// and the API key list, which takes no pull, at 3 call sites in `lib/`
 /// (#314, #717, #1028), `BgeInertButton` by buttons that keep focus while
-/// they can do nothing, at 28 call sites in `lib/` (#607, #807),
-/// `BgeExtendedFab` by all 6 extended floating buttons, which it rings
+/// they can do nothing, at 30 call sites in `lib/` (#607, #807),
+/// `BgeExtendedFab` by all 7 extended floating buttons, which it rings
 /// inside their edge on keyboard focus (#760) and whose label, a
 /// `BgeFabLabel`, it keeps on screen at large text (#50), `replaceSnackBar`
 /// by every SnackBar, at 4 uses in `lib/` (#343), `closeWhenSettled` by the
@@ -49,10 +51,10 @@
 /// which say every bar through it, at 11 constructor calls in `lib/`, all
 /// outside this package (#464, #694), and
 /// `BgeLoadingState`, `BgeEmptyState` and `BgeStateSliver` by the loading,
-/// empty and denied surfaces of the feature screens, at 39, 51 and 74 call
+/// empty and denied surfaces of the feature screens, at 40, 51 and 74 call
 /// sites in `lib/` (#49, #807). `BgeOnlineOnly`, `BgeOnlineOnlyLabel`,
 /// `BgeOnlineOnlyNote`, `BgeOnlineOnlyMenu` and `BgeOnlineOnlyPopupMenuItem`
-/// are on the controls that write straight to the server, at 36, 13, 10, 4
+/// are on the controls that write straight to the server, at 38, 13, 10, 4
 /// and 4 call sites in `lib/` (#49, #807). Each `lib/` count is of
 /// constructor calls in every package, this one included: 3 of
 /// `BgeInertButton`'s, 1 of `BgeOnlineOnlyLabel`'s and 1 of

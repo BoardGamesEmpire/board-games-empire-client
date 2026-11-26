@@ -312,6 +312,28 @@
   "@apiKeyScopesUndescribed": {
     "description": "Shown above an API key's permissions when the descriptions of the permissions could not be read from the server. Each permission is then shown by its code, such as 'collection:read'."
   },
+  "apiKeyScopeEverything": "Everything I can do",
+  "@apiKeyScopeEverything": {
+    "description": "Label of the switch above the permissions to choose from, when creating an API key. On, it gives the key every permission the user may give a key, and each permission below shows as included."
+  },
+  "apiKeyScopeEverythingIncludes": "{count, plural, =1{Includes 1 permission} other{Includes {count} permissions}}",
+  "@apiKeyScopeEverythingIncludes": {
+    "description": "Under the 'Everything I can do' switch while it is on: how many permissions it gives the key. Each of them is listed below it.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "12"
+      }
+    }
+  },
+  "apiKeyScopeNoLongerAvailableRemoved": "No longer available; saving removes it",
+  "@apiKeyScopeNoLongerAvailableRemoved": {
+    "description": "Under a permission an API key holds that the user may no longer give a key, once the user has changed the key's permissions: saving the change takes this permission off the key. The permission is shown by its code, as there is no description for it."
+  },
+  "apiKeyScopesNoneWarning": "With no permissions, this key works nowhere.",
+  "@apiKeyScopesNoneWarning": {
+    "description": "Warning under the permissions to choose from when none is chosen. A key may be saved with none, but it can't be used for anything until it is given some."
+  },
   "apiKeyDelete": "Delete key",
   "@apiKeyDelete": {
     "description": "Button at the end of an API key's page that deletes the key, after asking."
@@ -376,9 +398,9 @@
       }
     }
   },
-  "apiKeyFailureNeedsRecentSignIn": "This needs a recent sign-in. Sign out, sign in again, then try once more.",
+  "apiKeyFailureNeedsRecentSignIn": "Giving a key a Critical permission needs a recent sign-in. Sign out, sign in again, then try once more.",
   "@apiKeyFailureNeedsRecentSignIn": {
-    "description": "Shown when the server refused a change to an API key because the user signed in too long ago."
+    "description": "Shown when the server refused to make an API key, or to change one, because it would give the key a permission of the Critical risk level and the user signed in too long ago. The server only asks for a recent sign-in for a Critical permission."
   },
   "apiKeyFailureCriticalNeedsConfirmation": "A Critical permission needs your confirmation first.",
   "@apiKeyFailureCriticalNeedsConfirmation": {
@@ -437,5 +459,247 @@
   "apiKeyFailureGeneric": "The server couldn't do that. Try again later.",
   "@apiKeyFailureGeneric": {
     "description": "Shown when the server refused a request about an API key and gave no message of its own."
+  },
+  "apiKeyExpiryPreset": "{count, plural, =1{1 day} other{{count} days}}",
+  "@apiKeyExpiryPreset": {
+    "description": "Label of a choice of how long a new API key lasts, such as '30 days' or '90 days'. One of a row of choices next to 'Custom'.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "30"
+      }
+    }
+  },
+  "apiKeyExpiryCustom": "Custom",
+  "@apiKeyExpiryCustom": {
+    "description": "Label of the choice of how long an API key lasts that lets the user type their own number of days. Next to choices such as '30 days'. Choosing it shows a field for the number."
+  },
+  "apiKeyExpiryCustomField": "Number of days",
+  "@apiKeyExpiryCustomField": {
+    "description": "Label of the field where the user types how many days an API key lasts, shown after they choose 'Custom'."
+  },
+  "apiKeyExpiryCustomHelper": "Whole days, from {min} to {max}",
+  "@apiKeyExpiryCustomHelper": {
+    "description": "Under the field where the user types how many days an API key lasts: the fewest and the most days the server allows.",
+    "placeholders": {
+      "min": {
+        "type": "int",
+        "example": "1"
+      },
+      "max": {
+        "type": "int",
+        "example": "365"
+      }
+    }
+  },
+  "apiKeyExpiryCustomInvalid": "Enter a whole number of days from {min} to {max}.",
+  "@apiKeyExpiryCustomInvalid": {
+    "description": "Error under the field where the user types how many days an API key lasts, when what they typed isn't a whole number in the range the server allows.",
+    "placeholders": {
+      "min": {
+        "type": "int",
+        "example": "1"
+      },
+      "max": {
+        "type": "int",
+        "example": "365"
+      }
+    }
+  },
+  "apiKeyExpiryDate": "Expires {date}",
+  "@apiKeyExpiryDate": {
+    "description": "Under the choices of how long an API key lasts: the day the key stops working if the user chooses what is selected, in the device's time zone. It is read out when the choice changes.",
+    "placeholders": {
+      "date": {
+        "type": "DateTime",
+        "format": "yMMMd"
+      }
+    }
+  },
+  "apiKeyCreateAction": "Create key",
+  "@apiKeyCreateAction": {
+    "description": "Button on the API key list, and under 'No API keys yet', that opens the page where the user makes a new API key."
+  },
+  "apiKeyCreateTitle": "Create an API key",
+  "@apiKeyCreateTitle": {
+    "description": "Title of the page where the user makes a new API key: they name it, choose its permissions and choose how long it lasts."
+  },
+  "apiKeyCreateLoading": "Loading the permissions you can give a key…",
+  "@apiKeyCreateLoading": {
+    "description": "Shown beside a spinner, and read out by screen readers, while the page for making an API key reads from the server which permissions the user may give a key."
+  },
+  "apiKeyCreateLoadFailed": "Couldn't load the permissions you can give a key",
+  "@apiKeyCreateLoadFailed": {
+    "description": "Title of the message shown in place of the form for making an API key when the permissions the user may give a key could not be read from the server."
+  },
+  "apiKeyCreateLoadFailedBody": "Check your connection, then try again.",
+  "@apiKeyCreateLoadFailedBody": {
+    "description": "Body under the title when the permissions the user may give a key could not be read from the server."
+  },
+  "apiKeyCreateRetry": "Try again",
+  "@apiKeyCreateRetry": {
+    "description": "Button that reads the permissions the user may give a key from the server again after it failed."
+  },
+  "apiKeyNameLabel": "Name",
+  "@apiKeyNameLabel": {
+    "description": "Label of the field for an API key's name, which is how the user tells their keys apart."
+  },
+  "apiKeyNameRequired": "Enter a name for the key.",
+  "@apiKeyNameRequired": {
+    "description": "Error under the name field when the user tries to save an API key with no name, or one that is only spaces."
+  },
+  "apiKeyNameTooLong": "{max, plural, =1{Use 1 character at most.} other{Use {max} characters at most.}}",
+  "@apiKeyNameTooLong": {
+    "description": "Error under the name field when the API key's name is longer than the server allows. {max} is the most characters a name may have.",
+    "placeholders": {
+      "max": {
+        "type": "int",
+        "example": "32"
+      }
+    }
+  },
+  "apiKeyNameNul": "The name has a hidden character that can't be saved. Type it again.",
+  "@apiKeyNameNul": {
+    "description": "Error under the name field when the API key's name holds an invisible NUL character, usually brought in by pasting text, which the server refuses."
+  },
+  "apiKeyExpiryCreateLabel": "Expires in",
+  "@apiKeyExpiryCreateLabel": {
+    "description": "Label over the choices of how long a new API key lasts, such as '30 days' or '90 days'."
+  },
+  "apiKeyCreateSubmit": "Create key",
+  "@apiKeyCreateSubmit": {
+    "description": "Button at the end of the form for making an API key: sends it to the server."
+  },
+  "apiKeyCreateSubmitting": "Creating key…",
+  "@apiKeyCreateSubmitting": {
+    "description": "The name of the 'Create key' button while the new API key is on its way to the server. Read out by screen readers."
+  },
+  "apiKeyCreateFailedTitle": "Couldn't create the key",
+  "@apiKeyCreateFailedTitle": {
+    "description": "Title of the message shown above the 'Create key' button when making the API key failed. The reason follows it."
+  },
+  "apiKeyCriticalConfirmTitle": "Give this key Critical permissions?",
+  "@apiKeyCriticalConfirmTitle": {
+    "description": "Title of the dialog that asks before an API key is given a permission of the Critical risk level, the highest."
+  },
+  "apiKeyCriticalConfirmBody": "Anyone who gets hold of this key could do serious harm with it. It would be able to:",
+  "@apiKeyCriticalConfirmBody": {
+    "description": "In the dialog that asks before an API key is given Critical permissions: the line above the list of those permissions, each given by its description, such as 'Manage every user'."
+  },
+  "apiKeyCriticalConfirmBodyUnnamed": "This key would have a Critical permission. Anyone who gets hold of it could do serious harm with it.",
+  "@apiKeyCriticalConfirmBodyUnnamed": {
+    "description": "In the dialog that asks before an API key is given Critical permissions, when the app can't say which permissions those are."
+  },
+  "apiKeyCriticalConfirmSignIn": "The server may ask you to sign in again first.",
+  "@apiKeyCriticalConfirmSignIn": {
+    "description": "Last line of the dialog that asks before an API key is given Critical permissions. The server only gives a key such a permission when the user signed in recently."
+  },
+  "apiKeyCriticalConfirmCancel": "Cancel",
+  "@apiKeyCriticalConfirmCancel": {
+    "description": "Button in the dialog that asks before an API key is given Critical permissions: closes it, and nothing is sent to the server."
+  },
+  "apiKeyCriticalConfirmAction": "Confirm",
+  "@apiKeyCriticalConfirmAction": {
+    "description": "Button in the dialog that asks before an API key is given Critical permissions: goes ahead."
+  },
+  "apiKeySecretTitle": "Key created",
+  "@apiKeySecretTitle": {
+    "description": "Title of the page once a new API key has been made, while it shows the key itself for the only time."
+  },
+  "apiKeySecretLabel": "Your new key",
+  "@apiKeySecretLabel": {
+    "description": "Label over the new API key itself, the secret text a script or app sends to prove who it is, on the page shown once the key has been made."
+  },
+  "apiKeySecretCopy": "Copy key",
+  "@apiKeySecretCopy": {
+    "description": "Button under the new API key that copies the key itself to the clipboard."
+  },
+  "apiKeySecretCopied": "Key copied",
+  "@apiKeySecretCopied": {
+    "description": "Said once the new API key has been copied to the clipboard."
+  },
+  "apiKeySecretCopyFailed": "Couldn't copy the key. Select it and copy it yourself.",
+  "@apiKeySecretCopyFailed": {
+    "description": "Said when copying the new API key to the clipboard failed. The key is shown as text the user can select."
+  },
+  "apiKeySecretOnce": "This is the only time the key is shown. Copy it now and store it somewhere safe.",
+  "@apiKeySecretOnce": {
+    "description": "Warning under the new API key. The server never shows the key again after this page is left."
+  },
+  "apiKeySecretDone": "Done",
+  "@apiKeySecretDone": {
+    "description": "Button at the end of the page that shows the new API key: leaves the page, for the list of the user's keys."
+  },
+  "apiKeyLeaveTitle": "Leave this page?",
+  "@apiKeyLeaveTitle": {
+    "description": "Title of the dialog that asks before the user goes back from the page that shows their new API key for the only time."
+  },
+  "apiKeyLeaveBody": "You won't see this key again.",
+  "@apiKeyLeaveBody": {
+    "description": "Body of the dialog that asks before the user goes back from the page that shows their new API key."
+  },
+  "apiKeyLeaveStay": "Stay",
+  "@apiKeyLeaveStay": {
+    "description": "Button in the dialog that asks before leaving the page that shows the new API key: closes the dialog and stays on the page."
+  },
+  "apiKeyLeaveConfirm": "Leave",
+  "@apiKeyLeaveConfirm": {
+    "description": "Button in the dialog that asks before leaving the page that shows the new API key: leaves the page. The key is not shown again."
+  },
+  "apiKeyExpiryEditLabel": "Set a new expiry",
+  "@apiKeyExpiryEditLabel": {
+    "description": "Label over the choices of a new lifetime for an existing API key, such as '30 days', on the key's own page. The new expiry is counted from today, and may be earlier or later than the one the key has. 'Keep current' is chosen until the user picks another, and the key keeps its expiry until then."
+  },
+  "apiKeyExpiryKeep": "Keep current",
+  "@apiKeyExpiryKeep": {
+    "description": "First of the choices under 'Set a new expiry' on an API key's own page, beside '30 days' and the others: the key keeps the expiry it has. Chosen until the user picks another, and picking it again takes that pick back."
+  },
+  "apiKeySaveSubmit": "Save changes",
+  "@apiKeySaveSubmit": {
+    "description": "Button at the end of the form on an API key's own page: sends a new name, new permissions or a new expiry to the server."
+  },
+  "apiKeySaveSubmitting": "Saving changes…",
+  "@apiKeySaveSubmitting": {
+    "description": "The name of the 'Save changes' button while the changes to an API key are on their way to the server. Read out by screen readers."
+  },
+  "apiKeySaved": "Saved",
+  "@apiKeySaved": {
+    "description": "Shown above the 'Save changes' button once the server has saved the changes to an API key. The page then shows the key as the server saved it."
+  },
+  "apiKeyNothingToSave": "Nothing to save",
+  "@apiKeyNothingToSave": {
+    "description": "Shown above the 'Save changes' button when it is pressed with nothing changed: the name, the permissions and the expiry are as the API key has them, so nothing is sent."
+  },
+  "apiKeySaveFailed": "Couldn't save changes to {name}",
+  "@apiKeySaveFailed": {
+    "description": "Title of the message shown above the 'Save changes' button when saving the changes to an API key failed. The reason follows it. {name} is the key's name, or 'Unnamed key'.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "CI deploy"
+      }
+    }
+  },
+  "apiKeySavedDone": "Saved changes to {name}",
+  "@apiKeySavedDone": {
+    "description": "Said in a passing message once changes to an API key have been saved, when the user had already left the key's page while they were on their way. {name} is the key's name as saved, or 'Unnamed key'.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "CI deploy"
+      }
+    }
+  },
+  "apiKeyScopesChange": "Change permissions",
+  "@apiKeyScopesChange": {
+    "description": "Button under the permissions an API key holds, on the key's own page. It shows the list of permissions the user may give in their place, to tick and untick before saving."
+  },
+  "apiKeyScopesKeep": "Keep permissions as they were",
+  "@apiKeyScopesKeep": {
+    "description": "Button under the permissions being changed on an API key's own page. It puts back the list of the permissions the key holds, undoing any ticks, so saving leaves the key's permissions as they are."
+  },
+  "apiKeyScopesNotEditable": "Couldn't load the permissions you can give, so this key's permissions can't be changed now. Open this page again to try.",
+  "@apiKeyScopesNotEditable": {
+    "description": "Under the permissions on an API key's own page, when the list of permissions the user may give a key couldn't be read from the server. The key's permissions are shown, but can't be changed. Renaming the key and setting a new expiry still work."
   }
 }

@@ -330,6 +330,281 @@ void main() {
     );
   });
 
+  group('saving', () {
+    final renamed = key.copyWith(name: 'Renamed');
+    // Critical by the server's re-read, as the one the save sent.
+    final critical = permission(
+      'webhooks:manage',
+      riskLevel: RiskLevel.critical,
+    );
+    const needsConfirmation = ApiKeyCriticalNeedsConfirmationException('no');
+    const scopes = [
+      ApiKeyScope(slug: 'collection:read'),
+      ApiKeyScope(slug: 'webhooks:manage', resourceId: 'wh_1'),
+    ];
+
+    blocTest<ApiKeyDetailBloc, ApiKeyDetailState>(
+      'a save sends only what it was given, and shows the key the server '
+      'answered, saved',
+      setUp: () => when(
+        () => remote.update('k_1', any()),
+      ).thenAnswer((_) async => renamed),
+      build: build,
+      seed: loaded,
+      act: (bloc) => bloc.add(const ApiKeySaveRequested(name: 'Renamed')),
+      expect: () => [
+        loaded().copyWith(writing: () => ApiKeyWrite.save),
+        loaded(renamed).copyWith(outcome: () => const ApiKeyDetailSaved()),
+      ],
+      verify: (_) => verify(
+        () => remote.update('k_1', const ApiKeyPatch(name: 'Renamed')),
+      ).called(1),
+    );
+
+    blocTest<ApiKeyDetailBloc, ApiKeyDetailState>(
+      'scopes, a new expiry and a confirmation go as they were given',
+      setUp: () => when(
+        () => remote.update('k_1', any()),
+      ).thenAnswer((_) async => key),
+      build: build,
+      seed: loaded,
+      act: (bloc) => bloc.add(
+        const ApiKeySaveRequested(
+          scopes: scopes,
+          expiresInDays: 30,
+          confirmCritical: true,
+        ),
+      ),
+      verify: (_) => verify(
+        () => remote.update(
+          'k_1',
+          const ApiKeyPatch(
+            scopes: scopes,
+            expiresInDays: 30,
+            confirmCritical: true,
+          ),
+        ),
+      ).called(1),
+    );
+
+    blocTest<ApiKeyDetailBloc, ApiKeyDetailState>(
+      'nothing changed sends nothing, and says there is nothing to save',
+      build: build,
+      seed: loaded,
+      act: (bloc) => bloc.add(const ApiKeySaveRequested()),
+      expect: () => [
+        loaded().copyWith(outcome: () => const ApiKeyDetailNothingToSave()),
+      ],
+      verify: (_) => verifyNever(() => remote.update(any(), any())),
+    );
+
+    blocTest<ApiKeyDetailBloc, ApiKeyDetailState>(
+      'a confirmation alone is nothing to save',
+      build: build,
+      seed: loaded,
+      act: (bloc) => bloc.add(const ApiKeySaveRequested(confirmCritical: true)),
+      expect: () => [
+        loaded().copyWith(outcome: () => const ApiKeyDetailNothingToSave()),
+      ],
+      verify: (_) => verifyNever(() => remote.update(any(), any())),
+    );
+
+    blocTest<ApiKeyDetailBloc, ApiKeyDetailState>(
+      'a failed save keeps the key as it was, and names the save',
+      setUp: () => when(() => remote.update('k_1', any())).thenThrow(transient),
+      build: build,
+      seed: loaded,
+      act: (bloc) => bloc.add(const ApiKeySaveRequested(expiresInDays: 30)),
+      expect: () => [
+        loaded().copyWith(writing: () => ApiKeyWrite.save),
+        loaded().copyWith(
+          outcome: () => const ApiKeyDetailFailed(
+            ApiKeyFailure(ApiKeyFailureReason.transient),
+            write: ApiKeyWrite.save,
+          ),
+        ),
+      ],
+    );
+
+    blocTest<ApiKeyDetailBloc, ApiKeyDetailState>(
+      'an unconfirmed save the server calls Critical reads the grantable '
+      'permissions again before it fails',
+      setUp: () {
+        when(
+          () => remote.update('k_1', any()),
+        ).thenThrow(needsConfirmation);
+        // What the page was built from no longer holds; now it does.
+        answerGrantable(remote, [read, critical]);
+      },
+      build: build,
+      seed: loaded,
+      act: (bloc) => bloc.add(const ApiKeySaveRequested(scopes: scopes)),
+      expect: () => [
+        loaded().copyWith(writing: () => ApiKeyWrite.save),
+        loaded().copyWith(
+          grantable: () => {read.slug: read, critical.slug: critical},
+          outcome: () => const ApiKeyDetailFailed(
+            ApiKeyFailure(ApiKeyFailureReason.criticalNeedsConfirmation),
+            write: ApiKeyWrite.save,
+          ),
+        ),
+      ],
+      verify: (_) => verify(remote.fetchGrantable).called(1),
+    );
+
+    blocTest<ApiKeyDetailBloc, ApiKeyDetailState>(
+      'a confirmed one the server refuses the same way reads nothing again',
+      setUp: () => when(
+        () => remote.update('k_1', any()),
+      ).thenThrow(needsConfirmation),
+      build: build,
+      seed: loaded,
+      act: (bloc) => bloc.add(
+        const ApiKeySaveRequested(scopes: scopes, confirmCritical: true),
+      ),
+      expect: () => [
+        loaded().copyWith(writing: () => ApiKeyWrite.save),
+        loaded().copyWith(
+          outcome: () => const ApiKeyDetailFailed(
+            ApiKeyFailure(ApiKeyFailureReason.criticalNeedsConfirmation),
+            write: ApiKeyWrite.save,
+          ),
+        ),
+      ],
+      verify: (_) => verifyNever(remote.fetchGrantable),
+    );
+
+    blocTest<ApiKeyDetailBloc, ApiKeyDetailState>(
+      'a re-read that fails keeps the permissions it had',
+      setUp: () {
+        when(
+          () => remote.update('k_1', any()),
+        ).thenThrow(needsConfirmation);
+        when(remote.fetchGrantable).thenThrow(transient);
+      },
+      build: build,
+      seed: loaded,
+      act: (bloc) => bloc.add(const ApiKeySaveRequested(scopes: scopes)),
+      expect: () => [
+        loaded().copyWith(writing: () => ApiKeyWrite.save),
+        loaded().copyWith(
+          outcome: () => const ApiKeyDetailFailed(
+            ApiKeyFailure(ApiKeyFailureReason.criticalNeedsConfirmation),
+            write: ApiKeyWrite.save,
+          ),
+        ),
+      ],
+      // Tried, so what it kept is from a failed read, not a skipped one.
+      verify: (_) => verify(remote.fetchGrantable).called(1),
+    );
+
+    blocTest<ApiKeyDetailBloc, ApiKeyDetailState>(
+      'a 404 on a save is gone',
+      setUp: () => when(() => remote.update('k_1', any())).thenThrow(notFound),
+      build: build,
+      seed: loaded,
+      act: (bloc) => bloc.add(const ApiKeySaveRequested(name: 'Renamed')),
+      expect: () => [
+        loaded().copyWith(writing: () => ApiKeyWrite.save),
+        const ApiKeyDetailState(status: ApiKeyDetailStatus.gone),
+      ],
+    );
+
+    blocTest<ApiKeyDetailBloc, ApiKeyDetailState>(
+      'nothing else is written while a save is on its way',
+      setUp: () {
+        final answer = Completer<ApiKey>();
+        when(
+          () => remote.update('k_1', any()),
+        ).thenAnswer((_) => answer.future);
+        addTearDown(() => answer.complete(renamed));
+      },
+      build: build,
+      seed: loaded,
+      act: (bloc) async {
+        bloc.add(const ApiKeySaveRequested(name: 'Renamed'));
+        await Future<void>.delayed(Duration.zero);
+        bloc
+          ..add(const ApiKeySaveRequested(name: 'Again'))
+          ..add(const ApiKeySaveRequested())
+          ..add(const ApiKeyEnabledChanged(enabled: false))
+          ..add(const ApiKeyDeleteRequested());
+      },
+      expect: () => [loaded().copyWith(writing: () => ApiKeyWrite.save)],
+      verify: (_) {
+        verify(() => remote.update('k_1', any())).called(1);
+        verifyNever(() => remote.delete(any()));
+      },
+    );
+
+    blocTest<ApiKeyDetailBloc, ApiKeyDetailState>(
+      'no save starts while another write is on its way, or before the key '
+      'has loaded',
+      setUp: () {
+        final answer = Completer<void>();
+        when(() => remote.delete('k_1')).thenAnswer((_) => answer.future);
+        addTearDown(answer.complete);
+      },
+      build: build,
+      seed: loaded,
+      act: (bloc) async {
+        bloc.add(const ApiKeyDeleteRequested());
+        await Future<void>.delayed(Duration.zero);
+        bloc
+          ..add(const ApiKeySaveRequested(name: 'Renamed'))
+          ..add(const ApiKeySaveRequested());
+      },
+      expect: () => [loaded().copyWith(writing: () => ApiKeyWrite.delete)],
+      verify: (_) => verifyNever(() => remote.update(any(), any())),
+    );
+
+    blocTest<ApiKeyDetailBloc, ApiKeyDetailState>(
+      'before the key has loaded, a save sends nothing and says nothing',
+      build: build,
+      act: (bloc) => bloc
+        ..add(const ApiKeySaveRequested(name: 'Renamed'))
+        ..add(const ApiKeySaveRequested()),
+      expect: () => <ApiKeyDetailState>[],
+      verify: (_) => verifyNever(() => remote.update(any(), any())),
+    );
+
+    blocTest<ApiKeyDetailBloc, ApiKeyDetailState>(
+      'a save starting retires the last outcome',
+      setUp: () => when(
+        () => remote.update('k_1', any()),
+      ).thenAnswer((_) async => renamed),
+      build: build,
+      seed: () => loaded().copyWith(
+        outcome: () => const ApiKeyDetailFailed(
+          ApiKeyFailure(ApiKeyFailureReason.transient),
+          write: ApiKeyWrite.toggle,
+        ),
+      ),
+      act: (bloc) => bloc.add(const ApiKeySaveRequested(name: 'Renamed')),
+      expect: () => [
+        loaded().copyWith(writing: () => ApiKeyWrite.save),
+        loaded(renamed).copyWith(outcome: () => const ApiKeyDetailSaved()),
+      ],
+    );
+
+    test('a save names only what changed, and nothing else', () {
+      expect(
+        const ApiKeySaveRequested(name: 'Renamed'),
+        const ApiKeySaveRequested(name: 'Renamed'),
+      );
+      expect(
+        const ApiKeySaveRequested(scopes: scopes),
+        ApiKeySaveRequested(scopes: List.of(scopes)),
+      );
+      expect(
+        const ApiKeySaveRequested(name: 'Renamed'),
+        isNot(
+          const ApiKeySaveRequested(name: 'Renamed', confirmCritical: true),
+        ),
+      );
+    });
+  });
+
   group('outcomes', () {
     blocTest<ApiKeyDetailBloc, ApiKeyDetailState>(
       'outcome cleared retires a failure',
@@ -342,6 +617,21 @@ void main() {
       ),
       act: (bloc) => bloc.add(const ApiKeyDetailOutcomeCleared()),
       expect: () => [loaded()],
+    );
+
+    blocTest<ApiKeyDetailBloc, ApiKeyDetailState>(
+      'outcome cleared retires saved and nothing to save too',
+      build: build,
+      seed: () => loaded().copyWith(outcome: () => const ApiKeyDetailSaved()),
+      act: (bloc) => bloc
+        ..add(const ApiKeyDetailOutcomeCleared())
+        ..add(const ApiKeySaveRequested())
+        ..add(const ApiKeyDetailOutcomeCleared()),
+      expect: () => [
+        loaded(),
+        loaded().copyWith(outcome: () => const ApiKeyDetailNothingToSave()),
+        loaded(),
+      ],
     );
 
     test('a failure says which write failed and why, and nothing else', () {

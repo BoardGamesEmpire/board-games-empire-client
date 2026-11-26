@@ -7,7 +7,7 @@ import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 
 /// Drives one API key's own page (#1028): reads the key, and enables,
-/// disables or deletes it.
+/// disables, edits or deletes it.
 ///
 /// Nothing is stored. [ApiKeyDetailRequested] reads the key and the
 /// permissions the user may grant together. A 404 is [ApiKeyDetailStatus.gone]
@@ -26,10 +26,20 @@ import 'package:network_interface/network_interface.dart';
 ///
 /// - A toggle sends `enabled` alone and shows the key the server answers.
 ///   A toggle to the value the key already has sends nothing.
+/// - A save sends what [ApiKeySaveRequested] names, and nothing it leaves
+///   null. One that names nothing sends nothing, and is
+///   [ApiKeyDetailNothingToSave]. One that goes through shows the key the
+///   server answers, [ApiKeyDetailSaved].
 /// - A delete that goes through keeps the key, so the page draws it as it
 ///   leaves, and marks the state [ApiKeyDetailState.deleted].
-/// - A 404 from either says the key is gone. Any other failure keeps the key
-///   as it was, with an [ApiKeyDetailFailed] naming the write.
+/// - A 404 from any of them says the key is gone. Any other failure keeps the
+///   key as it was, with an [ApiKeyDetailFailed] naming the write.
+///
+/// `confirmCritical` is sent only when a save carries it. When the server
+/// refuses a save that didn't, saying it adds a Critical permission, the
+/// permissions the page was built from are out of date: they are read again
+/// before the failure is emitted, so that the page's question can name what
+/// is Critical now. A failed read keeps the ones it had.
 ///
 /// A write starting retires the last write's outcome, which no longer
 /// describes what the page shows.
@@ -39,6 +49,7 @@ class ApiKeyDetailBloc extends Bloc<ApiKeyDetailEvent, ApiKeyDetailState> {
     on<ApiKeyDetailRequested>(_onRequested, transformer: restartable());
     on<ApiKeyEnabledChanged>(_onEnabledChanged);
     on<ApiKeyDeleteRequested>(_onDeleteRequested);
+    on<ApiKeySaveRequested>(_onSaveRequested);
     on<ApiKeyDetailOutcomeCleared>(_onOutcomeCleared);
   }
 
@@ -148,13 +159,51 @@ class ApiKeyDetailBloc extends Bloc<ApiKeyDetailEvent, ApiKeyDetailState> {
     }
   }
 
+  Future<void> _onSaveRequested(
+    ApiKeySaveRequested event,
+    Emitter<ApiKeyDetailState> emit,
+  ) async {
+    if (!_mayWrite) return;
+    final patch = ApiKeyPatch(
+      name: event.name,
+      scopes: event.scopes,
+      expiresInDays: event.expiresInDays,
+      confirmCritical: event.confirmCritical,
+    );
+    // The remote refuses an empty patch, and there is nothing to send.
+    if (patch.isEmpty) {
+      emit(state.copyWith(outcome: () => const ApiKeyDetailNothingToSave()));
+      return;
+    }
+    emit(state.copyWith(writing: () => ApiKeyWrite.save, outcome: () => null));
+    try {
+      final answered = await _remote.update(_id, patch);
+      emit(
+        state.copyWith(
+          key: answered,
+          writing: () => null,
+          outcome: () => const ApiKeyDetailSaved(),
+        ),
+      );
+    } on ApiKeyCriticalNeedsConfirmationException catch (error) {
+      // Unconfirmed, the page found nothing new and Critical to ask about,
+      // and the server did: what the page was built from has changed under
+      // it.
+      final grantable = event.confirmCritical ? null : await _readGrantable();
+      _failed(emit, error, ApiKeyWrite.save, grantable: grantable);
+    } on Object catch (error) {
+      _failed(emit, error, ApiKeyWrite.save);
+    }
+  }
+
   /// Settles [write] after it threw [error]: gone on a 404, and otherwise the
-  /// key as it was, with the failure.
+  /// key as it was, with the failure, and [grantable] when it was read again.
   void _failed(
     Emitter<ApiKeyDetailState> emit,
     Object error,
-    ApiKeyWrite write,
-  ) {
+    ApiKeyWrite write, {
+    Map<String, GrantablePermission>? grantable,
+  }) {
     final failure = apiKeyFailureOf(error);
     if (failure.reason == ApiKeyFailureReason.notFound) {
       emit(const ApiKeyDetailState(status: ApiKeyDetailStatus.gone));
@@ -162,6 +211,7 @@ class ApiKeyDetailBloc extends Bloc<ApiKeyDetailEvent, ApiKeyDetailState> {
     }
     emit(
       state.copyWith(
+        grantable: grantable == null ? null : () => grantable,
         writing: () => null,
         outcome: () => ApiKeyDetailFailed(failure, write: write),
       ),

@@ -21,6 +21,9 @@ enum ApiKeyWrite {
 
   /// Deleting the key.
   delete,
+
+  /// Saving the page's form: a new name, permissions or expiry.
+  save,
 }
 
 /// What the last write answered, for the page to say (#1028).
@@ -37,6 +40,16 @@ sealed class ApiKeyDetailOutcome extends Equatable {
 /// The server deleted the key. The page says so and leaves.
 final class ApiKeyDetailDeleted extends ApiKeyDetailOutcome {
   const ApiKeyDetailDeleted();
+}
+
+/// The server saved the form's changes, and the key is as it answered.
+final class ApiKeyDetailSaved extends ApiKeyDetailOutcome {
+  const ApiKeyDetailSaved();
+}
+
+/// A save that changed nothing, so nothing was sent.
+final class ApiKeyDetailNothingToSave extends ApiKeyDetailOutcome {
+  const ApiKeyDetailNothingToSave();
 }
 
 /// The [write] failed, for the reason [failure] gives. The key is as it was.

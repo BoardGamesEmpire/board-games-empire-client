@@ -321,6 +321,11 @@ class _BgeAppState extends State<BgeApp> {
   late final BootstrapStreamListenable _refreshListenable;
   late final GoRouter _router;
 
+  /// What the router asks before it takes the page that makes an API key
+  /// away (#1028). The page answers it while it is mounted: see
+  /// [_buildApiKeyCreateRoute].
+  final ApiKeyCreateLeaveGuard _apiKeyCreateGuard = ApiKeyCreateLeaveGuard();
+
   /// The app-level messenger, so a message that belongs to no screen (a deep
   /// link that couldn't be opened) has somewhere to show (#984).
   final GlobalKey<ScaffoldMessengerState> _rootMessenger =
@@ -494,6 +499,8 @@ class _BgeAppState extends State<BgeApp> {
       signInMethodsBuilder: _buildSignInMethodsRoute,
       apiKeysBuilder: _buildApiKeysRoute,
       apiKeyDetailBuilder: _buildApiKeyDetailRoute,
+      apiKeyCreateBuilder: _buildApiKeyCreateRoute,
+      apiKeyCreateExit: _apiKeyCreateGuard.mayLeave,
       householdListBuilder: _buildHouseholdListRoute,
       householdDetailBuilder: _buildHouseholdDetailRoute,
       householdInvitesBuilder: _buildHouseholdInvitesRoute,
@@ -3353,8 +3360,8 @@ class _BgeAppState extends State<BgeApp> {
   /// server's remote is the same object for every user who signs in to it,
   /// so the list's own key, the remote, can't tell their sessions apart.
   ///
-  /// A key's page is pushed, and the list reads itself again once it pops.
-  /// Making a key is not offered yet.
+  /// A key's page, and the page that makes one, are pushed, and the list
+  /// reads itself again once either has gone.
   Widget? _buildApiKeysRoute(BuildContext context) {
     final deps = _apiKeysDeps();
     if (deps == null) return null;
@@ -3364,6 +3371,30 @@ class _BgeAppState extends State<BgeApp> {
       key: ValueKey((deps.active, _sessionLease(deps.active.container))),
       remote: deps.remote,
       openKey: (id) => router.push<void>(AppRoutes.settingsApiKeyOf(id)),
+      createKey: () => router.push<void>(AppRoutes.settingsApiKeyNew),
+    );
+  }
+
+  /// The page that makes an API key (#1028), keyed as [_buildApiKeysRoute]
+  /// keys the list. Once a key is made the page holds its secret, so a new
+  /// session gets a new page, and never the last user's key.
+  ///
+  /// It is a child of the list route, so leaving it lands on the list, a
+  /// page reached directly too.
+  ///
+  /// The page answers [_apiKeyCreateGuard], which the router asks before it
+  /// takes the page's route away: the browser's Back and a move elsewhere
+  /// pop nothing, so the page can't refuse them itself. With the session's
+  /// lease, the page lets its route go unasked once that session has ended.
+  Widget? _buildApiKeyCreateRoute(BuildContext context) {
+    final deps = _apiKeysDeps();
+    if (deps == null) return null;
+    final lease = _sessionLease(deps.active.container);
+    return ApiKeyCreateScreen(
+      key: ValueKey((deps.active, lease)),
+      remote: deps.remote,
+      leaveGuard: _apiKeyCreateGuard,
+      sessionLease: lease,
     );
   }
 
@@ -4432,6 +4463,14 @@ class _AuthScopeState extends State<_AuthScope> {
   /// before, and [_closePopUps] closes the modals open over it.
   /// Home itself shows the splash until the new user's scope is live, and is
   /// rebuilt for them then (see `_BgeAppState._homeSession`).
+  ///
+  /// The deactivation starts before the move, not after. It ends the
+  /// session's lease in this turn and queues the teardown, so the move
+  /// still comes before any repository is disposed. But a page asked whether
+  /// it may go, as the page showing a new API key's secret is, has to see
+  /// that its session is over (#1028). Otherwise it asks the departing user
+  /// to stay, the second pass of [_closePopUps] takes that question down,
+  /// and the move is refused, which keeps the page.
   void _endSessionInPlace(BuildContext context, ActiveServer active) {
     widget.unsentChanges.sessionEnded(active, deliberately: false);
     widget.homeSession.value = (
@@ -4440,8 +4479,8 @@ class _AuthScopeState extends State<_AuthScope> {
       switching: true,
     );
     _closePopUps(context);
-    GoRouter.maybeOf(context)?.go(AppRoutes.home);
     unawaited(_deactivateSessionScope(active));
+    GoRouter.maybeOf(context)?.go(AppRoutes.home);
   }
 
   /// Closes the pop-ups and dialogs open on the root navigator as a session

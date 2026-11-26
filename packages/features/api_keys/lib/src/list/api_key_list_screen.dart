@@ -26,13 +26,22 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// enabled and when it was last used ([ApiKeyRow]). Tapping a row opens the
 /// key through [openKey]; a second tap while that page is open does nothing.
 ///
+/// ## Create key
+///
+/// With a [createKey], a floating "Create key" opens the page that makes
+/// one, and so does a button under the words of a list with no keys. The
+/// floating button takes focus as either is pressed, so focus is back on it
+/// when that page closes: a screen reader's press gives it none, and the
+/// button under the words goes once there is a key to show.
+///
 /// ## Coming back
 ///
 /// The list reads its pages again once a page over it has gone, so what
 /// was done there shows here, and a key opened from a later page keeps its
 /// row and its focus. There are two signs of that, and one read for both:
 ///
-/// - [openKey]'s future completes, for a page the list opened;
+/// - [openKey]'s or [createKey]'s future completes, for a page the list
+///   opened;
 /// - the list's route is the top one again, after not being. That covers a
 ///   page the list never opened, as when a link or a reload builds the list
 ///   beneath a key's page, and a page the router took away without popping
@@ -52,6 +61,7 @@ class ApiKeyListScreen extends StatefulWidget {
   const ApiKeyListScreen({
     required this.remote,
     required this.openKey,
+    this.createKey,
     super.key,
   });
 
@@ -65,6 +75,12 @@ class ApiKeyListScreen extends StatefulWidget {
   static const Key refreshFailedKey = Key('api_key_list.refresh_failed');
   static const Key refreshRetryKey = Key('api_key_list.refresh_retry');
 
+  /// On the floating "Create key".
+  static const Key createFabKey = Key('api_key_list.create');
+
+  /// On the "Create key" under the words of a list with no keys.
+  static const Key emptyCreateKey = Key('api_key_list.empty_create');
+
   /// The row of the key [id]. Held by the wrapper [BgeKeyedSliverList] puts
   /// around each row, so a finder by it reaches the whole row.
   static Key rowKey(String id) => ValueKey('api_key_list.row.$id');
@@ -74,6 +90,10 @@ class ApiKeyListScreen extends StatefulWidget {
   /// Opens the key `id`'s own page. The list reads page 1 again when it
   /// completes, so a change made there shows here.
   final Future<void> Function(String id) openKey;
+
+  /// Opens the page that makes a key. The list reads page 1 again when it
+  /// completes, so a key made there shows here. Null offers none.
+  final Future<void> Function()? createKey;
 
   @override
   State<ApiKeyListScreen> createState() => _ApiKeyListScreenState();
@@ -86,7 +106,10 @@ class _ApiKeyListScreenState extends State<ApiKeyListScreen> {
     key: ObjectKey(widget.remote),
     create: (_) =>
         ApiKeyListBloc(widget.remote)..add(const ApiKeyListRequested()),
-    child: _ApiKeyList(openKey: widget.openKey),
+    child: _ApiKeyList(
+      openKey: widget.openKey,
+      createKey: widget.createKey,
+    ),
   );
 }
 
@@ -94,18 +117,21 @@ class _ApiKeyListScreenState extends State<ApiKeyListScreen> {
 /// reads it again once a page over it has gone. See "Coming back" on
 /// [ApiKeyListScreen].
 class _ApiKeyList extends StatefulWidget {
-  const _ApiKeyList({required this.openKey});
+  const _ApiKeyList({required this.openKey, required this.createKey});
 
   final Future<void> Function(String id) openKey;
+  final Future<void> Function()? createKey;
 
   @override
   State<_ApiKeyList> createState() => _ApiKeyListState();
 }
 
 class _ApiKeyListState extends State<_ApiKeyList> {
-  /// Whether a key's page opened from here is open. A second tap then opens
-  /// nothing.
-  bool _opening = false;
+  /// The page opened from here that is open, a key's or the one that makes a
+  /// key, or null when none is. A second press then opens nothing. Each
+  /// opening has its own, so an open that completes after its page has gone
+  /// and another has opened answers for nothing.
+  Object? _visit;
 
   /// Whether another route was over the list's when it was last asked.
   bool _covered = false;
@@ -121,6 +147,10 @@ class _ApiKeyListState extends State<_ApiKeyList> {
     skipTraversal: true,
   );
 
+  /// The floating Create key's, so focus can be sent to it and comes back
+  /// to it.
+  final FocusNode _createFocus = FocusNode(debugLabel: 'Create key');
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -128,7 +158,7 @@ class _ApiKeyListState extends State<_ApiKeyList> {
     if (_covered && current) {
       // The top route again: whatever was over the list has gone, by a pop
       // or by the router taking it away, whoever opened it.
-      _opening = false;
+      _visit = null;
       if (!_readAgain) _read();
     }
     // A page newly over the list has had no read made for it yet.
@@ -139,6 +169,7 @@ class _ApiKeyListState extends State<_ApiKeyList> {
   @override
   void dispose() {
     _heading.dispose();
+    _createFocus.dispose();
     super.dispose();
   }
 
@@ -150,19 +181,26 @@ class _ApiKeyListState extends State<_ApiKeyList> {
   }
 
   Future<void> _away(Future<void> Function() open) async {
-    if (_opening) return;
-    _opening = true;
+    if (_visit != null) return;
+    final visit = _visit = Object();
     try {
       await open();
     } finally {
-      // Still waited on: the list's route coming back to the top has not
-      // answered for this page already.
-      if (_opening) {
-        _opening = false;
+      // Still this page's: the list's route coming back to the top has not
+      // answered for it already, and no other page has opened since.
+      if (identical(_visit, visit)) {
+        _visit = null;
         _read();
         _readAgain = true;
       }
     }
+  }
+
+  void _create(Future<void> Function() createKey) {
+    // Taken as either Create key is pressed, so the page it opens hands
+    // focus back here when it closes: see "Create key" on the screen.
+    _createFocus.requestFocus();
+    unawaited(_away(createKey));
   }
 
   void _retry() {
@@ -172,15 +210,19 @@ class _ApiKeyListState extends State<_ApiKeyList> {
   }
 
   @override
-  Widget build(BuildContext context) =>
-      BlocBuilder<ApiKeyListBloc, ApiKeyListState>(
-        builder: (context, state) => _ApiKeyListView(
-          state: state,
-          heading: _heading,
-          onOpen: (id) => unawaited(_away(() => widget.openKey(id))),
-          onRetry: _retry,
-        ),
-      );
+  Widget build(BuildContext context) {
+    final createKey = widget.createKey;
+    return BlocBuilder<ApiKeyListBloc, ApiKeyListState>(
+      builder: (context, state) => _ApiKeyListView(
+        state: state,
+        heading: _heading,
+        onOpen: (id) => unawaited(_away(() => widget.openKey(id))),
+        onRetry: _retry,
+        onCreate: createKey == null ? null : () => _create(createKey),
+        createFocus: _createFocus,
+      ),
+    );
+  }
 }
 
 class _ApiKeyListView extends StatelessWidget {
@@ -189,6 +231,8 @@ class _ApiKeyListView extends StatelessWidget {
     required this.heading,
     required this.onOpen,
     required this.onRetry,
+    required this.onCreate,
+    required this.createFocus,
   });
 
   final ApiKeyListState state;
@@ -201,6 +245,12 @@ class _ApiKeyListView extends StatelessWidget {
   /// Reads page 1 again after a load failure.
   final VoidCallback onRetry;
 
+  /// Opens the page that makes a key, or null when none is offered.
+  final VoidCallback? onCreate;
+
+  /// The floating Create key's focus node.
+  final FocusNode createFocus;
+
   @override
   Widget build(BuildContext context) {
     final l10n = ApiKeysLocalizations.of(context);
@@ -208,9 +258,20 @@ class _ApiKeyListView extends StatelessWidget {
     final bloc = context.read<ApiKeyListBloc>();
     final loaded = state.status == ApiKeyListStatus.loaded;
     final visible = state.visible;
+    final onCreate = this.onCreate;
 
     return BgePage.slivers(
       title: Focus(focusNode: heading, child: Text(l10n.apiKeysTitle)),
+      // Offered however the read went: making a key needs no list.
+      floatingActionButton: onCreate == null
+          ? null
+          : BgeExtendedFab(
+              key: ApiKeyListScreen.createFabKey,
+              focusNode: createFocus,
+              onPressed: onCreate,
+              icon: const Icon(Icons.add),
+              label: l10n.apiKeyCreateAction,
+            ),
       // Rows of a name and its facts: the list measure.
       width: BgePageWidth.pane,
       // What the list holds now, grown as pages arrive. Not known until the
@@ -277,9 +338,11 @@ class _ApiKeyListView extends StatelessWidget {
           // With more to load, More follows the words, so the state takes
           // only its own room rather than the rest of the page.
           ApiKeyListStatus.loaded when visible.isEmpty && state.hasMore =>
-            SliverToBoxAdapter(child: _EmptyState(state: state)),
+            SliverToBoxAdapter(
+              child: _EmptyState(state: state, onCreate: onCreate),
+            ),
           ApiKeyListStatus.loaded when visible.isEmpty => BgeStateSliver(
-            child: _EmptyState(state: state),
+            child: _EmptyState(state: state, onCreate: onCreate),
           ),
           ApiKeyListStatus.loaded => BgeKeyedSliverList<ApiKey>(
             items: visible,
@@ -346,15 +409,19 @@ class _MoreButton extends StatelessWidget {
 }
 
 class _EmptyState extends StatelessWidget {
-  const _EmptyState({required this.state});
+  const _EmptyState({required this.state, required this.onCreate});
 
   final ApiKeyListState state;
+
+  /// Opens the page that makes a key, or null when none is offered.
+  final VoidCallback? onCreate;
 
   @override
   Widget build(BuildContext context) {
     final l10n = ApiKeysLocalizations.of(context);
     // Keys the server has not sent yet may be the ones the filter wants.
     final more = state.hasMore ? l10n.apiKeysEmptyFilterMore : null;
+    final onCreate = this.onCreate;
 
     return switch (state.filter) {
       ApiKeyStatusFilter.all => BgeEmptyState(
@@ -362,6 +429,15 @@ class _EmptyState extends StatelessWidget {
         icon: Icons.key_outlined,
         title: l10n.apiKeysEmptyTitle,
         body: l10n.apiKeysEmptyBody,
+        // Only where there is no key at all: a filter that shows none is
+        // answered by the filter, not by making a key.
+        action: onCreate == null
+            ? null
+            : FilledButton(
+                key: ApiKeyListScreen.emptyCreateKey,
+                onPressed: onCreate,
+                child: Text(l10n.apiKeyCreateAction),
+              ),
       ),
       ApiKeyStatusFilter.enabled => BgeEmptyState(
         key: ApiKeyListScreen.emptyKey,
