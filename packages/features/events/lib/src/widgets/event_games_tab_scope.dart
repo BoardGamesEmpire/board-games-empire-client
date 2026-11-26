@@ -42,7 +42,8 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// one: as the motion setting changes, and as the sub-tabs shown do (#519).
 /// So too when the date shown changes, or the date the location is to name
 /// ([dateQuery]), and when the row of dates clears the nominations' filter's
-/// date.
+/// date; and when a sub-tab held for the location is let go as the answer
+/// comes in ([locationSection], #1066).
 ///
 /// One per screen, held by [EventGamesTabScope] above the detail's builder,
 /// beside the tab controller, so no read, write, clock tick or switch to the
@@ -155,8 +156,83 @@ class EventGamesTabController extends ChangeNotifier {
   /// Tells the listeners the chosen sub-tab changed. For the scope only,
   /// which calls it once for each change, as the change starts, the way the
   /// screen's own tab bar tells the page: the page swaps the list under the
-  /// bar at once, not once the indicator has settled.
-  void sectionChanged() => notifyListeners();
+  /// bar at once, not once the indicator has settled. A sub-tab chosen, by
+  /// the user or the location, ends a hold ([holdSection], #1066); the
+  /// scope's own move as the answer comes in has ended it already
+  /// ([_endHoldOnAnswer]).
+  void sectionChanged() {
+    _heldSection = null;
+    notifyListeners();
+  }
+
+  /// Whether the answer to which sub-tabs the bar shows is in (#1066): the
+  /// detail is ready, the date view's mode is known ([viewMode], #1063), and
+  /// the nominations have answered at least once ([drawnNominationsLoad]
+  /// loaded, failed, hidden or gone). Until then, Nominations can be left
+  /// out under the host-only rule only for want of an answer. Set by the
+  /// scope as it works it out from the detail, the nominations and the date
+  /// view, before it makes the sub-tabs' controller anew, which can hold a
+  /// sub-tab that leaves ([holdSection]).
+  bool get sectionsAnswered => _sectionsAnswered;
+  bool _sectionsAnswered = false;
+
+  /// Holds what the sub-tab shown shows, under the bar and the row of dates
+  /// (#1066): focus in it is the user at work there, which a hold's end
+  /// doesn't move the bar from under.
+  final FocusNode sectionArea = FocusNode(
+    debugLabel: 'Sub-tab shown',
+    canRequestFocus: false,
+    skipTraversal: true,
+  );
+
+  /// A sub-tab the location names that the bar leaves out only because the
+  /// answer isn't in yet ([sectionsAnswered], #1066), as Nominations under
+  /// a host-only view before the nominations are read, or under a date whose
+  /// policy is still to come (#1063). The bar shows its first sub-tab
+  /// meanwhile, and the location goes on naming this one ([locationSection]),
+  /// as a date the cache lacks is held ([_heldDate]). It is held until the
+  /// user chooses a sub-tab ([sectionChanged]), the one shown included, or a
+  /// tab, or the location names another ([releaseSection]); and otherwise
+  /// until the answer is in, when the bar moves to it where it now shows,
+  /// unless the user is at work in the sub-tab shown ([_endHoldOnAnswer]).
+  EventGamesSection? _heldSection;
+
+  /// The sub-tab the screen's location is to name (#1066): the one held
+  /// while one is ([holdSection]), else [section].
+  EventGamesSection get locationSection => _heldSection ?? section;
+
+  /// Holds [section], a sub-tab the location names that the bar leaves out,
+  /// while the answer isn't in ([sectionsAnswered], #1066). Once it is, does
+  /// nothing, and the caller tells the location the sub-tab shown, as a
+  /// sub-tab chosen is. Tells no listener: the bar stays where it is. For the
+  /// screen and the scope.
+  void holdSection(EventGamesSection section) {
+    if (!_sectionsAnswered) _heldSection = section;
+  }
+
+  /// Ends the hold ([holdSection]) with the bar where it is (#1066): as the
+  /// user chooses a tab, or the sub-tab already shown, and as the location
+  /// names another. Where it ends one, tells the listeners, so the screen
+  /// tells the location the sub-tab shown. For the screen and the scope.
+  void releaseSection() {
+    if (_heldSection == null) return;
+    _heldSection = null;
+    notifyListeners();
+  }
+
+  /// Ends the hold once the answer is in (#1066), then calls [moveTo] with
+  /// the held sub-tab's place in the bar where it now shows, for the scope
+  /// to move the bar there unless the user is at work in the sub-tab shown;
+  /// then tells the listeners, so the screen tells the location the sub-tab
+  /// shown where it isn't the one held. Nothing while no sub-tab is held or
+  /// the answer isn't in. For the scope only.
+  void _endHoldOnAnswer(void Function(int index) moveTo) {
+    final held = _heldSection;
+    if (held == null || !_sectionsAnswered) return;
+    _heldSection = null;
+    if (sectionIndex(held) case final index?) moveTo(index);
+    notifyListeners();
+  }
 
   /// Which of the event's dates the tab shows (#1042): every date, or one;
   /// null on an event with no row of dates ([showsDateRow]), and until
@@ -1258,6 +1334,7 @@ class EventGamesTabController extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    sectionArea.dispose();
     offerArea.dispose();
     lineupAddArea.dispose();
     peopleFocus.dispose();
@@ -1324,6 +1401,18 @@ class EventGamesTabController extends ChangeNotifier {
 /// first, and lets the old one go after the frame, as it does for the
 /// motion setting. One mid-change ends where it was going: a new controller
 /// is never mid-change, and its index is always among the sub-tabs shown.
+///
+/// A sub-tab the bar leaves out only because the answer isn't in yet
+/// ([EventGamesTabController.sectionsAnswered], #1066), the one the location
+/// names as the tab opens or the one chosen as it leaves, is held
+/// ([EventGamesTabController.holdSection]), so the location goes on naming
+/// it. The user's choice of a sub-tab, the one shown included, or a tab
+/// ends the hold. Once the answer is in, the scope ends the hold and moves
+/// the bar to it where it now shows, a move that takes no focus. A route
+/// over the page's, a pop-up or a page, whoever opened it, counts as the
+/// user's choice, and so does focus in what the sub-tab shown shows, unless
+/// Lineup's own read failed, whose Try again may have taken that focus: the
+/// bar stays, and the location is told that sub-tab.
 ///
 /// ## A pool row's hand-off
 ///
@@ -1441,6 +1530,9 @@ class _EventGamesTabScopeState extends State<EventGamesTabScope>
   TabController? _tabs;
   TabController? _sections;
   int _notifiedSection = 0;
+
+  /// The screen's tab as [_tabChanged] last heard it.
+  int _tab = 0;
   EventDetailBloc? _detailBloc;
   StreamSubscription<EventDetailState>? _detail;
   EventGamesBloc? _bloc;
@@ -1495,8 +1587,13 @@ class _EventGamesTabScopeState extends State<EventGamesTabScope>
     super.didChangeDependencies();
     final tabs = DefaultTabController.of(context);
     if (tabs != _tabs) {
-      _tabs?.removeListener(_firstShowing);
-      _tabs = tabs..addListener(_firstShowing);
+      _tabs
+        ?..removeListener(_firstShowing)
+        ..removeListener(_tabChanged);
+      _tabs = tabs
+        ..addListener(_firstShowing)
+        ..addListener(_tabChanged);
+      _tab = tabs.index;
     }
     final detail = context.read<EventDetailBloc>();
     if (detail != _detailBloc) {
@@ -1564,18 +1661,23 @@ class _EventGamesTabScopeState extends State<EventGamesTabScope>
   /// and lets the old one go after the frame. With no [duration], the one it
   /// has. A new controller is never mid-change, so one replaced while its
   /// indicator moves ends that move where it was going.
+  ///
+  /// A sub-tab it leaves out only because the answer isn't in yet
+  /// ([EventGamesTabController.sectionsAnswered]), the location's or the one
+  /// chosen, is held, so the location goes on naming it (#1066).
   void _useSections({Duration? duration}) {
     final old = _sections;
     final motion = duration ?? old!.animationDuration;
+    _controller._sectionsAnswered = _sectionsAnswered();
     final shown = _shownSections();
     if (old != null &&
         old.animationDuration == motion &&
         listEquals(shown, _controller.visibleSections)) {
       return;
     }
-    final kept = shown.indexOf(
-      old == null ? widget.initialSection : _controller.section,
-    );
+    final wanted = old == null ? widget.initialSection : _controller.section;
+    final kept = shown.indexOf(wanted);
+    if (kept < 0) _controller.holdSection(wanted);
     final sections = TabController(
       length: shown.length,
       initialIndex: kept < 0 ? 0 : kept,
@@ -1608,12 +1710,66 @@ class _EventGamesTabScopeState extends State<EventGamesTabScope>
     );
   }
 
+  /// Whether the answer to which sub-tabs the tab shows is in
+  /// ([EventGamesTabController.sectionsAnswered], #1066): the detail is
+  /// ready, the date view's mode is known ([viewMode], #1063), and the
+  /// nominations have answered at least once.
+  bool _sectionsAnswered() {
+    final detail = _detailBloc?.state;
+    return detail is EventDetailReady &&
+        viewMode(detail, _controller.dateView) != null &&
+        _controller.drawnNominationsLoad(_lastNominations) !=
+            EventNominationsLoad.idle;
+  }
+
   /// Replaces the sub-tabs' controller where the sub-tabs shown have
   /// changed ([_useSections]): as the detail, the nominations or the date
-  /// view do.
+  /// view do. Once the answer is in, ends a hold (#1066): the bar moves to
+  /// the sub-tab held where it now shows, as nothing else was chosen
+  /// meanwhile ([_moveToHeld]), and otherwise the location is told the one
+  /// shown.
   void _syncSections() {
     if (!mounted || _sections == null) return;
     _useSections();
+    _controller._endHoldOnAnswer(_moveToHeld);
+  }
+
+  /// Moves the sub-tabs to [index], the one held, as the answer comes in
+  /// (#1066), as the location's own move does: animated, under the motion
+  /// setting. The hold has ended already, so [_sectionChanged] takes it as
+  /// any change. It asks for no focus and announces nothing: focus on a tab
+  /// stays on it, and the bar's tabs say which is selected, as for any
+  /// change.
+  ///
+  /// Not where the user is at work in the sub-tab shown, as good as a
+  /// sub-tab chosen: the bar stays, and the hold ends all the same, so the
+  /// location is told the sub-tab shown. That is while a route is over the
+  /// page's, a pop-up or a page ([anyRouteOver]), whoever opened it, since
+  /// nothing may swap under it; and while focus is in what the sub-tab shown
+  /// shows ([EventGamesTabController.sectionArea]), which the move would
+  /// take from under them, whatever the nominations answered. Unless
+  /// Lineup's own read failed: its Try again may have taken that focus as
+  /// the page opened, not the user, so the bar moves whatever it is doing.
+  void _moveToHeld(int index) {
+    if (anyRouteOver(context)) return;
+    if (!_lineupFailedShown() && _controller.sectionArea.hasFocus) return;
+    _sections!.animateTo(index);
+  }
+
+  /// Whether Lineup shows its own failure, with its Try again (#519): its
+  /// read failed with no games read before.
+  bool _lineupFailedShown() =>
+      _controller.drawnLineupLoad(_lastLineup) == EventLineupLoad.failed &&
+      _lastLineup.games.isEmpty;
+
+  /// Ends a hold as the screen's tab changes (#1066): the user's choice of a
+  /// tab, or the location's or the page's move away from Games. The screen
+  /// holds a sub-tab the location names once it has moved to Games.
+  void _tabChanged() {
+    final tab = _tabs!.index;
+    if (tab == _tab) return;
+    _tab = tab;
+    _controller.releaseSection();
   }
 
   /// Hands focus on from a row the date view now leaves out
@@ -1739,7 +1895,9 @@ class _EventGamesTabScopeState extends State<EventGamesTabScope>
 
   @override
   void dispose() {
-    _tabs?.removeListener(_firstShowing);
+    _tabs
+      ?..removeListener(_firstShowing)
+      ..removeListener(_tabChanged);
     _controller
       ..removeListener(_syncSections)
       ..removeListener(_viewChanged);

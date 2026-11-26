@@ -480,61 +480,61 @@ void main() {
       expect(notified, 1);
     });
 
-    // A detail can be ready as the scope is made, as one handed in already
-    // read could be: the sub-tabs it opens with follow the date the location
-    // names, not the event's own rules, so a link to Nominations on a date
-    // that takes nominations lands there (#519).
+    /// Ready as the scope is made, as one handed in already read could be:
+    /// only the hosts add games to the event, but its later date takes
+    /// nominations.
+    final hostOnlyButLater = EventDetailReady(
+      detail: EventDetail(
+        snapshot: EventSnapshot(
+          event: item('e').event,
+          occurrences: [soon, later],
+          policy: EventPolicy(
+            id: 'p',
+            eventId: 'e',
+            allowMemberInvites: true,
+            allowGuestInvites: false,
+            restrictToGameCategories: false,
+            requireHostApprovalToJoin: false,
+            allowSpectators: false,
+            strictCapacity: false,
+            gameAdditionMode: GameAdditionMode.hostOnly,
+            restrictToAttendeePool: false,
+            voteThresholdType: VoteThresholdType.simpleMajority,
+            voteQuorumType: VoteQuorumType.none,
+            voteEligibility: VoteEligibility.allAttendees,
+            interestedWeight: InterestedWeight.asAbstain,
+            createdAt: now,
+            updatedAt: now,
+          ),
+          occurrencePolicies: [
+            EventOccurrencePolicy(
+              id: 'op-later',
+              occurrenceId: 'later',
+              allowedCategoryIds: const [],
+              allowedPlatformIds: const [],
+              allowedPlatformTypes: const [],
+              platformTypesUnrestricted: false,
+              platformsUnrestricted: false,
+              capacityUnrestricted: false,
+              gameAdditionMode: GameAdditionMode.requiresVote,
+              createdAt: now,
+              updatedAt: now,
+            ),
+          ],
+        ),
+      ),
+      actions: const {},
+    );
+
+    // A detail can be ready as the scope is made: the sub-tabs it opens with
+    // follow the date the location names, not the event's own rules, so a
+    // link to Nominations on a date that takes nominations lands there
+    // (#519).
     testWidgets('a detail ready as the scope is made opens on the sub-tabs of '
         'the date the location names', (tester) async {
-      final at = now;
-      // Only the hosts add games to the event, but its later date takes
-      // nominations.
-      final detail = EventDetailReady(
-        detail: EventDetail(
-          snapshot: EventSnapshot(
-            event: item('e').event,
-            occurrences: [soon, later],
-            policy: EventPolicy(
-              id: 'p',
-              eventId: 'e',
-              allowMemberInvites: true,
-              allowGuestInvites: false,
-              restrictToGameCategories: false,
-              requireHostApprovalToJoin: false,
-              allowSpectators: false,
-              strictCapacity: false,
-              gameAdditionMode: GameAdditionMode.hostOnly,
-              restrictToAttendeePool: false,
-              voteThresholdType: VoteThresholdType.simpleMajority,
-              voteQuorumType: VoteQuorumType.none,
-              voteEligibility: VoteEligibility.allAttendees,
-              interestedWeight: InterestedWeight.asAbstain,
-              createdAt: at,
-              updatedAt: at,
-            ),
-            occurrencePolicies: [
-              EventOccurrencePolicy(
-                id: 'op-later',
-                occurrenceId: 'later',
-                allowedCategoryIds: const [],
-                allowedPlatformIds: const [],
-                allowedPlatformTypes: const [],
-                platformTypesUnrestricted: false,
-                platformsUnrestricted: false,
-                capacityUnrestricted: false,
-                gameAdditionMode: GameAdditionMode.requiresVote,
-                createdAt: at,
-                updatedAt: at,
-              ),
-            ],
-          ),
-        ),
-        actions: const {},
-      );
-
       await tester.pumpWidget(
         _harness(
-          initialDetail: detail,
+          initialDetail: hostOnlyButLater,
           initialDate: 'later',
           now: () => now,
           onBuild: (c) => controller = c,
@@ -544,6 +544,30 @@ void main() {
       expect(controller.dateView, const OneDateView('later'));
       expect(controller.visibleSections, EventGamesSection.values);
       expect(controller.section, EventGamesSection.nominations);
+    });
+
+    // A link to Nominations on the host-only date, with the nominations not
+    // yet read: the bar opens on Lineup, and Nominations is held for the
+    // location until the answer is in (#1066).
+    testWidgets('a detail ready as the scope is made holds a sub-tab it '
+        'leaves out before the nominations answer', (tester) async {
+      await tester.pumpWidget(
+        _harness(
+          initialDetail: hostOnlyButLater,
+          initialDate: 'soon',
+          now: () => now,
+          onBuild: (c) => controller = c,
+        ),
+      );
+
+      expect(controller.dateView, const OneDateView('soon'));
+      expect(controller.visibleSections, [
+        EventGamesSection.lineup,
+        EventGamesSection.pool,
+      ]);
+      expect(controller.section, EventGamesSection.lineup);
+      expect(controller.sectionsAnswered, isFalse);
+      expect(controller.locationSection, EventGamesSection.nominations);
     });
 
     // Nominate's "which date?" dialog asked only where the date view was

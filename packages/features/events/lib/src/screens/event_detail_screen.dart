@@ -180,7 +180,14 @@ typedef OpenEventGame = void Function(BuildContext context, String gameId);
 /// it, gives way to Lineup, which the location is told as a sub-tab chosen
 /// is; a sub-tab still shown stays chosen, and focus on a sub-tab, or in
 /// what one that went showed, stays on it or goes to the one chosen
-/// ([EventGamesSectionBar]).
+/// ([EventGamesSectionBar]). Where it goes only because the answer isn't in
+/// yet, before the nominations' first read has answered or while the
+/// date's policy is still to come (#1063), the location goes on naming it
+/// (#1066). Once the answer is in, the bar moves back to it where it now
+/// shows and no sub-tab or tab was chosen meanwhile, no route is over the
+/// page's, a pop-up or a page, and focus isn't in what Lineup shows, unless
+/// Lineup's own read failed, taking no focus; otherwise the location is
+/// told the sub-tab shown.
 ///
 /// It is read the first time the tab shows on a ready event, or, where a read
 /// of the event is running then, once that read ends, and so once; and again
@@ -1613,9 +1620,17 @@ class _EventDetailView extends StatelessWidget {
 /// never shows the sub-tab it is leaving. A sub-tab the Games tab doesn't
 /// show, as Nominations under a host-only view (#519), opens its first,
 /// Lineup, and that is reported, as it is where a sub-tab chosen leaves the
-/// bar and gives way to the first. A tab the page can't show, as an
-/// event made offline shows Details alone, doesn't wait in the controllers: the
-/// page puts them back on Details at once ([_ReadyPage]), and that move is
+/// bar and gives way to the first. Where it isn't shown only until the
+/// answer is in ([EventGamesTabController.sectionsAnswered], #1066), it is
+/// held instead, and each report names it
+/// ([EventGamesTabController.locationSection]) until the user chooses a
+/// sub-tab or a tab, the location names another, or the answer comes in:
+/// then the Games tab moves to it, which isn't reported, where it shows, no
+/// route is over the screen's, a pop-up or a page, and focus isn't in what
+/// the sub-tab shown shows, unless Lineup's own read failed; otherwise the
+/// sub-tab shown is reported. A tab the page can't show, as an event made
+/// offline shows Details alone, doesn't wait in the controllers: the page
+/// puts them back on Details at once ([_ReadyPage]), and that move is
 /// reported as the user's are, so the location drops the tab.
 ///
 /// A [date] that names another date than the location did, and than the one
@@ -1702,16 +1717,23 @@ class _EventTabLocationState extends State<_EventTabLocation> {
     // The screen's controller can have been replaced in this same build,
     // before this widget hears of it.
     _follow();
+    // A sub-tab held for the location before ends with it (#1066).
+    final games = _games!..releaseSection();
     _moving = true;
     try {
-      if (wanted.section case final section?) {
-        final index = _games!.sectionIndex(section);
-        // A sub-tab the date view doesn't show (#519) opens the first, which
-        // the location is told, as a sub-tab chosen is.
-        _sections!.animateTo(index ?? 0);
-        if (index == null) _changedAfterFrame();
-      }
+      // A sub-tab the date view doesn't show (#519) opens the first.
+      final section = wanted.section;
+      final index = section == null ? null : games.sectionIndex(section);
+      if (section != null) _sections!.animateTo(index ?? 0);
       _tabs!.animateTo(wanted.tab.index);
+      // Held, and the location goes on naming it, where it is left out only
+      // until the answer is in (#1066); otherwise the location is told the
+      // first, as a sub-tab chosen is. After the moves, since the screen's
+      // tab changing ends a hold, as the user's choice would.
+      if (section != null && index == null) {
+        games.holdSection(section);
+        if (games.locationSection != section) _changedAfterFrame();
+      }
     } finally {
       _moving = false;
     }
@@ -1758,11 +1780,23 @@ class _EventTabLocationState extends State<_EventTabLocation> {
 
   void _gamesChanged() {
     _followSections();
+    final games = _games!;
     // A new date for the location to name, as the user chooses one or the
     // event's dates change, or as the location names one the event doesn't
     // have, is reported as a settled tab is, once this frame has ended: the
-    // location can move it while the screen builds.
-    if (_games!.dateQuery != _lastDate) _changedAfterFrame();
+    // location can move it while the screen builds. So too a new sub-tab,
+    // as a hold ends with the sub-tab held left out (#1066). On Details the
+    // sub-tab names nothing, so only the screen's place is compared.
+    final tabs = _tabs;
+    if (games.dateQuery != _lastDate ||
+        tabs != null &&
+            EventScreenTab.of(
+                  EventDetailTab.values[tabs.index],
+                  games.locationSection,
+                ) !=
+                _last) {
+      _changedAfterFrame();
+    }
   }
 
   void _followSections() {
@@ -1790,9 +1824,10 @@ class _EventTabLocationState extends State<_EventTabLocation> {
     // screen is leaving, the location is someone else's.
     if (!(_route?.isCurrent ?? true)) return;
     if (tabs.indexIsChanging || sections.indexIsChanging) return;
+    // A sub-tab held stands for the one shown (#1066).
     final shown = EventScreenTab.of(
       EventDetailTab.values[tabs.index],
-      _games!.section,
+      _games!.locationSection,
     );
     final date = _games!.dateQuery;
     if (shown == _last && date == _lastDate) return;

@@ -154,7 +154,9 @@ void main() {
   /// The screen's `tab` is [location]'s value, and its `date` is [date]'s,
   /// and the screen is built again with each new one, as the router builds it
   /// for a new location (#856, #1042). Each change the screen reports goes to
-  /// [onLocationChanged].
+  /// [onLocationChanged]. Where [nested], the screen is on a navigator of its
+  /// own under the app's, as the app's shell puts a signed-in page, so a
+  /// dialog opens on the navigator above it.
   Widget app({
     ThemeData? theme,
     bool longLabel = false,
@@ -163,6 +165,7 @@ void main() {
     ValueListenable<String?>? location,
     ValueListenable<String?>? date,
     EventLocationChanged? onLocationChanged,
+    bool nested = false,
   }) {
     // Nobody has offered a game, unless a test says otherwise: the pool is
     // the empty state, under its header. Its rows are audited with the tab's
@@ -183,6 +186,13 @@ void main() {
       onLocationChanged: onLocationChanged,
     );
 
+    final home = location == null
+        ? screen(null, date?.value)
+        : ListenableBuilder(
+            listenable: Listenable.merge([location, date]),
+            builder: (_, _) => screen(location.value, date?.value),
+          );
+
     return MaterialApp(
       theme: theme ?? BgeTheme.light(),
       locale: const Locale('en', 'US'),
@@ -194,12 +204,12 @@ void main() {
         GameFiltersLocalizations.delegate,
       ],
       supportedLocales: EventsLocalizations.supportedLocales,
-      home: location == null
-          ? screen(null, date?.value)
-          : ListenableBuilder(
-              listenable: Listenable.merge([location, date]),
-              builder: (_, _) => screen(location.value, date?.value),
-            ),
+      home: nested
+          ? Navigator(
+              onGenerateRoute: (_) =>
+                  MaterialPageRoute<void>(builder: (_) => home),
+            )
+          : home,
     );
   }
 
@@ -659,6 +669,7 @@ void main() {
       String? date,
       FakeEventRemote? remote,
       List<OfferedGame> pool = const [],
+      bool nested = false,
     }) async {
       location = ValueNotifier(tab);
       addTearDown(location.dispose);
@@ -672,6 +683,7 @@ void main() {
           date: dateLocation,
           remote: remote,
           pool: pool,
+          nested: nested,
           onLocationChanged: (_, tab, date) {
             reports.add(tab);
             reportedDates.add(date);
@@ -1447,25 +1459,62 @@ void main() {
         createdAt: kItemInstant,
       );
 
+      /// Ada's Azul in the lineup, for the whole event.
+      const lined = LineupGame(
+        id: 'l-1',
+        platformGameId: 'pg-1',
+        gameId: 'g-1',
+        title: 'Azul',
+        platformName: 'Tabletop',
+        role: ScheduledGameRole.primary,
+        sortOrder: 0,
+        suppliedById: 'o-1',
+        supplierAttendeeId: 'att-2',
+      );
+
+      /// The focus of [control], a button: the nearest above its label.
+      FocusNode focusOf(WidgetTester tester, Finder control) => Focus.of(
+        tester.element(
+          find.descendant(of: control, matching: find.byType(Text)).first,
+        ),
+      );
+
       /// Opens the screen on the location's [tab] and [date], with a server
       /// that serves [detail], which the cache shows, and [nominations], and
-      /// lets the reads the Games tab makes end.
+      /// lets the reads the Games tab makes end. Where [nominationsRead] is
+      /// given, the nominations read answers as it does instead, so a test
+      /// can hold it open. The lineup read fails, so Lineup shows its failure
+      /// state, unless [lineup] is given, which it answers. The screen is
+      /// under a navigator of its own where [nested] ([app]).
       Future<void> openOn(
         WidgetTester tester,
         EventDetail detail,
         String? tab, {
         String? date,
         List<EventNomination> nominations = const [],
+        Future<List<EventNomination>>? nominationsRead,
+        List<LineupGame>? lineup,
+        bool nested = false,
       }) async {
+        FutureOr<List<EventNomination>> read(NominationsRequest _) =>
+            nominationsRead ?? nominations;
         await open(
           tester,
           tab,
           date: date,
-          remote: FakeEventRemote.detail(
-            (_) => detail.snapshot,
-            pool: (_) => const [],
-            nominations: (_) => nominations,
-          ),
+          nested: nested,
+          remote: lineup == null
+              ? FakeEventRemote.detail(
+                  (_) => detail.snapshot,
+                  pool: (_) => const [],
+                  nominations: read,
+                )
+              : FakeEventRemote.detail(
+                  (_) => detail.snapshot,
+                  pool: (_) => const [],
+                  nominations: read,
+                  lineup: (_) => lineup,
+                ),
         );
         cache.add(detail);
         await tester.pumpAndSettle();
@@ -1667,10 +1716,27 @@ void main() {
         expect(reportedDates, ['o-2', 'o-1']);
       });
 
+      // Until the nominations' first read answers, the bar can't tell
+      // whether Nominations shows, so it shows Lineup and the location goes
+      // on naming Nominations (#1066).
       testWidgets('tab=nominations on a host-only event opens Lineup', (
         tester,
       ) async {
-        await openOn(tester, hostOnly, 'nominations');
+        final read = Completer<List<EventNomination>>();
+        await openOn(
+          tester,
+          hostOnly,
+          'nominations',
+          nominationsRead: read.future,
+        );
+
+        expect(section(EventGamesSection.nominations), findsNothing);
+        expect(shown(tester), EventScreenTab.lineup);
+        expect(reports, isEmpty);
+
+        // None: the location is told Lineup, as a sub-tab chosen is.
+        read.complete(const []);
+        await tester.pumpAndSettle();
 
         expect(section(EventGamesSection.nominations), findsNothing);
         expect(shown(tester), EventScreenTab.lineup);
@@ -1719,22 +1785,415 @@ void main() {
       });
 
       // Nominations not yet read count as none, so a link to them lands on
-      // Lineup first; once they load, the sub-tab shows, and the screen
-      // stays where it landed.
+      // Lineup first; once they are read, the sub-tab shows, and the bar
+      // moves to it, with focus where it was and nothing told (#1066).
       testWidgets('tab=nominations on a host-only event with nominations '
-          'opens Lineup, then shows Nominations once they are read', (
+          'opens Lineup, then Nominations once they are read', (
         tester,
       ) async {
+        final read = Completer<List<EventNomination>>();
         await openOn(
           tester,
           hostOnly,
           'nominations',
-          nominations: [nominationFor(null)],
+          nominationsRead: read.future,
         );
+        expect(section(EventGamesSection.nominations), findsNothing);
+        expect(shown(tester), EventScreenTab.lineup);
+        expect(reports, isEmpty);
+        tabFocus(tester, EventGamesSection.lineup).requestFocus();
+        await tester.pump();
+        final focus = FocusManager.instance.primaryFocus;
+        tester.takeAnnouncements();
+
+        read.complete([nominationFor(null)]);
+        await tester.pumpAndSettle();
+
+        expect(section(EventGamesSection.nominations), findsOneWidget);
+        expect(shown(tester), EventScreenTab.nominations);
+        expect(reports, isEmpty);
+        // Still on Lineup's tab.
+        expect(FocusManager.instance.primaryFocus, same(focus));
+        expect(tester.takeAnnouncements(), isEmpty);
+      });
+
+      testWidgets('a sub-tab chosen during the hold stays chosen', (
+        tester,
+      ) async {
+        final read = Completer<List<EventNomination>>();
+        await openOn(
+          tester,
+          hostOnly,
+          'nominations',
+          nominationsRead: read.future,
+        );
+
+        await tester.tap(section(EventGamesSection.pool));
+        await tester.pumpAndSettle();
+        read.complete([nominationFor(null)]);
+        await tester.pumpAndSettle();
+
+        expect(section(EventGamesSection.nominations), findsOneWidget);
+        expect(shown(tester), EventScreenTab.pool);
+        expect(reports, [EventScreenTab.pool]);
+      });
+
+      // A read that failed can't say none are in view, so Nominations shows,
+      // with its Try again (#519). The move itself announces nothing, and
+      // takes focus from no tab.
+      testWidgets('a failed first read ends the hold on Nominations', (
+        tester,
+      ) async {
+        final read = Completer<List<EventNomination>>();
+        await openOn(
+          tester,
+          hostOnly,
+          'nominations',
+          nominationsRead: read.future,
+        );
+        final lineupTab = tabFocus(tester, EventGamesSection.lineup)
+          ..requestFocus();
+        await tester.pump();
+        tester.takeAnnouncements();
+
+        read.completeError(const EventRemoteTransientException('offline'));
+        await tester.pumpAndSettle();
+
+        expect(section(EventGamesSection.nominations), findsOneWidget);
+        expect(shown(tester), EventScreenTab.nominations);
+        expect(
+          find.byKey(EventDetailScreen.nominationsRetryKey),
+          findsOneWidget,
+        );
+        expect(reports, isEmpty);
+        expect(lineupTab.hasPrimaryFocus, isTrue);
+        expect(tester.takeAnnouncements(), isEmpty);
+      });
+
+      // Focus in what Lineup shows is the user at work there: the bar stays,
+      // and the location is told Lineup, as a sub-tab chosen is, whatever
+      // the nominations answered.
+      for (final fails in [false, true]) {
+        testWidgets('focus on a Lineup row during the hold keeps the bar on '
+            'Lineup as the nominations ${fails ? 'fail' : 'answer'}', (
+          tester,
+        ) async {
+          final read = Completer<List<EventNomination>>();
+          await openOn(
+            tester,
+            hostOnly,
+            'nominations',
+            nominationsRead: read.future,
+            lineup: const [lined],
+          );
+          final remove = find.byKey(EventDetailScreen.lineupRemoveKey('l-1'));
+          await tester.ensureVisible(remove);
+          final focus = focusOf(tester, remove)..requestFocus();
+          await tester.pump();
+
+          if (fails) {
+            read.completeError(const EventRemoteTransientException('offline'));
+          } else {
+            read.complete([nominationFor(null)]);
+          }
+          await tester.pumpAndSettle();
+
+          expect(section(EventGamesSection.nominations), findsOneWidget);
+          expect(shown(tester), EventScreenTab.lineup);
+          expect(focus.hasPrimaryFocus, isTrue);
+          expect(reports, [EventScreenTab.lineup]);
+        });
+      }
+
+      // Lineup's own failure state took the focus no control had as the page
+      // opened, so focus on its Try again says nothing of the user: the bar
+      // moves. The lineup read isn't faked here, so Lineup fails.
+      testWidgets("focus on Lineup's own Try again during the hold still "
+          'moves the bar', (tester) async {
+        final read = Completer<List<EventNomination>>();
+        await openOn(
+          tester,
+          hostOnly,
+          'nominations',
+          nominationsRead: read.future,
+        );
+        focusOf(
+          tester,
+          find.byKey(EventDetailScreen.lineupRetryKey),
+        ).requestFocus();
+        await tester.pump();
+
+        read.complete([nominationFor(null)]);
+        await tester.pumpAndSettle();
+
+        expect(section(EventGamesSection.nominations), findsOneWidget);
+        expect(shown(tester), EventScreenTab.nominations);
+        expect(reports, isEmpty);
+      });
+
+      // A pop-up opened from what Lineup shows, as a row's quick look, is the
+      // user at work there too: its close hands focus back into it.
+      testWidgets("a Lineup row's quick look open as the answer comes in "
+          'keeps the bar on Lineup', (tester) async {
+        final read = Completer<List<EventNomination>>();
+        await openOn(
+          tester,
+          hostOnly,
+          'nominations',
+          nominationsRead: read.future,
+          lineup: const [lined],
+        );
+        expect(shown(tester), EventScreenTab.lineup);
+        final head = find.byKey(EventDetailScreen.lineupRowHeadKey('l-1'));
+        final headFocus = tester
+            .widget<InkWell>(
+              find.descendant(of: head, matching: find.byType(InkWell)),
+            )
+            .focusNode!;
+        await tester.ensureVisible(head);
+        await tester.tap(head);
+        await tester.pumpAndSettle();
+        final quickLook = find.byKey(EventDetailScreen.quickLookKey);
+        expect(quickLook, findsOneWidget);
+
+        read.complete([nominationFor(null)]);
+        await tester.pumpAndSettle();
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await tester.pumpAndSettle();
+
+        expect(quickLook, findsNothing);
+        expect(section(EventGamesSection.nominations), findsOneWidget);
+        expect(shown(tester), EventScreenTab.lineup);
+        expect(reports, [EventScreenTab.lineup]);
+        expect(headFocus.hasPrimaryFocus, isTrue);
+      });
+
+      // A pop-up over the page, however it was opened, is the user at work
+      // there: nothing swaps under it. Remove opens its confirm dialog
+      // without taking focus, as a touch, a mouse or a screen reader presses
+      // it. The app's dialogs open on the navigator above the shell's, which
+      // leaves the page's own route current on its navigator.
+      for (final nested in [false, true]) {
+        testWidgets("Remove's dialog open as the answer comes in keeps the bar "
+            'on Lineup${nested ? ', from a nested navigator' : ''}', (
+          tester,
+        ) async {
+          final read = Completer<List<EventNomination>>();
+          await openOn(
+            tester,
+            hostOnly,
+            'nominations',
+            nominationsRead: read.future,
+            lineup: const [lined],
+            nested: nested,
+          );
+          final focus = FocusManager.instance.primaryFocus;
+          final remove = find.byKey(EventDetailScreen.lineupRemoveKey('l-1'));
+          await tester.ensureVisible(remove);
+          await tester.tap(remove);
+          await tester.pumpAndSettle();
+          final keep = find.byKey(EventDetailScreen.lineupRemoveKeepKey);
+          expect(keep, findsOneWidget);
+
+          read.complete([nominationFor(null)]);
+          await tester.pumpAndSettle();
+          await tester.tap(keep);
+          await tester.pumpAndSettle();
+
+          expect(keep, findsNothing);
+          expect(section(EventGamesSection.nominations), findsOneWidget);
+          expect(shown(tester), EventScreenTab.lineup);
+          expect(reports, [EventScreenTab.lineup]);
+          // Where it was before the dialog, as the dialog's close hands it.
+          expect(FocusManager.instance.primaryFocus, same(focus));
+        });
+      }
+
+      // Offline, both reads fail: Lineup's first, so its Try again takes the
+      // focus no control had, then the nominations'. A failure ends the hold
+      // on Nominations whatever focus in Lineup is doing.
+      testWidgets("a failed first read moves the bar from Lineup's own "
+          'failure to Nominations', (tester) async {
+        final read = Completer<List<EventNomination>>();
+        await openOn(
+          tester,
+          hostOnly,
+          'nominations',
+          nominationsRead: read.future,
+        );
+        expect(
+          focusOf(
+            tester,
+            find.byKey(EventDetailScreen.lineupRetryKey),
+          ).hasPrimaryFocus,
+          isTrue,
+        );
+
+        read.completeError(const EventRemoteTransientException('offline'));
+        await tester.pumpAndSettle();
+
+        expect(shown(tester), EventScreenTab.nominations);
+        expect(reports, isEmpty);
+        // Its own Try again takes the focus Lineup's left with.
+        expect(
+          focusOf(
+            tester,
+            find.byKey(EventDetailScreen.nominationsRetryKey),
+          ).hasPrimaryFocus,
+          isTrue,
+        );
+      });
+
+      testWidgets('a tap on the sub-tab shown during the hold ends it', (
+        tester,
+      ) async {
+        final read = Completer<List<EventNomination>>();
+        await openOn(
+          tester,
+          hostOnly,
+          'nominations',
+          nominationsRead: read.future,
+          lineup: const [],
+        );
+
+        await tester.tap(section(EventGamesSection.lineup));
+        await tester.pumpAndSettle();
+        expect(reports, [EventScreenTab.lineup]);
+        read.complete([nominationFor(null)]);
+        await tester.pumpAndSettle();
 
         expect(section(EventGamesSection.nominations), findsOneWidget);
         expect(shown(tester), EventScreenTab.lineup);
         expect(reports, [EventScreenTab.lineup]);
+      });
+
+      // The row of dates is above the bar, not in what a sub-tab shows.
+      testWidgets('focus on the row of dates during the hold still moves the '
+          'bar', (tester) async {
+        final answer = Completer<EventSnapshot>();
+        await open(
+          tester,
+          'nominations',
+          date: 'o-1',
+          remote: FakeEventRemote.detail(
+            (_) => answer.future,
+            pool: (_) => const [],
+            nominations: (_) => const [],
+          ),
+        );
+        cache.add(
+          dated.copyWith(
+            snapshot: dated.snapshot.copyWith(occurrencePolicies: null),
+          ),
+        );
+        for (var i = 0; i < 3; i++) {
+          await tester.pump();
+        }
+        expect(section(EventGamesSection.nominations), findsNothing);
+        final chip = find.byKey(EventDetailScreen.dateChipKey('o-1'));
+        final chipFocus = Focus.of(
+          tester.element(
+            find.descendant(of: chip, matching: find.byType(Text)).first,
+          ),
+        )..requestFocus();
+        await tester.pump();
+
+        // The first date takes nominations once its rules are read.
+        answer.complete(dated.snapshot);
+        cache.add(dated);
+        await tester.pumpAndSettle();
+
+        expect(section(EventGamesSection.nominations), findsOneWidget);
+        expect(shown(tester), EventScreenTab.nominations);
+        expect(chipFocus.hasPrimaryFocus, isTrue);
+        expect(reports, isEmpty);
+      });
+
+      testWidgets('a top-level tab change ends the hold', (tester) async {
+        final read = Completer<List<EventNomination>>();
+        await openOn(
+          tester,
+          hostOnly,
+          'nominations',
+          nominationsRead: read.future,
+        );
+
+        await tester.tap(tab(EventDetailTab.details));
+        await tester.pumpAndSettle();
+        expect(reports, [EventScreenTab.details]);
+        read.complete([nominationFor(null)]);
+        await tester.pumpAndSettle();
+        await tester.tap(tab(EventDetailTab.games));
+        await tester.pumpAndSettle();
+
+        expect(section(EventGamesSection.nominations), findsOneWidget);
+        expect(shown(tester), EventScreenTab.lineup);
+        expect(reports.last, EventScreenTab.lineup);
+      });
+
+      testWidgets('a new location during the hold ends it', (tester) async {
+        final read = Completer<List<EventNomination>>();
+        await openOn(
+          tester,
+          hostOnly,
+          'nominations',
+          nominationsRead: read.future,
+        );
+
+        // The bar is on Lineup already, so nothing moves.
+        location.value = 'lineup';
+        await tester.pumpAndSettle();
+        read.complete([nominationFor(null)]);
+        await tester.pumpAndSettle();
+
+        expect(section(EventGamesSection.nominations), findsOneWidget);
+        expect(shown(tester), EventScreenTab.lineup);
+        expect(reports, isEmpty);
+      });
+
+      // A list read cached the event, so its dates' rules are unread, and the
+      // date's mode is unknown until the open's read brings them (#1063).
+      testWidgets('a date whose rules are unread holds too', (tester) async {
+        final answer = Completer<EventSnapshot>();
+        await open(
+          tester,
+          'nominations',
+          date: 'o-2',
+          remote: FakeEventRemote.detail(
+            (_) => answer.future,
+            pool: (_) => const [],
+            nominations: (_) => const [],
+          ),
+        );
+        cache.add(
+          dated.copyWith(
+            snapshot: dated.snapshot.copyWith(occurrencePolicies: null),
+          ),
+        );
+        // The Games tab waits on the read with spinners, which never settle.
+        for (var i = 0; i < 3; i++) {
+          await tester.pump();
+        }
+        expect(games(tester).dateView, const OneDateView('o-2'));
+        expect(section(EventGamesSection.nominations), findsNothing);
+        expect(shown(tester), EventScreenTab.lineup);
+        expect(reports, isEmpty);
+
+        // The read ends, and the nominations are read, but the rules it
+        // carried have yet to reach the screen.
+        answer.complete(dated.snapshot);
+        for (var i = 0; i < 3; i++) {
+          await tester.pump();
+        }
+        expect(reports, isEmpty);
+
+        cache.add(dated);
+        await tester.pumpAndSettle();
+
+        expect(section(EventGamesSection.nominations), findsNothing);
+        expect(shown(tester), EventScreenTab.lineup);
+        expect(reports, [EventScreenTab.lineup]);
+        expect(reportedDates, ['o-2']);
       });
 
       testWidgets('focus on Nominations as it leaves goes to Lineup, the '

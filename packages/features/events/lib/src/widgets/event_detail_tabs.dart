@@ -178,6 +178,7 @@ class EventGamesSectionBar extends StatefulWidget {
   const EventGamesSectionBar({
     required this.sections,
     required this.controller,
+    this.onTap,
     super.key,
   });
 
@@ -186,6 +187,10 @@ class EventGamesSectionBar extends StatefulWidget {
 
   /// As long as [sections], each tab at its place among them.
   final TabController controller;
+
+  /// Called with the place of each sub-tab the user chooses, however it is
+  /// pressed, the one already chosen included, which changes no index.
+  final ValueChanged<int>? onTap;
 
   @override
   State<EventGamesSectionBar> createState() => _EventGamesSectionBarState();
@@ -259,6 +264,7 @@ class _EventGamesSectionBarState extends State<EventGamesSectionBar> {
 
     return TabBar.secondary(
       controller: widget.controller,
+      onTap: widget.onTap,
       tabs: [
         for (final section in widget.sections)
           Tab(
