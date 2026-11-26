@@ -332,7 +332,11 @@ void main() {
 
   group('saving', () {
     final renamed = key.copyWith(name: 'Renamed');
-    final critical = permission('users:manage', riskLevel: RiskLevel.critical);
+    // Critical by the server's re-read, as the one the save sent.
+    final critical = permission(
+      'webhooks:manage',
+      riskLevel: RiskLevel.critical,
+    );
     const needsConfirmation = ApiKeyCriticalNeedsConfirmationException('no');
     const scopes = [
       ApiKeyScope(slug: 'collection:read'),
@@ -490,6 +494,8 @@ void main() {
           ),
         ),
       ],
+      // Tried, so what it kept is from a failed read, not a skipped one.
+      verify: (_) => verify(remote.fetchGrantable).called(1),
     );
 
     blocTest<ApiKeyDetailBloc, ApiKeyDetailState>(

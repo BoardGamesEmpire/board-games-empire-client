@@ -127,9 +127,11 @@ class _ApiKeyList extends StatefulWidget {
 }
 
 class _ApiKeyListState extends State<_ApiKeyList> {
-  /// Whether a page opened from here is open: a key's, or the one that
-  /// makes a key. A second press then opens nothing.
-  bool _opening = false;
+  /// The page opened from here that is open, a key's or the one that makes a
+  /// key, or null when none is. A second press then opens nothing. Each
+  /// opening has its own, so an open that completes after its page has gone
+  /// and another has opened answers for nothing.
+  Object? _visit;
 
   /// Whether another route was over the list's when it was last asked.
   bool _covered = false;
@@ -156,7 +158,7 @@ class _ApiKeyListState extends State<_ApiKeyList> {
     if (_covered && current) {
       // The top route again: whatever was over the list has gone, by a pop
       // or by the router taking it away, whoever opened it.
-      _opening = false;
+      _visit = null;
       if (!_readAgain) _read();
     }
     // A page newly over the list has had no read made for it yet.
@@ -179,15 +181,15 @@ class _ApiKeyListState extends State<_ApiKeyList> {
   }
 
   Future<void> _away(Future<void> Function() open) async {
-    if (_opening) return;
-    _opening = true;
+    if (_visit != null) return;
+    final visit = _visit = Object();
     try {
       await open();
     } finally {
-      // Still waited on: the list's route coming back to the top has not
-      // answered for this page already.
-      if (_opening) {
-        _opening = false;
+      // Still this page's: the list's route coming back to the top has not
+      // answered for it already, and no other page has opened since.
+      if (identical(_visit, visit)) {
+        _visit = null;
         _read();
         _readAgain = true;
       }

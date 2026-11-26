@@ -4463,6 +4463,14 @@ class _AuthScopeState extends State<_AuthScope> {
   /// before, and [_closePopUps] closes the modals open over it.
   /// Home itself shows the splash until the new user's scope is live, and is
   /// rebuilt for them then (see `_BgeAppState._homeSession`).
+  ///
+  /// The deactivation starts before the move, not after. It ends the
+  /// session's lease in this turn and queues the teardown, so the move
+  /// still comes before any repository is disposed. But a page asked whether
+  /// it may go, as the page showing a new API key's secret is, has to see
+  /// that its session is over (#1028). Otherwise it asks the departing user
+  /// to stay, the second pass of [_closePopUps] takes that question down,
+  /// and the move is refused, which keeps the page.
   void _endSessionInPlace(BuildContext context, ActiveServer active) {
     widget.unsentChanges.sessionEnded(active, deliberately: false);
     widget.homeSession.value = (
@@ -4471,8 +4479,8 @@ class _AuthScopeState extends State<_AuthScope> {
       switching: true,
     );
     _closePopUps(context);
-    GoRouter.maybeOf(context)?.go(AppRoutes.home);
     unawaited(_deactivateSessionScope(active));
+    GoRouter.maybeOf(context)?.go(AppRoutes.home);
   }
 
   /// Closes the pop-ups and dialogs open on the root navigator as a session

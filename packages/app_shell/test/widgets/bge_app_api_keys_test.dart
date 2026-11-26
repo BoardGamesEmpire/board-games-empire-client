@@ -146,6 +146,26 @@ class _Events implements EventRepository {
       throw UnimplementedError('${invocation.memberName}');
 }
 
+/// A user-session scope that ends the session as the real one does: the
+/// lease in the caller's turn, the teardown queued behind it.
+class _LeaseEndingScope implements UserSessionScope {
+  _LeaseEndingScope(this._lease);
+
+  final FakeSessionLease Function() _lease;
+
+  @override
+  String? activeUserId;
+
+  @override
+  Future<void> activate(String userId) async => activeUserId = userId;
+
+  @override
+  Future<void> deactivate() {
+    _lease().isLive = false;
+    return Future(() => activeUserId = null);
+  }
+}
+
 ApiKey _key(String id, String name) => ApiKey(
   id: id,
   name: name,
@@ -185,14 +205,19 @@ void main() {
   /// The active server's API key client, when it has one.
   late _FakeApiKeyRemote remote;
 
+  /// The active server's session, which a test can move to another user.
+  late FakeAuthRepository auth;
+
   /// A signed-in server, with the API key client when [withRemote], and
   /// with a collection and events, so a bar or rail to pick them on, when
   /// [destinations].
   ActiveServer server({required bool withRemote, bool destinations = false}) {
+    auth = FakeAuthRepository(initialSession: testAuthResponse());
     final base = buildActiveServer(
-      FakeAuthRepository(initialSession: testAuthResponse()),
+      auth,
       gameCollectionRepository: destinations ? _Collection() : null,
       eventRepository: destinations ? _Events() : null,
+      userSessionScope: _LeaseEndingScope(() => lease as FakeSessionLease),
     );
     base.container.registerFactory<SessionLease>(() => lease);
     if (withRemote) {
@@ -846,6 +871,31 @@ void main() {
       // move, in one turn.
       (lease as FakeSessionLease).isLive = false;
       router.go(AppRoutes.home);
+      await tester.pumpAndSettle();
+
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(find.byType(ApiKeyCreateScreen), findsNothing);
+      expect(find.text(_secret), findsNothing);
+    });
+
+    // Another tab signing in as someone else moves this tab's session to
+    // them without a sign-out (#432). The shell ends the first user's
+    // session and goes home.
+    testWidgets('a switch to another account takes the page and its secret, '
+        'and asks nothing', (tester) async {
+      await pumpSettings(tester);
+      await openCreate(tester);
+      await makeKey(tester);
+
+      auth.emitAuthState(
+        AuthStateAuthenticated(
+          session: testAuthResponse().copyWith.user(
+            id: 'u2',
+            username: 'other',
+            email: 'u2@example.com',
+          ),
+        ),
+      );
       await tester.pumpAndSettle();
 
       expect(find.byType(AlertDialog), findsNothing);

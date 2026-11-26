@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:api_keys/api_keys.dart';
 import 'package:bge_test_support/widgets.dart';
 import 'package:flutter/material.dart';
@@ -89,6 +91,8 @@ void main() {
       expect(carrying, hasLength(1));
       expect(carrying.single.value, secret);
       expect(carrying.single.label, isNot(contains(secret)));
+      expect(carrying.single.hint, isNot(contains(secret)));
+      expect(carrying.single.tooltip, isNot(contains(secret)));
       semantics.dispose();
     });
 
@@ -192,6 +196,42 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(tester.takeException(), isNull);
+      expect(
+        find.text("Couldn't copy the key. Select it and copy it yourself."),
+        findsOneWidget,
+      );
+      expect(find.text('Key copied'), findsNothing);
+    });
+
+    testWidgets('a copy that answers after a later one says nothing over '
+        "the later one's answer", (tester) async {
+      final writes = <Completer<void>>[];
+      final messenger = tester.binding.defaultBinaryMessenger
+        ..setMockMethodCallHandler(SystemChannels.platform, (call) async {
+          if (call.method == 'Clipboard.setData') {
+            final write = Completer<void>();
+            writes.add(write);
+            await write.future;
+          }
+          return null;
+        });
+      addTearDown(
+        () => messenger.setMockMethodCallHandler(SystemChannels.platform, null),
+      );
+      await pump(tester);
+
+      await tester.tap(copyButton());
+      await tester.pump();
+      await tester.tap(copyButton());
+      await tester.pump();
+      expect(writes, hasLength(2));
+
+      // The second fails first; the first then goes through.
+      writes[1].completeError(PlatformException(code: 'denied'));
+      await tester.pumpAndSettle();
+      writes[0].complete();
+      await tester.pumpAndSettle();
+
       expect(
         find.text("Couldn't copy the key. Select it and copy it yourself."),
         findsOneWidget,

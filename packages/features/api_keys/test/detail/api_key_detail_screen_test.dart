@@ -1306,7 +1306,15 @@ void main() {
         'server answered it, and starts the form from it again', (
       tester,
     ) async {
-      serverApplies(key);
+      // A name unlike the one typed, so what shows can only be the answer.
+      when(() => remote.update('k_1', any())).thenAnswer((invocation) async {
+        final patch = invocation.positionalArguments[1] as ApiKeyPatch;
+        return key.copyWith(
+          name: 'Renamed by server',
+          scopes: patch.scopes ?? key.scopes,
+          expiresAt: renewed,
+        );
+      });
       final semantics = tester.ensureSemantics();
       await show(tester);
 
@@ -1332,7 +1340,8 @@ void main() {
         findsOneWidget,
       );
       // The app bar, the heading and the field.
-      expect(find.text('Renamed'), findsNWidgets(3));
+      expect(find.text('Renamed by server'), findsNWidgets(3));
+      expect(find.text('Renamed'), findsNothing);
       expect(find.text('Expires Jun 1, 2027'), findsOneWidget);
       expect(find.text('3 permissions, highest risk Critical'), findsOneWidget);
       // Back to the key's permissions, as the server answered them.

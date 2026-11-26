@@ -758,6 +758,52 @@ void main() {
       expect(routes, hasLength(2));
     });
 
+    testWidgets("a page taken away whose open completes late, under a key's "
+        'page, leaves that page its own read', (tester) async {
+      answerPage(remote, [apiKey('k_1')]);
+      late NavigatorState navigator;
+      Route<void>? createRoute;
+      Route<void>? keyRoute;
+      final createOpen = Completer<void>();
+      await tester.pumpWidget(
+        screen(
+          createKey: () {
+            navigator.push(createRoute = pageOver());
+            return createOpen.future;
+          },
+          openKey: (id) {
+            navigator.push(keyRoute = pageOver());
+            return Completer<void>().future;
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
+      navigator = tester.state(find.byType(Navigator));
+      expectPageReads(1);
+
+      await tester.tap(createFab());
+      await tester.pumpAndSettle();
+      navigator.removeRoute(createRoute!);
+      await tester.pumpAndSettle();
+      expectPageReads(1);
+
+      await tester.tap(find.text('CI deploy').last);
+      await tester.pumpAndSettle();
+      expect(find.text('Close'), findsOneWidget);
+      // The Create page's open answers only now, with a key's page open.
+      // It was answered for already, so it reads nothing.
+      createOpen.complete();
+      await tester.pumpAndSettle();
+      expectPageReads(0);
+
+      // The key was disabled on its own page.
+      answerPage(remote, [apiKey('k_1', enabled: false)]);
+      navigator.removeRoute(keyRoute!);
+      await tester.pumpAndSettle();
+      expectPageReads(1);
+      expect(rowLabel(tester, 'k_1'), contains('Disabled'));
+    });
+
     testWidgets('one page gone is one read, though both its signs come', (
       tester,
     ) async {

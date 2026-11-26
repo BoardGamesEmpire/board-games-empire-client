@@ -1606,6 +1606,27 @@ void main() {
       expect(find.byType(AlertDialog), findsNothing);
     });
 
+    testWidgets('a session that ends while the question is open lets the '
+        'next ask go at once, and leaves the open one to its answer', (
+      tester,
+    ) async {
+      await showGuarded(tester);
+      await createKey(tester);
+      final (asked: _, :answers) = ask();
+      await tester.pumpAndSettle();
+      expect(find.text(leaveQuestion), findsOneWidget);
+
+      lease.isLive = false;
+
+      // The router's next ask, as the session's own move comes: at once.
+      expect(guard.mayLeave(), isTrue);
+      // The open question is the page's, which goes with it: what takes the
+      // page takes the question too. Until then it waits on the user.
+      await tester.pumpAndSettle();
+      expect(answers, isEmpty);
+      expect(find.text(leaveQuestion), findsOneWidget);
+    });
+
     testWidgets('once its session has ended a create on its way holds '
         'nothing', (tester) async {
       final answer = Completer<CreatedApiKey>();
