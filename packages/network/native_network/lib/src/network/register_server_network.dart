@@ -1,10 +1,16 @@
+import 'dart:async';
+
 import 'package:di/di.dart' show ServerSkewClockService;
 import 'package:dio/dio.dart';
 import 'package:dio_network/dio_network.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:interfaces/services.dart'
-    show ClockService, ProviderSignInBrowser, UnsupportedProviderSignInBrowser;
+    show
+        ClockService,
+        ProviderSignInBrowser,
+        SessionRejectionSignal,
+        UnsupportedProviderSignInBrowser;
 import 'package:models/domain.dart';
 import 'package:native_network/src/auth/auth_repository_impl.dart';
 import 'package:native_network/src/auth/token_storage_service.dart';
@@ -43,6 +49,10 @@ import 'package:observability/observability.dart' show FeedbackTransport;
 /// Beside the Dio, it registers the [RealtimeEndpoint] the session's socket
 /// connects with, whose token comes from the same [TokenStorageService]
 /// (#473).
+///
+/// Beside the repository, it registers the [SessionRejectionSignal] a 401
+/// from any of this server's data endpoints is reported to, and that the
+/// sync drain and the search socket report to as well (#484).
 ///
 /// Lifecycle: the container owns the shared [Dio] and closes it on dispose; the
 /// repository only closes its own resources (it must not close a [Dio] that
@@ -102,6 +112,12 @@ void registerServerNetwork({
   const factory = DefaultDioFactory();
   container.registerSingleton<DioFactory>(factory);
 
+  // #484: assigned once the repository it re-reads the session through
+  // exists, below, before this function returns. Nothing can read it sooner:
+  // this function is synchronous, and Dio runs every interceptor in a later
+  // event, never inside the call that starts a request.
+  late final SessionRejectionSignal sessionRejection;
+
   final dio = factory.buildForServer(
     baseUrl: config.serverUrl,
     interceptors: [
@@ -112,6 +128,20 @@ void registerServerNetwork({
       // tracing is at debug and self-gates to non-release builds; a
       // transport failure logs at error always.
       NetworkLogInterceptor(),
+      // #484: reports a 401 from any endpoint outside the auth API, so the
+      // session is re-read. After the log, which stays first, and ahead of
+      // the token and clock interceptors, so the clock's send stamp stays
+      // last. Dio runs response interceptors in the same order, not
+      // reversed, and none of these changes a response, so it sees the
+      // status the server sent. `sessionAuthBase` builds the auth base the
+      // way this Dio builds the repository's requests.
+      SessionRejectionInterceptor(
+        authBase: sessionAuthBase(
+          config.serverUrl,
+          config.cachedIdentity.authBasePath,
+        ),
+        onRejected: () => unawaited(sessionRejection.report()),
+      ),
       TokenInterceptor(tokenStorage: tokenStorage, clock: clock),
       // #12: feeds server Date headers to the skew estimator. Every
       // response through this Dio is a free calibration sample. LAST in
@@ -131,9 +161,17 @@ void registerServerNetwork({
     clock: clock,
     providerBrowser: providerBrowser,
   );
+  // #484: what the interceptor above reports to. Concurrent reports of a
+  // session that is gone share one `getSession()`, whose definitive "no
+  // session" ends the session through the repository's own path.
+  sessionRejection = MergedSessionRevalidation(authRepository.getSession);
   // Disposable, so the container closes it with the scope.
   container
     ..registerSingleton<AuthRepository>(authRepository)
+    // #484: the same signal for the user scope's sync drain and search
+    // socket, so one refused session costs one session read however many
+    // places saw it. Holds nothing to dispose.
+    ..registerSingleton<SessionRejectionSignal>(sessionRejection)
     // #97: the per-server feedback transport. Registered here — not in its
     // own installer — per the registration convention: services sharing a
     // per-server resource register in that resource's installer, and this

@@ -1202,6 +1202,120 @@ void main() {
           ),
         ],
       );
+
+      // A failure state already means "signed out, with a reason" (#1033).
+      // The web repository publishes unauthenticated on every session
+      // re-read while signed out, so the mirror must not erase the reason.
+      group('a failure banner', () {
+        late StreamController<AuthState> repoStates;
+
+        setUp(() {
+          repoStates = StreamController<AuthState>();
+          addTearDown(repoStates.close);
+          when(() => mockRepo.watchAuthState())
+              .thenAnswer((_) => repoStates.stream);
+        });
+
+        blocTest<AuthBloc, AuthBlocState>(
+          'a provider-return failure at startup survives the first '
+          'repository unauthenticated',
+          build: () {
+            when(() => mockRepo.getSession()).thenAnswer((_) async => null);
+            when(() => mockRepo.takeProviderSignInReturn()).thenReturn(
+              const AuthProviderSignInException(
+                ProviderSignInFailureReason.accountNotLinked,
+              ),
+            );
+            return AuthBloc(authRepository: mockRepo);
+          },
+          act: (b) async {
+            b.add(const AuthSessionCheckRequested());
+            await pumpEventQueue();
+            repoStates.add(const AuthStateUnauthenticated());
+          },
+          expect: () => [
+            const AuthSessionCheckInProgress(),
+            const AuthFailureProviderSignIn(
+              ProviderSignInFailureReason.accountNotLinked,
+            ),
+          ],
+        );
+
+        // The startup race: the session read itself publishes
+        // unauthenticated before it returns, so the repository's word can
+        // land either during the check (the in-progress guard) or after the
+        // provider failure (the failure-state guard).
+        blocTest<AuthBloc, AuthBlocState>(
+          'a provider-return failure at startup survives an unauthenticated '
+          'the session read publishes itself',
+          build: () {
+            when(() => mockRepo.getSession()).thenAnswer((_) async {
+              repoStates.add(const AuthStateUnauthenticated());
+              return null;
+            });
+            when(() => mockRepo.takeProviderSignInReturn()).thenReturn(
+              const AuthProviderSignInException(
+                ProviderSignInFailureReason.accountNotLinked,
+              ),
+            );
+            return AuthBloc(authRepository: mockRepo);
+          },
+          act: (b) async {
+            b.add(const AuthSessionCheckRequested());
+            await pumpEventQueue();
+          },
+          expect: () => [
+            const AuthSessionCheckInProgress(),
+            const AuthFailureProviderSignIn(
+              ProviderSignInFailureReason.accountNotLinked,
+            ),
+          ],
+        );
+
+        blocTest<AuthBloc, AuthBlocState>(
+          'a password failure survives a later repository unauthenticated '
+          '(focus re-read)',
+          build: () => AuthBloc(authRepository: mockRepo),
+          seed: () => const AuthFailureInvalidCredentials(),
+          act: (b) async {
+            repoStates.add(const AuthStateUnauthenticated());
+            await pumpEventQueue();
+          },
+          expect: () => const <AuthBlocState>[],
+        );
+
+        blocTest<AuthBloc, AuthBlocState>(
+          'a session-check failure is still replaced by a repository '
+          'unauthenticated',
+          build: () => AuthBloc(authRepository: mockRepo),
+          seed: () => const AuthSessionCheckFailed(
+            kind: SessionCheckFailureKind.unreachable,
+          ),
+          act: (b) async {
+            repoStates.add(const AuthStateUnauthenticated());
+            await pumpEventQueue();
+          },
+          expect: () => [
+            // Pins the cause itself, not whatever the default is.
+            // ignore: avoid_redundant_argument_values
+            const AuthUnauthenticated(cause: SignOutCause.sessionLost),
+          ],
+        );
+
+        blocTest<AuthBloc, AuthBlocState>(
+          'sign-out from a failure state still flips it',
+          build: () {
+            when(() => mockRepo.signOut()).thenAnswer((_) async {});
+            return AuthBloc(authRepository: mockRepo);
+          },
+          seed: () => const AuthFailureInvalidCredentials(),
+          act: (b) => b.add(const AuthSignOutRequested()),
+          expect: () => [
+            const AuthLoading(),
+            const AuthUnauthenticated(cause: SignOutCause.user),
+          ],
+        );
+      });
     });
   });
 }

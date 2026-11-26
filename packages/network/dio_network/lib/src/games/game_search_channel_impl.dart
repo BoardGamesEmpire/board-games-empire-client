@@ -4,6 +4,7 @@ import 'package:dio_network/src/games/game_search_wire.dart';
 import 'package:dio_network/src/games/games_remote_data_source_impl.dart';
 import 'package:dio_network/src/network/api_error_envelope.dart';
 import 'package:dio_network/src/network/remote_failure.dart';
+import 'package:interfaces/services.dart' show SessionRejectionSignal;
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 
@@ -55,14 +56,23 @@ abstract final class _Wire {
 ///
 /// `RealtimeInstaller` registers one in the user-session scope, beside the
 /// connection, so each screen's channel rides the session's one socket.
+///
+/// Each channel reports an `auth:error` to `sessionRejection`, the server
+/// scope's [SessionRejectionSignal], as a REST 401 is reported (#484).
+/// Without one, a refused session only fails the searches it ends.
 final class GameSearchStreamSourceImpl implements GameSearchStreamSource {
-  const GameSearchStreamSourceImpl(this._connection);
+  const GameSearchStreamSourceImpl(this._connection, {this._sessionRejection});
 
   final RealtimeConnection _connection;
+  final SessionRejectionSignal? _sessionRejection;
 
   @override
-  GameSearchChannel open() =>
-      GameSearchChannelImpl(_connection.lease(_Wire.namespace));
+  GameSearchChannel open() => GameSearchChannelImpl(
+    _connection.lease(_Wire.namespace),
+    onSessionRejected: _sessionRejection == null
+        ? null
+        : () => unawaited(_sessionRejection.report()),
+  );
 }
 
 /// [GameSearchChannel] over one lease on the `games/search` namespace
@@ -142,7 +152,8 @@ final class GameSearchStreamSourceImpl implements GameSearchStreamSource {
 ///   any other 4xx [GamesRemotePermanentException]. The server never
 ///   registered a refused search, so nothing is cancelled.
 /// - **`auth:error`** fails every search as transient, with status 401, as
-///   REST reads a 401.
+///   REST reads a 401. Each search it ends calls `onSessionRejected` first,
+///   so the session is re-read as after a REST 401 (#484).
 /// - **A frame this client can't read** fails the search as permanent, as an
 ///   unreadable REST body is, and cancels it.
 /// - **Cancelling the subscription** before the end sends `search:cancel`,
@@ -161,9 +172,14 @@ final class GameSearchChannelImpl implements GameSearchChannel {
     this._lease, {
     this._idleTimeout = GamesRemoteDataSourceImpl.searchReceiveTimeout,
     this._newCorrelationId = uuidV4,
+    this._onSessionRejected,
   });
 
   final RealtimeLease _lease;
+
+  /// Told when the server refuses the session on `auth:error` (#484). Null
+  /// reports it nowhere.
+  final void Function()? _onSessionRejected;
 
   /// How long a search waits for its next frame before it ends cut short.
   final Duration _idleTimeout;
@@ -333,6 +349,7 @@ final class _Search {
         );
         return;
       case _Wire.authError:
+        _channel._onSessionRejected?.call();
         _fail(
           GamesRemoteTransientException(
             'Game search ended: the server no longer accepts this session',

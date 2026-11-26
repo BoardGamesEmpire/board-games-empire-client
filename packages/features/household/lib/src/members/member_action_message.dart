@@ -38,6 +38,10 @@ String memberActionMessage(
     _ => l10n.householdMemberErrorRejected,
   },
   HouseholdMemberActionResult.failed => switch (outcome.error) {
+    // The server answered and refused the session (#484), so "couldn't
+    // reach the server" would be false.
+    HouseholdMemberTransientException(statusCode: 401) =>
+      l10n.householdMemberErrorUnexpected,
     HouseholdMemberTransientException() => l10n.householdMemberErrorOffline,
     _ => l10n.householdMemberErrorUnexpected,
   },

@@ -31,6 +31,19 @@ void main() {
       }
     });
 
+    test('a 401 is unexpected, not unreachable: the server answered', () {
+      for (final action in HouseholdInviteAction.values) {
+        expect(
+          message(
+            action,
+            const HouseholdInviteTransientException('refused', statusCode: 401),
+          ),
+          unexpected,
+          reason: action.name,
+        );
+      }
+    });
+
     test('a permanent failure, or any other error, is unexpected', () {
       for (final action in HouseholdInviteAction.values) {
         expect(

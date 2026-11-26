@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
+import 'package:interfaces/services.dart' show SessionRejectionSignal;
 import 'package:interfaces/sync.dart';
 import 'package:models/domain.dart';
 import 'package:observability/observability.dart';
@@ -49,10 +50,13 @@ import 'package:sync_queue/src/sync_queue_drain.dart';
 ///
 /// ## A refused session
 ///
-/// A 401 asks the [AuthRepository], when the composition has one, whether
-/// the session still stands, once per pass. Only the session endpoint signs
-/// anyone out, so without this a session revoked mid-session would leave an
-/// app that looks signed in with a drain that has stopped.
+/// A 401 asks whether the session still stands, once per pass. Only the
+/// session endpoint signs anyone out, so without this a session revoked
+/// mid-session would leave an app that looks signed in with a drain that has
+/// stopped. It asks through the server's [SessionRejectionSignal] when the
+/// composition has one, so when the session is gone, the read the per-server
+/// Dio's interceptor already started for the same refused send answers the
+/// drain too (#484). Without one, it asks the [AuthRepository] directly.
 ///
 /// ## Nothing here may throw
 ///
@@ -85,6 +89,9 @@ class SyncQueueDrainInstaller implements UserScopeInstaller {
       return;
     }
 
+    final sessionRejection = container.isRegistered<SessionRejectionSignal>()
+        ? container.get<SessionRejectionSignal>()
+        : null;
     final auth = container.isRegistered<AuthRepository>()
         ? container.get<AuthRepository>()
         : null;
@@ -96,8 +103,10 @@ class SyncQueueDrainInstaller implements UserScopeInstaller {
       sender: container.get<SyncOperationSender>(),
       collection: container.get<GameCollectionRepository>(),
       // A definitive "no session" signs the user out through the auth
-      // layer's own path; the queue survives it (#98).
-      revalidateSession: auth?.getSession,
+      // layer's own path; the queue survives it (#98). Through the signal,
+      // a gone session is answered by the re-read the interceptor already
+      // started for the same 401 (#484).
+      revalidateSession: sessionRejection?.report ?? auth?.getSession,
       exclusive: lock == null
           ? null
           : (lock: lock, name: 'bge.sync_drain.${server.serverId}.$userId'),

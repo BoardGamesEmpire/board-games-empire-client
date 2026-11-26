@@ -127,6 +127,90 @@ void main() {
     ],
   );
 
+  // The server granted the session and this device could not store it
+  // (#726). The provider section words it, as it does every provider failure.
+  blocTest<AuthBloc, AuthBlocState>(
+    'provider: AuthDeviceStorageException → '
+    'AuthFailureProviderSignIn(deviceStorage)',
+    build: () {
+      when(
+        () => repo.signInWithProvider(any()),
+      ).thenAnswer((_) => Future.error(const AuthDeviceStorageException()));
+      return AuthBloc(authRepository: repo);
+    },
+    act: (b) => b.add(const AuthProviderSignInRequested(kOidcStrategy)),
+    expect: () => [
+      loading,
+      const AuthFailureProviderSignIn(
+        ProviderSignInFailureReason.deviceStorage,
+      ),
+    ],
+  );
+
+  // Nothing raw may leave a credential handler (#181, #726). The report is
+  // recorded rather than pinned with `blocTest`'s `errors:`, which would let a
+  // handler stranded on its loading state pass: see `recordBlocErrors`.
+  group('a throw that is not an AuthException', () {
+    final unexpected = StateError('x');
+    late List<Object> reported;
+    setUp(() => reported = recordBlocErrors());
+
+    blocTest<AuthBloc, AuthBlocState>(
+      'provider: a non-AuthException throw → '
+      'AuthFailureProviderSignIn(generic) and onError',
+      build: () {
+        when(
+          () => repo.signInWithProvider(any()),
+        ).thenAnswer((_) => Future.error(unexpected));
+        return AuthBloc(authRepository: repo);
+      },
+      act: (b) => b.add(const AuthProviderSignInRequested(kOidcStrategy)),
+      expect: () => [
+        loading,
+        isA<AuthFailureProviderSignIn>()
+            .having(
+              (s) => s.reason,
+              'reason',
+              ProviderSignInFailureReason.generic,
+            )
+            .having((s) => s.cause, 'cause', same(unexpected)),
+      ],
+      verify: (_) => expect(reported, [same(unexpected)]),
+    );
+
+    // As for a modelled ending (#280): on web another tab's sign-in reaches
+    // this bloc while the attempt is pending. The session is kept, and the
+    // error is still reported (#181).
+    late StreamController<AuthState> repoStates;
+    late Completer<ProviderSignInOutcome> gate;
+
+    blocTest<AuthBloc, AuthBlocState>(
+      'provider backstop keeps a session that arrived meanwhile, and still '
+      'reports the error',
+      build: () {
+        repoStates = StreamController<AuthState>();
+        addTearDown(repoStates.close);
+        // Made here, inside `blocTest`'s error zone: an error can't cross
+        // into it from a future made in `setUp`.
+        gate = Completer<ProviderSignInOutcome>();
+        when(() => repo.watchAuthState()).thenAnswer((_) => repoStates.stream);
+        when(
+          () => repo.signInWithProvider(any()),
+        ).thenAnswer((_) => gate.future);
+        return AuthBloc(authRepository: repo);
+      },
+      act: (b) async {
+        b.add(const AuthProviderSignInRequested(kOidcStrategy));
+        await pumpEventQueue();
+        repoStates.add(AuthStateAuthenticated(session: testAuthResponse()));
+        await pumpEventQueue();
+        gate.completeError(unexpected);
+      },
+      expect: () => [loading, AuthAuthenticated(session: testAuthResponse())],
+      verify: (_) => expect(reported, [same(unexpected)]),
+    );
+  });
+
   blocTest<AuthBloc, AuthBlocState>(
     'a superseded attempt lands quietly',
     build: () {

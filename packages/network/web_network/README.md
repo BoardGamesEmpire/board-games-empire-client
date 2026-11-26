@@ -11,7 +11,7 @@ and no orchestrator.
 
 Depends on `dio_network` for the platform-neutral `DioFactory` seam and the
 pieces that are genuinely shared — `WellKnownClientImpl`,
-`FeedbackDioTransport`, `HouseholdRemoteDataSourceImpl`, and two of the three
+`FeedbackDioTransport`, `HouseholdRemoteDataSourceImpl`, and three of the four
 interceptors below. The native token plumbing lives in `native_network`, which
 the browser build does not depend on.
 
@@ -28,14 +28,14 @@ the browser build does not depend on.
   than a `ServerConfig`, since the web has nothing persisted to read one from.
 
   Interceptor order (see the function for the reasoning):
-  `NetworkLogInterceptor` (#282) → `ClockSkewInterceptor` (#118) →
-  `WebClockSkewDiagnosticInterceptor` (#281). Native's `TokenInterceptor` has
-  no counterpart here. The last of the three is internal to this function and
-  is not exported: it reports once, per scope, that this origin's responses
-  carry no readable `Date` header — which on web means a misconfiguration
-  rather than the benign absence it is on native, and which the registered
-  clock cannot see, because a response it takes no sample from never reaches
-  it.
+  `NetworkLogInterceptor` (#282) → `SessionRejectionInterceptor` (#484) →
+  `ClockSkewInterceptor` (#118) → `WebClockSkewDiagnosticInterceptor` (#281).
+  Native's `TokenInterceptor` has no counterpart here. The last of the four is
+  internal to this function and is not exported: it reports once, per scope,
+  that this origin's responses carry no readable `Date` header — which on web
+  means a misconfiguration rather than the benign absence it is on native, and
+  which the registered clock cannot see, because a response it takes no sample
+  from never reaches it.
 - **`WebDioFactory`** — enables `withCredentials` so the browser sends the
   session cookie, and passes no token interceptor. The base URL comes from
   the address bar via `Uri.base.origin`, not from `ServerConfig.serverUrl`.

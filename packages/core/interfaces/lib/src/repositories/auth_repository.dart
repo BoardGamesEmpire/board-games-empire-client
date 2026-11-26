@@ -18,11 +18,15 @@ abstract class AuthRepository {
   /// Throws [AuthInvalidCredentialsException] for a 401, or a 403 whose body
   /// carries no code it recognises.
   /// Throws [AuthEmailNotVerifiedException] for a 403 `EMAIL_NOT_VERIFIED`.
+  /// Throws [AuthTwoFactorRequiredException] for BetterAuth's
+  /// `twoFactorRedirect` answer, with nothing stored and no reconcile (#704).
   /// Throws [AuthNetworkException] for connectivity failures.
   /// Throws [AuthLocalDecodeException] when the server answered but this
   /// device could not decode the reply.
   /// Throws [AuthSessionNotGrantedException] when the grant itself declines
   /// a session — BetterAuth's `token: null` envelope.
+  /// Throws [AuthDeviceStorageException] when the server granted a session and
+  /// this device could not store it; the session is revoked best-effort.
   /// Throws [AuthServerException] for unexpected server errors, including a
   /// grant that carried a session the server then reports it does not have.
   ///
@@ -48,6 +52,7 @@ abstract class AuthRepository {
   /// Throws [AuthSessionNotGrantedException] when the grant itself declines
   /// a session — BetterAuth's `token: null` envelope, which is how a server
   /// requiring email verification answers a sign-up.
+  /// Throws [AuthDeviceStorageException] as on [signIn].
   /// Throws [AuthServerException] for unexpected server errors, including a
   /// grant that carried a session the server then reports it does not have.
   ///
@@ -225,7 +230,7 @@ abstract class AuthRepository {
   /// refuses, or when a return fails a check; its reason is mapped from the
   /// error code, never from text. Throws [AuthRateLimitedException] for a 429
   /// on the token exchange and [AuthNetworkException] for connectivity
-  /// failures.
+  /// failures. Throws [AuthDeviceStorageException] as on [signIn].
   Future<ProviderSignInOutcome> signInWithProvider(OidcStrategy strategy);
 
   /// Whether this device can sign in through a provider on this server.
@@ -619,6 +624,37 @@ final class AuthSessionNotGrantedException extends AuthException {
   const AuthSessionNotGrantedException({
     super.message =
         'The server accepted the credentials but granted no session.',
+  });
+}
+
+/// The server granted a session and this device could not keep it (#726):
+/// the grant's token could not be written to secure storage, or read back
+/// for the reconcile that follows.
+///
+/// The fault is the device's (storage full, a keychain or keystore that
+/// refused the write), not the server's or the credentials'. By the time this
+/// is thrown the repository has cleared what it could and asked the server,
+/// best-effort, to end the session it granted, so no live session is left
+/// that nobody holds. [cause] carries the storage fault.
+final class AuthDeviceStorageException extends AuthException {
+  const AuthDeviceStorageException({
+    super.message =
+        'This device could not keep the session the server granted.',
+    super.cause,
+  });
+}
+
+/// The server checked the password and wants a second sign-in step, because
+/// the account has two-factor turned on (#704).
+///
+/// BetterAuth's two-factor hook answers a password sign-in with
+/// `twoFactorRedirect: true` and no user, and grants no usable session. This
+/// app has no second step yet (#1121), so the sign-in ends here: nothing from
+/// the answer is stored. Not a wrong password and not a server fault, and a
+/// retry gets the same answer.
+final class AuthTwoFactorRequiredException extends AuthException {
+  const AuthTwoFactorRequiredException({
+    super.message = 'This account needs a second sign-in step.',
   });
 }
 

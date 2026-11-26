@@ -574,4 +574,131 @@ void main() {
       expect(repo.currentAuthState, isNot(isA<AuthStateAuthenticated>()));
     });
   });
+
+  // BetterAuth's two-factor hook answers a correct password with this body and
+  // no session (#704). There is nothing to reconcile, and the read would have
+  // nothing to confirm. The second step is #1121.
+  group('a two-factor answer to a password sign-in (#704)', () {
+    /// Records every request path [dio] sends.
+    List<String> recordRequests(Dio dio) {
+      final requested = <String>[];
+      dio.interceptors.add(
+        InterceptorsWrapper(
+          onRequest: (options, handler) {
+            requested.add(options.path);
+            handler.next(options);
+          },
+        ),
+      );
+      return requested;
+    }
+
+    test('sign-in answered with twoFactorRedirect throws '
+        'AuthTwoFactorRequiredException without a reconcile', () async {
+      final dio = routingDio({
+        '/sign-in/email': ('{"twoFactorRedirect": true}', 200),
+        '/get-session': ('', 200),
+      });
+      final requested = recordRequests(dio);
+      final repo = repoWith(dio);
+      final before = repo.currentAuthState;
+
+      await expectLater(
+        repo.signIn(email: 'a@b.c', password: 'pw'),
+        throwsA(isA<AuthTwoFactorRequiredException>()),
+      );
+
+      expect(requested, isNot(contains(endsWith('/get-session'))));
+      expect(requested, [endsWith('/sign-in/email')]);
+      expect(repo.currentAuthState, same(before));
+    });
+
+    // The redirect sets no session cookie this client can prove, so it must
+    // not release a latch raised over a cookie a failed revocation left live
+    // (#348). The probe is the one `web_auth_repository_impl_test.dart` uses:
+    // while the latch holds, `getSession` answers null without asking.
+    test('a twoFactorRedirect sign-in leaves a held #348 latch held', () async {
+      final dio = routingDio({
+        '/sign-out': ('{}', 500),
+        '/sign-in/email': ('{"twoFactorRedirect": true}', 200),
+        '/get-session': (jsonEncode(_sessionJson()), 200),
+      });
+      final requested = recordRequests(dio);
+      final repo = repoWith(dio);
+
+      await repo.signOut();
+
+      await expectLater(
+        repo.signIn(email: 'a@b.c', password: 'pw'),
+        throwsA(isA<AuthTwoFactorRequiredException>()),
+      );
+
+      expect(await repo.getSession(), isNull, reason: 'the latch still holds');
+      expect(requested, isNot(contains(endsWith('/get-session'))));
+    });
+
+    // The check comes before the parse and its `token: null` reading. A body
+    // that parsed, with a null token, would otherwise read as the server
+    // declining a session, and a reconcile that found a cookie would adopt it.
+    test('a twoFactorRedirect body that would parse as a no-session grant '
+        '(a user and a null token) is still two-factor', () async {
+      final dio = routingDio({
+        '/sign-in/email': (
+          jsonEncode({
+            'twoFactorRedirect': true,
+            'token': null,
+            'user': _grantJson()['user'],
+          }),
+          200,
+        ),
+        '/get-session': ('', 200),
+      });
+      final requested = recordRequests(dio);
+      final repo = repoWith(dio);
+
+      await expectLater(
+        repo.signIn(email: 'a@b.c', password: 'pw'),
+        throwsA(isA<AuthTwoFactorRequiredException>()),
+      );
+      expect(requested, isNot(contains(endsWith('/get-session'))));
+    });
+
+    // Likewise a body that would parse as a full grant: its token is no
+    // proof of a session, so neither the reconcile nor the latch moves.
+    test(
+      'a twoFactorRedirect body that also carries a token and a user is '
+      'still two-factor: no reconcile, and a held #348 latch stays held',
+      () async {
+        final dio = routingDio({
+          '/sign-out': ('{}', 500),
+          '/sign-in/email': (
+            jsonEncode({
+              'twoFactorRedirect': true,
+              'token': 'tok',
+              'user': _grantJson()['user'],
+            }),
+            200,
+          ),
+          '/get-session': (jsonEncode(_sessionJson()), 200),
+        });
+        final requested = recordRequests(dio);
+        final repo = repoWith(dio);
+
+        await repo.signOut();
+
+        await expectLater(
+          repo.signIn(email: 'a@b.c', password: 'pw'),
+          throwsA(isA<AuthTwoFactorRequiredException>()),
+        );
+        expect(requested, isNot(contains(endsWith('/get-session'))));
+
+        expect(
+          await repo.getSession(),
+          isNull,
+          reason: 'the latch still holds',
+        );
+        expect(requested, isNot(contains(endsWith('/get-session'))));
+      },
+    );
+  });
 }

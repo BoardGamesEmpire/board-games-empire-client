@@ -4,6 +4,7 @@ import 'package:di/di.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
+import 'package:interfaces/services.dart';
 import 'package:interfaces/sync.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
@@ -26,6 +27,16 @@ class _FakeIdentityGuard implements SessionIdentityGuard {
   Future<SessionConfirmation> confirm(String userId) async {
     askedFor.add(userId);
     return answer;
+  }
+}
+
+/// Counts the rejected sessions reported to it (#484).
+class _FakeSessionRejectionSignal implements SessionRejectionSignal {
+  int reports = 0;
+
+  @override
+  Future<void> report() async {
+    reports += 1;
   }
 }
 
@@ -297,7 +308,32 @@ void main() {
       expect(h.householdRemote.creates, hasLength(1));
     });
 
-    test('a refused session asks the auth layer', () async {
+    test('the drain revalidates through the SessionRejectionSignal when one '
+        'is registered', () async {
+      // Through the signal, the drain's re-read joins one already running
+      // for another 401 on the same session (#484).
+      final auth = _MockAuthRepository();
+      when(auth.getSession).thenAnswer((_) async => null);
+      container.registerSingleton<AuthRepository>(auth);
+      final signal = _FakeSessionRejectionSignal();
+      container.registerSingleton<SessionRejectionSignal>(signal);
+      register();
+      await h.queuedCreate();
+      h.householdRemote.respond = (_) =>
+          throw const HouseholdRemoteTransientException(
+            'Household create failed',
+            statusCode: 401,
+          );
+      await installSender();
+
+      await installDrain();
+      await pumpEventQueue();
+
+      expect(signal.reports, 1);
+      verifyNever(auth.getSession);
+    });
+
+    test('falls back to AuthRepository.getSession without a signal', () async {
       final auth = _MockAuthRepository();
       when(auth.getSession).thenAnswer((_) async => null);
       container.registerSingleton<AuthRepository>(auth);

@@ -120,6 +120,26 @@ void main() {
   );
 
   blocTest<AuthBloc, AuthBlocState>(
+    'warns (not errors) when the account needs a second sign-in step — the '
+    'password was right and nothing is broken (#704)',
+    build: () {
+      when(
+        () => repo.signIn(
+          email: any(named: 'email'),
+          password: any(named: 'password'),
+        ),
+      ).thenThrow(const AuthTwoFactorRequiredException());
+      return AuthBloc(authRepository: repo);
+    },
+    act: (b) =>
+        b.add(const AuthSignInRequested(email: 'a@b.co', password: 'x')),
+    verify: (_) {
+      expect(warns(), isNotEmpty);
+      expect(errors(), isEmpty);
+    },
+  );
+
+  blocTest<AuthBloc, AuthBlocState>(
     'warns (not errors) when the server wants the email confirmed — the '
     'user has a step to take, and nothing is broken (#394)',
     build: () {
@@ -153,6 +173,27 @@ void main() {
     act: (b) =>
         b.add(const AuthSignInRequested(email: 'a@b.co', password: 'x')),
     verify: (_) => expect(errors(), isNotEmpty),
+  );
+
+  blocTest<AuthBloc, AuthBlocState>(
+    'logs a raw sign-in throw at error once, from onError, not again for the '
+    'failure state it lands on (#726)',
+    build: () {
+      when(
+        () => repo.signIn(
+          email: any(named: 'email'),
+          password: any(named: 'password'),
+        ),
+      ).thenThrow(StateError('raw'));
+      return AuthBloc(authRepository: repo);
+    },
+    act: (b) =>
+        b.add(const AuthSignInRequested(email: 'a@b.co', password: 'x')),
+    verify: (_) {
+      expect(errors(), hasLength(1));
+      expect(errors().single.message, 'Uncaught error in AuthBloc');
+      expect(errors().single.error, isA<StateError>());
+    },
   );
 
   blocTest<AuthBloc, AuthBlocState>(

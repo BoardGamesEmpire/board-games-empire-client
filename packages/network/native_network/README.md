@@ -26,7 +26,8 @@ container owns the `Dio` and closes it on dispose; individual clients must not
 close a `Dio` they share.
 
 Interceptor order (see `register_server_network.dart` for the reasoning):
-`NetworkLogInterceptor` → `TokenInterceptor` → `ClockSkewInterceptor`.
+`NetworkLogInterceptor` → `SessionRejectionInterceptor` (#484) →
+`TokenInterceptor` → `ClockSkewInterceptor`.
 
 ## Contents
 

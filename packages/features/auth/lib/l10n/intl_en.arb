@@ -151,6 +151,10 @@
   "@authProviderErrorGeneric": {
     "description": "Provider sign-in failure, under the heading authSignInErrorTitle, for any cause no other message covers. The server's and the provider's own error text is never shown, so this must not promise a specific reason."
   },
+  "authProviderErrorDeviceStorage": "Couldn't save your sign-in on this device. Make sure it has free storage space, then try again.",
+  "@authProviderErrorDeviceStorage": {
+    "description": "The provider section's copy of authErrorDeviceStorage, under the heading authSignInErrorTitle: the provider and the server signed the user in, but this device could not store the session, so the app ended it. The fault is the device's, not the server's, the provider's or the user's account; the copy must not suggest any of those."
+  },
   "authErrorRequired": "This field is required",
   "@authErrorRequired": {
     "description": "Validation error for empty required field"
@@ -204,6 +208,14 @@
   "authErrorSessionNotGranted": "This server accepted your details but didn't sign you in. It may need you to confirm your email first — check your inbox, then sign in.",
   "@authErrorSessionNotGranted": {
     "description": "Submission error: the server accepted the credentials but started no session, typically because it requires email verification. The server does not say why, and a duplicate sign-up gets the same answer as a new account, so the copy must not claim an account was created or that verification is certainly the reason."
+  },
+  "authErrorDeviceStorage": "Couldn't save your sign-in on this device. Make sure it has free storage space, then try again.",
+  "@authErrorDeviceStorage": {
+    "description": "Submission error: the server signed the user in, but this device could not store the session, so the app ended it. The fault is the device's, not the server's or the password's; the copy must not suggest either."
+  },
+  "authErrorTwoFactorRequired": "This account needs a verification code to sign in, and this app can't ask for one yet.",
+  "@authErrorTwoFactorRequired": {
+    "description": "Submission error: the password was right, but the account has two-factor turned on and the app has no second step yet (#1121). Must not suggest the password was wrong or that the server failed."
   },
   "authErrorEmailNotVerified": "Confirm your email before signing in. Check your inbox for the link, then try again.",
   "@authErrorEmailNotVerified": {

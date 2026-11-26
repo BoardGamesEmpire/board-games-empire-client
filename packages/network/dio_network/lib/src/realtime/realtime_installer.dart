@@ -3,6 +3,7 @@ import 'package:dio_network/src/realtime/realtime_connection_impl.dart';
 import 'package:dio_network/src/realtime/realtime_endpoint.dart';
 import 'package:dio_network/src/realtime/socket_manager.dart';
 import 'package:interfaces/orchestration.dart';
+import 'package:interfaces/services.dart' show SessionRejectionSignal;
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
@@ -21,6 +22,10 @@ import 'package:observability/observability.dart';
 /// `registerServerNetworkWeb`), and is reached because the user-scope view
 /// falls through to it. A server scope without one gets neither, and a
 /// feature does what it does without a socket: search goes over REST.
+///
+/// The server scope's [SessionRejectionSignal], when it has one, is found the
+/// same way and handed to the search source, so a socket's `auth:error`
+/// reaches the same session re-read as a REST 401 (#484).
 ///
 /// It never throws or waits, so it may sit anywhere in an installer list.
 class RealtimeInstaller implements UserScopeInstaller {
@@ -49,13 +54,19 @@ class RealtimeInstaller implements UserScopeInstaller {
       endpoint: container.get<RealtimeEndpoint>(),
       managerFactory: _managerFactory,
     );
+    final sessionRejection = container.isRegistered<SessionRejectionSignal>()
+        ? container.get<SessionRejectionSignal>()
+        : null;
     container
       ..registerSingleton<RealtimeConnection>(
         connection,
         dispose: (_) => connection.close(),
       )
       ..registerSingleton<GameSearchStreamSource>(
-        GameSearchStreamSourceImpl(connection),
+        GameSearchStreamSourceImpl(
+          connection,
+          sessionRejection: sessionRejection,
+        ),
       );
   }
 }

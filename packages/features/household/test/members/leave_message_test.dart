@@ -50,6 +50,17 @@ void main() {
       );
     });
 
+    test('a 401 is unexpected, not unreachable: the server answered', () {
+      expect(
+        message(
+          HouseholdMemberActionResult.failed,
+          const HouseholdMemberTransientException('refused', statusCode: 401),
+        ),
+        'Something went wrong. The household is being read again to show '
+        'where things stand.',
+      );
+    });
+
     test('anything else is unexpected', () {
       expect(
         message(

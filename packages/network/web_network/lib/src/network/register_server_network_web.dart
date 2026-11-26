@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:di/di.dart' show ServerSkewClockService;
 import 'package:dio/dio.dart';
 import 'package:dio_network/dio_network.dart'
@@ -14,15 +16,19 @@ import 'package:dio_network/dio_network.dart'
         HouseholdInviteRemoteDataSourceImpl,
         HouseholdMemberRemoteDataSourceImpl,
         HouseholdRemoteDataSourceImpl,
+        MergedSessionRevalidation,
         NetworkLogInterceptor,
         NotificationRemoteDataSourceImpl,
         RealtimeEndpoint,
+        SessionRejectionInterceptor,
         SystemSettingsRemoteDataSourceImpl,
         UserProfileRemoteDataSourceImpl,
-        UserRemoteDataSourceImpl;
+        UserRemoteDataSourceImpl,
+        sessionAuthBase;
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
-import 'package:interfaces/services.dart' show ClockService;
+import 'package:interfaces/services.dart'
+    show ClockService, SessionRejectionSignal;
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart'
     show
@@ -80,6 +86,10 @@ import 'package:web_network/src/network/web_dio_factory.dart';
 /// Without it, as in every VM suite and the storage-less bootstrap, the
 /// repository reports provider sign-in as unavailable.
 ///
+/// Beside the repository, it registers the [SessionRejectionSignal] a 401
+/// from any of the origin's data endpoints is reported to, and that the sync
+/// drain and the search socket report to as well (#484).
+///
 /// Lifecycle: the container owns the shared [Dio] and closes it on dispose;
 /// the repository only closes its own resources.
 void registerServerNetworkWeb({
@@ -109,11 +119,17 @@ void registerServerNetworkWeb({
     dispose: (_) => clock.dispose(),
   );
 
+  // #484: assigned once the repository it re-reads the session through
+  // exists, below, before this function returns. Nothing can read it sooner:
+  // this function is synchronous, and Dio runs every interceptor in a later
+  // event, never inside the call that starts a request.
+  late final SessionRejectionSignal sessionRejection;
+
   final origin = originProvider();
   final dio = factory.buildForServer(
     baseUrl: origin,
     interceptors: [
-      // #282: permanent network observability, first of the three installed
+      // #282: permanent network observability, first of the four installed
       // here so it observes every outgoing request and its resolution — the
       // same placement and the same rationale as native's. (Dio still seeds
       // its own `ImplyContentTypeInterceptor` ahead of all of them, on both
@@ -123,13 +139,23 @@ void registerServerNetworkWeb({
       // this: until now the browser stack kept no record of any request it
       // made.
       NetworkLogInterceptor(),
+      // #484: reports a 401 from any endpoint outside the auth API, so the
+      // session is re-read. After the log, which stays first, and ahead of
+      // the clock-skew interceptors, as on native. Dio runs response
+      // interceptors in the same order, not reversed, and none of these
+      // changes a response, so it sees the status the server sent. The auth
+      // base is built as native's is, by `sessionAuthBase`.
+      SessionRejectionInterceptor(
+        authBase: sessionAuthBase(origin, identity.authBasePath),
+        onRejected: () => unawaited(sessionRejection.report()),
+      ),
       // #118: every response through this Dio is a free calibration sample,
       // so no dedicated calibration request is ever needed. Native installs
       // this last, behind `TokenInterceptor`, so its send stamp excludes the
       // async token-storage read; on web there is nothing async to sit behind
-      // — the browser attaches the cookie itself, and the log interceptor
-      // above is synchronous — so the stamp is still taken immediately
-      // before dispatch.
+      // — the browser attaches the cookie itself, and both interceptors
+      // above pass a request on synchronously — so the stamp is still taken
+      // immediately before dispatch.
       ClockSkewInterceptor(recorder: clock),
       // #281: reports once if this origin's responses carry no readable
       // `Date`, which on web means a misconfiguration rather than the benign
@@ -154,8 +180,17 @@ void registerServerNetworkWeb({
     dio: dio,
     providerSignIn: providerSignIn,
   );
-  // Disposable, so the container closes it with the scope.
-  container.registerSingleton<AuthRepository>(authRepository);
+  // #484: what the interceptor above reports to. Concurrent reports of a
+  // session that is gone share one `getSession()`, whose definitive "no
+  // session" ends the session through the repository's own path.
+  sessionRejection = MergedSessionRevalidation(authRepository.getSession);
+  container
+    // Disposable, so the container closes it with the scope.
+    ..registerSingleton<AuthRepository>(authRepository)
+    // #484: the same signal for the user scope's sync drain and search
+    // socket, so one refused session costs one session read however many
+    // places saw it. Holds nothing to dispose.
+    ..registerSingleton<SessionRejectionSignal>(sessionRejection);
 
   // #432: keeps this tab's session in step with the cookie the other tabs
   // share. Built now rather than on first use: a tab on the sign-in screen

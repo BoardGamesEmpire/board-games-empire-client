@@ -552,6 +552,70 @@ void main() {
         );
       });
 
+      // The server signed the user in and this device could not keep the
+      // session (#726). The fault is the device's, so the copy blames
+      // neither the server nor the password.
+      testWidgets('a session this device could not store points at the '
+          'device, not the server (#726)', (tester) async {
+        whenListen(
+          mockBloc,
+          Stream.fromIterable([
+            const AuthInitial(),
+            const AuthFailureDeviceStorage(),
+          ]),
+          initialState: const AuthInitial(),
+        );
+
+        await tester.pumpWidget(_wrap(_screen(testServerIdentity()), mockBloc));
+        await tester.pumpAndSettle();
+
+        expect(
+          find.text(
+            "Couldn't save your sign-in on this device. Make sure it has "
+            'free storage space, then try again.',
+          ),
+          findsOneWidget,
+        );
+        expect(
+          find.text('Something went wrong on the server. Please try again.'),
+          findsNothing,
+        );
+      });
+
+      // The password was right and the account has two-factor turned on,
+      // which this app has no step for yet (#704; the step is #1121). The
+      // copy blames neither the password nor the server.
+      testWidgets('a sign-in that needs a verification code says so, without '
+          'calling it a server fault (#704)', (tester) async {
+        whenListen(
+          mockBloc,
+          Stream.fromIterable([
+            const AuthInitial(),
+            const AuthFailureTwoFactorRequired(),
+          ]),
+          initialState: const AuthInitial(),
+        );
+
+        await tester.pumpWidget(_wrap(_screen(testServerIdentity()), mockBloc));
+        await tester.pumpAndSettle();
+
+        expect(
+          find.descendant(
+            of: find.byKey(AuthScreen.failureBannerKey),
+            matching: find.text(
+              'This account needs a verification code to sign in, and this '
+              "app can't ask for one yet.",
+            ),
+          ),
+          findsOneWidget,
+        );
+        expect(
+          find.text('Something went wrong on the server. Please try again.'),
+          findsNothing,
+        );
+        expect(find.text('Incorrect email or password.'), findsNothing);
+      });
+
       // The server checked the password and wants the address confirmed
       // first, so "incorrect password" would send the user to reset a
       // password that works (#394).

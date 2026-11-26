@@ -92,7 +92,9 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
 
   AuthState _currentState = const AuthStateUnknown();
 
-  /// Bumped by [signOut] synchronously, before any await. [getSession]
+  /// Bumped by [signOut] synchronously, before any await, and likewise by
+  /// [_abandonUnstorableGrant], which ends a session as a sign-out does
+  /// (#726). [getSession]
   /// captures it in its own synchronous prologue — before the storage load,
   /// not merely before the HTTP call — and re-checks it once the response
   /// lands, so a response that resolves *after* the user signed out is
@@ -264,6 +266,11 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
   ///   refused if the delete failed, by `getSession`, so a "signed in" state
   ///   here would 401 on every subsequent request. Matches
   ///   `WebAuthRepositoryImpl.signUp`.
+  ///
+  /// Apart from those three, a storage fault on this device, in the grant's
+  /// store or in the reconcile's own storage, ends the grant with
+  /// [AuthDeviceStorageException] and revokes the session (#726): see
+  /// [_abandonUnstorableGrant].
   Future<AuthResponse> _finalizeCredentialGrant(
     AuthResponse granted, {
     required String context,
@@ -281,8 +288,10 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
     // This must throw a modelled AuthException rather than let a null
     // reach `TokenStorageService.store`. Before the field was nullable the
     // same envelope failed inside `AuthResponse.fromJson`, and a raw parse
-    // error slips past every `on AuthException` clause in AuthBloc and
-    // strands the form on AuthLoading — the failure this replaces.
+    // error slipped past every `on AuthException` clause in AuthBloc and
+    // stranded the form on AuthLoading — the failure this replaces. The
+    // store and the reconcile's storage read below are guarded for the same
+    // reason (#726), and AuthBloc now backstops anything else raw (#181).
     //
     // Not a server fault: the server answered as configured, and calling it
     // one invited a retry that can only get the same answer (#331).
@@ -332,12 +341,24 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
     // delete a newer password grant's token instead of this one's.
     final epoch = _sessionEpoch;
 
-    await _tokenStorage.store(
-      token: token,
-      expiresAt: null,
-      persistedAt: _deviceNowUtc(),
-      user: granted.user,
-    );
+    try {
+      await _tokenStorage.store(
+        token: token,
+        expiresAt: null,
+        persistedAt: _deviceNowUtc(),
+        user: granted.user,
+      );
+    } on Object catch (error, stackTrace) {
+      // The device refused the write: secure storage full, or a keychain or
+      // keystore that would not take it (#726).
+      await _abandonUnstorableGrant(
+        token,
+        epoch: epoch,
+        context: context,
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
 
     // A sign-out during the grant store: the latch stands, whether the store
     // was dropped for it or its write was overtaken. Clear again for whatever
@@ -366,6 +387,19 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
       );
       _setState(AuthStateAuthenticated(session: granted));
       return granted;
+    } on Object catch (error, stackTrace) {
+      // `getSession` models every network and server outcome as an
+      // AuthException, so a raw throw here is taken to be its storage: the
+      // read it starts with, or the write of the session it confirms (#726).
+      // Not indeterminate the way the catch above is: whatever the server
+      // says, this device cannot hold the session.
+      await _abandonUnstorableGrant(
+        token,
+        epoch: epoch,
+        context: context,
+        error: error,
+        stackTrace: stackTrace,
+      );
     }
 
     if (confirmed == null) {
@@ -385,6 +419,74 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
 
     _setState(AuthStateAuthenticated(session: confirmed));
     return confirmed;
+  }
+
+  /// Ends a credential grant whose session this device could not store or
+  /// read back (#726), and always throws.
+  ///
+  /// Clears whatever the failed write left, then revokes the granted session
+  /// best-effort with [token], which only this method still holds: left
+  /// alone, it would sit live in the user's session list until it expired.
+  /// The revoke is fire-and-forget like [signOut]'s, and its failure is
+  /// ignored. The repository then settles on unauthenticated. Like
+  /// [signOut], it moves [_sessionEpoch] first, so a session read already in
+  /// flight cannot write the ended session back or publish it.
+  ///
+  /// A sign-out that landed meanwhile, the clear here included, is the newer
+  /// intent, so that case is reported as [AuthSupersededException] rather
+  /// than a storage fault, and the fault is logged quietly. The grant is
+  /// revoked then too: a sign-out during a failed store could not read a
+  /// token that never reached storage, so its own revoke missed this
+  /// session.
+  Future<Never> _abandonUnstorableGrant(
+    String token, {
+    required int epoch,
+    required String context,
+    required Object error,
+    required StackTrace stackTrace,
+  }) async {
+    // A sign-out that landed during the failed write.
+    final supersededEarlier = epoch != _sessionEpoch;
+
+    // Retire every session read in flight, before the first await: one that
+    // lands after this, during the clear included, would otherwise store the
+    // session this method ends and publish it (see [_sessionEpoch]).
+    final abandonEpoch = ++_sessionEpoch;
+
+    await _clearQuietly(
+      supersededEarlier
+          ? 'a superseded credential grant'
+          : 'a credential grant this device could not store',
+    );
+    unawaited(_bestEffortSignOutPost(token));
+
+    // Read again after the clear: a sign-out landing during the clear is
+    // still the newer intent.
+    if (supersededEarlier || abandonEpoch != _sessionEpoch) {
+      _log.info(
+        'This device could not store the session granted by $context, and '
+        'a sign-out overtook it; revoking it',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      throw const AuthSupersededException();
+    }
+
+    // Another read may have confirmed the grant before the reconcile failed,
+    // and published it. The clear and the revoke above have ended that
+    // session, so the state must say so: left authenticated, AuthBloc keeps
+    // the live session and drops this failure.
+    _setState(const AuthStateUnauthenticated());
+    _log.warn(
+      'This device could not store the session granted by $context; '
+      'revoking it',
+      error: error,
+      stackTrace: stackTrace,
+    );
+    Error.throwWithStackTrace(
+      AuthDeviceStorageException(cause: error),
+      stackTrace,
+    );
   }
 
   @override
@@ -999,6 +1101,15 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
     required String context,
     required int? status,
   }) {
+    // BetterAuth's two-factor hook answers a correct password with this flag
+    // and no user (#704). Checked before the parse, and outside its try, so
+    // it is not read as an unreadable body and filed as a server fault.
+    // Nothing from this answer is stored: its token opens nothing. The
+    // second step it asks for is #1121.
+    if (body['twoFactorRedirect'] == true) {
+      throw const AuthTwoFactorRequiredException();
+    }
+
     try {
       return AuthResponse.fromJson(body);
     } on Object catch (error) {
