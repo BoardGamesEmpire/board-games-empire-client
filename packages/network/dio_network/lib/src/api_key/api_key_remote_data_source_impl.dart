@@ -225,9 +225,18 @@ class ApiKeyRemoteDataSourceImpl implements ApiKeyRemoteDataSource {
     }
   }
 
-  /// A slug and a pin the server would refuse with a 400. An unpinned scope
-  /// has a null `resourceId`: an empty one is never what was meant.
+  /// More than [ApiKeyRemoteDataSource.maxScopes] scopes, or a slug and a pin
+  /// the server would refuse with a 400: empty, longer than
+  /// [ApiKeyRemoteDataSource.maxScopeLength], or holding a NUL. An unpinned
+  /// scope has a null `resourceId`: an empty one is never what was meant.
   static void _checkScopes(List<ApiKeyScope> scopes, {required String name}) {
+    if (scopes.length > ApiKeyRemoteDataSource.maxScopes) {
+      throw ArgumentError.value(
+        scopes.length,
+        name,
+        'at most ${ApiKeyRemoteDataSource.maxScopes} scopes',
+      );
+    }
     for (final scope in scopes) {
       final resourceId = scope.resourceId;
       if (scope.slug.isEmpty || resourceId?.isEmpty == true) {
@@ -235,6 +244,14 @@ class ApiKeyRemoteDataSourceImpl implements ApiKeyRemoteDataSource {
           scopes,
           name,
           'a scope needs a slug, and a pin is left out rather than empty',
+        );
+      }
+      const max = ApiKeyRemoteDataSource.maxScopeLength;
+      if (scope.slug.length > max || (resourceId?.length ?? 0) > max) {
+        throw ArgumentError.value(
+          scopes,
+          name,
+          'a slug or pin must be at most $max characters',
         );
       }
       if (scope.slug.contains(_nul) || (resourceId?.contains(_nul) ?? false)) {

@@ -331,6 +331,24 @@ void main() {
             ApiKeyScope(slug: 'read:game', resourceId: 'g\u{0}'),
           ]),
         ),
+        // More scopes than the server's 500.
+        ApiKeyCreate(
+          name: 'a',
+          grant: ApiKeyScopesGrant([
+            for (var i = 0; i < 501; i++) ApiKeyScope(slug: 's$i'),
+          ]),
+        ),
+        // A slug or pin over the server's 128.
+        ApiKeyCreate(
+          name: 'a',
+          grant: ApiKeyScopesGrant([ApiKeyScope(slug: 's' * 129)]),
+        ),
+        ApiKeyCreate(
+          name: 'a',
+          grant: ApiKeyScopesGrant([
+            ApiKeyScope(slug: 'read:game', resourceId: 'g' * 129),
+          ]),
+        ),
       ];
 
       for (final request in bad) {
@@ -340,6 +358,36 @@ void main() {
         );
       }
       expect(server.requests, isEmpty);
+    });
+
+    test('sends a slug and a pin of exactly 128', () async {
+      answerCreate();
+
+      await remote.create(
+        ApiKeyCreate(
+          name: 'a',
+          grant: ApiKeyScopesGrant([
+            ApiKeyScope(slug: 's' * 128, resourceId: 'g' * 128),
+          ]),
+        ),
+      );
+
+      expect(server.requests, hasLength(1));
+    });
+
+    test('sends exactly 500 scopes', () async {
+      answerCreate();
+
+      await remote.create(
+        ApiKeyCreate(
+          name: 'a',
+          grant: ApiKeyScopesGrant([
+            for (var i = 0; i < 500; i++) ApiKeyScope(slug: 's$i'),
+          ]),
+        ),
+      );
+
+      expect(server.requests, hasLength(1));
     });
 
     test('measures the name trimmed, in UTF-16 units', () async {
@@ -457,6 +505,31 @@ void main() {
             'k_1',
             const ApiKeyPatch(
               scopes: [ApiKeyScope(slug: 'read:game', resourceId: 'g\u{0}')],
+            ),
+          ),
+          throwsA(isA<ArgumentError>()),
+        );
+        await expectLater(
+          remote.update(
+            'k_1',
+            ApiKeyPatch(scopes: [ApiKeyScope(slug: 's' * 129)]),
+          ),
+          throwsA(isA<ArgumentError>()),
+        );
+        await expectLater(
+          remote.update(
+            'k_1',
+            ApiKeyPatch(
+              scopes: [for (var i = 0; i < 501; i++) ApiKeyScope(slug: 's$i')],
+            ),
+          ),
+          throwsA(isA<ArgumentError>()),
+        );
+        await expectLater(
+          remote.update(
+            'k_1',
+            ApiKeyPatch(
+              scopes: [ApiKeyScope(slug: 'read:game', resourceId: 'g' * 129)],
             ),
           ),
           throwsA(isA<ArgumentError>()),

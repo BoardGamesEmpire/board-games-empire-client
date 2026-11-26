@@ -71,8 +71,10 @@ import 'package:network_interface/src/paginated_result.dart';
 /// `1..maxPageSize`, a name that is empty once trimmed or longer than
 /// [maxNameLength], an expiry outside `minExpiryDays..maxExpiryDays`, or an
 /// empty [ApiKeyPatch]. A scope with an empty slug or an empty resourceId
-/// throws too: an unpinned scope's resourceId is null, never empty. So does a
-/// NUL character in a name, a slug or a resourceId, which the server refuses.
+/// throws too: an unpinned scope's resourceId is null, never empty. So do more
+/// than [maxScopes] scopes, a slug or resourceId longer than
+/// [maxScopeLength], or a NUL character in a name, a slug or a resourceId,
+/// which the server refuses.
 /// [ApiKeyCreate] and [ApiKeyPatch] are not validated in their constructors,
 /// so the implementation checks them.
 abstract class ApiKeyRemoteDataSource {
@@ -96,6 +98,14 @@ abstract class ApiKeyRemoteDataSource {
   /// count by `serverStringLength`, and matches the sign-in library's check, so
   /// a name that passes here passes both.
   static const int maxNameLength = 32;
+
+  /// The longest slug or resourceId a key scope may send, counted in Dart
+  /// `String.length` as [maxNameLength] is. The server's bound is longer than
+  /// any slug its catalog holds or any id it mints.
+  static const int maxScopeLength = 128;
+
+  /// The most key scopes one create or edit may send.
+  static const int maxScopes = 500;
 
   /// Every permission the caller may give a key. Not paged.
   Future<List<GrantablePermission>> fetchGrantable();
