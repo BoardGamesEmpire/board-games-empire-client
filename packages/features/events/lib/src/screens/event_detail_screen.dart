@@ -699,14 +699,6 @@ class EventDetailScreen extends StatelessWidget {
     'event_detail.quick_look_open_lineup',
   );
 
-  /// Key on one choice of the nominate dialog (#517): the date's id, or
-  /// null for the whole event.
-  static Key nominateScopeKey(String? occurrenceId) =>
-      Key('event_detail.nominate_scope_${occurrenceId ?? 'event'}');
-
-  /// Key on the nominate dialog's Nominate button (#517).
-  static const Key nominateConfirmKey = Key('event_detail.nominate_confirm');
-
   /// Key on a pool row's Add to lineup (#519), its main action under a
   /// host-only view, by the offered game's id.
   static Key poolAddToLineupKey(String offeredGameId) =>

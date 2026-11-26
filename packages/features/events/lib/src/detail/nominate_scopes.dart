@@ -10,10 +10,10 @@ typedef NominateScope = ({NominationScope scope, EventOccurrence? date});
 /// of dates' choice (#1042), from which a nomination takes its scope: under
 /// one date, that date, while a game can still be nominated for it
 /// ([nominatableDates]), and nothing once it can't; under Every date, the
-/// whole event. With no view, as on an event with no row, the whole event,
-/// then, on an event of more than one date, each date a game can still be
-/// nominated for, in their order. With one choice, Nominate nominates for
-/// it; with more, it asks; with none, it isn't offered.
+/// whole event. With no view, as on an event with no row, the whole event
+/// (#1062): the row is there on every event of more than one date, so a
+/// choice of dates is never left to ask. Nominate nominates for the one
+/// choice; with none, it isn't offered.
 List<NominateScope> nominateScopes(
   EventDetail detail, {
   required DateTime now,
@@ -23,13 +23,7 @@ List<NominateScope> nominateScopes(
     for (final date in nominatableDates(detail, now: now))
       if (date.id == occurrenceId) (scope: DateScope(date.id), date: date),
   ],
-  EveryDateView() => const [(scope: WholeEventScope(), date: null)],
-  null => [
-    (scope: const WholeEventScope(), date: null),
-    if (detail.snapshot.occurrences.length > 1)
-      for (final date in nominatableDates(detail, now: now))
-        (scope: DateScope(date.id), date: date),
-  ],
+  EveryDateView() || null => const [(scope: WholeEventScope(), date: null)],
 };
 
 /// Whether whoever brings [game] has answered Not going (#517), which the

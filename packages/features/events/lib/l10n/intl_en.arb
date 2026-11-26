@@ -1356,11 +1356,11 @@
   },
   "eventsNominateAlready": "Already nominated",
   "@eventsNominateAlready": {
-    "description": "Read to a screen reader as the hint of the Nominate button (eventsNominate) of a game in the games pool, which can't be pressed, when that copy of the game is nominated already for everything it could be nominated for. Also under a choice in the nominate dialog (eventsNominateTitle) that can't be picked: the copy is nominated already for the whole event, or for that date."
+    "description": "Read to a screen reader as the hint of the Nominate button (eventsNominate) of a game in the games pool, which can't be pressed, when that copy of the game is nominated already for everything it could be nominated for."
   },
   "eventsNominateInLineup": "Already in the lineup",
   "@eventsNominateInLineup": {
-    "description": "Read to a screen reader as the hint of the Nominate button (eventsNominate) of a game in the games pool, which can't be pressed, when the game (anyone's copy of it) is in the event's lineup already for everything it could be nominated for. Also under a choice in the nominate dialog (eventsNominateTitle) that can't be picked: the game is in the lineup for the whole event, or for that date."
+    "description": "Read to a screen reader as the hint of the Nominate button (eventsNominate) of a game in the games pool, which can't be pressed, when the game (anyone's copy of it) is in the event's lineup already for everything it could be nominated for."
   },
   "eventsNominateAlreadyOrInLineup": "Already nominated or in the lineup",
   "@eventsNominateAlreadyOrInLineup": {
@@ -1369,24 +1369,6 @@
   "eventsNominateUnsettled": "Your last nomination may have gone through. Load the nominations again on the Nominations tab to check.",
   "@eventsNominateUnsettled": {
     "description": "Under the Nominate button (eventsNominate) of a game in the games pool, which can't be pressed, on its row and in the game's quick look, and read to a screen reader as the button's hint: the answer to the user's last nomination was lost, and reading the nominations again to see whether it was saved failed. The copy points to the Nominations sub-tab of the same Games tab, labelled eventsGamesSectionNominations, so the two should match: the nominations' Try again button (eventsRefreshRetry) is there, in the banner eventsNominationsRefreshFailed or under eventsNominationsFailedTitle, and not beside this button, which is on the Pool sub-tab."
-  },
-  "eventsNominateTitle": "Nominate {title}",
-  "@eventsNominateTitle": {
-    "description": "Title of the dialog opened by the Nominate button (eventsNominate) on an event of more than one date. It asks whether the game is nominated for the whole event (eventsNominationWholeEvent) or for one of its dates still to come (eventsNominationForDate), one choice each. {title} is the game's title, with its subtitle where it has one (#920).",
-    "placeholders": {
-      "title": {
-        "type": "String",
-        "example": "Catan"
-      }
-    }
-  },
-  "eventsNominateCancel": "Cancel",
-  "@eventsNominateCancel": {
-    "description": "Button in the nominate dialog (eventsNominateTitle) that closes it and nominates nothing."
-  },
-  "eventsNominateConfirm": "Nominate",
-  "@eventsNominateConfirm": {
-    "description": "Button in the nominate dialog (eventsNominateTitle) that nominates the game for the choice picked: the whole event or one date."
   },
   "eventsPoolNominated": "Nominated",
   "@eventsPoolNominated": {
@@ -2052,11 +2034,11 @@
   },
   "eventsNominationWholeEvent": "For the whole event",
   "@eventsNominationWholeEvent": {
-    "description": "Line of a nominated game's quick look, the pop-up its row opens in the Nominations section of an event's Games tab: the game is nominated for the event as a whole, not for one of its dates (eventsNominationForDate). Also the first choice in the nominate dialog (eventsNominateTitle) and in the add dialog (eventsLineupAddTitle), a choice in the nominations' date filter (eventsNominationsDate), and the chip naming it while it narrows the list."
+    "description": "Line of a nominated game's quick look, the pop-up its row opens in the Nominations section of an event's Games tab: the game is nominated for the event as a whole, not for one of its dates (eventsNominationForDate). Also the first choice in the add dialog (eventsLineupAddTitle), a choice in the nominations' date filter (eventsNominationsDate), and the chip naming it while it narrows the list."
   },
   "eventsNominationForDate": "For {date}",
   "@eventsNominationForDate": {
-    "description": "Line of a nominated game's quick look, the pop-up its row opens in the Nominations section of an event's Games tab: the game is nominated for one date of the event. Also a choice in the nominate dialog (eventsNominateTitle), one per date still to come, and in the add dialog (eventsLineupAddTitle), a choice in the nominations' date filter (eventsNominationsDate), one per date, and the chip naming it while it narrows the list. {date} is the date's own label, or when it starts, for example 'Fri, Nov 6 · 7:30 PM'.",
+    "description": "Line of a nominated game's quick look, the pop-up its row opens in the Nominations section of an event's Games tab: the game is nominated for one date of the event. Also a choice in the add dialog (eventsLineupAddTitle), a choice in the nominations' date filter (eventsNominationsDate), one per date, and the chip naming it while it narrows the list. {date} is the date's own label, or when it starts, for example 'Fri, Nov 6 · 7:30 PM'.",
     "placeholders": {
       "date": {
         "type": "String",
@@ -2506,7 +2488,7 @@
   },
   "eventsOfferTitleWithSubtitle": "{title}: {subtitle}",
   "@eventsOfferTitleWithSubtitle": {
-    "description": "A game's name when the game also has a subtitle, for example 'Catan: Seafarers', as the collection list names it. Used on the game's row of the Offer games page, and for the event's games on the Games tab of an event's screen: on the game's row; in its Take back and Nominate buttons as a screen reader reads them (eventsGamesTakeBackNamed, eventsNominateNamed); in the dialog that asks before someone else's game is taken back (eventsTakeBackTheirsConfirmTitle) and the one that asks what a nomination is for (eventsNominateTitle); and in the outcome lines at the foot of the screen after a take-back or a nominate from the game's row (eventsGamesTakenBack, eventsNominatedOpen and the others that name the game). A nomination's own row, and the outcome lines of a vote, a withdrawal or a host's decision, name the game by its title alone. The subtitle is often what tells two games apart. Reorder or change the punctuation as your language needs.",
+    "description": "A game's name when the game also has a subtitle, for example 'Catan: Seafarers', as the collection list names it. Used on the game's row of the Offer games page, and for the event's games on the Games tab of an event's screen: on the game's row; in its Take back and Nominate buttons as a screen reader reads them (eventsGamesTakeBackNamed, eventsNominateNamed); in the dialog that asks before someone else's game is taken back (eventsTakeBackTheirsConfirmTitle); and in the outcome lines at the foot of the screen after a take-back or a nominate from the game's row (eventsGamesTakenBack, eventsNominatedOpen and the others that name the game). A nomination's own row, and the outcome lines of a vote, a withdrawal or a host's decision, name the game by its title alone. The subtitle is often what tells two games apart. Reorder or change the punctuation as your language needs.",
     "placeholders": {
       "title": {
         "type": "String",

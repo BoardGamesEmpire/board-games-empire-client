@@ -41,9 +41,11 @@ class _MockLineup extends MockBloc<EventLineupEvent, EventLineupState>
 /// the controller it holds handed to [onBuild] on each build. The detail's
 /// bloc starts on [initialDetail] and emits [details], and the scope opens
 /// on [initialDate], the date the location names (#1042), by the clock
-/// [now].
+/// [now]. With a [child], that is built under the scope in place of the
+/// widget that hands the controller to [onBuild].
 Widget _harness({
   required void Function(EventGamesTabController controller) onBuild,
+  Widget? child,
   EventGamesSection initialSection = EventGamesSection.nominations,
   bool disableAnimations = false,
   Stream<EventDetailState> details = const Stream.empty(),
@@ -89,12 +91,14 @@ Widget _harness({
             initialSection: initialSection,
             initialDate: initialDate,
             now: now,
-            child: Builder(
-              builder: (context) {
-                onBuild(EventGamesTabScope.of(context));
-                return const SizedBox();
-              },
-            ),
+            child:
+                child ??
+                Builder(
+                  builder: (context) {
+                    onBuild(EventGamesTabScope.of(context));
+                    return const SizedBox();
+                  },
+                ),
           ),
         ),
       ),
@@ -537,6 +541,65 @@ void main() {
       expect(controller.dateView, const OneDateView('later'));
       expect(controller.visibleSections, EventGamesSection.values);
       expect(controller.section, EventGamesSection.nominations);
+    });
+
+    // Nominate's "which date?" dialog asked only where the date view was
+    // null on a multi-date event (#1062). That holds only if the view exists
+    // before any pool row builds. A pool row builds under the scope only on a
+    // Ready detail, as the screen's page does (`_ReadyPage`, under a
+    // `BlocBuilder` on the detail's bloc), so the stand-in below builds on
+    // the same terms and records the view it finds there.
+    group('before any pool row builds (#1062)', () {
+      /// What stands in for a pool row: built under the scope only once the
+      /// detail is Ready, recording the controller's date view each time.
+      Widget poolRow(List<GamesDateView?> seen) =>
+          BlocBuilder<EventDetailBloc, EventDetailState>(
+            builder: (context, state) {
+              if (state is! EventDetailReady) return const SizedBox();
+              seen.add(EventGamesTabScope.of(context).dateView);
+              return const SizedBox();
+            },
+          );
+
+      testWidgets("a multi-date event's first Ready detail has a date view "
+          'before any pool row builds (#1062)', (tester) async {
+        final seen = <GamesDateView?>[];
+        final details = StreamController<EventDetailState>();
+        addTearDown(() => unawaited(details.close()));
+        await tester.pumpWidget(
+          _harness(
+            details: details.stream,
+            now: () => now,
+            child: poolRow(seen),
+            onBuild: (_) {},
+          ),
+        );
+        expect(seen, isEmpty);
+
+        details.add(ready([soon, later]));
+        // Once for the event to reach the builder, once for its frame.
+        await tester.pump();
+        await tester.pump();
+
+        expect(seen, isNotEmpty);
+        expect(seen.first, isNotNull);
+      });
+
+      testWidgets('a detail already Ready as the scope mounts has a date '
+          'view on the first build (#1062)', (tester) async {
+        final seen = <GamesDateView?>[];
+        await tester.pumpWidget(
+          _harness(
+            initialDetail: ready([soon, later]),
+            now: () => now,
+            child: poolRow(seen),
+            onBuild: (_) {},
+          ),
+        );
+
+        expect(seen, isNotEmpty);
+        expect(seen.first, isNotNull);
+      });
     });
 
     // The row takes the place of the nominations' date facet: a date set

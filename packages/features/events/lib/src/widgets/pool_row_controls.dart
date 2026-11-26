@@ -22,12 +22,10 @@ import 'package:events/src/screens/event_detail_screen.dart';
 import 'package:events/src/widgets/confirm_dialog.dart';
 import 'package:events/src/widgets/event_games_footer.dart';
 import 'package:events/src/widgets/event_games_tab_scope.dart';
-import 'package:events/src/widgets/event_labels.dart';
 import 'package:events/src/widgets/game_name.dart';
 import 'package:events/src/widgets/held_press.dart';
 import 'package:events/src/widgets/held_spinner.dart';
 import 'package:events/src/widgets/lineup_row_controls.dart';
-import 'package:events/src/widgets/nominate_scope_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:models/domain.dart';
@@ -522,14 +520,10 @@ String? _nominateUnread(
 }
 
 /// Nominates [game] (#517): for the one choice the date view in use as it
-/// is pressed offers ([nominateScopes], #1042), its date or the whole
-/// event; or where there is more than one, as with no view, for the one
-/// chosen in [showNominateScopeDialog], where a choice the row already
-/// supplies a live nomination for, or its game is in the lineup for, can't
-/// be chosen. The dialog, the nomination's outcome and a drop name the game
-/// as the row does, with its subtitle ([gameName], #851). Completes true
-/// when the nomination was sent, and false when nothing was: the dialog
-/// cancelled, or as below.
+/// is pressed offers ([nominateScopes], #1042), its date or the whole event.
+/// The nomination's outcome and a drop name the game as the row does, with
+/// its subtitle ([gameName], #851). Completes true when the nomination was
+/// sent, and false when nothing was, as below.
 ///
 /// It goes once any running detail read has ended ([readEnded]), for the
 /// event as the detail shows it then, whose id a reconcile can have moved
@@ -549,9 +543,8 @@ Future<bool> nominateGame(
   OfferedGame game, {
   required DateTime Function() clock,
 }) async {
-  // Read before anything is awaited: the dialog covers the row, and a
-  // rebuild can take this context with it.
-  final l10n = EventsLocalizations.of(context);
+  // Read before anything is awaited: a rebuild can take this context with
+  // it.
   final detail = context.read<EventDetailBloc>();
   final pool = context.read<EventGamesBloc>();
   final nominations = context.read<EventNominationsBloc>();
@@ -571,38 +564,11 @@ Future<bool> nominateGame(
 
   final now = clock();
   final choices = nominateScopes(shown.detail, now: now, view: view);
-  final NominationScope scope;
   if (choices.isEmpty) {
     dropped();
     return false;
-  } else if (choices.length == 1) {
-    scope = choices.single.scope;
-  } else {
-    final chosen = await showNominateScopeDialog(
-      context,
-      title: gameName(l10n, game.title, game.subtitle),
-      choices: [
-        for (final choice in choices)
-          (
-            scope: choice.scope,
-            label: switch (choice.date) {
-              null => l10n.eventsNominationWholeEvent,
-              final date => l10n.eventsNominationForDate(
-                eventDateName(context, date, now: now),
-              ),
-            },
-            taken: nominateTaken(
-              game,
-              nominations.state.nominations,
-              scope: choice.scope,
-              lineup: knownLineup(lineup.state),
-            ),
-          ),
-      ],
-    );
-    if (chosen == null || nominations.isClosed) return false;
-    scope = chosen;
   }
+  final scope = choices.single.scope;
 
   final state = await readEnded(detail);
   if (state is! EventDetailReady || nominations.isClosed) return false;
@@ -622,7 +588,7 @@ Future<bool> nominateGame(
             game,
             nominations.state.nominations,
             scope: scope,
-            // As the lineup stands now, not as the dialog showed it.
+            // As the lineup stands now, not as the row was built.
             lineup: knownLineup(lineup.state),
           ) !=
           NominateTaken.no) {
@@ -662,16 +628,15 @@ Future<bool> nominateGame(
 /// that order. It is disabled with no hint while it may not be pressed for
 /// a while ([enabled]).
 ///
-/// Its press can open the nominate dialog, which hands focus back to it as
-/// it closes, just before the nomination goes out, and a disabled button
-/// can't hold focus (#607). So, as Offer games is, it is held through
-/// [HeldPress] from its press until its nomination is over ([runOver]):
-/// enabled, ignoring presses and showing a spinner, wherever it would
-/// otherwise be unavailable. A nomination of its own that leaves the row
-/// nominated already for everything would disable it under the keyboard
-/// user who pressed it, so then it stays inert, drawn as a disabled button
-/// is and saying why, for as long as it holds focus, and is disabled once
-/// focus moves on.
+/// Its press waits for any running detail read to end before the
+/// nomination goes out, and a disabled button can't hold focus (#607). So,
+/// as Offer games is, it is held through [HeldPress] from its press until
+/// its nomination is over ([runOver]): enabled, ignoring presses and
+/// showing a spinner, wherever it would otherwise be unavailable. A
+/// nomination of its own that leaves the row nominated already for
+/// everything would disable it under the keyboard user who pressed it, so
+/// then it stays inert, drawn as a disabled button is and saying why, for as
+/// long as it holds focus, and is disabled once focus moves on.
 class NominateButton extends StatefulWidget {
   const NominateButton({
     required this.game,

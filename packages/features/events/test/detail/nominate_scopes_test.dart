@@ -5,8 +5,9 @@ import 'package:models/domain.dart';
 
 import '../support/event_list_items.dart';
 
-/// What Nominate offers on a pool row (#517), in the date view the row of
-/// dates chose (#1042), and under that view's mode (#519).
+/// The choices Nominate offers on an event as of a time (#517), from the date
+/// view the row of dates chose (#1042): the pure rule, apart from the view's
+/// mode and the row it is offered on.
 void main() {
   final now = DateTime.utc(2026, 10, 1, 12);
 
@@ -73,15 +74,11 @@ void main() {
       );
     });
 
-    test('with no view, an event of more dates offers the whole event, then '
-        'each date still to come, in their order', () {
+    test('with no view, an event of more dates offers the whole event alone '
+        '(#1062)', () {
       final detail = ready([later, cancelled, passed, soon]).detail;
 
-      expect(forWhat(nominateScopes(detail, now: now)), [
-        null,
-        'soon',
-        'later',
-      ]);
+      expect(forWhat(nominateScopes(detail, now: now)), [null]);
     });
 
     test('Every date offers the whole event alone', () {

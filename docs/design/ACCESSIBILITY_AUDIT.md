@@ -292,8 +292,8 @@ The same flows as the keyboard tests, plus the screens they don't reach:
    and the count is read as it changes. Remove that chip with the reader's
    double-tap: focus goes to Filters. On an event with a game that has a
    subtitle, check its row, its Take back and its Nominate say it ("Catan:
-   Seafarers"), and so do Nominate's dialog and its outcome. Take one of your
-   games back and check the footer reads "… is off your games."
+   Seafarers"), and so does Nominate's outcome. Take one of your games back
+   and check the footer reads "… is off your games."
    Then stop the server, and on Details change your answer (Going to Maybe,
    say): the change fails, so the event is read again, and that read fails, so
    the games are read again, and fail too. Back on Games, check the footer
@@ -748,9 +748,9 @@ it came arms it, the reader's double-tap included.
   another control moves no focus.
 - Clear filters, in "No nominations match", however it is pressed:
   Filters.
-- Nominate, through its dialog and its nomination: Nominate, which keeps
-  focus, read as unavailable once the row is nominated for everything it
-  could be, until focus moves on.
+- Nominate, through its nomination: Nominate, which keeps focus, read as
+  unavailable once the row is nominated for everything it could be, until
+  focus moves on.
 
 ### Focus hand-offs from #518
 
@@ -787,8 +787,8 @@ at 320dp and 200% text.
 
 - Flow 7, from "Then the Nominations section (#517)": the rows read as one
   item each, the vote choices and their in-progress label, Who voted and
-  its pop-up, Withdraw and its dialog, Nominate and its dialog, Filters,
-  Sort and the count, and the offline hints.
+  its pop-up, Withdraw and its dialog, Nominate, Filters, Sort and the
+  count, and the offline hints.
 - "Focus hand-offs from #517": whether the reader's cursor lands where
   input focus is handed, the next row's vote after a vote under Not voted
   yet above all.
