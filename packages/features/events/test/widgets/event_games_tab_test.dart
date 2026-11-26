@@ -6902,6 +6902,154 @@ void main() {
         findsOneWidget,
       );
     });
+
+    group('the Nominated line under a date view (#1090)', () {
+      /// The viewer's own Catan, nominated by Bo for Friday.
+      EventNomination onFriday() =>
+          nominationOf('n-1', catanMine, occurrenceId: 'd-1');
+
+      /// [id]'s row says "Nominated" anywhere: its status line, or the
+      /// button's label where Nominate can't be pressed (#947).
+      Finder saysNominated(String id) => find.descendant(
+        of: row(id),
+        matching: find.textContaining('Nominated'),
+        skipOffstage: false,
+      );
+
+      testWidgets('under the nominated date the row says Nominated', (
+        tester,
+      ) async {
+        nominationsAnswer = (_) => [onFriday()];
+        useViewSize(tester, const Size(800, 2400));
+        // Friday, the next date still to come, opens.
+        await showGames(tester, detail: detailOf(occurrences: twoDates));
+
+        // Nominate says it, for the one choice the view has, so the status
+        // line doesn't (#947).
+        expect(saysNominated(catanMine.id), findsOneWidget);
+        expect(
+          find.descendant(
+            of: nominate(catanMine.id),
+            matching: find.text('Nominated'),
+            skipOffstage: false,
+          ),
+          findsOneWidget,
+        );
+        expect(onPressed(tester, catanMine.id), isNull);
+      });
+
+      testWidgets("under another date it doesn't, and Nominate is offered", (
+        tester,
+      ) async {
+        nominationsAnswer = (_) => [onFriday()];
+        useViewSize(tester, const Size(800, 2400));
+        await showGames(tester, detail: detailOf(occurrences: twoDates));
+
+        await chooseDate(tester, 'd-2');
+
+        expect(nominated(catanMine.id), findsNothing);
+        expect(saysNominated(catanMine.id), findsNothing);
+        expect(onPressed(tester, catanMine.id), isNotNull);
+        // The row still says who brings it.
+        expect(
+          tester
+              .widget<Text>(
+                find.descendant(
+                  of: row(catanMine.id),
+                  matching: find.text("You're bringing this"),
+                  skipOffstage: false,
+                ),
+              )
+              .data,
+          "You're bringing this",
+        );
+      });
+
+      testWidgets('under Every date only a whole-event nomination counts', (
+        tester,
+      ) async {
+        nominationsAnswer = (_) => [onFriday()];
+        useViewSize(tester, const Size(800, 2400));
+        await showGames(tester, detail: detailOf(occurrences: twoDates));
+
+        await chooseDate(tester, null);
+
+        // Friday's alone isn't the whole event's.
+        expect(saysNominated(catanMine.id), findsNothing);
+        expect(onPressed(tester, catanMine.id), isNotNull);
+      });
+
+      testWidgets('under Every date a whole-event nomination does', (
+        tester,
+      ) async {
+        nominationsAnswer = (_) => [
+          onFriday(),
+          nominationOf('n-2', catanMine),
+        ];
+        useViewSize(tester, const Size(800, 2400));
+        await showGames(tester, detail: detailOf(occurrences: twoDates));
+
+        await chooseDate(tester, null);
+
+        // For the one choice Every date has, Nominate says it.
+        expect(saysNominated(catanMine.id), findsOneWidget);
+        expect(onPressed(tester, catanMine.id), isNull);
+      });
+
+      testWidgets('a whole-event nomination is in view under every date, and '
+          'the line says it where a date is left to nominate for', (
+        tester,
+      ) async {
+        nominationsAnswer = (_) => [nominationOf('n-1', catanMine)];
+        useViewSize(tester, const Size(800, 2400));
+        await showGames(tester, detail: detailOf(occurrences: twoDates));
+
+        for (final id in ['d-1', 'd-2']) {
+          await chooseDate(tester, id);
+          expect(
+            tester.widget<Text>(nominated(catanMine.id)).data,
+            "You're bringing this · Nominated",
+            reason: id,
+          );
+          expect(onPressed(tester, catanMine.id), isNotNull, reason: id);
+        }
+      });
+
+      testWidgets('back on the nominated date the row says Nominated again', (
+        tester,
+      ) async {
+        nominationsAnswer = (_) => [onFriday()];
+        useViewSize(tester, const Size(800, 2400));
+        await showGames(tester, detail: detailOf(occurrences: twoDates));
+        expect(saysNominated(catanMine.id), findsOneWidget);
+
+        await chooseDate(tester, 'd-2');
+        expect(saysNominated(catanMine.id), findsNothing);
+
+        await chooseDate(tester, 'd-1');
+        expect(saysNominated(catanMine.id), findsOneWidget);
+      });
+
+      testWidgets('Take back stays blocked under a date the nomination is '
+          'not for (#905)', (tester) async {
+        nominationsAnswer = (_) => [onFriday()];
+        useViewSize(tester, const Size(800, 2400));
+        await showGames(tester, detail: detailOf(occurrences: twoDates));
+
+        await chooseDate(tester, 'd-2');
+        // Take back sits in the quick look beside Nominate (#946).
+        await press(tester, head(catanMine.id));
+        await animate(tester);
+
+        final takeBackIn = find.descendant(
+          of: find.byKey(EventDetailScreen.quickLookKey),
+          matching: find.byKey(EventDetailScreen.quickLookTakeBackKey),
+        );
+        expect(nominated(catanMine.id), findsNothing);
+        expect(takeBackIn, findsOneWidget);
+        expect(tester.widget<ButtonStyleButton>(takeBackIn).onPressed, isNull);
+      });
+    });
   });
 
   // The Pool under the row of dates (#1042): the same games in every view,

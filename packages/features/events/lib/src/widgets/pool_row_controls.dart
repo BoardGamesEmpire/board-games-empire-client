@@ -363,9 +363,15 @@ PoolRowGates poolRowGates(
             names[game.attendeeId] ?? l10n.eventsAttendeeSomeoneStart,
           ),
     // Nominate says it where it can't be pressed for any choice; otherwise
-    // the row's status line does (#947).
+    // the row's status line does (#947). Only the nominations the date view
+    // shows count, not those for another date (#1090); Take back's block
+    // still counts every one (#905).
     nominatedLine:
-        suppliesLive(game, nominated) && (choices == null || already == null),
+        suppliesLive(
+          game,
+          nominationsInView(controller.dateView, nominated),
+        ) &&
+        (choices == null || already == null),
     nominate: nominations == null || choices == null
         ? null
         : (
