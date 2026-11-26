@@ -3946,6 +3946,198 @@ void main() {
           await closeQuickLook(tester);
         }
       });
+
+      // Where See in lineup leaves while it holds focus, the lines take it,
+      // as they do from a write button that goes with its write (#1073).
+      group('leaving under focus (#1073)', () {
+        setUp(() {
+          nominationsAnswer = (_) => [
+            _nomination(
+              'n-1',
+              status: NominationStatus.passed,
+              elevatedTo: (id: 'l-1', occurrenceId: null),
+            ),
+          ];
+          lineupAnswer = (_) => [_lineupGame('l-1', nominationId: 'n-1')];
+        });
+
+        /// A lineup read that no longer holds the game.
+        Future<void> takeGameOut(WidgetTester tester) async {
+          lineupAnswer = (_) => [_lineupGame('l-2')];
+          blocOf<EventLineupBloc>(
+            tester,
+          ).add(const EventLineupRequested('e-1'));
+          await animate(tester);
+        }
+
+        /// Focus is on the nomination quick look's lines, as one node, and
+        /// not on its route's scope; a screen reader has it there too.
+        void expectOnLines(WidgetTester tester) {
+          expect(
+            FocusManager.instance.primaryFocus?.debugLabel,
+            'Quick look nomination',
+          );
+          expect(
+            linesNode(tester),
+            isSemantics(isFocusable: true, isFocused: true),
+          );
+          expect(
+            linesNode(tester).getSemanticsData().label,
+            contains('Passed'),
+          );
+        }
+
+        testWidgets('See in lineup leaving under focus hands focus to the '
+            'lines', (tester) async {
+          final handle = tester.ensureSemantics();
+          await showGames(tester);
+          await openQuickLook(tester, 'n-1');
+          final focus = focusOf(tester, lineupIn)..requestFocus();
+          await tester.pump();
+          expect(focus.hasPrimaryFocus, isTrue);
+
+          await takeGameOut(tester);
+
+          expect(quickLook, findsOneWidget);
+          expect(lineupIn, findsNothing);
+          expectOnLines(tester);
+          // Nothing under the pop-up took it.
+          expect(headFocus(tester, 'n-1').hasFocus, isFalse);
+          handle.dispose();
+        });
+
+        testWidgets('the game leaving while the lineup look is open hands '
+            'focus to the lines on close', (tester) async {
+          final handle = tester.ensureSemantics();
+          await showGames(tester);
+          await openQuickLook(tester, 'n-1');
+          focusOf(tester, lineupIn).requestFocus();
+          await tester.pump();
+          await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+          await animate(tester);
+          expect(quickLook, findsNWidgets(2));
+
+          await takeGameOut(tester);
+          expect(inQuickLook(lineupGone), findsOneWidget);
+          expect(lineupIn, findsNothing);
+
+          await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+          await animate(tester);
+
+          expect(quickLook, findsOneWidget);
+          expectOnLines(tester);
+          expect(headFocus(tester, 'n-1').hasFocus, isFalse);
+          handle.dispose();
+        });
+
+        testWidgets('the look closing with the button takes no hand-off', (
+          tester,
+        ) async {
+          final handle = tester.ensureSemantics();
+          await showGames(tester);
+          await openQuickLook(tester, 'n-1');
+          final focus = focusOf(tester, lineupIn)..requestFocus();
+          await tester.pump();
+          expect(focus.hasPrimaryFocus, isTrue);
+
+          await closeQuickLook(tester);
+
+          expect(tester.takeException(), isNull);
+          expect(FocusManager.instance.primaryFocus, isNot(same(focus)));
+          // The row's head has it, as after any quick look.
+          expect(headFocus(tester, 'n-1').hasPrimaryFocus, isTrue);
+          handle.dispose();
+        });
+
+        testWidgets('with another control here focused before it, the lines '
+            'still take focus as the lineup look closes', (tester) async {
+          nominationsAnswer = (_) => [
+            _nomination(
+              'n-1',
+              status: NominationStatus.passed,
+              elevatedTo: (id: 'l-1', occurrenceId: null),
+              votes: [_vote('att-ada', VoteType.forGame)],
+            ),
+          ];
+          final handle = tester.ensureSemantics();
+          await showGames(tester);
+          await openQuickLook(tester, 'n-1');
+          // Who voted, then See in lineup, as Tab reaches them.
+          final voters = focusOf(tester, votersIn)..requestFocus();
+          await tester.pump();
+          focusOf(tester, lineupIn).requestFocus();
+          await tester.pump();
+          await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+          await animate(tester);
+          expect(quickLook, findsNWidgets(2));
+
+          await takeGameOut(tester);
+          await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+          await animate(tester);
+
+          // Not Who voted, where the closing put it back.
+          expect(voters.hasFocus, isFalse);
+          expectOnLines(tester);
+          handle.dispose();
+        });
+
+        testWidgets('the game leaving and coming back while the lineup look '
+            'is open hands focus to the lines on close', (tester) async {
+          final handle = tester.ensureSemantics();
+          await showGames(tester);
+          await openQuickLook(tester, 'n-1');
+          screenReaderTap(tester, 'See in lineup: Catan');
+          await animate(tester);
+          expect(quickLook, findsNWidgets(2));
+
+          await takeGameOut(tester);
+          expect(lineupIn, findsNothing);
+          // A later read has it again, under a new See in lineup.
+          lineupAnswer = (_) => [_lineupGame('l-1', nominationId: 'n-1')];
+          blocOf<EventLineupBloc>(
+            tester,
+          ).add(const EventLineupRequested('e-1'));
+          await animate(tester);
+          expect(lineupIn, findsOneWidget);
+
+          await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+          await animate(tester);
+
+          expect(quickLook, findsOneWidget);
+          expectOnLines(tester);
+          handle.dispose();
+        });
+
+        testWidgets('the nomination leaving while the lineup look is open '
+            'takes no hand-off on close', (tester) async {
+          final handle = tester.ensureSemantics();
+          await showGames(tester);
+          await openQuickLook(tester, 'n-1');
+          final lines = tester.widget<Focus>(quickLookLines).focusNode!;
+          focusOf(tester, lineupIn).requestFocus();
+          await tester.pump();
+          await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+          await animate(tester);
+          expect(quickLook, findsNWidgets(2));
+
+          // Gone from the next read, so the nomination's look, its lines
+          // and See in lineup go with it.
+          nominationsAnswer = (_) => const [];
+          blocOf<EventNominationsBloc>(
+            tester,
+          ).add(const EventNominationsRequested('e-1'));
+          await animate(tester);
+          expect(quickLookLines, findsNothing);
+
+          await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+          await animate(tester);
+
+          expect(tester.takeException(), isNull);
+          expect(inQuickLook(gone), findsOneWidget);
+          expect(FocusManager.instance.primaryFocus, isNot(same(lines)));
+          handle.dispose();
+        });
+      });
     });
 
     testWidgets("a nomination's quick look names a date the event no longer "

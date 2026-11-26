@@ -788,6 +788,17 @@ moves focus only if focus is then free, as #517's do.
   appears with the sheet open: the next stop after it, Mine, else Not
   voted yet, else the stop before it, the last status chip.
 
+### Focus hand-offs from #1073
+
+The same check, for See in lineup in a passed nomination's quick look,
+under the same guard.
+
+- See in lineup, gone while it holds focus, as a lineup read takes its
+  game out: the quick look's lines, as one node, as when the look's own
+  Withdraw or decision leaves.
+- The lineup game's quick look, opened by See in lineup and closed after a
+  read took the game out: the same lines, rather than nowhere.
+
 ### #850's list from #517
 
 #850's device pass takes these too, from the same build: the Nominations
