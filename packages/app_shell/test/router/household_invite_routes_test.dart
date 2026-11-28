@@ -85,7 +85,7 @@ void main() {
     final router = await pumpRouter(
       tester,
       inviteInboxBuilder: (_) => marker(_inboxKey),
-      sentInvitesBuilder: (_) => marker(_sentKey),
+      sentInvitesBuilder: (_, {required declined}) => marker(_sentKey),
     );
 
     router.go(AppRoutes.invitesSent);
@@ -95,6 +95,57 @@ void main() {
     expect(find.byKey(_inboxKey, skipOffstage: false), findsOneWidget);
   });
 
+  test('invitesSentOf asks for the declined filter only when told', () {
+    expect(AppRoutes.invitesSentOf(), '/invites/sent');
+    expect(
+      AppRoutes.invitesSentOf(declined: true),
+      '/invites/sent?filter=declined',
+    );
+  });
+
+  testWidgets('a link opens the sent invites on the filter it names (#475)', (
+    tester,
+  ) async {
+    final seen = <bool>[];
+    final router = await pumpRouter(
+      tester,
+      inviteInboxBuilder: (_) => marker(_inboxKey),
+      sentInvitesBuilder: (_, {required declined}) {
+        seen.add(declined);
+        return marker(_sentKey);
+      },
+    );
+
+    router.go(AppRoutes.invitesSentOf(declined: true));
+    await tester.pumpAndSettle();
+    expect(find.byKey(_sentKey), findsOneWidget);
+    expect(seen.last, isTrue);
+
+    router.go(AppRoutes.invitesSentOf());
+    await tester.pumpAndSettle();
+    expect(seen.last, isFalse);
+  });
+
+  testWidgets('an unknown sent filter value opens on the default (#475)', (
+    tester,
+  ) async {
+    bool? seen;
+    final router = await pumpRouter(
+      tester,
+      inviteInboxBuilder: (_) => marker(_inboxKey),
+      sentInvitesBuilder: (_, {required declined}) {
+        seen = declined;
+        return marker(_sentKey);
+      },
+    );
+
+    router.go('/invites/sent?filter=awaiting');
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(_sentKey), findsOneWidget);
+    expect(seen, isFalse);
+  });
+
   testWidgets("a household's invites get its id, over its detail screen", (
     tester,
   ) async {
@@ -102,10 +153,11 @@ void main() {
     final router = await pumpRouter(
       tester,
       householdDetailBuilder: (_, _) => marker(_detailKey),
-      householdInvitesBuilder: (_, id, {required awaitingApproval}) {
-        seen = id;
-        return marker(_invitesKey);
-      },
+      householdInvitesBuilder:
+          (_, id, {required awaitingApproval, required declined}) {
+            seen = id;
+            return marker(_invitesKey);
+          },
     );
 
     router.go(AppRoutes.householdInvitesOf('hh 1/a'));
@@ -116,52 +168,73 @@ void main() {
     expect(find.byKey(_detailKey, skipOffstage: false), findsOneWidget);
   });
 
-  test('householdInvitesOf asks for the awaiting filter only when told', () {
+  test('householdInvitesOf asks for a filter only when told', () {
     expect(AppRoutes.householdInvitesOf('h1'), '/household/h1/invites');
     expect(
       AppRoutes.householdInvitesOf('h1', awaitingApproval: true),
       '/household/h1/invites?filter=awaiting',
+    );
+    expect(
+      AppRoutes.householdInvitesOf('h1', declined: true),
+      '/household/h1/invites?filter=declined',
+    );
+  });
+
+  test('householdInvitesOf refuses to ask for two filters at once', () {
+    expect(
+      () => AppRoutes.householdInvitesOf(
+        'h1',
+        awaitingApproval: true,
+        declined: true,
+      ),
+      throwsArgumentError,
     );
   });
 
   testWidgets('a link opens the invites on the filter it names (#475)', (
     tester,
   ) async {
-    final seen = <bool>[];
+    final seen = <(bool, bool)>[];
     final router = await pumpRouter(
       tester,
       householdDetailBuilder: (_, _) => marker(_detailKey),
-      householdInvitesBuilder: (_, _, {required awaitingApproval}) {
-        seen.add(awaitingApproval);
-        return marker(_invitesKey);
-      },
+      householdInvitesBuilder:
+          (_, _, {required awaitingApproval, required declined}) {
+            seen.add((awaitingApproval, declined));
+            return marker(_invitesKey);
+          },
     );
 
     router.go(AppRoutes.householdInvitesOf('hh_1', awaitingApproval: true));
     await tester.pumpAndSettle();
-    expect(seen.last, isTrue);
+    expect(seen.last, (true, false));
+
+    router.go(AppRoutes.householdInvitesOf('hh_1', declined: true));
+    await tester.pumpAndSettle();
+    expect(seen.last, (false, true));
 
     router.go(AppRoutes.householdInvitesOf('hh_1'));
     await tester.pumpAndSettle();
-    expect(seen.last, isFalse);
+    expect(seen.last, (false, false));
   });
 
   testWidgets('an unknown filter value opens on Open (#475)', (tester) async {
-    bool? seen;
+    (bool, bool)? seen;
     final router = await pumpRouter(
       tester,
       householdDetailBuilder: (_, _) => marker(_detailKey),
-      householdInvitesBuilder: (_, _, {required awaitingApproval}) {
-        seen = awaitingApproval;
-        return marker(_invitesKey);
-      },
+      householdInvitesBuilder:
+          (_, _, {required awaitingApproval, required declined}) {
+            seen = (awaitingApproval, declined);
+            return marker(_invitesKey);
+          },
     );
 
     router.go('/household/hh_1/invites?filter=bogus');
     await tester.pumpAndSettle();
 
     expect(find.byKey(_invitesKey), findsOneWidget);
-    expect(seen, isFalse);
+    expect(seen, (false, false));
   });
 
   testWidgets('the send form gets the id, over the household', (tester) async {
@@ -172,10 +245,11 @@ void main() {
     final router = await pumpRouter(
       tester,
       householdDetailBuilder: (_, _) => marker(_detailKey),
-      householdInvitesBuilder: (_, _, {required awaitingApproval}) {
-        invitesBuilt++;
-        return marker(_invitesKey);
-      },
+      householdInvitesBuilder:
+          (_, _, {required awaitingApproval, required declined}) {
+            invitesBuilt++;
+            return marker(_invitesKey);
+          },
       sendHouseholdInviteBuilder: (_, id) {
         seen = id;
         return marker(_sendKey);
@@ -199,8 +273,12 @@ void main() {
     final router = await pumpRouter(
       tester,
       householdDetailBuilder: (_, _) => marker(_detailKey),
-      householdInvitesBuilder: (_, _, {required awaitingApproval}) =>
-          marker(_invitesKey),
+      householdInvitesBuilder: (
+        _,
+        _, {
+        required awaitingApproval,
+        required declined,
+      }) => marker(_invitesKey),
       sendHouseholdInviteBuilder: (_, _) => marker(_sendKey),
     );
 

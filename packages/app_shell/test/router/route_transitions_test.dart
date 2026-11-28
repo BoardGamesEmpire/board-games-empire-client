@@ -149,6 +149,7 @@ void main() {
       AppRoutes.householdEditOf('h1'),
       AppRoutes.invites,
       AppRoutes.invitesSent,
+      AppRoutes.notifications,
       AppRoutes.collection,
       AppRoutes.games,
       AppRoutes.gameSearch,

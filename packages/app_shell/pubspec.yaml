@@ -51,6 +51,8 @@ dependencies:
     path: ../core/models
   network_interface:
     path: ../network/network_interface
+  notifications:
+    path: ../features/notifications
   observability:
     path: ../core/observability
   profile:

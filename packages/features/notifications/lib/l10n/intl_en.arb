@@ -2,7 +2,7 @@
   "@@locale": "en",
   "notificationsTitle": "Notifications",
   "@notificationsTitle": {
-    "description": "Title of the page that lists every notification the signed-in user has on this server, read or not. Not the invite inbox, which is a different page."
+    "description": "Title of the page that lists every notification the signed-in user has on this server, read or not, and the label of the navigation menu's entry that opens it. Not the invite inbox, which is a different page."
   },
   "notificationUnknownTitle": "A notification this version of the app can't show",
   "@notificationUnknownTitle": {

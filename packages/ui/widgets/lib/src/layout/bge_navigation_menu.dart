@@ -48,6 +48,19 @@ class BgeNavigationMenu extends InheritedWidget {
   static BgeNavigationMenu? maybeOf(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<BgeNavigationMenu>();
 
+  /// Whether the page at [context] is the top of a section (#611): the
+  /// first route on its navigator, or, where the browser owns Back, a
+  /// [BgeTopLevelRoute] wherever it sits in the stack.
+  ///
+  /// Under a shell, such a page shows the menu button where another shows
+  /// its way back. A page's own control for a section's top alone, such as
+  /// the notifications bell (#475), asks this too, so the two always agree.
+  /// With no shell above, only the first route is one.
+  static bool isSectionTop(BuildContext context) =>
+      ModalRoute.of(context)?.isFirst == true ||
+      ((maybeOf(context)?.browserOwnsBack ?? false) &&
+          BgeTopLevelRoute.isAt(context));
+
   @override
   bool updateShouldNotify(BgeNavigationMenu oldWidget) =>
       onOpen != oldWidget.onOpen ||

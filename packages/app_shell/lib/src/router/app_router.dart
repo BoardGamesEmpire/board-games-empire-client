@@ -116,20 +116,32 @@ abstract final class AppRoutes {
   static const _householdEditSegment = 'edit';
 
   /// The query parameter that picks the filter the invites open on (#475),
-  /// and the value that picks Awaiting approval. Any other value is Open.
+  /// and the values that pick Awaiting approval and Declined. Any other
+  /// value is Open.
   static const householdInvitesFilterParam = 'filter';
   static const householdInvitesAwaitingValue = 'awaiting';
+  static const householdInvitesDeclinedValue = 'declined';
 
   /// The location of one household's invites, on Awaiting approval when
-  /// [awaitingApproval] (#475).
+  /// [awaitingApproval], or on Declined when [declined] (#475). The list
+  /// opens on one filter, so asking for both is an [ArgumentError].
   static String householdInvitesOf(
     String householdId, {
     bool awaitingApproval = false,
+    bool declined = false,
   }) {
+    if (awaitingApproval && declined) {
+      throw ArgumentError(
+        'The invites open on one filter: Awaiting approval or Declined.',
+      );
+    }
     final path = '${householdDetailOf(householdId)}/$_householdInvitesSegment';
-    return awaitingApproval
-        ? '$path?$householdInvitesFilterParam=$householdInvitesAwaitingValue'
-        : path;
+    final filter = awaitingApproval
+        ? householdInvitesAwaitingValue
+        : declined
+        ? householdInvitesDeclinedValue
+        : null;
+    return filter == null ? path : '$path?$householdInvitesFilterParam=$filter';
   }
 
   /// The location of one household's send-invite form.
@@ -147,9 +159,26 @@ abstract final class AppRoutes {
   /// The current user's own profile (#547).
   static const profile = '/profile';
 
+  /// Every notification the current user has on the active server, read or
+  /// not (#475). Top-level: a notification can be about anything, so it
+  /// belongs under nothing. Never the [invites] inbox, which lists invites.
+  static const notifications = '/notifications';
+
   /// The invites the current user sent (#487). Under the inbox, because it
   /// is reached from there.
   static const invitesSent = '/invites/sent';
+
+  /// The query parameter that picks the filter the sent invites open on
+  /// (#475), and the value that picks Declined. Any other value is the
+  /// default filter.
+  static const invitesSentFilterParam = 'filter';
+  static const invitesSentDeclinedValue = 'declined';
+
+  /// The location of the invites the current user sent, on Declined when
+  /// [declined] (#475).
+  static String invitesSentOf({bool declined = false}) => declined
+      ? '$invitesSent?$invitesSentFilterParam=$invitesSentDeclinedValue'
+      : invitesSent;
 
   /// The location of one household's detail screen.
   ///
@@ -732,18 +761,32 @@ typedef InviteInboxScreenBuilder = Widget? Function(BuildContext context);
 /// [NotYetAvailableScreen].
 typedef ProfileScreenBuilder = Widget? Function(BuildContext context);
 
+/// Builds the Notifications page (#475) for the [AppRoutes.notifications]
+/// route. Supplied by `BgeApp`; the same null contract as
+/// [InviteInboxScreenBuilder]: null when no active server is resolvable, or
+/// its container lacks the `NotificationRemoteDataSource` or a user session,
+/// in which case the route falls back to [NotYetAvailableScreen].
+typedef NotificationsScreenBuilder = Widget? Function(BuildContext context);
+
 /// Builds the invites the current user sent (#487) for the
 /// [AppRoutes.invitesSent] route. Supplied by `BgeApp`; same null contract
 /// as [InviteInboxScreenBuilder], so the two routes are available together.
-typedef SentInvitesScreenBuilder = Widget? Function(BuildContext context);
+///
+/// [declined] is whether the location asked to open on that filter (#475);
+/// the builder opens on the default filter otherwise.
+typedef SentInvitesScreenBuilder = Widget? Function(
+  BuildContext context, {
+  required bool declined,
+});
 
 /// Builds one household's invites (#455) for the
 /// [AppRoutes.householdInvites] route, given the `:householdId` the path
 /// carried. Same null contract as [InviteInboxScreenBuilder], and also null
 /// without a `HouseholdRepository`, which says who is looking.
 ///
-/// [awaitingApproval] is whether the location asked to open on that filter
-/// (#475); the builder opens on Open otherwise.
+/// [awaitingApproval] and [declined] say whether the location asked to open
+/// on that filter (#475); at most one is true, and the builder opens on Open
+/// when neither is.
 ///
 /// Not gated on the viewer's role. A deep link by someone the server
 /// refuses reaches the screen, which says only owners and admins can see
@@ -752,6 +795,7 @@ typedef HouseholdInvitesScreenBuilder = Widget? Function(
   BuildContext context,
   String householdId, {
   required bool awaitingApproval,
+  required bool declined,
 });
 
 /// Builds the send-invite form for one household (#455) for the
@@ -1097,6 +1141,7 @@ GoRouter buildAppRouter({
   EditHouseholdScreenBuilder? editHouseholdBuilder,
   InviteInboxScreenBuilder? inviteInboxBuilder,
   ProfileScreenBuilder? profileBuilder,
+  NotificationsScreenBuilder? notificationsBuilder,
   SentInvitesScreenBuilder? sentInvitesBuilder,
   CollectionListScreenBuilder? collectionListBuilder,
   CollectionEntryScreenBuilder? collectionEntryBuilder,
@@ -1537,15 +1582,20 @@ GoRouter buildAppRouter({
                               state.pathParameters[AppRoutes
                                   .householdIdParam] ??
                               '';
+                          final filter =
+                              state.uri.queryParameters[AppRoutes
+                                  .householdInvitesFilterParam];
                           return _materialPage(
                             state,
                             householdInvitesBuilder?.call(
                                   context,
                                   id,
                                   awaitingApproval:
-                                      state.uri.queryParameters[AppRoutes
-                                          .householdInvitesFilterParam] ==
+                                      filter ==
                                       AppRoutes.householdInvitesAwaitingValue,
+                                  declined:
+                                      filter ==
+                                      AppRoutes.householdInvitesDeclinedValue,
                                 ) ??
                                 const NotYetAvailableScreen(),
                           );
@@ -1604,6 +1654,20 @@ GoRouter buildAppRouter({
                   ),
                 ),
               ),
+              // #475: every notification, pushed from the navigation menu
+              // and from the bell's preview. Under the shell, so the page
+              // finds the session's unread count above it.
+              GoRoute(
+                path: AppRoutes.notifications,
+                pageBuilder: (context, state) => _materialPage(
+                  state,
+                  BgeTopLevelRoute(
+                    child:
+                        notificationsBuilder?.call(context) ??
+                        const NotYetAvailableScreen(),
+                  ),
+                ),
+              ),
               // #455: the invites sent to the current user, pushed from the
               // navigation menu.
               GoRoute(
@@ -1623,7 +1687,13 @@ GoRouter buildAppRouter({
                     path: 'sent',
                     pageBuilder: (context, state) => _materialPage(
                       state,
-                      sentInvitesBuilder?.call(context) ??
+                      sentInvitesBuilder?.call(
+                            context,
+                            declined:
+                                state.uri.queryParameters[AppRoutes
+                                    .invitesSentFilterParam] ==
+                                AppRoutes.invitesSentDeclinedValue,
+                          ) ??
                           const NotYetAvailableScreen(),
                     ),
                   ),

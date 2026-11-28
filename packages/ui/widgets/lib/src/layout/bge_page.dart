@@ -444,9 +444,7 @@ class BgePage extends StatelessWidget {
     if (leading != null || !automaticallyImplyLeading) return asSet;
     final menu = BgeNavigationMenu.maybeOf(context);
     if (menu == null) return asSet;
-    final top =
-        ModalRoute.of(context)?.isFirst == true ||
-        (menu.browserOwnsBack && BgeTopLevelRoute.isAt(context));
+    final top = BgeNavigationMenu.isSectionTop(context);
     if (!top) {
       return menu.browserOwnsBack ? (leading: null, imply: false) : asSet;
     }

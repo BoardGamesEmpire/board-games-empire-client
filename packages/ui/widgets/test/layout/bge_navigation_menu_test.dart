@@ -408,6 +408,95 @@ void main() {
     });
   });
 
+  // The test a page's menu button stands on, and a section-top control of
+  // the app's own, such as the notifications bell (#475), with it.
+  group('BgeNavigationMenu.isSectionTop', () {
+    /// What isSectionTop answers on the page home's Push button opens:
+    /// [topLevel] marks it a section's top, as a router does.
+    Future<({bool home, bool pushed})> answers(
+      WidgetTester tester, {
+      required bool withMenu,
+      bool browserOwnsBack = false,
+      bool topLevel = true,
+    }) async {
+      late bool home;
+      late bool pushed;
+      Widget reading(String title, ValueSetter<bool> record) => BgePage(
+        title: Text(title),
+        child: Builder(
+          builder: (context) {
+            record(BgeNavigationMenu.isSectionTop(context));
+            return TextButton(
+              key: title == 'Home' ? _pushKey : null,
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) {
+                    final page = reading('Pushed', (top) => pushed = top);
+                    return topLevel ? BgeTopLevelRoute(child: page) : page;
+                  },
+                ),
+              ),
+              child: const Text('Push'),
+            );
+          },
+        ),
+      );
+      await tester.pumpWidget(
+        _host(
+          home: reading('Home', (top) => home = top),
+          withMenu: withMenu,
+          browserOwnsBack: browserOwnsBack,
+        ),
+      );
+      await _push(tester);
+      return (home: home, pushed: pushed);
+    }
+
+    testWidgets('the first route is one; a top-level page pushed over it is '
+        'not', (tester) async {
+      final top = await answers(tester, withMenu: true);
+
+      expect(top.home, isTrue);
+      expect(top.pushed, isFalse);
+      // The menu button follows it: the pushed page keeps its arrow.
+      expect(find.byType(BackButton), findsOneWidget);
+    });
+
+    testWidgets('where the browser owns Back, a top-level page pushed over '
+        'another is one, as its menu button says', (tester) async {
+      final top = await answers(
+        tester,
+        withMenu: true,
+        browserOwnsBack: true,
+      );
+
+      expect(top.home, isTrue);
+      expect(top.pushed, isTrue);
+      expect(_menuButton, findsOneWidget);
+    });
+
+    testWidgets('where the browser owns Back, a pushed page under a section '
+        'is not', (tester) async {
+      final top = await answers(
+        tester,
+        withMenu: true,
+        browserOwnsBack: true,
+        topLevel: false,
+      );
+
+      expect(top.pushed, isFalse);
+    });
+
+    testWidgets('with no shell above, only the first route is one', (
+      tester,
+    ) async {
+      final top = await answers(tester, withMenu: false);
+
+      expect(top.home, isTrue);
+      expect(top.pushed, isFalse);
+    });
+  });
+
   group('BgeTopLevelRoute', () {
     testWidgets('isAt is true beneath one and false elsewhere', (
       tester,
