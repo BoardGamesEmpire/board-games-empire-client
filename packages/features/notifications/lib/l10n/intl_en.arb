@@ -201,6 +201,18 @@
   "@notificationMarkRead": {
     "description": "Button under a notification that opens nothing, such as one this version of the app can't show, on the Notifications page and in the preview the bell in the header opens. It marks that notification read, so it no longer counts as unread. It shows only while the notification is unread."
   },
+  "notificationCopyError": "Copy error",
+  "@notificationCopyError": {
+    "description": "Button under a notification on the Notifications page whose quoted text is an error message, as when a DataGateway was switched off after repeated failures. It copies that message, exactly as the server sent it, to the clipboard, so a server admin can look it up or report it."
+  },
+  "notificationErrorCopied": "Error copied",
+  "@notificationErrorCopied": {
+    "description": "Said once notificationCopyError has copied a notification's error message to the clipboard."
+  },
+  "notificationErrorCopyFailed": "Couldn't copy the error. Try again.",
+  "@notificationErrorCopyFailed": {
+    "description": "Said when notificationCopyError couldn't copy a notification's error message to the clipboard."
+  },
   "notificationsBellTooltip": "Notifications",
   "@notificationsBellTooltip": {
     "description": "Tooltip of the bell button in the header, shown when a mouse rests on it. The bell opens a preview of the latest notifications. Screen readers hear the button's name, which gives the unread count, instead."
@@ -342,7 +354,7 @@
   },
   "notificationEventAttendeeRemovedTitle": "You were removed from {eventTitle}",
   "@notificationEventAttendeeRemovedTitle": {
-    "description": "Title of a notification sent to a person who another person took off an event's list of attendees. It opens nothing, since the event is no longer theirs to see: the user can only mark it read. {eventTitle} is the event's title as the server gives it.",
+    "description": "Title of a notification sent to a person who another person took off an event's list of attendees. It opens the event, which they may still be able to see, as when it is their household's or public. {eventTitle} is the event's title as the server gives it.",
     "placeholders": {
       "eventTitle": {
         "type": "String",

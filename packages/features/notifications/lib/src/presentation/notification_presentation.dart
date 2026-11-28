@@ -11,6 +11,7 @@ final class NotificationPresentation extends Equatable {
     required this.title,
     this.detail,
     this.quote,
+    this.quoteIsError = false,
     this.target,
   });
 
@@ -23,10 +24,15 @@ final class NotificationPresentation extends Equatable {
   /// Text the server wrote, shown as it came and never translated.
   final String? quote;
 
+  /// Whether [quote] is an error message, such as a DataGateway's upstream
+  /// error (#545). The Notifications page offers to copy one, so a server
+  /// admin can look it up or report it on any platform.
+  final bool quoteIsError;
+
   /// What the row opens. Null makes the row plain: it opens nothing, and
   /// the user can only mark it read.
   final NotificationTarget? target;
 
   @override
-  List<Object?> get props => [icon, title, detail, quote, target];
+  List<Object?> get props => [icon, title, detail, quote, quoteIsError, target];
 }

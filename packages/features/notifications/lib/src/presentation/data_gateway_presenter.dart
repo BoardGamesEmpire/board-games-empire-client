@@ -12,7 +12,8 @@ import 'package:notifications/src/presentation/payload_fields.dart';
 
 /// `DataGatewayAutoDisabled`: repeated failures switched a DataGateway off.
 /// Opens it. The `reason` code is worded; `lastError` is the upstream's own
-/// text, so it is the quote, untranslated.
+/// text, so it is the quote, untranslated, and an error the page offers to
+/// copy.
 NotificationPresentation? presentDataGatewayAutoDisabled(
   NotificationsLocalizations l10n,
   Map<String, Object?> payload,
@@ -30,6 +31,7 @@ NotificationPresentation? presentDataGatewayAutoDisabled(
       _ => l10n.notificationDataGatewayGenericDetail,
     },
     quote: nonBlankString(payload, 'lastError'),
+    quoteIsError: true,
     target: DataGatewayTarget(gatewayId),
   );
 }

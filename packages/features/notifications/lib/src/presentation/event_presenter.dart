@@ -70,8 +70,10 @@ NotificationPresentation? presentEventDeleted(
   );
 }
 
-/// `EventAttendeeRemoved`, sent to the person removed: the event isn't theirs
-/// to open any more, so the row opens nothing.
+/// `EventAttendeeRemoved`, sent to the person removed: opens the event.
+/// Removal takes away only what attending gave them, so they can still see
+/// an event of their household, a public one, or one that reaches their
+/// friends. Where they can't, the event's page says it can't be found.
 NotificationPresentation? presentEventAttendeeRemoved(
   NotificationsLocalizations l10n,
   Map<String, Object?> payload,
@@ -81,6 +83,7 @@ NotificationPresentation? presentEventAttendeeRemoved(
   return NotificationPresentation(
     icon: Icons.person_remove_outlined,
     title: l10n.notificationEventAttendeeRemovedTitle(event.title),
+    target: EventTarget(event.id),
   );
 }
 

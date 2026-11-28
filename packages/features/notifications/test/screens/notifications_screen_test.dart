@@ -250,6 +250,8 @@ void main() {
     }
     // The quote is selectable on the page: the tile is not cut.
     expect(tileOf(tester, 'new').quoteMaxLines, isNull);
+    // And an error in it can be copied, on any platform (#545).
+    expect(tileOf(tester, 'new').offersCopy, isTrue);
 
     // A screen reader counts the rows loaded. Three rows don't scroll, so
     // the scroll view's own count is what a screen reader is given.

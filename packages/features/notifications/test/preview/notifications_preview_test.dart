@@ -182,11 +182,13 @@ void main() {
     expect(tops, orderedEquals([...tops]..sort()), reason: 'newest first');
     expect(tileOf(tester, 'n1').read, isFalse);
     expect(tileOf(tester, 'n2').read, isTrue);
-    // A glance: each row's quote is cut to two lines.
+    // A glance: each row's quote is cut to two lines, and an error is
+    // copied from the page, not here.
     for (final tile in tester.widgetList<NotificationTile>(
       find.byType(NotificationTile),
     )) {
       expect(tile.quoteMaxLines, 2);
+      expect(tile.offersCopy, isFalse);
     }
     // Rows in a pop-up stay plain (STYLE_GUIDE, List surfaces).
     expect(find.byType(BgeOutlinedRow), findsNothing);

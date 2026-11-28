@@ -285,6 +285,8 @@ void main() {
       });
 
       expect(presentation.quote, error);
+      // An error, which the page offers to copy (#545).
+      expect(presentation.quoteIsError, isTrue);
       expect(presentation.title, isNot(contains('Verbindung')));
       expect(presentation.detail, isNot(contains('Verbindung')));
     });
@@ -568,6 +570,8 @@ void main() {
       );
       expect(presentation.title, contains('cancelled'));
       expect(presentation.quote, reason);
+      // A host's words, not an error: nothing offers to copy them.
+      expect(presentation.quoteIsError, isFalse);
       expect(presentation.target, const EventTarget('e1'));
     });
 
@@ -770,6 +774,20 @@ void main() {
       expect(presentation.title, contains('{who} <i>'));
     });
 
+    // Removal takes only what attending gave: a household, public or
+    // friends' event is still theirs to see.
+    test('EventAttendeeRemoved says what happened and opens the event', () {
+      final presentation = present('EventAttendeeRemoved', event);
+
+      expect(
+        presentation.title,
+        l10n.notificationEventAttendeeRemovedTitle('Friday Night Games'),
+      );
+      expect(presentation.title, contains('removed'));
+      expect(presentation.target, const EventTarget('e1'));
+      expect(presentation.icon, Icons.person_remove_outlined);
+    });
+
     test('missing required field is a plain row', () {
       for (final type in [
         'EventCreated',
@@ -779,6 +797,7 @@ void main() {
         'EventRsvpChanged',
         'EventInviteAccepted',
         'EventInviteDeclined',
+        'EventAttendeeRemoved',
       ]) {
         const full = <String, Object?>{
           'eventId': 'e1',
@@ -826,17 +845,6 @@ void main() {
       expect(presentation.target, isNull);
     });
 
-    test('EventAttendeeRemoved says what happened and opens nothing', () {
-      final presentation = present('EventAttendeeRemoved', event);
-
-      expect(
-        presentation.title,
-        l10n.notificationEventAttendeeRemovedTitle('Friday Night Games'),
-      );
-      expect(presentation.title, contains('removed'));
-      expect(presentation.target, isNull);
-    });
-
     test('EventInviteReceived is a row with no destination', () {
       final presentation = present('EventInviteReceived', {
         ...event,
@@ -855,7 +863,6 @@ void main() {
     test('missing required field is a plain row', () {
       for (final type in [
         'EventDeleted',
-        'EventAttendeeRemoved',
         'EventInviteReceived',
       ]) {
         const full = <String, Object?>{

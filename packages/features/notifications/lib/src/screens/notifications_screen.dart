@@ -626,6 +626,7 @@ class _NotificationsViewState extends State<_NotificationsView> {
                 focus: _rows,
                 onOpen: (target) => unawaited(_open(item, target)),
                 onMarkRead: () => _markRead(item),
+                offersCopy: true,
               ),
             ),
           ),
