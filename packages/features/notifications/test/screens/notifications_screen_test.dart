@@ -117,6 +117,11 @@ void main() {
   String? primaryFocusLabel() => FocusManager.instance.primaryFocus?.debugLabel;
 
   Finder markAll() => find.byKey(NotificationsScreen.markAllKey);
+
+  /// The [T] inside what [finder] finds: a shared part, keyed by the
+  /// surface, draws it.
+  T inside<T extends Widget>(WidgetTester tester, Finder finder) =>
+      tester.widget<T>(find.descendant(of: finder, matching: find.byType(T)));
   Finder loadMore() => find.byKey(NotificationsScreen.loadMoreKey);
   Finder refreshButton() => find.byKey(NotificationsScreen.refreshKey);
 
@@ -204,7 +209,7 @@ void main() {
     );
     expect(empty, findsOneWidget);
     expect(
-      tester.widget<BgeEmptyState>(empty).title,
+      inside<BgeEmptyState>(tester, empty).title,
       'No notifications yet',
     );
     expect(markAll(), findsNothing);
@@ -277,6 +282,53 @@ void main() {
     expect(tileOf(tester, 'b').read, isFalse);
     // The bell's count hears of it.
     expect(count.state.unread, 3);
+  });
+
+  // A tapped row shows read and opens even when marking it read fails, or
+  // the app is offline (#475).
+  testWidgets('a row with a target still opens and shows read when its mark '
+      'read fails', (tester) async {
+    remote
+      ..scriptPages([
+        page([joined('a'), joined('b')]),
+      ])
+      ..scriptMarkRead([offline]);
+
+    await tester.pumpWidget(screen());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text(titleOf('a')));
+    await tester.pumpAndSettle();
+
+    expect(opened, [const HouseholdTarget('h-a')]);
+    expect(remote.markReadCalls, [
+      ['a'],
+    ]);
+    expect(tileOf(tester, 'a').read, isTrue);
+    expect(tileOf(tester, 'b').read, isFalse);
+    // A quiet failure: no banner over what the row opened.
+    expect(markAllFailed(), findsNothing);
+    expect(find.byType(SnackBar), findsNothing);
+  });
+
+  testWidgets('offline, a row with a target still opens and shows read', (
+    tester,
+  ) async {
+    remote
+      ..scriptPages([
+        page([joined('a'), joined('b')]),
+      ])
+      ..scriptMarkRead([offline]);
+
+    await tester.pumpWidget(screen(offline: true));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text(titleOf('a')));
+    await tester.pumpAndSettle();
+
+    expect(opened, [const HouseholdTarget('h-a')]);
+    expect(tileOf(tester, 'a').read, isTrue);
+    expect(tileOf(tester, 'b').read, isFalse);
   });
 
   testWidgets('while what a row opened is open, a second open does nothing', (
@@ -409,6 +461,60 @@ void main() {
     expect(find.widgetWithText(TextButton, 'Mark read'), findsNothing);
   });
 
+  group("a plain row's Mark read pressed from the keyboard goes with the row "
+      'turned read, and hands focus on (#475)', () {
+    /// The node of the control nearest above [finder].
+    FocusNode focusOf(WidgetTester tester, Finder finder) =>
+        Focus.of(tester.element(finder));
+
+    /// Tabs to the first Mark read and presses Enter on it.
+    Future<void> markReadByKeyboard(WidgetTester tester) async {
+      final button = focusOf(tester, find.text('Mark read').first);
+      for (var i = 0; i < 20 && !button.hasPrimaryFocus; i++) {
+        await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+        await tester.pump();
+      }
+      expect(button.hasPrimaryFocus, isTrue, reason: 'Tab reaches it');
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('to the next row with a control, past one with none', (
+      tester,
+    ) async {
+      remote
+        ..scriptPages([
+          page([unknown('odd'), unknown('done', read: true), joined('c')]),
+        ])
+        ..scriptMarkRead([null]);
+      await tester.pumpWidget(screen());
+      await tester.pumpAndSettle();
+
+      await markReadByKeyboard(tester);
+
+      expect(tileOf(tester, 'odd').read, isTrue);
+      expect(find.text('Mark read'), findsNothing);
+      expect(focusOf(tester, find.text(titleOf('c'))).hasPrimaryFocus, isTrue);
+    });
+
+    testWidgets('to the title, with no row after it to take it', (
+      tester,
+    ) async {
+      remote
+        ..scriptPages([
+          page([joined('a'), unknown('odd')]),
+        ])
+        ..scriptMarkRead([null]);
+      await tester.pumpWidget(screen());
+      await tester.pumpAndSettle();
+
+      await markReadByKeyboard(tester);
+
+      expect(tileOf(tester, 'odd').read, isTrue);
+      expect(primaryFocusLabel(), 'Notifications heading');
+    });
+  });
+
   group('Mark all read', () {
     for (final width in [320.0, 700.0, 1200.0]) {
       testWidgets('sits in an end-aligned row above the list, at every '
@@ -495,7 +601,7 @@ void main() {
 
       expect(markAll(), findsOneWidget);
       expect(
-        tester.widget<BgeInertButton>(markAll()).inert,
+        inside<BgeInertButton>(tester, markAll()).inert,
         isTrue,
       );
       expect(find.text('Marking all read\u{2026}'), findsOneWidget);
@@ -705,9 +811,15 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(markAll(), findsOneWidget);
-      expect(tester.widget<BgeInertButton>(markAll()).onPressed, isNull);
+      expect(inside<BgeInertButton>(tester, markAll()).onPressed, isNull);
       expect(
-        find.ancestor(of: markAll(), matching: find.byType(BgeOnlineOnly)),
+        find.ancestor(
+          of: find.descendant(
+            of: markAll(),
+            matching: find.byType(BgeInertButton),
+          ),
+          matching: find.byType(BgeOnlineOnly),
+        ),
         findsOneWidget,
       );
       expect(find.text(onlineOnlyCopy), findsOneWidget);
@@ -756,6 +868,43 @@ void main() {
         null,
         null,
       ]);
+    });
+
+    testWidgets('the app coming back to the foreground re-reads the list '
+        '(#475)', (tester) async {
+      remote.scriptPages([
+        page([joined('a')]),
+        page([joined('b'), joined('a')]),
+      ]);
+
+      await tester.pumpWidget(screen());
+      await tester.pumpAndSettle();
+      expect(remote.fetchPageCalls, hasLength(1));
+
+      // The platform walks the states one at a time; the listener asserts on
+      // a jump.
+      void walk(List<AppLifecycleState> states) =>
+          states.forEach(tester.binding.handleAppLifecycleStateChanged);
+
+      walk([
+        AppLifecycleState.inactive,
+        AppLifecycleState.hidden,
+        AppLifecycleState.paused,
+      ]);
+      await tester.pumpAndSettle();
+      // Going to the background reads nothing.
+      expect(remote.fetchPageCalls, hasLength(1));
+
+      walk([
+        AppLifecycleState.hidden,
+        AppLifecycleState.inactive,
+        AppLifecycleState.resumed,
+      ]);
+      await tester.pumpAndSettle();
+
+      expect(remote.fetchPageCalls, hasLength(2));
+      expect(remote.fetchPageCalls.last.cursor, isNull);
+      expect(row('b'), findsOneWidget);
     });
 
     testWidgets("a pull's spinner holds until the pass ends", (tester) async {
@@ -1216,7 +1365,7 @@ void main() {
         matching: find.byKey(NotificationsScreen.failedKey),
       );
       expect(failed, findsOneWidget);
-      final state = tester.widget<BgeErrorState>(failed);
+      final state = inside<BgeErrorState>(tester, failed);
       expect(state.icon, Icons.cloud_off_outlined);
       expect(state.title, "Couldn't load your notifications");
       expect(state.body, 'Check your connection, then try again.');
@@ -1330,7 +1479,8 @@ void main() {
     );
 
     auditScreen(
-      'offline, Mark all read waits for a connection',
+      "offline, Mark all read and a plain row's Mark read wait for a "
+      'connection',
       build: screenWith(rows, offline: true),
       arrange: (tester) async {
         await tester.pumpAndSettle();

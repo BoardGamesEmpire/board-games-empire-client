@@ -6,7 +6,7 @@
   },
   "notificationUnknownTitle": "A notification this version of the app can't show",
   "@notificationUnknownTitle": {
-    "description": "Title of a row in the notifications list for a notification the app can't word: the server sent a kind of notification this version doesn't know, or one whose details it can't read. The row opens nothing; the user can only mark it read."
+    "description": "Title of a notification's row, on the Notifications page and in the preview the bell in the header opens, for a notification the app can't word: the server sent a kind of notification this version doesn't know, or one whose details it can't read. The row opens nothing; the user can only mark it read."
   },
   "notificationHouseholdInviteReceivedTitle": "{inviterName} invited you to {householdName}",
   "@notificationHouseholdInviteReceivedTitle": {
@@ -118,7 +118,7 @@
   },
   "notificationReceivedAt": "{date} at {time}",
   "@notificationReceivedAt": {
-    "description": "When a notification arrived, on its row in the notifications list: the date, then the time of day, in the device's time zone.",
+    "description": "When a notification arrived, on its row on the Notifications page and in the preview the bell in the header opens: the date, then the time of day, in the device's time zone.",
     "placeholders": {
       "date": {
         "type": "DateTime",
@@ -134,7 +134,7 @@
   },
   "notificationMarkRead": "Mark read",
   "@notificationMarkRead": {
-    "description": "Button under a notification that opens nothing, such as one this version of the app can't show. It marks that notification read, so it no longer counts as unread. It shows only while the notification is unread."
+    "description": "Button under a notification that opens nothing, such as one this version of the app can't show, on the Notifications page and in the preview the bell in the header opens. It marks that notification read, so it no longer counts as unread. It shows only while the notification is unread."
   },
   "notificationsBellTooltip": "Notifications",
   "@notificationsBellTooltip": {
@@ -153,31 +153,31 @@
   },
   "notificationsLoading": "Loading your notifications…",
   "@notificationsLoading": {
-    "description": "Shown, and read by a screen reader, while the Notifications page waits for the first of the user's notifications to arrive from the server."
+    "description": "Shown, and read by a screen reader, while the user's notifications are on their way from the server: on the Notifications page, and in the preview of the latest ones that the bell in the header opens."
   },
   "notificationsEmptyTitle": "No notifications yet",
   "@notificationsEmptyTitle": {
-    "description": "Title on the Notifications page when the server has no notifications for the user, read or unread."
+    "description": "Title shown when the server has no notifications for the user, read or unread: on the Notifications page, and in the preview of the latest ones that the bell in the header opens."
   },
   "notificationsEmptyBody": "When something needs you, such as an invite, it shows up here.",
   "@notificationsEmptyBody": {
-    "description": "Line under the title on the Notifications page when the user has no notifications: what will appear on the page."
+    "description": "Line under the title when the user has no notifications, saying what will appear there: on the Notifications page, and in the preview the bell in the header opens."
   },
   "notificationsLoadFailed": "Couldn't load your notifications",
   "@notificationsLoadFailed": {
-    "description": "Title on the Notifications page when the user's notifications couldn't be read from the server, so there is nothing to show. A Try again button follows."
+    "description": "Title shown when the user's notifications couldn't be read from the server, so there is nothing to show: on the Notifications page, and in the preview of the latest ones that the bell in the header opens. A Try again button follows."
   },
   "notificationsLoadFailedOfflineBody": "Check your connection, then try again.",
   "@notificationsLoadFailedOfflineBody": {
-    "description": "Line under the title when the Notifications page couldn't load because the server didn't answer: the device may be offline, or the server down."
+    "description": "Line under the title when the notifications couldn't load because the server didn't answer, on the Notifications page or in the preview the bell in the header opens: the device may be offline, or the server down."
   },
   "notificationsLoadFailedRefusedBody": "The server wouldn't send your notifications. If trying again doesn't help, tell the server's admin.",
   "@notificationsLoadFailedRefusedBody": {
-    "description": "Line under the title when the Notifications page couldn't load because the server answered and refused. Trying again is unlikely to help, so it points to the person who runs the server."
+    "description": "Line under the title when the notifications couldn't load because the server answered and refused, on the Notifications page or in the preview the bell in the header opens. Trying again is unlikely to help, so it points to the person who runs the server."
   },
   "notificationsRetry": "Try again",
   "@notificationsRetry": {
-    "description": "Button on the Notifications page, after its notifications couldn't be loaded, that reads them from the server again."
+    "description": "Button that reads the notifications from the server again after reading them failed: under the failure on the Notifications page and in the preview the bell in the header opens, and on the banner at the top of the page when a refresh failed."
   },
   "notificationsRefresh": "Refresh",
   "@notificationsRefresh": {
@@ -185,7 +185,7 @@
   },
   "notificationsRefreshing": "Refreshing…",
   "@notificationsRefreshing": {
-    "description": "Name and tooltip of the Notifications page's refresh button while the notifications are being read from the server again."
+    "description": "Name and tooltip of the Notifications page's refresh button, and the name of the Try again on the page's banner after a refresh failed, while the notifications are being read from the server again."
   },
   "notificationsRefreshFailed": "Couldn't refresh your notifications. They may be out of date.",
   "@notificationsRefreshFailed": {
@@ -193,11 +193,11 @@
   },
   "notificationsMarkAllRead": "Mark all read",
   "@notificationsMarkAllRead": {
-    "description": "Button above the list on the Notifications page, shown while any notification is unread. It marks every notification the user has read, with no confirmation, since nothing is lost: they stay on the page."
+    "description": "Button that marks every notification the user has read, shown ones or not, with no confirmation, since nothing is lost: they stay listed, shown read. It sits above the list on the Notifications page, and above the latest notifications in the preview the bell in the header opens, while any notification listed there is unread."
   },
   "notificationsMarkingAllRead": "Marking all read…",
   "@notificationsMarkingAllRead": {
-    "description": "What the Mark all read button says, and is called by a screen reader, while the server is marking every notification read."
+    "description": "What the Mark all read button says, and is called by a screen reader, while the server is marking every notification read: on the Notifications page and in the preview the bell in the header opens."
   },
   "notificationsLoadMore": "Load more",
   "@notificationsLoadMore": {
@@ -209,11 +209,11 @@
   },
   "notificationsMarkAllFailedOffline": "Couldn't mark your notifications read. Check your connection, then try again.",
   "@notificationsMarkAllFailedOffline": {
-    "description": "Banner at the foot of the Notifications page when Mark all read failed because the server didn't answer. The notifications show unread again, and Mark all read can be pressed again. It stays until the next Mark all read answers, or the user dismisses it."
+    "description": "Banner when Mark all read failed because the server didn't answer. The notifications show unread again, and Mark all read can be pressed again. On the Notifications page it sits at the foot of the page, and stays until the next Mark all read answers or the user dismisses it. In the preview the bell in the header opens, it sits under the Mark all read button, and stays until the next Mark all read answers."
   },
   "notificationsMarkAllRefused": "The server wouldn't mark your notifications read.",
   "@notificationsMarkAllRefused": {
-    "description": "Banner at the foot of the Notifications page when the server answered Mark all read and refused it. The notifications show unread again. It stays until the next Mark all read answers, or the user dismisses it."
+    "description": "Banner when the server answered Mark all read and refused it. The notifications show unread again. On the Notifications page it sits at the foot of the page, and stays until the next Mark all read answers or the user dismisses it. In the preview the bell in the header opens, it sits under the Mark all read button, and stays until the next Mark all read answers."
   },
   "notificationsLoadMoreFailedOffline": "Couldn't load more notifications. Check your connection, then choose Load more.",
   "@notificationsLoadMoreFailedOffline": {
@@ -226,5 +226,13 @@
   "notificationsDismiss": "Dismiss",
   "@notificationsDismiss": {
     "description": "Button on a banner at the foot of the Notifications page, saying that Mark all read or Load more failed. It takes the banner away."
+  },
+  "notificationsPreviewTitle": "Notifications",
+  "@notificationsPreviewTitle": {
+    "description": "Heading of the pop-up the bell in the header opens, which shows the five latest notifications, read or not, with a button to the Notifications page for the rest. A screen reader also calls the pop-up this as it opens. Not the invite inbox, which is a different page."
+  },
+  "notificationsPreviewSeeAll": "See all",
+  "@notificationsPreviewSeeAll": {
+    "description": "Button at the foot of the pop-up the bell in the header opens, which shows the five latest notifications. It opens the Notifications page, which lists every notification, read or not, a page at a time."
   }
 }

@@ -10,16 +10,17 @@ import 'package:notifications/src/list/notification_list_bloc.dart';
 import 'package:notifications/src/list/notification_list_event.dart';
 import 'package:notifications/src/list/notification_list_state.dart';
 import 'package:notifications/src/presentation/notification_target.dart';
-import 'package:notifications/src/presentation/present_notification.dart';
-import 'package:notifications/src/widgets/notification_tile.dart';
+import 'package:notifications/src/widgets/notification_list_parts.dart';
+import 'package:notifications/src/widgets/notification_row.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
 /// The Notifications page (#475): every notification the user has on the
 /// active server, read or not, newest first, a page at a time.
 ///
-/// Online only: the list is read from the server when the page opens, on a
-/// pull, and on the header's Refresh, and nothing is stored. A read that
+/// Online only: the list is read from the server when the page opens, when
+/// the app comes back to the foreground, on a pull, and on the header's
+/// Refresh, and nothing is stored. A read that
 /// fails with nothing loaded takes the page, as a [BgeErrorState] with Try
 /// again. A refresh that fails over the rows keeps them, under a
 /// [BgeRefreshBanner] in the header, until a refresh works.
@@ -34,9 +35,12 @@ import 'package:ui_tokens/ui_tokens.dart';
 ///
 /// Tapping a row that opens something marks it read and calls [onOpen] with
 /// its target; until that completes, other rows open nothing. A plain row
-/// opens nothing: its "Mark read" marks it read. The row stays on the page
-/// either way, shown read. A mark-read that fails says nothing, and the
-/// next refresh tells the truth.
+/// opens nothing: its "Mark read" marks it read, and goes, so one pressed
+/// from the keyboard hands focus on to the next row with a control, or else
+/// to the title ([NotificationRowFocus]). The row stays on the page either
+/// way, shown read. A mark-read that fails says nothing, and the
+/// next refresh tells the truth. Offline a row still opens and shows read;
+/// a plain row's "Mark read" waits for a connection.
 ///
 /// "Mark all read" sits in a row of its own above the list, at its end, at
 /// every width, while a row loaded is unread. It asks for no confirmation,
@@ -143,7 +147,8 @@ class _NotificationsView extends StatefulWidget {
 class _NotificationsViewState extends State<_NotificationsView> {
   /// On the page's title, which takes focus only when sent there: it is no
   /// Tab stop. Where focus waits when the control that had it goes: Try
-  /// again as the load starts, Mark all read once nothing is unread.
+  /// again as the load starts, Mark all read once nothing is unread, and a
+  /// row's Mark read with no row after it to take focus.
   final FocusNode _heading = FocusNode(
     debugLabel: 'Notifications heading',
     skipTraversal: true,
@@ -202,16 +207,32 @@ class _NotificationsViewState extends State<_NotificationsView> {
   );
 
   /// Around each row, by notification id, so that focus can be handed to a
-  /// row once it is built.
-  final Map<String, FocusNode> _rows = {};
+  /// row once it is built, and on from a row whose Mark read has gone.
+  late final NotificationRowFocus _rows = NotificationRowFocus(
+    heading: _heading,
+    order: () => [
+      for (final item in context.read<NotificationListBloc>().state.items)
+        item.id,
+    ],
+  );
 
   /// How many rows were loaded when the running Load more started: the
   /// index of the first row it adds.
   int _shownBeforeMore = 0;
 
+  /// Re-reads the list when the app comes back to the foreground (#475).
+  late final AppLifecycleListener _lifecycle;
+
   @override
   void initState() {
     super.initState();
+    // The count refreshes on resume in its own host; the list is this
+    // page's.
+    _lifecycle = AppLifecycleListener(
+      onResume: () => context.read<NotificationListBloc>().add(
+        const NotificationListRefreshRequested(),
+      ),
+    );
     _refreshCount();
   }
 
@@ -229,15 +250,14 @@ class _NotificationsViewState extends State<_NotificationsView> {
 
   @override
   void dispose() {
+    _lifecycle.dispose();
     _heading.dispose();
     _markAll.dispose();
     _loadMore.dispose();
     _markAllDismiss.dispose();
     _loadMoreDismiss.dispose();
     _refreshBanner.dispose();
-    for (final node in _rows.values) {
-      node.dispose();
-    }
+    _rows.dispose();
     super.dispose();
   }
 
@@ -306,12 +326,6 @@ class _NotificationsViewState extends State<_NotificationsView> {
       .read<NotificationListBloc>()
       .add(NotificationListOpened(notification.id));
 
-  /// Whether a Mark all read that was running has answered.
-  static bool _markAllAnswered(
-    NotificationListState previous,
-    NotificationListState current,
-  ) => previous.markingAll && !current.markingAll;
-
   /// Whether a Load more that was running has answered.
   static bool _loadMoreAnswered(
     NotificationListState previous,
@@ -330,19 +344,12 @@ class _NotificationsViewState extends State<_NotificationsView> {
           !current.refreshing &&
           current.outcome is! RefreshFailed);
 
-  void _onMarkAllAnswered(BuildContext context, NotificationListState state) {
-    final outcome = state.outcome;
-    if (outcome is MarkAllFailed) {
-      setState(() {
-        _markAllFailure = outcome;
-        _markAllFailures++;
-      });
-      _keepInView(_markAll);
-      return;
-    }
-    if (_markAllFailure != null) setState(() => _markAllFailure = null);
-    // Nothing left unread: Mark all read goes in the next frame.
-    if (!state.hasUnread && _markAll.hasFocus) _heading.requestFocus();
+  void _onMarkAllFailed(MarkAllFailed outcome) {
+    setState(() {
+      _markAllFailure = outcome;
+      _markAllFailures++;
+    });
+    _keepInView(_markAll);
   }
 
   void _onLoadMoreAnswered(BuildContext context, NotificationListState state) {
@@ -372,9 +379,7 @@ class _NotificationsViewState extends State<_NotificationsView> {
     WidgetsBinding.instance
       ..addPostFrameCallback((_) {
         if (!mounted || !focusIsFree(context, untouched: focused)) return;
-        final row = first == null
-            ? null
-            : _rows[first]?.traversalDescendants.firstOrNull;
+        final row = first == null ? null : _rows.firstIn(first);
         if (row == null) {
           _heading.requestFocus();
           return;
@@ -385,12 +390,6 @@ class _NotificationsViewState extends State<_NotificationsView> {
       // A post-frame callback does not ask for a frame.
       ..ensureVisualUpdate();
   }
-
-  FocusNode _rowFocus(String id) => _rows[id] ??= FocusNode(
-    debugLabel: 'Notification $id',
-    canRequestFocus: false,
-    skipTraversal: true,
-  );
 
   /// The banner takes room from the foot of the view as it arrives, which
   /// may cover the control under [group] that keeps focus: it is brought
@@ -436,52 +435,47 @@ class _NotificationsViewState extends State<_NotificationsView> {
       (group.traversalDescendants.firstOrNull ?? _heading).requestFocus();
 
   @override
-  Widget build(BuildContext context) => MultiBlocListener(
-    listeners: [
-      BlocListener<NotificationListBloc, NotificationListState>(
-        listenWhen: _markAllAnswered,
-        listener: _onMarkAllAnswered,
+  Widget build(BuildContext context) => NotificationsMarkAllAnswers(
+    showingFailure: () => _markAllFailure != null,
+    unread: (state) => state.hasUnread,
+    button: _markAll,
+    heading: _heading,
+    onFailed: _onMarkAllFailed,
+    onRetired: () => setState(() => _markAllFailure = null),
+    child: MultiBlocListener(
+      listeners: [
+        BlocListener<NotificationListBloc, NotificationListState>(
+          listenWhen: (previous, current) =>
+              !previous.loadingMore && current.loadingMore,
+          listener: (context, state) => _shownBeforeMore = state.items.length,
+        ),
+        BlocListener<NotificationListBloc, NotificationListState>(
+          listenWhen: _loadMoreAnswered,
+          listener: _onLoadMoreAnswered,
+        ),
+        BlocListener<NotificationListBloc, NotificationListState>(
+          // The rows and the cursor Load more failed on have gone, and with a
+          // load, the rows Mark all read failed on.
+          listenWhen: _listingReplaced,
+          listener: (context, state) {
+            // The refresh banner goes in the next frame, and would take focus
+            // on its Try again with it.
+            if (_refreshFailed && _refreshBanner.hasFocus) {
+              _heading.requestFocus();
+            }
+            _clearOnNewListing(state);
+          },
+        ),
+        BlocListener<NotificationListBloc, NotificationListState>(
+          listenWhen: (previous, current) =>
+              current.outcome is RefreshFailed &&
+              current.outcome != previous.outcome,
+          listener: (context, state) => setState(() => _refreshFailed = true),
+        ),
+      ],
+      child: BlocBuilder<NotificationListBloc, NotificationListState>(
+        builder: _page,
       ),
-      BlocListener<NotificationListBloc, NotificationListState>(
-        listenWhen: (previous, current) =>
-            !previous.loadingMore && current.loadingMore,
-        listener: (context, state) => _shownBeforeMore = state.items.length,
-      ),
-      BlocListener<NotificationListBloc, NotificationListState>(
-        listenWhen: _loadMoreAnswered,
-        listener: _onLoadMoreAnswered,
-      ),
-      BlocListener<NotificationListBloc, NotificationListState>(
-        // The rows and the cursor Load more failed on have gone, and with a
-        // load, the rows Mark all read failed on.
-        listenWhen: _listingReplaced,
-        listener: (context, state) {
-          // The refresh banner goes in the next frame, and would take focus
-          // on its Try again with it.
-          if (_refreshFailed && _refreshBanner.hasFocus) {
-            _heading.requestFocus();
-          }
-          _clearOnNewListing(state);
-        },
-      ),
-      BlocListener<NotificationListBloc, NotificationListState>(
-        // Nothing loaded is unread any more, by a row opened or a refresh,
-        // so there is nothing for Mark all read to mark.
-        listenWhen: (previous, current) =>
-            _markAllFailure != null &&
-            !current.markingAll &&
-            !current.hasUnread,
-        listener: (context, state) => setState(() => _markAllFailure = null),
-      ),
-      BlocListener<NotificationListBloc, NotificationListState>(
-        listenWhen: (previous, current) =>
-            current.outcome is RefreshFailed &&
-            current.outcome != previous.outcome,
-        listener: (context, state) => setState(() => _refreshFailed = true),
-      ),
-    ],
-    child: BlocBuilder<NotificationListBloc, NotificationListState>(
-      builder: _page,
     ),
   );
 
@@ -562,7 +556,13 @@ class _NotificationsViewState extends State<_NotificationsView> {
                 child: Focus(
                   focusNode: _markAll,
                   includeSemantics: false,
-                  child: _MarkAllRead(markingAll: state.markingAll),
+                  child: NotificationsMarkAllReadButton(
+                    key: NotificationsScreen.markAllKey,
+                    markingAll: state.markingAll,
+                    onPressed: () => context.read<NotificationListBloc>().add(
+                      const NotificationListAllMarkedRead(),
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -575,37 +575,33 @@ class _NotificationsViewState extends State<_NotificationsView> {
             ),
           ),
           NotificationListStatus.loadFailed => BgeStateSliver(
-            child: _LoadFailed(failure: state.failure, onRetry: _retry),
+            child: NotificationsLoadFailed(
+              key: NotificationsScreen.failedKey,
+              failure: state.failure,
+              onRetry: _retry,
+            ),
           ),
           // With more to load, Load more follows the words, so the state
           // takes only its own room rather than the rest of the page.
           NotificationListStatus.loaded when items.isEmpty && state.hasMore =>
-            const SliverToBoxAdapter(child: _Empty()),
+            const SliverToBoxAdapter(
+              child: NotificationsEmptyState(key: NotificationsScreen.emptyKey),
+            ),
           NotificationListStatus.loaded when items.isEmpty =>
-            const BgeStateSliver(child: _Empty()),
+            const BgeStateSliver(
+              child: NotificationsEmptyState(key: NotificationsScreen.emptyKey),
+            ),
           NotificationListStatus.loaded => BgeKeyedSliverList<UserNotification>(
             items: items,
             keyOf: (item) => NotificationsScreen.rowKey(item.id),
-            itemBuilder: (context, item) {
-              final presentation = presentNotification(l10n, item);
-              final target = presentation.target;
-              return BgeOutlinedRow(
-                child: Focus(
-                  focusNode: _rowFocus(item.id),
-                  includeSemantics: false,
-                  child: NotificationTile(
-                    presentation: presentation,
-                    read: item.read,
-                    createdAt: item.createdAt,
-                    // A plain row never runs it: the tile offers no tap.
-                    onOpen: target == null
-                        ? () {}
-                        : () => unawaited(_open(item, target)),
-                    onMarkRead: () => _markRead(item),
-                  ),
-                ),
-              );
-            },
+            itemBuilder: (context, item) => BgeOutlinedRow(
+              child: NotificationRow(
+                notification: item,
+                focus: _rows,
+                onOpen: (target) => unawaited(_open(item, target)),
+                onMarkRead: () => _markRead(item),
+              ),
+            ),
           ),
         },
         if (loaded && state.hasMore)
@@ -621,54 +617,6 @@ class _NotificationsViewState extends State<_NotificationsView> {
               ),
             ),
           ),
-      ],
-    );
-  }
-}
-
-/// Marks every notification read. Busy, it stays enabled and keeps focus,
-/// and its name says it is marking, so a keyboard or screen reader user who
-/// pressed it stays where they were (STYLE_GUIDE §5). Offline it is
-/// disabled, and says why.
-class _MarkAllRead extends StatelessWidget {
-  const _MarkAllRead({required this.markingAll});
-
-  final bool markingAll;
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = NotificationsLocalizations.of(context);
-    final offline = BgeConnectivityScope.offlineOf(context);
-    final label = markingAll
-        ? l10n.notificationsMarkingAllRead
-        : l10n.notificationsMarkAllRead;
-
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      // The reason lines up with the button's end, as the button does with
-      // the list's.
-      crossAxisAlignment: CrossAxisAlignment.end,
-      children: [
-        BgeOnlineOnly(
-          showNote: false,
-          child: BgeInertButton(
-            key: NotificationsScreen.markAllKey,
-            inert: markingAll,
-            label: label,
-            onPressed: offline
-                ? null
-                : () => context.read<NotificationListBloc>().add(
-                    const NotificationListAllMarkedRead(),
-                  ),
-            builder: (context, focusNode, onPressed) => TextButton.icon(
-              focusNode: focusNode,
-              onPressed: onPressed,
-              icon: const Icon(Icons.done_all),
-              label: Text(label),
-            ),
-          ),
-        ),
-        if (offline) const BgeOnlineOnlyNote(),
       ],
     );
   }
@@ -700,44 +648,6 @@ class _LoadMore extends StatelessWidget {
         onPressed: onPressed,
         child: Text(label),
       ),
-    );
-  }
-}
-
-class _Empty extends StatelessWidget {
-  const _Empty();
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = NotificationsLocalizations.of(context);
-    return BgeEmptyState(
-      key: NotificationsScreen.emptyKey,
-      icon: Icons.notifications_none_outlined,
-      title: l10n.notificationsEmptyTitle,
-      body: l10n.notificationsEmptyBody,
-    );
-  }
-}
-
-class _LoadFailed extends StatelessWidget {
-  const _LoadFailed({required this.failure, required this.onRetry});
-
-  final NotificationListFailure? failure;
-  final VoidCallback onRetry;
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = NotificationsLocalizations.of(context);
-    final refused = failure == NotificationListFailure.permanent;
-    return BgeErrorState(
-      key: NotificationsScreen.failedKey,
-      icon: refused ? Icons.error_outline : Icons.cloud_off_outlined,
-      title: l10n.notificationsLoadFailed,
-      body: refused
-          ? l10n.notificationsLoadFailedRefusedBody
-          : l10n.notificationsLoadFailedOfflineBody,
-      retryLabel: l10n.notificationsRetry,
-      onRetry: onRetry,
     );
   }
 }
