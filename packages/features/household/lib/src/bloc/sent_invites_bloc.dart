@@ -19,13 +19,19 @@ import 'package:observability/observability.dart';
 ///
 /// Every failed read is [SentInvitesFailed], a refusal included: the server
 /// refuses this read only to an API key.
+///
+/// It opens on [SentInviteFilter.openAndExpired], or on the filter a link
+/// names (#475): a notification that an invite was declined opens the list
+/// on "Declined".
 class SentInvitesBloc extends Bloc<SentInvitesEvent, SentInvitesState> {
   SentInvitesBloc({
     required this._remote,
     this._pageSize = HouseholdInviteRemoteDataSource.defaultPageSize,
+    SentInviteFilter initialFilter = SentInviteFilter.openAndExpired,
     BgeLogger? logger,
-  }) : _logger = logger ?? BgeLogger('bge.household.invites.sent'),
-       super(const SentInvitesLoading()) {
+  }) : _filter = initialFilter,
+       _logger = logger ?? BgeLogger('bge.household.invites.sent'),
+       super(SentInvitesLoading(filter: initialFilter)) {
     _pages = InvitePages(
       // Read at call time, not captured, so each read asks for the filter
       // as it is when the read begins.
@@ -45,7 +51,7 @@ class SentInvitesBloc extends Bloc<SentInvitesEvent, SentInvitesState> {
   final int _pageSize;
   final BgeLogger _logger;
 
-  SentInviteFilter _filter = SentInviteFilter.openAndExpired;
+  SentInviteFilter _filter;
 
   /// The filter the list is under, including while its first read runs.
   SentInviteFilter get filter => _filter;

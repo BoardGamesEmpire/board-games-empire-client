@@ -4,6 +4,7 @@ import 'package:bge_test_support/widgets.dart';
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:household/household.dart';
 import 'package:household/l10n/household_localizations.dart';
@@ -13,6 +14,7 @@ import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
 import '../support/fake_household_invite_remote.dart';
+import '../support/invite_filter_menu_support.dart';
 
 HouseholdInvite _sent(
   String id, {
@@ -40,6 +42,7 @@ void main() {
     TextScaler? textScaler,
     ValueListenable<bool>? offline,
     ThemeData? theme,
+    SentInviteFilter initialFilter = SentInviteFilter.openAndExpired,
   }) => MaterialApp(
     theme: theme ?? BgeTheme.light(),
     localizationsDelegates: HouseholdLocalizations.localizationsDelegates,
@@ -63,7 +66,7 @@ void main() {
         ),
       );
     },
-    home: SentInvitesScreen(remote: remote),
+    home: SentInvitesScreen(remote: remote, initialFilter: initialFilter),
   );
 
   /// Answers every read with [rows], whatever the filter.
@@ -95,6 +98,32 @@ void main() {
     await tester.tap(find.widgetWithText(MenuItemButton, label).hitTestable());
     await tester.pumpAndSettle();
   }
+
+  testWidgets('starts on declined when asked (#475)', (tester) async {
+    listing(const []);
+
+    await tester.pumpWidget(harness(initialFilter: SentInviteFilter.declined));
+    await tester.pumpAndSettle();
+
+    expect(remote.calls, ['fetchSent(declined, 1, 25)']);
+    expect(chosen(tester), 'Show: Declined');
+  });
+
+  testWidgets('a different opening filter is a new list (#475)', (
+    tester,
+  ) async {
+    // The route's page key is its path pattern, so a link to the other
+    // filter reuses this State; the filter keys the bloc.
+    listing(const []);
+    await tester.pumpWidget(harness());
+    await tester.pumpAndSettle();
+
+    await tester.pumpWidget(harness(initialFilter: SentInviteFilter.declined));
+    await tester.pumpAndSettle();
+
+    expect(remote.calls.last, 'fetchSent(declined, 1, 25)');
+    expect(chosen(tester), 'Show: Declined');
+  });
 
   testWidgets('every row is outlined (#647)', (tester) async {
     listing([_sent('i_1'), _sent('i_2')]);
@@ -357,6 +386,45 @@ void main() {
     expect(chosen(tester), 'Show: Accepted');
   });
 
+  testWidgets('the filter menu works from the keyboard, over rows with '
+      'actions', (tester) async {
+    // The viewer's own outstanding invites, so each row offers Withdraw:
+    // the arrows must not reach them under the open menu.
+    listing([_sent('i_1'), _sent('i_2')]);
+    await tester.pumpWidget(harness());
+    await tester.pumpAndSettle();
+    final button = find.byKey(SentInvitesScreen.filterKey);
+    Finder item(String label) => find.widgetWithText(MenuItemButton, label);
+    await tabTo(tester, button);
+
+    // Enter opens it, on the filter chosen now.
+    await press(tester, LogicalKeyboardKey.enter);
+    expect(find.byType(MenuItemButton), findsNWidgets(8));
+    expect(focusIn(item('Open and expired')), isTrue);
+
+    // Down moves through the choices, and Enter picks one and closes it,
+    // with focus back on the button.
+    await press(tester, LogicalKeyboardKey.arrowDown);
+    expect(focusIn(item('Pending')), isTrue);
+    await press(tester, LogicalKeyboardKey.enter);
+    expect(find.byType(MenuItemButton), findsNothing);
+    expect(remote.calls.last, 'fetchSent(pending, 1, 25)');
+    expect(chosen(tester), 'Show: Pending');
+    expect(focusIn(button), isTrue);
+
+    // Open again: Tab stays in the menu, and Escape closes it, with focus
+    // back on the button and nothing asked for.
+    await press(tester, LogicalKeyboardKey.enter);
+    expect(focusIn(item('Pending')), isTrue);
+    await press(tester, LogicalKeyboardKey.tab);
+    expect(focusIn(find.byType(MenuItemButton)), isTrue);
+    final calls = remote.calls.length;
+    await press(tester, LogicalKeyboardKey.escape);
+    expect(find.byType(MenuItemButton), findsNothing);
+    expect(focusIn(button), isTrue);
+    expect(remote.calls.length, calls);
+  });
+
   testWidgets('the filter tells assistive tech whether its menu is open', (
     tester,
   ) async {
@@ -496,6 +564,9 @@ void main() {
         isFalse,
       );
       expect(control.intersect(tester.getRect(label)), tester.getRect(label));
+      // Every glyph of the test font is an em wide, so whether a word
+      // breaks is checked in the platform's own face, in
+      // sent_invites_screen_filter_fit_test.dart.
 
       await tester.tap(find.byKey(SentInvitesScreen.filterKey));
       await tester.pumpAndSettle();
@@ -503,9 +574,11 @@ void main() {
       expect(awaiting.hitTestable(), findsOneWidget);
       // Its entries wrap within the control's width too, rather than
       // widening the menu past the screen's edge, where it clips them.
-      final entry = tester.getRect(
-        find.descendant(of: awaiting, matching: find.text('Awaiting approval')),
+      final words = find.descendant(
+        of: awaiting,
+        matching: find.text('Awaiting approval'),
       );
+      final entry = tester.getRect(words);
       expect(entry.left, greaterThanOrEqualTo(control.left));
       expect(entry.right, lessThanOrEqualTo(control.right));
 

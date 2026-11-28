@@ -115,9 +115,22 @@ abstract final class AppRoutes {
 
   static const _householdEditSegment = 'edit';
 
-  /// The location of one household's invites.
-  static String householdInvitesOf(String householdId) =>
-      '${householdDetailOf(householdId)}/$_householdInvitesSegment';
+  /// The query parameter that picks the filter the invites open on (#475),
+  /// and the value that picks Awaiting approval. Any other value is Open.
+  static const householdInvitesFilterParam = 'filter';
+  static const householdInvitesAwaitingValue = 'awaiting';
+
+  /// The location of one household's invites, on Awaiting approval when
+  /// [awaitingApproval] (#475).
+  static String householdInvitesOf(
+    String householdId, {
+    bool awaitingApproval = false,
+  }) {
+    final path = '${householdDetailOf(householdId)}/$_householdInvitesSegment';
+    return awaitingApproval
+        ? '$path?$householdInvitesFilterParam=$householdInvitesAwaitingValue'
+        : path;
+  }
 
   /// The location of one household's send-invite form.
   static String householdInviteSendOf(String householdId) =>
@@ -729,13 +742,17 @@ typedef SentInvitesScreenBuilder = Widget? Function(BuildContext context);
 /// carried. Same null contract as [InviteInboxScreenBuilder], and also null
 /// without a `HouseholdRepository`, which says who is looking.
 ///
+/// [awaitingApproval] is whether the location asked to open on that filter
+/// (#475); the builder opens on Open otherwise.
+///
 /// Not gated on the viewer's role. A deep link by someone the server
 /// refuses reaches the screen, which says only owners and admins can see
 /// the invites.
 typedef HouseholdInvitesScreenBuilder = Widget? Function(
   BuildContext context,
-  String householdId,
-);
+  String householdId, {
+  required bool awaitingApproval,
+});
 
 /// Builds the send-invite form for one household (#455) for the
 /// [AppRoutes.householdInviteSend] route. Same null contract as
@@ -1522,7 +1539,14 @@ GoRouter buildAppRouter({
                               '';
                           return _materialPage(
                             state,
-                            householdInvitesBuilder?.call(context, id) ??
+                            householdInvitesBuilder?.call(
+                                  context,
+                                  id,
+                                  awaitingApproval:
+                                      state.uri.queryParameters[AppRoutes
+                                          .householdInvitesFilterParam] ==
+                                      AppRoutes.householdInvitesAwaitingValue,
+                                ) ??
                                 const NotYetAvailableScreen(),
                           );
                         },

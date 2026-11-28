@@ -102,7 +102,7 @@ void main() {
     final router = await pumpRouter(
       tester,
       householdDetailBuilder: (_, _) => marker(_detailKey),
-      householdInvitesBuilder: (_, id) {
+      householdInvitesBuilder: (_, id, {required awaitingApproval}) {
         seen = id;
         return marker(_invitesKey);
       },
@@ -116,6 +116,54 @@ void main() {
     expect(find.byKey(_detailKey, skipOffstage: false), findsOneWidget);
   });
 
+  test('householdInvitesOf asks for the awaiting filter only when told', () {
+    expect(AppRoutes.householdInvitesOf('h1'), '/household/h1/invites');
+    expect(
+      AppRoutes.householdInvitesOf('h1', awaitingApproval: true),
+      '/household/h1/invites?filter=awaiting',
+    );
+  });
+
+  testWidgets('a link opens the invites on the filter it names (#475)', (
+    tester,
+  ) async {
+    final seen = <bool>[];
+    final router = await pumpRouter(
+      tester,
+      householdDetailBuilder: (_, _) => marker(_detailKey),
+      householdInvitesBuilder: (_, _, {required awaitingApproval}) {
+        seen.add(awaitingApproval);
+        return marker(_invitesKey);
+      },
+    );
+
+    router.go(AppRoutes.householdInvitesOf('hh_1', awaitingApproval: true));
+    await tester.pumpAndSettle();
+    expect(seen.last, isTrue);
+
+    router.go(AppRoutes.householdInvitesOf('hh_1'));
+    await tester.pumpAndSettle();
+    expect(seen.last, isFalse);
+  });
+
+  testWidgets('an unknown filter value opens on Open (#475)', (tester) async {
+    bool? seen;
+    final router = await pumpRouter(
+      tester,
+      householdDetailBuilder: (_, _) => marker(_detailKey),
+      householdInvitesBuilder: (_, _, {required awaitingApproval}) {
+        seen = awaitingApproval;
+        return marker(_invitesKey);
+      },
+    );
+
+    router.go('/household/hh_1/invites?filter=bogus');
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(_invitesKey), findsOneWidget);
+    expect(seen, isFalse);
+  });
+
   testWidgets('the send form gets the id, over the household', (tester) async {
     // #569: a member's deep link must not build the invites, which answer
     // them 403.
@@ -124,7 +172,7 @@ void main() {
     final router = await pumpRouter(
       tester,
       householdDetailBuilder: (_, _) => marker(_detailKey),
-      householdInvitesBuilder: (_, _) {
+      householdInvitesBuilder: (_, _, {required awaitingApproval}) {
         invitesBuilt++;
         return marker(_invitesKey);
       },
@@ -151,7 +199,8 @@ void main() {
     final router = await pumpRouter(
       tester,
       householdDetailBuilder: (_, _) => marker(_detailKey),
-      householdInvitesBuilder: (_, _) => marker(_invitesKey),
+      householdInvitesBuilder: (_, _, {required awaitingApproval}) =>
+          marker(_invitesKey),
       sendHouseholdInviteBuilder: (_, _) => marker(_sendKey),
     );
 

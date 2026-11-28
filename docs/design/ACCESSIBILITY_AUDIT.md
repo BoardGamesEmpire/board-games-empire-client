@@ -174,11 +174,11 @@ Know these limits before trusting a green run.
   (its Show and Sort menus and Restore's confirm dialog), the three
   DataGateway screens, event detail, game detail and the two collection
   screens audit every dialog, sheet and menu they open. Elsewhere only
-  home's drawer, game search's filter sheet, sent invites' filter menu,
-  stuck changes' discard dialog and the game quick look are audited. The
-  rest are not: the confirm dialogs of the invite inbox, the household's
-  invite list and the bootstrap error screen, and create event's date and
-  time pickers, among others.
+  home's drawer, game search's filter sheet, the filter menus of sent
+  invites and a household's invites, stuck changes' discard dialog and the
+  game quick look are audited. The rest are not: the confirm dialogs of the
+  invite inbox, the household's invite list and the bootstrap error screen,
+  and create event's date and time pickers, among others.
 - **A pop-up drawn at its own text scale or theme (#794).** The cell check
   holds every `Scaffold` to the cell, and then needs only one piece of drawn
   text anywhere at it. A pop-up has no `Scaffold`, and the page under it

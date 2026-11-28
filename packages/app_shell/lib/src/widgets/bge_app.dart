@@ -1662,8 +1662,9 @@ class _BgeAppState extends State<BgeApp> {
   /// the invites.
   Widget? _buildHouseholdInvitesRoute(
     BuildContext context,
-    String householdId,
-  ) {
+    String householdId, {
+    required bool awaitingApproval,
+  }) {
     final active = widget.bootstrapCubit.activeServerScope?.active;
     if (active == null) return null;
 
@@ -1677,6 +1678,9 @@ class _BgeAppState extends State<BgeApp> {
       householdId: householdId,
       remote: invites,
       repository: container.get<HouseholdRepository>(),
+      initialFilter: awaitingApproval
+          ? HouseholdInviteFilter.awaitingApproval
+          : HouseholdInviteFilter.open,
       onInvite: _canSendInvites(container)
           ? (ctx) => unawaited(
               ctx.push<void>(AppRoutes.householdInviteSendOf(householdId)),

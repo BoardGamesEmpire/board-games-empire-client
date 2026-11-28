@@ -12,6 +12,7 @@ import 'package:household/src/permissions/household_actions.dart';
 import 'package:household/src/widgets/household_invite_awaiting_badge.dart';
 import 'package:household/src/widgets/household_invite_busy_indicator.dart';
 import 'package:household/src/widgets/household_role_label.dart';
+import 'package:household/src/widgets/invite_filter_menu.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:ui/ui.dart';
@@ -24,7 +25,11 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// DI like the other household screens: the caller resolves the per-server
 /// [HouseholdInviteRemoteDataSource].
 class SentInvitesScreen extends StatelessWidget {
-  const SentInvitesScreen({required this.remote, super.key});
+  const SentInvitesScreen({
+    required this.remote,
+    this.initialFilter = SentInviteFilter.openAndExpired,
+    super.key,
+  });
 
   static const Key loadingKey = Key('sent_invites.loading');
   static const Key emptyKey = Key('sent_invites.empty');
@@ -43,10 +48,18 @@ class SentInvitesScreen extends StatelessWidget {
 
   final HouseholdInviteRemoteDataSource remote;
 
+  /// The filter the list opens on: Open and expired, or Declined for a link
+  /// from a notification (#475). The person changes it from there.
+  final SentInviteFilter initialFilter;
+
   @override
   Widget build(BuildContext context) => BlocProvider<SentInvitesBloc>(
+    // A new opening filter is a new list: the route's page key is its path
+    // pattern, so a link to the other filter reuses this State (#475).
+    key: ValueKey<SentInviteFilter>(initialFilter),
     create: (_) =>
-        SentInvitesBloc(remote: remote)..add(const SentInvitesLoadRequested()),
+        SentInvitesBloc(remote: remote, initialFilter: initialFilter)
+          ..add(const SentInvitesLoadRequested()),
     child: const _SentInvitesView(),
   );
 }
@@ -148,10 +161,6 @@ class _SentInvitesView extends StatelessWidget {
 }
 
 /// Which of the sent invites to list, as wide as the pane.
-///
-/// A button that opens a menu rather than a [DropdownMenu], whose
-/// single-line field cut the chosen status short at 320dp and 2.0 text.
-/// This button's label wraps instead.
 class _FilterMenu extends StatelessWidget {
   const _FilterMenu({required this.filter});
 
@@ -161,64 +170,14 @@ class _FilterMenu extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = HouseholdLocalizations.of(context);
 
-    return LayoutBuilder(
-      builder: (context, constraints) => MenuAnchor(
-        // As wide as the button that opens it. Left unconstrained, the
-        // menu takes its widest entry's width and clips past the screen.
-        crossAxisUnconstrained: false,
-        style: MenuStyle(
-          minimumSize: WidgetStatePropertyAll(Size(constraints.maxWidth, 0)),
-          maximumSize: WidgetStatePropertyAll(
-            Size(constraints.maxWidth, double.infinity),
-          ),
-        ),
-        menuChildren: [
-          for (final choice in SentInviteFilter.values)
-            MenuItemButton(
-              // An empty icon on the others keeps their labels in line.
-              leadingIcon: Icon(choice == filter ? Icons.check : null),
-              overflowAxis: Axis.vertical,
-              // The chosen one only closes the menu: asking for it again
-              // would read the list over, losing the pages shown.
-              onPressed: () {
-                if (choice == filter) return;
-                context.read<SentInvitesBloc>().add(
-                  SentInvitesFilterChanged(choice),
-                );
-              },
-              // The check is only drawn, so the label says it is chosen.
-              // Inside the item, where it merges into the item's own node;
-              // around it, it would stand as a node of its own.
-              child: Semantics(
-                selected: choice == filter,
-                child: Text(_filterLabel(l10n, choice)),
-              ),
-            ),
-        ],
-        builder: (context, controller, _) => MergeSemantics(
-          child: Semantics(
-            expanded: controller.isOpen,
-            child: OutlinedButton(
-              key: SentInvitesScreen.filterKey,
-              onPressed: controller.isOpen ? controller.close : controller.open,
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      l10n.sentInvitesFilterLabel(_filterLabel(l10n, filter)),
-                    ),
-                  ),
-                  Icon(
-                    controller.isOpen
-                        ? Icons.arrow_drop_up
-                        : Icons.arrow_drop_down,
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
+    return InviteFilterMenu<SentInviteFilter>(
+      buttonKey: SentInvitesScreen.filterKey,
+      choices: SentInviteFilter.values,
+      chosen: filter,
+      choiceLabel: (choice) => _filterLabel(l10n, choice),
+      buttonLabel: l10n.sentInvitesFilterLabel,
+      onChosen: (choice) =>
+          context.read<SentInvitesBloc>().add(SentInvitesFilterChanged(choice)),
     );
   }
 }
