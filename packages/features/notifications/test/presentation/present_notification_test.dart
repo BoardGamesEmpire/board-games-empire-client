@@ -503,6 +503,421 @@ void main() {
     });
   });
 
+  group('event notifications that open the event', () {
+    const event = <String, Object?>{
+      'eventId': 'e1',
+      'eventTitle': 'Friday Night Games',
+    };
+
+    test('EventCreated names the event and opens it', () {
+      final presentation = present('EventCreated', event);
+
+      expect(
+        presentation.title,
+        l10n.notificationEventCreatedTitle('Friday Night Games'),
+      );
+      expect(presentation.title, contains('Friday Night Games'));
+      expect(presentation.target, const EventTarget('e1'));
+      expect(presentation.icon, Icons.event_outlined);
+    });
+
+    test('EventReopened names the event and opens it', () {
+      final presentation = present('EventReopened', event);
+
+      expect(
+        presentation.title,
+        l10n.notificationEventReopenedTitle('Friday Night Games'),
+      );
+      expect(presentation.title, contains('reopened'));
+      expect(presentation.target, const EventTarget('e1'));
+    });
+
+    test('EventCancelled quotes the reason as the host wrote it', () {
+      const reason = '  Wasserschaden im <Keller>  ';
+      final presentation = present('EventCancelled', {
+        ...event,
+        'reason': reason,
+      });
+
+      expect(
+        presentation.title,
+        l10n.notificationEventCancelledTitle('Friday Night Games'),
+      );
+      expect(presentation.title, contains('cancelled'));
+      expect(presentation.quote, reason);
+      expect(presentation.target, const EventTarget('e1'));
+    });
+
+    test('EventCancelled with a null or non-string reason has no quote', () {
+      for (final reason in <Object?>[null, '', '   ', 4]) {
+        final presentation = present('EventCancelled', {
+          ...event,
+          'reason': reason,
+        });
+
+        expect(presentation.quote, isNull, reason: '$reason');
+        expect(presentation.target, const EventTarget('e1'));
+      }
+      expect(present('EventCancelled', event).quote, isNull);
+    });
+
+    test('EventRsvpReceived names the attendee and opens the event', () {
+      final presentation = present('EventRsvpReceived', {
+        ...event,
+        'attendeeName': 'Ana',
+      });
+
+      expect(
+        presentation.title,
+        l10n.notificationEventRsvpReceivedTitle('Ana', 'Friday Night Games'),
+      );
+      expect(presentation.title, contains('Ana'));
+      expect(presentation.target, const EventTarget('e1'));
+    });
+
+    test('EventRsvpReceived with no attendee name says a guest', () {
+      for (final name in <Object?>[null, '', '   ']) {
+        final presentation = present('EventRsvpReceived', {
+          ...event,
+          'attendeeName': name,
+        });
+
+        expect(
+          presentation.title,
+          l10n.notificationEventRsvpReceivedGuestTitle('Friday Night Games'),
+          reason: '$name',
+        );
+        expect(presentation.title, contains('A guest'));
+        expect(presentation.target, const EventTarget('e1'));
+      }
+      expect(
+        present('EventRsvpReceived', event).title,
+        contains('A guest'),
+      );
+    });
+
+    test('EventRsvpChanged names who changed it and the new answer', () {
+      final presentation = present('EventRsvpChanged', {
+        ...event,
+        'changedByName': 'Bo',
+        'status': 'NotAttending',
+      });
+
+      expect(
+        presentation.title,
+        l10n.notificationEventRsvpChangedTitle('Bo', 'Friday Night Games'),
+      );
+      expect(
+        presentation.detail,
+        l10n.notificationEventRsvpNowNotAttendingDetail,
+      );
+      expect(presentation.target, const EventTarget('e1'));
+    });
+
+    test('EventRsvpChanged words each answer', () {
+      const words = {
+        'Attending': 'Now: Going',
+        'Maybe': 'Now: Maybe',
+        'NotAttending': 'Now: Not going',
+        'Invited': 'Now: Invited',
+      };
+      for (final MapEntry(:key, :value) in words.entries) {
+        final presentation = present('EventRsvpChanged', {
+          ...event,
+          'changedByName': 'Bo',
+          'status': key,
+        });
+
+        expect(presentation.detail, value, reason: key);
+      }
+    });
+
+    test('EventRsvpChanged with a status it does not know has no detail', () {
+      for (final status in <Object?>['Waitlisted', 2, null]) {
+        final presentation = present('EventRsvpChanged', {
+          ...event,
+          'changedByName': 'Bo',
+          'status': status,
+        });
+
+        expect(presentation.detail, isNull, reason: '$status');
+        expect(presentation.target, const EventTarget('e1'));
+      }
+    });
+
+    test('EventRsvpChanged with no name gives the generic wording', () {
+      for (final name in <Object?>[null, '', '   ']) {
+        final presentation = present('EventRsvpChanged', {
+          ...event,
+          'changedByName': name,
+          'status': 'Maybe',
+        });
+
+        expect(
+          presentation.title,
+          l10n.notificationEventRsvpChangedUnnamedTitle('Friday Night Games'),
+          reason: '$name',
+        );
+        expect(presentation.detail, 'Now: Maybe');
+        expect(presentation.target, const EventTarget('e1'));
+      }
+    });
+
+    test('EventRsvpReceived with a name that is not text is a plain row', () {
+      for (final name in <Object?>[
+        3,
+        true,
+        1.5,
+        const ['Ana'],
+        const {},
+      ]) {
+        expect(
+          present('EventRsvpReceived', {...event, 'attendeeName': name}),
+          plain,
+          reason: '$name',
+        );
+      }
+    });
+
+    test('EventRsvpChanged with a name that is not text is a plain row', () {
+      for (final name in <Object?>[
+        3,
+        true,
+        1.5,
+        const ['Bo'],
+        const {},
+      ]) {
+        expect(
+          present('EventRsvpChanged', {
+            ...event,
+            'changedByName': name,
+            'status': 'Maybe',
+          }),
+          plain,
+          reason: '$name',
+        );
+      }
+    });
+
+    test('EventInviteAccepted names the invitee and opens the event', () {
+      final presentation = present('EventInviteAccepted', {
+        ...event,
+        'inviteId': 'i1',
+        'inviteeName': 'Cy',
+      });
+
+      expect(
+        presentation.title,
+        l10n.notificationEventInviteAcceptedTitle('Cy', 'Friday Night Games'),
+      );
+      expect(presentation.title, contains('accepted'));
+      expect(presentation.target, const EventTarget('e1'));
+    });
+
+    test('EventInviteDeclined names the invitee and opens the event', () {
+      final presentation = present('EventInviteDeclined', {
+        ...event,
+        'inviteId': 'i1',
+        'inviteeName': 'Cy',
+      });
+
+      expect(
+        presentation.title,
+        l10n.notificationEventInviteDeclinedTitle('Cy', 'Friday Night Games'),
+      );
+      expect(presentation.title, contains('declined'));
+      expect(presentation.target, const EventTarget('e1'));
+    });
+
+    test('names and titles go in unchanged', () {
+      const title = '  {Spiel} <b>Abend</b> \u{00DF}  ';
+      final presentation = present('EventRsvpReceived', {
+        'eventId': 'e1',
+        'eventTitle': title,
+        'attendeeName': '{who} <i>',
+      });
+
+      expect(presentation.title, contains(title));
+      expect(presentation.title, contains('{who} <i>'));
+    });
+
+    test('missing required field is a plain row', () {
+      for (final type in [
+        'EventCreated',
+        'EventReopened',
+        'EventCancelled',
+        'EventRsvpReceived',
+        'EventRsvpChanged',
+        'EventInviteAccepted',
+        'EventInviteDeclined',
+      ]) {
+        const full = <String, Object?>{
+          'eventId': 'e1',
+          'eventTitle': 'Friday Night Games',
+          'attendeeName': 'Ana',
+          'changedByName': 'Bo',
+          'status': 'Maybe',
+          'inviteeName': 'Cy',
+        };
+        expect(present(type, full), isNot(plain), reason: type);
+        expect(present(type, {...full, 'eventId': null}), plain, reason: type);
+        expect(present(type, {...full, 'eventId': 5}), plain, reason: type);
+        expect(
+          present(type, {...full, 'eventTitle': null}),
+          plain,
+          reason: type,
+        );
+        expect(present(type, const {}), plain, reason: type);
+      }
+      expect(
+        present('EventInviteAccepted', {...event, 'inviteeName': null}),
+        plain,
+      );
+      expect(
+        present('EventInviteDeclined', {...event, 'inviteeName': ''}),
+        plain,
+      );
+    });
+  });
+
+  group('event notifications that open nothing', () {
+    const event = <String, Object?>{
+      'eventId': 'e1',
+      'eventTitle': 'Friday Night Games',
+    };
+
+    test('EventDeleted says what happened and opens nothing', () {
+      final presentation = present('EventDeleted', event);
+
+      expect(
+        presentation.title,
+        l10n.notificationEventDeletedTitle('Friday Night Games'),
+      );
+      expect(presentation.title, contains('deleted'));
+      expect(presentation.target, isNull);
+    });
+
+    test('EventAttendeeRemoved says what happened and opens nothing', () {
+      final presentation = present('EventAttendeeRemoved', event);
+
+      expect(
+        presentation.title,
+        l10n.notificationEventAttendeeRemovedTitle('Friday Night Games'),
+      );
+      expect(presentation.title, contains('removed'));
+      expect(presentation.target, isNull);
+    });
+
+    test('EventInviteReceived is a row with no destination', () {
+      final presentation = present('EventInviteReceived', {
+        ...event,
+        'inviteId': 'i1',
+        'inviterName': 'Ana',
+      });
+
+      expect(
+        presentation.title,
+        l10n.notificationEventInviteReceivedTitle('Ana', 'Friday Night Games'),
+      );
+      expect(presentation.title, contains('invited you'));
+      expect(presentation.target, isNull);
+    });
+
+    test('missing required field is a plain row', () {
+      for (final type in [
+        'EventDeleted',
+        'EventAttendeeRemoved',
+        'EventInviteReceived',
+      ]) {
+        const full = <String, Object?>{
+          'eventId': 'e1',
+          'eventTitle': 'Friday Night Games',
+          'inviterName': 'Ana',
+        };
+        expect(present(type, full), isNot(plain), reason: type);
+        expect(present(type, {...full, 'eventId': null}), plain, reason: type);
+        expect(
+          present(type, {...full, 'eventTitle': 7}),
+          plain,
+          reason: type,
+        );
+        expect(present(type, const {}), plain, reason: type);
+      }
+      expect(
+        present('EventInviteReceived', {...event, 'inviterName': null}),
+        plain,
+      );
+    });
+  });
+
+  group('date notifications', () {
+    const payload = <String, Object?>{
+      'eventId': 'e1',
+      'eventTitle': 'Friday Night Games',
+      'occurrenceId': 'o1',
+      'occurrenceLabel': 'Saturday Evening',
+    };
+    const target = EventTarget('e1', tab: 'games', date: 'o1');
+
+    const titles = {
+      'EventOccurrenceProposed': 'proposed',
+      'EventOccurrenceConfirmed': 'confirmed',
+      'EventOccurrenceDeclined': 'declined',
+      'EventOccurrenceCanceled': 'cancelled',
+      'EventOccurrenceRescheduled': 'rescheduled',
+    };
+
+    for (final MapEntry(:key, :value) in titles.entries) {
+      test('$key names the event, shows the date, and opens it', () {
+        final presentation = present(key, payload);
+
+        expect(presentation.title, contains('Friday Night Games'));
+        expect(presentation.title, contains(value));
+        expect(presentation.detail, 'Date: Saturday Evening');
+        expect(presentation.target, target);
+      });
+
+      test('$key with a null occurrenceLabel has no detail', () {
+        for (final label in <Object?>[null, '', '  ', 5]) {
+          final presentation = present(key, {
+            ...payload,
+            'occurrenceLabel': label,
+          });
+
+          expect(presentation.detail, isNull, reason: '$label');
+          expect(presentation.target, target, reason: '$label');
+        }
+        final absent = {...payload}..remove('occurrenceLabel');
+        expect(present(key, absent).target, target);
+      });
+
+      test('$key missing required field is a plain row', () {
+        expect(present(key, {...payload, 'occurrenceId': null}), plain);
+        expect(present(key, {...payload, 'occurrenceId': 3}), plain);
+        expect(present(key, {...payload, 'eventId': null}), plain);
+        expect(present(key, {...payload, 'eventTitle': null}), plain);
+        expect(present(key, const {}), plain);
+      });
+    }
+
+    test('words each date notification differently', () {
+      final seen = {
+        for (final type in titles.keys) present(type, payload).title,
+      };
+
+      expect(seen, hasLength(titles.length));
+    });
+
+    test('the date label goes in unchanged', () {
+      final presentation = present('EventOccurrenceConfirmed', {
+        ...payload,
+        'occurrenceLabel': '  {Freitag} <b>4.</b>  ',
+      });
+
+      expect(presentation.detail, 'Date:   {Freitag} <b>4.</b>  ');
+    });
+  });
+
   group('a plain row', () {
     test('unknown type is a plain row', () {
       final presentation = present('SomethingNew', {'anything': 1});
@@ -611,6 +1026,20 @@ void main() {
       expect(
         const DataGatewayTarget('g1'),
         isNot(const HouseholdTarget('g1')),
+      );
+      expect(const EventTarget('e1'), const EventTarget('e1'));
+      expect(
+        const EventTarget('e1', tab: 'games', date: 'o1'),
+        const EventTarget('e1', tab: 'games', date: 'o1'),
+      );
+      expect(const EventTarget('e1'), isNot(const EventTarget('e2')));
+      expect(
+        const EventTarget('e1'),
+        isNot(const EventTarget('e1', tab: 'games')),
+      );
+      expect(
+        const EventTarget('e1', tab: 'games', date: 'o1'),
+        isNot(const EventTarget('e1', tab: 'games', date: 'o2')),
       );
     });
   });

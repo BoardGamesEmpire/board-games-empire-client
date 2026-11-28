@@ -65,3 +65,19 @@ final class DataGatewayTarget extends NotificationTarget {
   @override
   List<Object?> get props => [gatewayId];
 }
+
+/// An event's own page, on the tab [tab] names and the date [date] names,
+/// where either is given (#504, #475). Both are the values the event's
+/// location takes, so a notification about one date opens the lineup on that
+/// date: `tab` is `lineup` or `nominations`, and `date` is the id of one of
+/// the event's dates. Null leaves it out, and no tab is Details.
+final class EventTarget extends NotificationTarget {
+  const EventTarget(this.eventId, {this.tab, this.date});
+
+  final String eventId;
+  final String? tab;
+  final String? date;
+
+  @override
+  List<Object?> get props => [eventId, tab, date];
+}

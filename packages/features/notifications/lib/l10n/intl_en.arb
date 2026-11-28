@@ -299,5 +299,221 @@
   "notificationsPreviewSeeAll": "See all",
   "@notificationsPreviewSeeAll": {
     "description": "Button at the foot of the pop-up the bell in the header opens, which shows the five latest notifications. It opens the Notifications page, which lists every notification, read or not, a page at a time."
+  },
+  "notificationEventCreatedTitle": "New event: {eventTitle}",
+  "@notificationEventCreatedTitle": {
+    "description": "Title of a notification sent to a household's members when an event was created for the household. Tapping it opens the event. {eventTitle} is the event's title as the server gives it.",
+    "placeholders": {
+      "eventTitle": {
+        "type": "String",
+        "example": "Friday Night Games"
+      }
+    }
+  },
+  "notificationEventReopenedTitle": "{eventTitle} was reopened",
+  "@notificationEventReopenedTitle": {
+    "description": "Title of a notification sent to an event's attendees when an event that had been cancelled was opened again. Tapping it opens the event. {eventTitle} is the event's title as the server gives it.",
+    "placeholders": {
+      "eventTitle": {
+        "type": "String",
+        "example": "Friday Night Games"
+      }
+    }
+  },
+  "notificationEventCancelledTitle": "{eventTitle} was cancelled",
+  "@notificationEventCancelledTitle": {
+    "description": "Title of a notification sent to an event's attendees when the event was cancelled. Tapping it opens the event. {eventTitle} is the event's title as the server gives it. The reason the host gave, when they gave one, is shown under it as they wrote it.",
+    "placeholders": {
+      "eventTitle": {
+        "type": "String",
+        "example": "Friday Night Games"
+      }
+    }
+  },
+  "notificationEventDeletedTitle": "{eventTitle} was deleted",
+  "@notificationEventDeletedTitle": {
+    "description": "Title of a notification sent to an event's attendees when the event was deleted. It opens nothing, since the event is gone: the user can only mark it read. {eventTitle} is the event's title as the server gives it.",
+    "placeholders": {
+      "eventTitle": {
+        "type": "String",
+        "example": "Friday Night Games"
+      }
+    }
+  },
+  "notificationEventAttendeeRemovedTitle": "You were removed from {eventTitle}",
+  "@notificationEventAttendeeRemovedTitle": {
+    "description": "Title of a notification sent to a person who another person took off an event's list of attendees. It opens nothing, since the event is no longer theirs to see: the user can only mark it read. {eventTitle} is the event's title as the server gives it.",
+    "placeholders": {
+      "eventTitle": {
+        "type": "String",
+        "example": "Friday Night Games"
+      }
+    }
+  },
+  "notificationEventRsvpReceivedTitle": "{attendeeName} replied to {eventTitle}",
+  "@notificationEventRsvpReceivedTitle": {
+    "description": "Title of a notification sent to an event's hosts and co-hosts when someone replied to the event, to say whether they are coming. Tapping it opens the event. {attendeeName} is the person's name as the server gives it. {eventTitle} is the event's title as the server gives it.",
+    "placeholders": {
+      "attendeeName": {
+        "type": "String",
+        "example": "Ana"
+      },
+      "eventTitle": {
+        "type": "String",
+        "example": "Friday Night Games"
+      }
+    }
+  },
+  "notificationEventRsvpReceivedGuestTitle": "A guest replied to {eventTitle}",
+  "@notificationEventRsvpReceivedGuestTitle": {
+    "description": "Title of a notification sent to an event's hosts and co-hosts when someone without an account replied to the event, to say whether they are coming, so the server has no name for them. Tapping it opens the event. {eventTitle} is the event's title as the server gives it.",
+    "placeholders": {
+      "eventTitle": {
+        "type": "String",
+        "example": "Friday Night Games"
+      }
+    }
+  },
+  "notificationEventRsvpChangedTitle": "{changedByName} changed your reply to {eventTitle}",
+  "@notificationEventRsvpChangedTitle": {
+    "description": "Title of a notification sent to an attendee when another person changed their reply to an event, the answer saying whether they are coming. Tapping it opens the event. {changedByName} is the person who changed it, as the server gives it. {eventTitle} is the event's title as the server gives it. The line under it says the new answer.",
+    "placeholders": {
+      "changedByName": {
+        "type": "String",
+        "example": "Bo"
+      },
+      "eventTitle": {
+        "type": "String",
+        "example": "Friday Night Games"
+      }
+    }
+  },
+  "notificationEventRsvpChangedUnnamedTitle": "Your reply to {eventTitle} was changed",
+  "@notificationEventRsvpChangedUnnamedTitle": {
+    "description": "Title of a notification sent to an attendee when their reply to an event, the answer saying whether they are coming, was changed by something other than a person with an account, so the server has no name to give. Tapping it opens the event. {eventTitle} is the event's title as the server gives it. The line under it says the new answer.",
+    "placeholders": {
+      "eventTitle": {
+        "type": "String",
+        "example": "Friday Night Games"
+      }
+    }
+  },
+  "notificationEventRsvpNowAttendingDetail": "Now: Going",
+  "@notificationEventRsvpNowAttendingDetail": {
+    "description": "Second line of the notification that someone changed the user's reply to an event: the new answer is that they are going."
+  },
+  "notificationEventRsvpNowMaybeDetail": "Now: Maybe",
+  "@notificationEventRsvpNowMaybeDetail": {
+    "description": "Second line of the notification that someone changed the user's reply to an event: the new answer is that they might go."
+  },
+  "notificationEventRsvpNowNotAttendingDetail": "Now: Not going",
+  "@notificationEventRsvpNowNotAttendingDetail": {
+    "description": "Second line of the notification that someone changed the user's reply to an event: the new answer is that they are not going."
+  },
+  "notificationEventRsvpNowInvitedDetail": "Now: Invited",
+  "@notificationEventRsvpNowInvitedDetail": {
+    "description": "Second line of the notification that someone changed the user's reply to an event: the reply was cleared, so they are invited and have not answered."
+  },
+  "notificationEventInviteReceivedTitle": "{inviterName} invited you to {eventTitle}",
+  "@notificationEventInviteReceivedTitle": {
+    "description": "Title of a notification telling the user they were invited to an event. It opens nothing for now, since the app has no page for an invite to an event: the user can only mark it read. {inviterName} is the name of the person who invited them, as the server gives it. {eventTitle} is the event's title as the server gives it.",
+    "placeholders": {
+      "inviterName": {
+        "type": "String",
+        "example": "Ana"
+      },
+      "eventTitle": {
+        "type": "String",
+        "example": "Friday Night Games"
+      }
+    }
+  },
+  "notificationEventInviteAcceptedTitle": "{inviteeName} accepted your invite to {eventTitle}",
+  "@notificationEventInviteAcceptedTitle": {
+    "description": "Title of a notification sent to the person who invited someone to an event, when the person invited accepted. Tapping it opens the event. {inviteeName} is the name of the person invited, as the server gives it. {eventTitle} is the event's title as the server gives it.",
+    "placeholders": {
+      "inviteeName": {
+        "type": "String",
+        "example": "Cy"
+      },
+      "eventTitle": {
+        "type": "String",
+        "example": "Friday Night Games"
+      }
+    }
+  },
+  "notificationEventInviteDeclinedTitle": "{inviteeName} declined your invite to {eventTitle}",
+  "@notificationEventInviteDeclinedTitle": {
+    "description": "Title of a notification sent to the person who invited someone to an event, when the person invited declined. Tapping it opens the event. {inviteeName} is the name of the person invited, as the server gives it. {eventTitle} is the event's title as the server gives it.",
+    "placeholders": {
+      "inviteeName": {
+        "type": "String",
+        "example": "Cy"
+      },
+      "eventTitle": {
+        "type": "String",
+        "example": "Friday Night Games"
+      }
+    }
+  },
+  "notificationEventOccurrenceProposedTitle": "A new date was proposed for {eventTitle}",
+  "@notificationEventOccurrenceProposedTitle": {
+    "description": "Title of a notification telling the user that a date was proposed for an event. Tapping it opens the event on its Games tab, on that date. {eventTitle} is the event's title as the server gives it. The line under it names the date, when the server gave one.",
+    "placeholders": {
+      "eventTitle": {
+        "type": "String",
+        "example": "Friday Night Games"
+      }
+    }
+  },
+  "notificationEventOccurrenceConfirmedTitle": "A date for {eventTitle} was confirmed",
+  "@notificationEventOccurrenceConfirmedTitle": {
+    "description": "Title of a notification telling the user that one of an event's dates was confirmed, so it is going ahead on that date. Tapping it opens the event on its Games tab, on that date. {eventTitle} is the event's title as the server gives it. The line under it names the date, when the server gave one.",
+    "placeholders": {
+      "eventTitle": {
+        "type": "String",
+        "example": "Friday Night Games"
+      }
+    }
+  },
+  "notificationEventOccurrenceDeclinedTitle": "A proposed date for {eventTitle} was declined",
+  "@notificationEventOccurrenceDeclinedTitle": {
+    "description": "Title of a notification telling the user that a date proposed for an event was declined, so it will not be one of the event's dates. Tapping it opens the event on its Games tab, on that date. {eventTitle} is the event's title as the server gives it. The line under it names the date, when the server gave one.",
+    "placeholders": {
+      "eventTitle": {
+        "type": "String",
+        "example": "Friday Night Games"
+      }
+    }
+  },
+  "notificationEventOccurrenceCanceledTitle": "A date for {eventTitle} was cancelled",
+  "@notificationEventOccurrenceCanceledTitle": {
+    "description": "Title of a notification telling the user that one of an event's dates was cancelled, so the event is not happening on it. Tapping it opens the event on its Games tab, on that date. {eventTitle} is the event's title as the server gives it. The line under it names the date, when the server gave one.",
+    "placeholders": {
+      "eventTitle": {
+        "type": "String",
+        "example": "Friday Night Games"
+      }
+    }
+  },
+  "notificationEventOccurrenceRescheduledTitle": "A date for {eventTitle} was rescheduled",
+  "@notificationEventOccurrenceRescheduledTitle": {
+    "description": "Title of a notification telling the user that one of an event's dates was moved to another time. Tapping it opens the event on its Games tab, on that date. {eventTitle} is the event's title as the server gives it. The line under it names the date, when the server gave one.",
+    "placeholders": {
+      "eventTitle": {
+        "type": "String",
+        "example": "Friday Night Games"
+      }
+    }
+  },
+  "notificationEventOccurrenceDetail": "Date: {occurrenceLabel}",
+  "@notificationEventOccurrenceDetail": {
+    "description": "Second line of a notification about one of an event's dates: names the date. {occurrenceLabel} is the name the host gave that date, as they wrote it, such as Day 1 or Saturday Evening. It is not a formatted time.",
+    "placeholders": {
+      "occurrenceLabel": {
+        "type": "String",
+        "example": "Saturday Evening"
+      }
+    }
   }
 }
