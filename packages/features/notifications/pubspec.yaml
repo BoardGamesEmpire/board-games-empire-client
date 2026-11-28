@@ -1,0 +1,42 @@
+name: notifications
+description: "Your notifications on the active server (#475): one list of every notification, read or not, each worded from its type and payload and opening what it's about"
+publish_to: none
+
+environment:
+  sdk: ^3.13.0
+  flutter: ">=3.47.1"
+resolution: workspace
+
+dependencies:
+  bloc: ^9.2.1
+  bloc_concurrency: ^0.3.0
+  equatable: ^2.1.0
+  flutter:
+    sdk: flutter
+  flutter_bloc: ^9.1.1
+  flutter_localizations:
+    sdk: flutter
+  intl: ^0.20.2
+  models:
+    path: ../../core/models
+  # The remote comes in as a parameter. Nothing under `lib/` names `di`.
+  network_interface:
+    path: ../../network/network_interface
+  ui:
+    path: ../../ui/widgets
+  ui_tokens:
+    path: ../../ui/tokens
+
+dev_dependencies:
+  bge_test_support:
+    path: ../../testing/support
+  bloc_test: ^10.0.0
+  flutter_test:
+    sdk: flutter
+  l10n_test_support:
+    path: ../../testing/l10n
+  mocktail: ^1.0.5
+
+flutter:
+  generate: true
+  uses-material-design: true

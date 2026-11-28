@@ -1,0 +1,115 @@
+{
+  "@@locale": "en",
+  "notificationsTitle": "Notifications",
+  "@notificationsTitle": {
+    "description": "Title of the page that lists every notification the signed-in user has on this server, read or not. Not the invite inbox, which is a different page."
+  },
+  "notificationUnknownTitle": "A notification this version of the app can't show",
+  "@notificationUnknownTitle": {
+    "description": "Title of a row in the notifications list for a notification the app can't word: the server sent a kind of notification this version doesn't know, or one whose details it can't read. The row opens nothing; the user can only mark it read."
+  },
+  "notificationHouseholdInviteReceivedTitle": "{inviterName} invited you to {householdName}",
+  "@notificationHouseholdInviteReceivedTitle": {
+    "description": "Title of a notification telling the user they were invited to join a household. Tapping it opens the user's invites, where they can accept or decline. {inviterName} is the name of the person who sent the invite and {householdName} is the household's name, both as the server gives them.",
+    "placeholders": {
+      "inviterName": {
+        "type": "String",
+        "example": "Ana"
+      },
+      "householdName": {
+        "type": "String",
+        "example": "The Smiths"
+      }
+    }
+  },
+  "notificationHouseholdInviteAwaitingApprovalTitle": "{inviterName}'s invite to {householdName} is awaiting approval",
+  "@notificationHouseholdInviteAwaitingApprovalTitle": {
+    "description": "Title of a notification sent to a household's owners and admins when a member invited someone and the invite needs one of them to approve it before it is sent. Tapping it opens the household's invites awaiting approval. {inviterName} is the member who made the invite and {householdName} is the household's name, both as the server gives them. The line under it says who the invite is for.",
+    "placeholders": {
+      "inviterName": {
+        "type": "String",
+        "example": "Ana"
+      },
+      "householdName": {
+        "type": "String",
+        "example": "The Smiths"
+      }
+    }
+  },
+  "notificationInviteeDetail": "For {invitee}",
+  "@notificationInviteeDetail": {
+    "description": "Second line of the notification that a household invite is awaiting approval: who the invite is for. {invitee} is the name the invite was sent with or, when it was sent to an email address with no name, that address, as the server gives it.",
+    "placeholders": {
+      "invitee": {
+        "type": "String",
+        "example": "Bo"
+      }
+    }
+  },
+  "notificationInviteeUnnamedDetail": "For someone the invite doesn't name",
+  "@notificationInviteeUnnamedDetail": {
+    "description": "Second line of the notification that a household invite is awaiting approval, when the server gave neither a name nor an email address for the person invited."
+  },
+  "notificationHouseholdInviteAcceptedTitle": "{memberName} joined {householdName}",
+  "@notificationHouseholdInviteAcceptedTitle": {
+    "description": "Title of a notification sent to a household's members when someone accepted an invite and became a member. Tapping it opens the household. {memberName} is the new member's name and {householdName} is the household's name, both as the server gives them.",
+    "placeholders": {
+      "memberName": {
+        "type": "String",
+        "example": "Bo"
+      },
+      "householdName": {
+        "type": "String",
+        "example": "The Smiths"
+      }
+    }
+  },
+  "notificationHouseholdInviteDeclinedTitle": "{invitee} declined an invite to {householdName}",
+  "@notificationHouseholdInviteDeclinedTitle": {
+    "description": "Title of a notification sent to the person who made a household invite, and to the household's owners and admins, when the person invited declined it. Tapping it opens the invites. {invitee} is the name the invite was sent with or, when it was sent to an email address with no name, that address; {householdName} is the household's name. All come from the server as they are.",
+    "placeholders": {
+      "invitee": {
+        "type": "String",
+        "example": "Bo"
+      },
+      "householdName": {
+        "type": "String",
+        "example": "The Smiths"
+      }
+    }
+  },
+  "notificationHouseholdInviteDeclinedUnnamedTitle": "Someone declined an invite to {householdName}",
+  "@notificationHouseholdInviteDeclinedUnnamedTitle": {
+    "description": "Title of the notification that a household invite was declined, when the server gave neither a name nor an email address for the person invited. Tapping it opens the invites. {householdName} is the household's name as the server gives it.",
+    "placeholders": {
+      "householdName": {
+        "type": "String",
+        "example": "The Smiths"
+      }
+    }
+  },
+  "notificationHouseholdOwnershipTransferredTitle": "Ownership of {householdName} passed to you from {previousOwnerName}",
+  "@notificationHouseholdOwnershipTransferredTitle": {
+    "description": "Title of a notification telling the user they are now the owner of a household, the one member with final say over it. Tapping it opens the household. {householdName} is the household's name and {previousOwnerName} is the name of the member who owned it before, both as the server gives them.",
+    "placeholders": {
+      "householdName": {
+        "type": "String",
+        "example": "The Smiths"
+      },
+      "previousOwnerName": {
+        "type": "String",
+        "example": "Ana"
+      }
+    }
+  },
+  "notificationHouseholdOwnershipTransferredUnnamedTitle": "Ownership of {householdName} passed to you from the previous owner",
+  "@notificationHouseholdOwnershipTransferredUnnamedTitle": {
+    "description": "Title of the notification that the user is now the owner of a household, when the previous owner's account was deleted and the server no longer has their name. Tapping it opens the household. {householdName} is the household's name as the server gives it.",
+    "placeholders": {
+      "householdName": {
+        "type": "String",
+        "example": "The Smiths"
+      }
+    }
+  }
+}

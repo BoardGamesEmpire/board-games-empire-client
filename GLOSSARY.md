@@ -188,3 +188,14 @@ How dangerous a permission is to hand over: low, medium, high or critical. It de
 how prominently the permission is shown when consent is asked, and whether consent
 must be given again when the level rises.
 _Avoid_: severity, sensitivity
+
+### Notifications
+
+**Notification**:
+A message inside the app to one user about something that concerns them, such as an
+invite, an RSVP, a nomination's outcome or a finished import, which they mark as read.
+It stays on the Notifications page once read, so the user can go back to it. A kind the
+client doesn't know yet still shows there, as a plain row. Email and push delivery are
+planned.
+_Avoid_: alert, notice; notification for a webhook delivery; inbox (that is the invite
+inbox at `/invites`)
