@@ -640,6 +640,139 @@ void main() {
         ),
       ],
     );
+
+    blocTest<NotificationListBloc, NotificationListState>(
+      'opened stays read when a refresh answered before the server took its '
+      'markRead brings it back unread',
+      build: build,
+      seed: () => loaded([a, b]),
+      act: (bloc) async {
+        final mark = Completer<void>();
+        remote
+          ..scriptMarkRead([mark.future])
+          // Read before the server marked a.
+          ..scriptPages([
+            NotificationPage(items: [a, b]),
+          ]);
+        bloc.add(const NotificationListOpened('a'));
+        await pumpEventQueue();
+        bloc.add(const NotificationListRefreshRequested());
+        await pumpEventQueue();
+        mark.complete();
+      },
+      expect: () => [
+        loaded([a.markedRead(openedAt), b]),
+        loaded([a.markedRead(openedAt), b], refreshing: true),
+        loaded([a.markedRead(openedAt), b]),
+      ],
+      verify: (_) => expect(markedRead, [1]),
+    );
+
+    blocTest<NotificationListBloc, NotificationListState>(
+      'opened stays read when a refresh sent before it was opened answers '
+      'after the server took its markRead',
+      build: build,
+      seed: () => loaded([a, b]),
+      act: (bloc) async {
+        final page = Completer<NotificationPage>();
+        remote
+          ..scriptPages([page.future])
+          ..scriptMarkRead([null]);
+        bloc.add(const NotificationListRefreshRequested());
+        await pumpEventQueue();
+        bloc.add(const NotificationListOpened('a'));
+        await pumpEventQueue();
+        page.complete(NotificationPage(items: [a, b]));
+      },
+      expect: () => [
+        loaded([a, b], refreshing: true),
+        loaded([a.markedRead(openedAt), b], refreshing: true),
+        loaded([a.markedRead(openedAt), b]),
+      ],
+      verify: (_) => expect(markedRead, [1]),
+    );
+
+    blocTest<NotificationListBloc, NotificationListState>(
+      'opened shows what a refresh sent after the server took its markRead '
+      'says',
+      build: build,
+      seed: () => loaded([a, b]),
+      act: (bloc) async {
+        remote
+          ..scriptMarkRead([null])
+          ..scriptPages([
+            NotificationPage(items: [a, b]),
+          ]);
+        bloc.add(const NotificationListOpened('a'));
+        await pumpEventQueue();
+        bloc.add(const NotificationListRefreshRequested());
+      },
+      skip: 2,
+      expect: () => [
+        loaded([a, b]),
+      ],
+    );
+
+    blocTest<NotificationListBloc, NotificationListState>(
+      'opened with markRead failing shows what a refresh answered meanwhile '
+      'says',
+      build: build,
+      seed: () => loaded([a, b]),
+      act: (bloc) async {
+        final mark = Completer<void>();
+        final page = Completer<NotificationPage>();
+        remote
+          ..scriptMarkRead([mark.future])
+          ..scriptPages([page.future]);
+        bloc.add(const NotificationListOpened('a'));
+        await pumpEventQueue();
+        bloc.add(const NotificationListRefreshRequested());
+        await pumpEventQueue();
+        mark.completeError(offline);
+        await pumpEventQueue();
+        page.complete(NotificationPage(items: [a, b]));
+      },
+      skip: 2,
+      expect: () => [
+        loaded([a, b]),
+      ],
+      verify: (_) => expect(markedRead, isEmpty),
+    );
+
+    blocTest<NotificationListBloc, NotificationListState>(
+      'opened before marking all read stays read when a refresh brings it '
+      'back unread and marking all fails',
+      build: build,
+      seed: () => loaded([a, b]),
+      act: (bloc) async {
+        final mark = Completer<void>();
+        final all = Completer<void>();
+        remote
+          ..scriptMarkRead([mark.future])
+          ..scriptMarkAllRead([all.future])
+          // Read before the server marked a, or marked them all.
+          ..scriptPages([
+            NotificationPage(items: [a, b]),
+          ]);
+        bloc.add(const NotificationListOpened('a'));
+        await pumpEventQueue();
+        bloc.add(const NotificationListAllMarkedRead());
+        await pumpEventQueue();
+        bloc.add(const NotificationListRefreshRequested());
+        await pumpEventQueue();
+        mark.complete();
+        await pumpEventQueue();
+        all.completeError(offline);
+      },
+      skip: 4,
+      expect: () => [
+        failed<MarkAllFailed>(
+          loaded([a.markedRead(openedAt), b]),
+          NotificationListFailure.transient,
+        ),
+      ],
+      verify: (_) => expect(markedRead, [1]),
+    );
   });
 
   group('all marked read', () {

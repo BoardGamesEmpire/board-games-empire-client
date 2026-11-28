@@ -36,6 +36,11 @@ import 'package:notifications/src/list/notification_list_state.dart';
 /// shows read and nothing is said: the next refresh tells the truth.
 /// `onMarkedRead` hears of each one the server took.
 ///
+/// A read of a page sent before the server took a row's mark may have been
+/// answered before the server marked it, so the row shows read there too:
+/// while the mark is out, and for good once the server took it. A read sent
+/// after the server took it, or after it failed, shows what the server says.
+///
 /// Marking all read shows every row read at once. When it fails, the rows it
 /// changed are as they were, and the outcome says so. `onAllMarkedRead`
 /// hears when the server took it. A row opened meanwhile is sent on its
@@ -86,6 +91,16 @@ class NotificationListBloc
   /// has replaced its listing.
   int _listing = 0;
 
+  /// Counts every read of a page, first or later, so that a read can tell
+  /// whether it was sent before the server took a row's mark.
+  int _readsSent = 0;
+
+  /// Each row opened here whose mark is out or the server took, by id: when
+  /// it showed read, and the last read of a page sent before the server took
+  /// it, numbered as [_readsSent] counts them, or null while it is out. A
+  /// mark that failed leaves it.
+  final Map<String, ({DateTime at, int? lastStale})> _marked = {};
+
   /// While marking all read is out: each row it showed read, by id, as it
   /// was before. A row opened meanwhile leaves it.
   Map<String, UserNotification>? _unreadBeforeAll;
@@ -114,6 +129,7 @@ class NotificationListBloc
 
   Future<void> _load(Emitter<NotificationListState> emit) async {
     final listing = ++_listing;
+    final read = ++_readsSent;
     final since = _marksAllSince();
     // A bloc's first emit is not compared with its initial state, so the
     // spinner it starts on is not emitted again.
@@ -123,7 +139,7 @@ class NotificationListBloc
     try {
       final page = await _remote.fetchPage(limit: _pageSize);
       if (listing != _listing) return;
-      emit(_firstPage(page, since));
+      emit(_firstPage(page, read, since));
     } on Object catch (error) {
       if (listing == _listing) {
         emit(
@@ -145,12 +161,13 @@ class NotificationListBloc
       return _load(emit);
     }
     final listing = ++_listing;
+    final read = ++_readsSent;
     final since = _marksAllSince();
     emit(state.copyWith(refreshing: true));
     try {
       final page = await _remote.fetchPage(limit: _pageSize);
       if (listing != _listing) return;
-      emit(_firstPage(page, since));
+      emit(_firstPage(page, read, since));
     } on Object catch (error) {
       if (listing == _listing) {
         emit(
@@ -164,17 +181,20 @@ class NotificationListBloc
     }
   }
 
-  /// The state once [page] is the first page, from a read sent when
-  /// [_marksAllSince] gave [since]: it replaces every row and the cursor. A
-  /// More or marking all read still out stays so.
-  NotificationListState _firstPage(NotificationPage page, int since) =>
-      state.copyWith(
-        status: NotificationListStatus.loaded,
-        items: _distinct(_underMarkAll(page.items, since)),
-        nextCursor: () => page.nextCursor,
-        failure: () => null,
-        refreshing: false,
-      );
+  /// The state once [page] is the first page, from the [read]th read, sent
+  /// when [_marksAllSince] gave [since]: it replaces every row and the
+  /// cursor. A More or marking all read still out stays so.
+  NotificationListState _firstPage(
+    NotificationPage page,
+    int read,
+    int since,
+  ) => state.copyWith(
+    status: NotificationListStatus.loaded,
+    items: _distinct(_shownRead(page.items, read, since)),
+    nextCursor: () => page.nextCursor,
+    failure: () => null,
+    refreshing: false,
+  );
 
   Future<void> _onMore(
     NotificationListMoreRequested event,
@@ -187,6 +207,7 @@ class NotificationListBloc
       return;
     }
     final listing = _listing;
+    final read = ++_readsSent;
     final since = _marksAllSince();
     emit(state.copyWith(loadingMore: true));
     try {
@@ -200,7 +221,7 @@ class NotificationListBloc
         state.copyWith(
           items: _distinct([
             ...state.items,
-            ..._underMarkAll(page.items, since),
+            ..._shownRead(page.items, read, since),
           ]),
           nextCursor: () => page.nextCursor,
           loadingMore: false,
@@ -232,10 +253,12 @@ class NotificationListBloc
     final readByAll = _unreadBeforeAll?.remove(event.id) != null;
     if (row.read && !readByAll) return;
     _openedDuringAll?.add(event.id);
+    final at = row.readAt ?? _now();
+    _marked[event.id] = (at: at, lastStale: null);
     if (!row.read) {
       emit(
         state.copyWith(
-          items: [...items]..[index] = row.markedRead(_now()),
+          items: [...items]..[index] = row.markedRead(at),
         ),
       );
     }
@@ -243,8 +266,10 @@ class NotificationListBloc
       await _remote.markRead([event.id]);
     } on NotificationRemoteException {
       // The row stays read, and the next refresh tells the truth.
+      _marked.remove(event.id);
       return;
     }
+    _marked[event.id] = (at: at, lastStale: _readsSent);
     _onMarkedRead?.call(1);
   }
 
@@ -305,6 +330,32 @@ class NotificationListBloc
   /// have been out while it was, numbered as [_marksAllSent] counts them.
   int _marksAllSince() =>
       _unreadBeforeAll != null ? _marksAllSent : _marksAllSent + 1;
+
+  /// [rows] from the [read]th read, sent when [_marksAllSince] gave [since],
+  /// with the rows this bloc showed read while it was out shown read too.
+  ///
+  /// A row's own mark goes first, so marking all read never holds a row
+  /// whose own mark was out or taken, and a failure can't put it back
+  /// unread.
+  List<UserNotification> _shownRead(
+    List<UserNotification> rows,
+    int read,
+    int since,
+  ) => _underMarkAll(_underMarked(rows, read), since);
+
+  /// [rows] from the [read]th read, with each unread row whose mark was out
+  /// when it was sent, or taken after, shown read.
+  List<UserNotification> _underMarked(List<UserNotification> rows, int read) {
+    if (_marked.isEmpty) return rows;
+    return [
+      for (final row in rows)
+        if (_marked[row.id] case (:final at, :final lastStale)
+            when !row.read && (lastStale == null || read <= lastStale))
+          row.markedRead(at)
+        else
+          row,
+    ];
+  }
 
   /// [rows] from a read sent when [_marksAllSince] gave [since], with what
   /// marking all read that was out meanwhile shows: unread rows read.
