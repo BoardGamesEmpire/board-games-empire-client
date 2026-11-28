@@ -54,3 +54,14 @@ final class DeclinedInviteTarget extends NotificationTarget {
   @override
   List<Object?> get props => [householdId];
 }
+
+/// A DataGateway's own page, where a server admin sees why it stopped and
+/// what it can still do. Only server admins get its notifications.
+final class DataGatewayTarget extends NotificationTarget {
+  const DataGatewayTarget(this.gatewayId);
+
+  final String gatewayId;
+
+  @override
+  List<Object?> get props => [gatewayId];
+}

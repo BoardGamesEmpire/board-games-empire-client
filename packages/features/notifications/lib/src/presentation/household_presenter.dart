@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:notifications/l10n/notifications_localizations.dart';
 import 'package:notifications/src/presentation/notification_presentation.dart';
 import 'package:notifications/src/presentation/notification_target.dart';
+import 'package:notifications/src/presentation/payload_fields.dart';
 
 // The household notifications (#475). Every payload carries `householdId`
 // and `householdName`. Each function returns null when a field its wording
@@ -13,9 +14,9 @@ NotificationPresentation? presentHouseholdInviteReceived(
   NotificationsLocalizations l10n,
   Map<String, Object?> payload,
 ) {
-  final householdName = _string(payload, 'householdName');
-  final inviterName = _string(payload, 'inviterName');
-  if (_string(payload, 'householdId') == null ||
+  final householdName = nonBlankString(payload, 'householdName');
+  final inviterName = nonBlankString(payload, 'inviterName');
+  if (nonBlankString(payload, 'householdId') == null ||
       householdName == null ||
       inviterName == null) {
     return null;
@@ -36,9 +37,9 @@ NotificationPresentation? presentHouseholdInviteAwaitingApproval(
   NotificationsLocalizations l10n,
   Map<String, Object?> payload,
 ) {
-  final householdId = _string(payload, 'householdId');
-  final householdName = _string(payload, 'householdName');
-  final inviterName = _string(payload, 'inviterName');
+  final householdId = nonBlankString(payload, 'householdId');
+  final householdName = nonBlankString(payload, 'householdName');
+  final inviterName = nonBlankString(payload, 'inviterName');
   if (householdId == null || householdName == null || inviterName == null) {
     return null;
   }
@@ -62,9 +63,9 @@ NotificationPresentation? presentHouseholdInviteAccepted(
   NotificationsLocalizations l10n,
   Map<String, Object?> payload,
 ) {
-  final householdId = _string(payload, 'householdId');
-  final householdName = _string(payload, 'householdName');
-  final memberName = _string(payload, 'memberName');
+  final householdId = nonBlankString(payload, 'householdId');
+  final householdName = nonBlankString(payload, 'householdName');
+  final memberName = nonBlankString(payload, 'memberName');
   if (householdId == null || householdName == null || memberName == null) {
     return null;
   }
@@ -84,8 +85,8 @@ NotificationPresentation? presentHouseholdInviteDeclined(
   NotificationsLocalizations l10n,
   Map<String, Object?> payload,
 ) {
-  final householdId = _string(payload, 'householdId');
-  final householdName = _string(payload, 'householdName');
+  final householdId = nonBlankString(payload, 'householdId');
+  final householdName = nonBlankString(payload, 'householdName');
   if (householdId == null || householdName == null) return null;
   final invitee = _invitee(payload);
   return NotificationPresentation(
@@ -104,10 +105,10 @@ NotificationPresentation? presentHouseholdOwnershipTransferred(
   NotificationsLocalizations l10n,
   Map<String, Object?> payload,
 ) {
-  final householdId = _string(payload, 'householdId');
-  final householdName = _string(payload, 'householdName');
+  final householdId = nonBlankString(payload, 'householdId');
+  final householdName = nonBlankString(payload, 'householdName');
   if (householdId == null || householdName == null) return null;
-  final previousOwnerName = _string(payload, 'previousOwnerName');
+  final previousOwnerName = nonBlankString(payload, 'previousOwnerName');
   return NotificationPresentation(
     icon: Icons.workspace_premium_outlined,
     title: previousOwnerName == null
@@ -126,11 +127,5 @@ NotificationPresentation? presentHouseholdOwnershipTransferred(
 /// the address it was sent to. Null when it has neither, which the wording
 /// covers.
 String? _invitee(Map<String, Object?> payload) =>
-    _string(payload, 'inviteeName') ?? _string(payload, 'inviteeEmail');
-
-/// [payload]'s [key] when it holds a string with more than whitespace in it,
-/// else null.
-String? _string(Map<String, Object?> payload, String key) {
-  final value = payload[key];
-  return value is String && value.trim().isNotEmpty ? value : null;
-}
+    nonBlankString(payload, 'inviteeName') ??
+    nonBlankString(payload, 'inviteeEmail');

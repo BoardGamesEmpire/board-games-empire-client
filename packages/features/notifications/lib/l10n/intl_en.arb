@@ -116,6 +116,49 @@
   "@notificationUnreadLabel": {
     "description": "Read by a screen reader before the title of a notification the user hasn't read yet. On screen, an unread notification's title is bold instead."
   },
+  "notificationDataGatewayAutoDisabledTitle": "{gatewayName} was switched off",
+  "@notificationDataGatewayAutoDisabledTitle": {
+    "description": "Title of a notification sent to server admins when a data gateway, a source the server gets game information from, was switched off automatically after repeated failures. Tapping it opens that data gateway's page. {gatewayName} is the data gateway's name as the server gives it. The line under it says why, and the text under that is the error the data gateway last gave.",
+    "placeholders": {
+      "gatewayName": {
+        "type": "String",
+        "example": "BoardGameGeek"
+      }
+    }
+  },
+  "notificationDataGatewayConnectDetail": "It couldn't connect, again and again",
+  "@notificationDataGatewayConnectDetail": {
+    "description": "Second line of the notification that a data gateway was switched off: the reason, when the server couldn't connect to it on one attempt after another."
+  },
+  "notificationDataGatewayCallDetail": "Its calls kept failing",
+  "@notificationDataGatewayCallDetail": {
+    "description": "Second line of the notification that a data gateway was switched off: the reason, when the server reached it but its calls failed on one attempt after another."
+  },
+  "notificationDataGatewayGenericDetail": "It failed too many times in a row",
+  "@notificationDataGatewayGenericDetail": {
+    "description": "Second line of the notification that a data gateway was switched off, when the server gave a reason this version of the app has no words for."
+  },
+  "notificationDataGatewayCapabilitiesLostTitle": "{gatewayName} lost some capabilities",
+  "@notificationDataGatewayCapabilitiesLostTitle": {
+    "description": "Title of a notification sent to server admins when a check of a data gateway, a source the server gets game information from, found it no longer does things the server was using it for. Tapping it opens that data gateway's page, which lists them. {gatewayName} is the data gateway's name as the server gives it.",
+    "placeholders": {
+      "gatewayName": {
+        "type": "String",
+        "example": "BoardGameGeek"
+      }
+    }
+  },
+  "notificationDataGatewayCapabilitiesLostDetail": "{count, plural, =1{1 thing the server was using it for is gone} other{{count} things the server was using it for are gone}}",
+  "@notificationDataGatewayCapabilitiesLostDetail": {
+    "description": "Second line of the notification that a data gateway lost capabilities: how many of the things the server was using it for, such as searching, it can no longer do. {count} is at least 1.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "format": "decimalPattern",
+        "example": "2"
+      }
+    }
+  },
   "notificationReceivedAt": "{date} at {time}",
   "@notificationReceivedAt": {
     "description": "When a notification arrived, on its row on the Notifications page and in the preview the bell in the header opens: the date, then the time of day, in the device's time zone.",

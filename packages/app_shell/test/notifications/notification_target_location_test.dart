@@ -44,6 +44,20 @@ void main() {
     );
   });
 
+  test("a DataGateway notification opens the DataGateway's own page", () async {
+    expect(
+      await notificationTargetLocation(
+        const DataGatewayTarget('gw 1'),
+        households: households,
+      ),
+      AppRoutes.dataGatewayDetailOf('gw 1'),
+    );
+    expect(
+      AppRoutes.dataGatewayDetailOf('gw 1'),
+      '/admin/data-gateways/gw%201',
+    );
+  });
+
   test('a household notification opens the household', () async {
     expect(
       await notificationTargetLocation(

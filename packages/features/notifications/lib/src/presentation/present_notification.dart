@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:models/domain.dart';
 import 'package:notifications/l10n/notifications_localizations.dart';
+import 'package:notifications/src/presentation/data_gateway_presenter.dart';
 import 'package:notifications/src/presentation/household_presenter.dart';
 import 'package:notifications/src/presentation/notification_presentation.dart';
 
@@ -24,6 +25,11 @@ NotificationPresentation presentNotification(
     'HouseholdInviteAccepted' => presentHouseholdInviteAccepted(l10n, payload),
     'HouseholdInviteDeclined' => presentHouseholdInviteDeclined(l10n, payload),
     'HouseholdOwnershipTransferred' => presentHouseholdOwnershipTransferred(
+      l10n,
+      payload,
+    ),
+    'DataGatewayAutoDisabled' => presentDataGatewayAutoDisabled(l10n, payload),
+    'DataGatewayCapabilitiesLost' => presentDataGatewayCapabilitiesLost(
       l10n,
       payload,
     ),

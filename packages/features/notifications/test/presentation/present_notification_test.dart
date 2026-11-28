@@ -221,6 +221,184 @@ void main() {
     });
   });
 
+  group('DataGatewayAutoDisabled', () {
+    const payload = <String, Object?>{
+      'gatewayId': 'g1',
+      'gatewayName': 'BoardGameGeek',
+      'reason': 'repeated_connection_failure',
+      'consecutiveFailures': 5,
+      'firstFailureAt': '2026-11-27T10:00:00.000Z',
+      'lastFailureAt': '2026-11-27T10:05:00.000Z',
+      'lastError': 'connect ECONNREFUSED 10.0.0.7:443',
+    };
+
+    test('names the DataGateway in the title and opens it', () {
+      final presentation = present('DataGatewayAutoDisabled', payload);
+
+      expect(presentation.title, contains('BoardGameGeek'));
+      expect(presentation.icon, Icons.power_off_outlined);
+      expect(presentation.target, const DataGatewayTarget('g1'));
+    });
+
+    test('words repeated_connection_failure', () {
+      final presentation = present('DataGatewayAutoDisabled', payload);
+
+      expect(presentation.detail, l10n.notificationDataGatewayConnectDetail);
+      expect(presentation.detail, contains("couldn't connect"));
+    });
+
+    test('words repeated_call_failure', () {
+      final presentation = present('DataGatewayAutoDisabled', {
+        ...payload,
+        'reason': 'repeated_call_failure',
+      });
+
+      expect(presentation.detail, l10n.notificationDataGatewayCallDetail);
+      expect(presentation.detail, contains('calls kept failing'));
+    });
+
+    test('words a reason it does not know, and one that is not a string', () {
+      for (final reason in <Object?>['rate_limited', 7, null, '']) {
+        final presentation = present('DataGatewayAutoDisabled', {
+          ...payload,
+          'reason': reason,
+        });
+
+        expect(
+          presentation.detail,
+          l10n.notificationDataGatewayGenericDetail,
+          reason: '$reason',
+        );
+        expect(presentation.target, const DataGatewayTarget('g1'));
+      }
+    });
+
+    test('the quote is lastError, as the upstream wrote it', () {
+      const error = '  Verbindung verweigert:\n\tECONNREFUSED  ';
+      final presentation = present('DataGatewayAutoDisabled', {
+        ...payload,
+        'lastError': error,
+      });
+
+      expect(presentation.quote, error);
+      expect(presentation.title, isNot(contains('Verbindung')));
+      expect(presentation.detail, isNot(contains('Verbindung')));
+    });
+
+    test('with no lastError has no quote but is still a row', () {
+      final presentation = present('DataGatewayAutoDisabled', {
+        ...payload,
+        'lastError': null,
+      });
+
+      expect(presentation.quote, isNull);
+      expect(presentation.title, contains('BoardGameGeek'));
+      expect(presentation.target, const DataGatewayTarget('g1'));
+    });
+
+    test('missing required field is a plain row', () {
+      expect(
+        present('DataGatewayAutoDisabled', {...payload, 'gatewayId': null}),
+        plain,
+      );
+      expect(
+        present('DataGatewayAutoDisabled', {...payload, 'gatewayName': 3}),
+        plain,
+      );
+      expect(present('DataGatewayAutoDisabled', const {}), plain);
+    });
+  });
+
+  group('DataGatewayCapabilitiesLost', () {
+    const payload = <String, Object?>{
+      'gatewayId': 'g1',
+      'gatewayName': 'BoardGameGeek',
+      'lostCapabilities': ['Search', 'Fetch'],
+    };
+
+    test('names the DataGateway and opens it', () {
+      final presentation = present('DataGatewayCapabilitiesLost', payload);
+
+      expect(presentation.title, contains('BoardGameGeek'));
+      expect(presentation.icon, Icons.extension_off_outlined);
+      expect(presentation.target, const DataGatewayTarget('g1'));
+      expect(presentation.quote, isNull);
+    });
+
+    test('counts the capabilities lost, in the plural', () {
+      expect(
+        present('DataGatewayCapabilitiesLost', payload).detail,
+        l10n.notificationDataGatewayCapabilitiesLostDetail(2),
+      );
+      expect(
+        present('DataGatewayCapabilitiesLost', {
+          ...payload,
+          'lostCapabilities': ['Search'],
+        }).detail,
+        l10n.notificationDataGatewayCapabilitiesLostDetail(1),
+      );
+      expect(
+        l10n.notificationDataGatewayCapabilitiesLostDetail(1),
+        contains('1 '),
+      );
+      expect(
+        l10n.notificationDataGatewayCapabilitiesLostDetail(2),
+        contains('2 '),
+      );
+    });
+
+    test('counts only the entries that are text', () {
+      final presentation = present('DataGatewayCapabilitiesLost', {
+        ...payload,
+        'lostCapabilities': ['Search', 4, null, '', 'Fetch'],
+      });
+
+      expect(
+        presentation.detail,
+        l10n.notificationDataGatewayCapabilitiesLostDetail(2),
+      );
+    });
+
+    test('an empty list is a row with no detail', () {
+      final presentation = present('DataGatewayCapabilitiesLost', {
+        ...payload,
+        'lostCapabilities': <Object?>[],
+      });
+
+      expect(presentation.detail, isNull);
+      expect(presentation.target, const DataGatewayTarget('g1'));
+    });
+
+    test('missing required field is a plain row', () {
+      expect(
+        present('DataGatewayCapabilitiesLost', {...payload, 'gatewayId': ''}),
+        plain,
+      );
+      expect(
+        present('DataGatewayCapabilitiesLost', {
+          ...payload,
+          'gatewayName': null,
+        }),
+        plain,
+      );
+      expect(
+        present('DataGatewayCapabilitiesLost', {
+          'gatewayId': 'g1',
+          'gatewayName': 'BoardGameGeek',
+        }),
+        plain,
+      );
+      expect(
+        present('DataGatewayCapabilitiesLost', {
+          ...payload,
+          'lostCapabilities': 'Search',
+        }),
+        plain,
+      );
+      expect(present('DataGatewayCapabilitiesLost', const {}), plain);
+    });
+  });
+
   group('a plain row', () {
     test('unknown type is a plain row', () {
       final presentation = present('SomethingNew', {'anything': 1});
@@ -321,6 +499,15 @@ void main() {
         isNot(const HouseholdTarget('h1')),
       );
       expect(const InviteInboxTarget(), const InviteInboxTarget());
+      expect(const DataGatewayTarget('g1'), const DataGatewayTarget('g1'));
+      expect(
+        const DataGatewayTarget('g1'),
+        isNot(const DataGatewayTarget('g2')),
+      );
+      expect(
+        const DataGatewayTarget('g1'),
+        isNot(const HouseholdTarget('g1')),
+      );
     });
   });
 }
