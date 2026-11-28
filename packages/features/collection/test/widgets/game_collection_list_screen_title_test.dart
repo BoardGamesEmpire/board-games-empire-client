@@ -75,6 +75,77 @@ void main() {
       );
     });
   }
+
+  for (final scale in [1.0, 2.0]) {
+    testWidgets('pushed on a 320dp screen at text scale $scale, the title is '
+        'whole beside the header action (#475)', (tester) async {
+      useViewSize(tester, const Size(320, 640));
+      tester.platformDispatcher.textScaleFactorTestValue = scale;
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      const action = Key('header_action');
+      final repository = _MockGameCollectionRepository();
+      when(repository.watchCollectionListItems)
+          .thenAnswer((_) => Stream.value([listItem('e-1')]));
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: BgeTheme.light(),
+          localizationsDelegates: const [
+            ...GameCollectionLocalizations.localizationsDelegates,
+            GameFiltersLocalizations.delegate,
+          ],
+          supportedLocales: GameCollectionLocalizations.supportedLocales,
+          home: const Scaffold(body: Text('home')),
+        ),
+      );
+      Navigator.of(tester.element(find.text('home'))).push(
+        MaterialPageRoute<void>(
+          builder: (_) => GameCollectionListScreen(
+            repository: repository,
+            layouts: _Thumbnails(),
+            onRetry: () async {},
+            headerAction: const SizedBox(key: action, width: 48, height: 48),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(BackButton), findsOneWidget);
+      expect(
+        find.byKey(GameCollectionListScreen.refreshButtonKey),
+        findsOneWidget,
+      );
+      expect(find.byKey(action), findsOneWidget);
+
+      // The control that left the app bar is in the content row, whole
+      // within the screen, with nothing overflowing.
+      final moved = find.byKey(GameCollectionListScreen.refreshButtonKey);
+      expect(
+        find.descendant(of: find.byType(AppBar), matching: moved),
+        findsNothing,
+      );
+      for (final control in [
+        moved,
+        find.byKey(GameCollectionListScreen.layoutToggleKey),
+      ]) {
+        final rect = tester.getRect(control);
+        expect(rect.left, greaterThanOrEqualTo(0));
+        expect(rect.right, lessThanOrEqualTo(320));
+      }
+      expect(tester.takeException(), isNull);
+
+      final title = tester.renderObject<RenderParagraph>(
+        find.descendant(
+          of: find.byType(AppBar),
+          matching: find.text('Collection'),
+        ),
+      );
+      expect(
+        title.getMaxIntrinsicWidth(double.infinity),
+        lessThanOrEqualTo(title.size.width + 0.5),
+        reason: 'the title has ${title.size.width}dp',
+      );
+    });
+  }
 }
 
 /// A user who keeps the thumbnails.

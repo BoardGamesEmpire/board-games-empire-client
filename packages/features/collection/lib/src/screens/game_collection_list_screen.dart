@@ -118,6 +118,7 @@ class GameCollectionListScreen extends StatelessWidget {
     this.onRetry,
     this.onEnter,
     this.layouts,
+    this.headerAction,
     super.key,
   });
 
@@ -274,6 +275,10 @@ class GameCollectionListScreen extends StatelessWidget {
   /// user session. Without it the toggle still works, for this visit.
   final ListLayoutRepository? layouts;
 
+  /// A control the app adds at the end of the header, such as the
+  /// notifications bell (#475). Last in the header.
+  final Widget? headerAction;
+
   @override
   Widget build(BuildContext context) {
     final layouts = this.layouts;
@@ -311,6 +316,7 @@ class GameCollectionListScreen extends StatelessWidget {
               onLayoutChanged: onChanged,
               onOpen: onOpen,
               onBrowse: onBrowse,
+              headerAction: headerAction,
             ),
       ),
     );
@@ -323,6 +329,7 @@ class _GameCollectionListPage extends StatefulWidget {
     required this.onLayoutChanged,
     this.onOpen,
     this.onBrowse,
+    this.headerAction,
   });
 
   /// Null until the remembered choice is read.
@@ -330,6 +337,7 @@ class _GameCollectionListPage extends StatefulWidget {
   final ValueChanged<bool> onLayoutChanged;
   final void Function(BuildContext context, String entryId)? onOpen;
   final void Function(BuildContext context)? onBrowse;
+  final Widget? headerAction;
 
   @override
   State<_GameCollectionListPage> createState() =>
@@ -416,32 +424,7 @@ class _GameCollectionListPageState extends State<_GameCollectionListPage> {
       // Set or not for the screen's whole life, as the bloc's `canRetry` is:
       // a page that gains or loses it rebuilds its scroll view.
       onRefresh: canRetry ? () => _refresh(context) : null,
-      // Where there is no pass to run, there is no button either: one that
-      // did nothing is worse than none (#717). The page is built outside the
-      // list's builder, so the button reads the pass on its own.
-      actions: canRetry
-          ? [
-              BlocSelector<
-                GameCollectionListBloc,
-                GameCollectionListState,
-                bool
-              >(
-                // From any state: the button says a pass it started is
-                // running on the loading and error surfaces too, where no
-                // banner does (#717).
-                selector: (state) => state.refreshing,
-                builder: (context, refreshing) => BgeRefreshButton(
-                  buttonKey: GameCollectionListScreen.refreshButtonKey,
-                  label: l10n.collectionRefreshAction,
-                  inProgressLabel: l10n.collectionRefreshInProgress,
-                  refreshing: refreshing,
-                  onPressed: () => context.read<GameCollectionListBloc>().add(
-                    const GameCollectionListRetryRequested(),
-                  ),
-                ),
-              ),
-            ]
-          : null,
+      actions: [?widget.headerAction],
       slivers: [
         // In every state, and first, above the refresh banner, so that it
         // keeps its place and its focus as the list below it changes (#607).
@@ -452,6 +435,34 @@ class _GameCollectionListPageState extends State<_GameCollectionListPage> {
               key: _controls,
               thumbnails: thumbnails ?? false,
               onLayoutChanged: widget.onLayoutChanged,
+              // Where there is no pass to run, there is no button either: one
+              // that did nothing is worse than none (#717). In the controls,
+              // not the app bar, which left the title too little room at
+              // 320dp and 2.0 text beside the control the app adds there
+              // (#475). The controls are built outside the list's builder,
+              // so the button reads the pass on its own.
+              refresh: canRetry
+                  ? BlocSelector<
+                      GameCollectionListBloc,
+                      GameCollectionListState,
+                      bool
+                    >(
+                      // From any state: the button says a pass it started is
+                      // running on the loading and error surfaces too, where
+                      // no banner does (#717).
+                      selector: (state) => state.refreshing,
+                      builder: (context, refreshing) => BgeRefreshButton(
+                        buttonKey: GameCollectionListScreen.refreshButtonKey,
+                        label: l10n.collectionRefreshAction,
+                        inProgressLabel: l10n.collectionRefreshInProgress,
+                        refreshing: refreshing,
+                        onPressed: () =>
+                            context.read<GameCollectionListBloc>().add(
+                              const GameCollectionListRetryRequested(),
+                            ),
+                      ),
+                    )
+                  : null,
             ),
           ),
         ),

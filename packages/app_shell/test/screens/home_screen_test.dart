@@ -707,4 +707,37 @@ void main() {
       ),
     );
   });
+
+  group('header action (#475)', () {
+    const action = Key('header_action');
+
+    testWidgets('shows the header action at the end of the app bar', (
+      tester,
+    ) async {
+      useViewSize(tester, const Size(400, 800));
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: BgeTheme.light(),
+          localizationsDelegates: ShellLocalizations.localizationsDelegates,
+          supportedLocales: ShellLocalizations.supportedLocales,
+          home: const HomeScreen(
+            headerAction: SizedBox(key: action, width: 48, height: 48),
+          ),
+        ),
+      );
+
+      final bar = tester.getRect(find.byType(AppBar));
+      final rect = tester.getRect(
+        find.descendant(of: find.byType(AppBar), matching: find.byKey(action)),
+      );
+      expect(rect.size, const Size(48, 48));
+      expect(rect.right, greaterThan(bar.right - 16));
+    });
+
+    testWidgets('shows nothing there without one', (tester) async {
+      await tester.pumpWidget(_app());
+
+      expect(find.byKey(action), findsNothing);
+    });
+  });
 }

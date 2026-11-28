@@ -60,6 +60,7 @@ class EventOverviewScreen extends StatelessWidget {
     this.onRetry,
     this.onEnter,
     this.now,
+    this.headerAction,
     super.key,
   });
 
@@ -134,6 +135,10 @@ class EventOverviewScreen extends StatelessWidget {
   /// The clock the events are grouped against. Defaults to the device's.
   final DateTime Function()? now;
 
+  /// A control the app adds at the end of the header, such as the
+  /// notifications bell (#475). Last in the header.
+  final Widget? headerAction;
+
   @override
   Widget build(BuildContext context) {
     return BlocProvider<EventOverviewBloc>(
@@ -157,6 +162,7 @@ class EventOverviewScreen extends StatelessWidget {
         onOpenGroup: onOpenGroup,
         onCreate: onCreate,
         now: now,
+        headerAction: headerAction,
       ),
     );
   }
@@ -168,12 +174,14 @@ class _EventOverviewPage extends StatelessWidget {
     this.onOpenGroup,
     this.onCreate,
     this.now,
+    this.headerAction,
   });
 
   final void Function(BuildContext context, String eventId)? onOpen;
   final void Function(BuildContext context, EventGroup group)? onOpenGroup;
   final void Function(BuildContext context)? onCreate;
   final DateTime Function()? now;
+  final Widget? headerAction;
 
   @override
   Widget build(BuildContext context) {
@@ -191,6 +199,7 @@ class _EventOverviewPage extends StatelessWidget {
 
     return BgePage.slivers(
       title: Text(l10n.eventsTitle),
+      actions: [?headerAction],
       // A list surface, so the wider measure.
       width: BgePageWidth.pane,
       semanticChildCount: rowCount,

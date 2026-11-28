@@ -2546,6 +2546,74 @@ void main() {
     });
   });
 
+  group('header action (#475)', () {
+    const action = Key('header_action');
+
+    testWidgets('shows the header action after search, and the sort in the '
+        'content, at a wide width', (tester) async {
+      useViewSize(tester, const Size(1200, 800));
+      await tester.pumpWidget(
+        catalogApp(
+          GameBrowseScreen(
+            remote: remote,
+            onSearch: (_) {},
+            headerAction: const SizedBox(key: action, width: 48, height: 48),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final rect = tester.getRect(
+        find.descendant(of: find.byType(AppBar), matching: find.byKey(action)),
+      );
+      expect(rect.size, const Size(48, 48));
+      expect(
+        tester.getRect(find.byKey(GameBrowseScreen.searchKey)).right,
+        lessThanOrEqualTo(rect.left),
+      );
+      final sort = find.byKey(GameBrowseScreen.sortKey);
+      expect(
+        find.descendant(of: find.byType(AppBar), matching: sort),
+        findsNothing,
+      );
+      expect(
+        find.descendant(of: find.byType(CustomScrollView), matching: sort),
+        findsOneWidget,
+      );
+      // End-aligned beside the layout toggle, and below the app bar.
+      expect(
+        tester.getRect(sort).right,
+        lessThanOrEqualTo(
+          tester.getRect(find.byKey(GameBrowseScreen.layoutToggleKey)).left,
+        ),
+      );
+      expect(
+        tester.getRect(sort).top,
+        greaterThanOrEqualTo(tester.getRect(find.byType(AppBar)).bottom),
+      );
+    });
+
+    testWidgets('shows it with no search to offer', (tester) async {
+      await tester.pumpWidget(
+        catalogApp(
+          GameBrowseScreen(
+            remote: remote,
+            headerAction: const SizedBox(key: action, width: 48, height: 48),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(GameBrowseScreen.searchKey), findsNothing);
+      expect(find.byKey(action), findsOneWidget);
+    });
+
+    testWidgets('shows nothing extra without one', (tester) async {
+      await show(tester);
+
+      expect(find.byKey(action), findsNothing);
+    });
+  });
   group('accessibility audit', () {
     // `show` pumps the screen and wants the tester, so each call pumps it
     // with `pump`.

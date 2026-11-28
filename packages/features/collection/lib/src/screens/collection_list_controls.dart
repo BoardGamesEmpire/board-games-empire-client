@@ -23,9 +23,10 @@ const collectionFilterOptions = GameFilterOptions(
 );
 
 /// The head of the collection list (#715), top to bottom: the search field;
-/// the Filters button and the sort button, with the layout toggle at the
-/// end; a chip for each filter in use; and, while anything narrows the list,
-/// how many games it shows of how many are owned.
+/// the Filters button and the sort button, with the refresh button and the
+/// layout toggle at the end (#475); a chip for each filter in use; and,
+/// while anything narrows the list, how many games it shows of how many are
+/// owned.
 ///
 /// Built in every state of the list, so each control keeps its place and its
 /// focus as the list below changes. The filter and the sort live in the
@@ -56,6 +57,7 @@ class CollectionListControls extends StatefulWidget {
   const CollectionListControls({
     required this.thumbnails,
     required this.onLayoutChanged,
+    this.refresh,
     super.key,
   });
 
@@ -64,6 +66,10 @@ class CollectionListControls extends StatefulWidget {
 
   /// Called with the layout the user chose.
   final ValueChanged<bool> onLayoutChanged;
+
+  /// The refresh button, shown before the layout toggle, or null where
+  /// there is no pass to run (#717).
+  final Widget? refresh;
 
   @override
   State<CollectionListControls> createState() => CollectionListControlsState();
@@ -186,8 +192,9 @@ class CollectionListControlsState extends State<CollectionListControls> {
           onChanged: (text) => _setFilter(bloc.filter.copyWith(query: text)),
         ),
         const BgeGap.sm(),
-        // The layout toggle at the end edge where the row has room, and on
-        // a line of its own where it doesn't, as at 320dp.
+        // The refresh button and the layout toggle at the end edge where
+        // the row has room, and on a line of their own where it doesn't, as
+        // at 320dp.
         Wrap(
           alignment: WrapAlignment.spaceBetween,
           crossAxisAlignment: WrapCrossAlignment.center,
@@ -215,12 +222,20 @@ class CollectionListControlsState extends State<CollectionListControls> {
             ),
             // Never disabled: while the choice is read it shows the list,
             // which is what a missing choice means.
-            BgeLayoutToggle(
-              key: GameCollectionListScreen.layoutToggleKey,
-              thumbnails: widget.thumbnails,
-              onChanged: widget.onLayoutChanged,
-              listLabel: l10n.collectionLayoutList,
-              thumbnailsLabel: l10n.collectionLayoutThumbnails,
+            Wrap(
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: tokens.spaceSm,
+              runSpacing: tokens.spaceSm,
+              children: [
+                ?widget.refresh,
+                BgeLayoutToggle(
+                  key: GameCollectionListScreen.layoutToggleKey,
+                  thumbnails: widget.thumbnails,
+                  onChanged: widget.onLayoutChanged,
+                  listLabel: l10n.collectionLayoutList,
+                  thumbnailsLabel: l10n.collectionLayoutThumbnails,
+                ),
+              ],
             ),
           ],
         ),

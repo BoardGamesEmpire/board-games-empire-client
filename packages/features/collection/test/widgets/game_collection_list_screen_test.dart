@@ -1184,14 +1184,20 @@ void main() {
     final banner = find.byKey(GameCollectionListScreen.refreshBannerKey);
 
     for (final surface in _Surface.values) {
-      testWidgets('the app bar has a refresh button: ${surface.name}', (
-        tester,
-      ) async {
+      testWidgets('the controls have a refresh button, not the app bar: '
+          '${surface.name}', (tester) async {
         await pumpOn(tester, surface, onRetry: () async {});
 
         expect(
-          find.descendant(of: find.byType(AppBar), matching: button()),
+          find.descendant(
+            of: find.byType(CustomScrollView),
+            matching: button(),
+          ),
           findsOneWidget,
+        );
+        expect(
+          find.descendant(of: find.byType(AppBar), matching: button()),
+          findsNothing,
         );
         expect(find.byTooltip(_refreshCopy), findsOneWidget);
       });
@@ -2989,6 +2995,84 @@ void main() {
     }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
   });
 
+  group('header action (#475)', () {
+    const action = Key('header_action');
+
+    testWidgets('shows the header action alone in the app bar, and the '
+        'refresh button in the content, at a wide width', (tester) async {
+      useViewSize(tester, const Size(1200, 800));
+      await tester.pumpWidget(
+        app(
+          GameCollectionListScreen(
+            repository: repository,
+            hydration: status.watch(),
+            onRetry: () async {},
+            headerAction: const SizedBox(key: action, width: 48, height: 48),
+          ),
+        ),
+      );
+      status.finished(CollectionHydrateOutcome.complete);
+      items.add([listItem('e-1')]);
+      await tester.pumpAndSettle();
+
+      final rect = tester.getRect(
+        find.descendant(of: find.byType(AppBar), matching: find.byKey(action)),
+      );
+      expect(rect.size, const Size(48, 48));
+      final refresh = find.byKey(GameCollectionListScreen.refreshButtonKey);
+      expect(
+        find.descendant(of: find.byType(AppBar), matching: refresh),
+        findsNothing,
+      );
+      expect(
+        find.descendant(of: find.byType(CustomScrollView), matching: refresh),
+        findsOneWidget,
+      );
+      // End-aligned beside the layout toggle, and below the app bar.
+      expect(
+        tester.getRect(refresh).right,
+        lessThanOrEqualTo(
+          tester
+              .getRect(find.byKey(GameCollectionListScreen.layoutToggleKey))
+              .left,
+        ),
+      );
+      expect(
+        tester.getRect(refresh).top,
+        greaterThanOrEqualTo(tester.getRect(find.byType(AppBar)).bottom),
+      );
+    });
+
+    testWidgets('shows it where there is no refresh to offer', (tester) async {
+      await tester.pumpWidget(
+        app(
+          GameCollectionListScreen(
+            repository: repository,
+            hydration: status.watch(),
+            headerAction: const SizedBox(key: action, width: 48, height: 48),
+          ),
+        ),
+      );
+      status.finished(CollectionHydrateOutcome.complete);
+      items.add([listItem('e-1')]);
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(GameCollectionListScreen.refreshButtonKey),
+        findsNothing,
+      );
+      expect(
+        find.descendant(of: find.byType(AppBar), matching: find.byKey(action)),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('shows nothing extra without one', (tester) async {
+      await show(tester, [listItem('e-1')]);
+
+      expect(find.byKey(action), findsNothing);
+    });
+  });
   group('accessibility audit', () {
     /// A row with every detail and the favourite, plain ones enough to run
     /// below the fold at both viewports, as rows and as covers, and last a
@@ -3039,7 +3123,7 @@ void main() {
 
     /// The screen in [theme], with a way to open an entry unless [open] is
     /// false: the composition offers one only to a user who may write the
-    /// collection. With a retry too, so the app bar's refresh button is held
+    /// collection. With a retry too, so the refresh button is held
     /// to the same checks in every state (#717); the shell passes one
     /// wherever it has a collection client.
     ///
@@ -3060,7 +3144,7 @@ void main() {
           layouts: layouts,
         );
 
-    /// The app bar's refresh button, at rest or busy.
+    /// The refresh button, at rest or busy.
     void expectRefreshButton({bool refreshing = false}) {
       expect(
         find.byKey(GameCollectionListScreen.refreshButtonKey),
@@ -3167,7 +3251,7 @@ void main() {
       },
     );
 
-    // A composition with no refresh seam: no button in the app bar, and no
+    // A composition with no refresh seam: no refresh button, and no
     // gesture (#717).
     auditScreen(
       'ready, list, with no refresh seam',

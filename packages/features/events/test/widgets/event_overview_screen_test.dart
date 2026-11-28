@@ -768,6 +768,41 @@ void main() {
     expect(find.byType(BgePage), findsNothing);
   });
 
+  group('header action (#475)', () {
+    const action = Key('header_action');
+
+    testWidgets('shows the header action at the end of the app bar', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        app(
+          EventOverviewScreen(
+            repository: repository,
+            hydration: status.watch(),
+            headerAction: const SizedBox(key: action, width: 48, height: 48),
+            now: () => now,
+          ),
+        ),
+      );
+      status.finished(EventHydrateOutcome.complete);
+      items.add(const []);
+      await tester.pump();
+
+      final bar = tester.getRect(find.byType(AppBar));
+      final rect = tester.getRect(
+        find.descendant(of: find.byType(AppBar), matching: find.byKey(action)),
+      );
+      expect(rect.size, const Size(48, 48));
+      expect(rect.right, greaterThan(bar.right - 16));
+    });
+
+    testWidgets('shows nothing extra without one', (tester) async {
+      await show(tester, const []);
+
+      expect(find.byKey(action), findsNothing);
+    });
+  });
+
   group('accessibility audit', () {
     Widget build(ThemeData theme, {bool retry = true}) => harness(
       theme: theme,
