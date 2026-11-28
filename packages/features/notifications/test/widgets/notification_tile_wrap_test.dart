@@ -87,6 +87,30 @@ void main() {
         greaterThan(paragraph.size.width),
         reason: 'the name is longer than a line, so it has to wrap',
       );
+      // And it did: its glyphs sit on more than one line, every one inside
+      // the title's box. One line cut at the edge would have one top. The
+      // space a line breaks at may hang past the edge, so only the glyphs
+      // that draw are measured.
+      final text = paragraph.text.toPlainText();
+      final glyphs = [
+        for (var i = 0; i < text.length; i++)
+          if (text[i].trim().isNotEmpty)
+            ...paragraph.getBoxesForSelection(
+              TextSelection(baseOffset: i, extentOffset: i + 1),
+            ),
+      ];
+      expect(
+        {for (final box in glyphs) box.top}.length,
+        greaterThan(1),
+        reason: 'the title is drawn on more than one line',
+      );
+      for (final box in glyphs) {
+        expect(
+          box.right,
+          lessThanOrEqualTo(paragraph.size.width + 0.01),
+          reason: 'a glyph is drawn past the edge',
+        );
+      }
 
       // Every line of the row, the quote's and the button's included.
       final lines = find.descendant(

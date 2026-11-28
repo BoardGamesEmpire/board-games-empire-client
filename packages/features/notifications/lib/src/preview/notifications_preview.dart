@@ -6,6 +6,7 @@ import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:notifications/l10n/notifications_localizations.dart';
 import 'package:notifications/src/count/notification_count_cubit.dart';
+import 'package:notifications/src/count/notification_count_state.dart';
 import 'package:notifications/src/list/notification_list_bloc.dart';
 import 'package:notifications/src/list/notification_list_event.dart';
 import 'package:notifications/src/list/notification_list_state.dart';
@@ -273,15 +274,21 @@ class _NotificationsPreviewState extends State<_NotificationsPreview> {
   @override
   Widget build(BuildContext context) => NotificationsMarkAllAnswers(
     bloc: _bloc,
+    count: widget.count,
     showingFailure: () => _markAllFailure != null,
     unread: _unreadShown,
     button: _markAll,
     heading: _heading,
     onFailed: _onMarkAllFailed,
     onRetired: () => setState(() => _markAllFailure = null),
-    child: BlocBuilder<NotificationListBloc, NotificationListState>(
-      bloc: _bloc,
-      builder: _content,
+    // The count too, so Mark all read comes and goes with it.
+    child: BlocBuilder<NotificationCountCubit, NotificationCountState>(
+      bloc: widget.count,
+      builder: (context, _) =>
+          BlocBuilder<NotificationListBloc, NotificationListState>(
+            bloc: _bloc,
+            builder: _content,
+          ),
     ),
   );
 
@@ -344,7 +351,12 @@ class _NotificationsPreviewState extends State<_NotificationsPreview> {
                 ),
               ),
               // Above the rows, at the end, as on the page.
-              if (loaded && (_unreadShown(state) || state.markingAll))
+              if (loaded &&
+                  NotificationsMarkAllAnswers.offered(
+                    state,
+                    unread: _unreadShown,
+                    count: widget.count.state,
+                  ))
                 Padding(
                   key: const ValueKey('mark all'),
                   padding: inset,

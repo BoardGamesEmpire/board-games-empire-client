@@ -1249,7 +1249,9 @@ class _BgeAppState extends State<BgeApp> {
   /// The household cache, which a declined invite's location reads, and the
   /// session's lease are taken now, as the route is built. A session that
   /// ends while the location is read opens nothing: its pages are leaving,
-  /// and the next session's must not get one. It never throws.
+  /// and the next session's must not get one. Nor does a tap the user has
+  /// left meanwhile, where the route it was on is no longer the top one, as
+  /// when Back closed the preview. It never throws.
   static Future<void> Function(BuildContext context, NotificationTarget target)
   _notificationOpener(DependencyContainer container) {
     final lease = _sessionLease(container);
@@ -1259,11 +1261,13 @@ class _BgeAppState extends State<BgeApp> {
     return (context, target) async {
       // Taken now: the context may be gone once the location is known.
       final router = GoRouter.of(context);
+      final from = ModalRoute.of(context);
       final location = await notificationTargetLocation(
         target,
         households: households,
       );
       if (!lease.isLive) return;
+      if (from != null && !from.isCurrent) return;
       await router.push<void>(location);
     };
   }

@@ -6,6 +6,8 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:notifications/l10n/notifications_localizations.dart';
+import 'package:notifications/src/count/notification_count_cubit.dart';
+import 'package:notifications/src/count/notification_count_state.dart';
 import 'package:notifications/src/list/notification_list_bloc.dart';
 import 'package:notifications/src/list/notification_list_state.dart';
 import 'package:ui/ui.dart';
@@ -111,13 +113,18 @@ class NotificationsMarkAllReadButton extends StatelessWidget {
 /// - A failure goes to [onFailed], which shows it.
 /// - One that worked retires the failure shown, through [onRetired].
 /// - So does a list with nothing [unread] left while a failure shows: a row
-///   opened or marked read, or a refresh. There is then nothing for Mark all
-///   read to mark, and it has gone.
+///   opened or marked read, a refresh, or the count reaching zero. There is
+///   then nothing for Mark all read to mark, and it has gone.
 ///
-/// Once nothing is unread, the button goes in the next frame, and focus in
-/// [button], the group around it, waits on [heading] instead.
+/// Mark all read is offered while a row the surface shows is [unread], or
+/// while the session's [count] is above zero: the unread rows may all be
+/// on pages not loaded, and marking all marks them too ([offered]). Once
+/// neither holds, the button goes in the next frame, and focus in [button],
+/// the group around it, waits on [heading] instead, whatever took it away:
+/// marking all, a row, a refresh, or the count.
 ///
-/// [bloc] is the list's, or null for the one in context.
+/// [bloc] is the list's, or null for the one in context. [count] is the
+/// session's unread count, or null where there is none.
 class NotificationsMarkAllAnswers extends StatelessWidget {
   const NotificationsMarkAllAnswers({
     required this.showingFailure,
@@ -128,10 +135,12 @@ class NotificationsMarkAllAnswers extends StatelessWidget {
     required this.onRetired,
     required this.child,
     this.bloc,
+    this.count,
     super.key,
   });
 
   final NotificationListBloc? bloc;
+  final NotificationCountCubit? count;
 
   /// Whether a failure shows now. A function, so that a state that comes
   /// before the surface has rebuilt reads what it set.
@@ -153,8 +162,27 @@ class NotificationsMarkAllAnswers extends StatelessWidget {
       return;
     }
     if (showingFailure()) onRetired();
-    // Nothing left unread: Mark all read goes in the next frame.
-    if (!unread(state) && button.hasFocus) heading.requestFocus();
+  }
+
+  /// Whether Mark all read is shown, for [state] and the [count] the
+  /// surface has: while marking all is out, while a row [unread] says of is
+  /// unread, or while the count is above zero.
+  static bool offered(
+    NotificationListState state, {
+    required bool Function(NotificationListState state) unread,
+    required NotificationCountState? count,
+  }) => state.markingAll || unread(state) || (count?.unread ?? 0) > 0;
+
+  bool _offered(NotificationListState state) =>
+      offered(state, unread: unread, count: count?.state);
+
+  /// The count is no longer above zero: with no row unread, Mark all read
+  /// goes, and the failure it showed with it.
+  void _counted(BuildContext context) {
+    final state = (bloc ?? context.read<NotificationListBloc>()).state;
+    if (_offered(state)) return;
+    if (showingFailure()) onRetired();
+    if (button.hasFocus) heading.requestFocus();
   }
 
   @override
@@ -169,9 +197,25 @@ class NotificationsMarkAllAnswers extends StatelessWidget {
       BlocListener<NotificationListBloc, NotificationListState>(
         bloc: bloc,
         listenWhen: (previous, current) =>
-            showingFailure() && !current.markingAll && !unread(current),
+            showingFailure() && !_offered(current),
         listener: (context, state) => onRetired(),
       ),
+      BlocListener<NotificationListBloc, NotificationListState>(
+        bloc: bloc,
+        // Mark all read goes in the next frame.
+        listenWhen: (previous, current) =>
+            _offered(previous) && !_offered(current),
+        listener: (context, state) {
+          if (button.hasFocus) heading.requestFocus();
+        },
+      ),
+      if (count case final count?)
+        BlocListener<NotificationCountCubit, NotificationCountState>(
+          bloc: count,
+          listenWhen: (previous, current) =>
+              (previous.unread ?? 0) > 0 && (current.unread ?? 0) == 0,
+          listener: (context, state) => _counted(context),
+        ),
     ],
     child: child,
   );

@@ -217,15 +217,24 @@ void main() {
     'a refresh in flight that fails after allMarkedRead stays quiet',
     () async {
       final pending = Completer<int>();
-      remote.scriptUnreadCounts([
-        pending.future,
-        const NotificationTransientException('offline'),
-      ]);
+      final replacement = Completer<int>();
+      remote.scriptUnreadCounts([pending.future, replacement.future]);
 
       final refresh = cubit.refresh();
       cubit.allMarkedRead();
       pending.completeError(const NotificationTransientException('offline'));
       await refresh;
+      await pumpEventQueue();
+
+      // The stale failure says nothing: the read again is still out.
+      expect(
+        cubit.state,
+        const NotificationCountState(unread: 0, refreshing: true),
+      );
+
+      replacement.completeError(
+        const NotificationTransientException('offline'),
+      );
       await pumpEventQueue();
 
       expect(cubit.state, const NotificationCountState(unread: 0));

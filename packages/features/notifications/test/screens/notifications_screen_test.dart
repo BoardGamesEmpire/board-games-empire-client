@@ -220,8 +220,8 @@ void main() {
     remote.scriptPages([
       page([
         joined('new', createdAt: DateTime.utc(2026, 11, 27)),
-        joined('old', read: true, createdAt: DateTime.utc(2026, 11, 20)),
         unknown('odd'),
+        joined('old', read: true, createdAt: DateTime.utc(2026, 11, 20)),
       ]),
     ]);
 
@@ -230,7 +230,7 @@ void main() {
 
     // In the server's order, which is newest first.
     final tops = [
-      for (final id in ['new', 'old', 'odd']) tester.getTopLeft(row(id)).dy,
+      for (final id in ['new', 'odd', 'old']) tester.getTopLeft(row(id)).dy,
     ];
     expect(tops, orderedEquals([...tops]..sort()));
     expect(find.text(titleOf('new')), findsOneWidget);
@@ -572,6 +572,76 @@ void main() {
       expect(count.state.unread, 0);
     });
 
+    group('while the count is above zero and every loaded row is read', () {
+      testWidgets('is offered, and marks the rest', (tester) async {
+        final count = countCubit();
+        remote
+          // Unread rows on a page not loaded.
+          ..scriptUnreadCounts([3, 0])
+          ..scriptPages([
+            page([joined('a', read: true)], nextCursor: 'c-1'),
+          ])
+          ..scriptMarkAllRead([null]);
+
+        await tester.pumpWidget(screen(count: count));
+        await tester.pumpAndSettle();
+        expect(markAll(), findsOneWidget);
+
+        await tester.tap(markAll());
+        await tester.pumpAndSettle();
+
+        expect(remote.markAllReadCalls, 1);
+        expect(count.state.unread, 0);
+        expect(markAll(), findsNothing);
+      });
+
+      testWidgets('a failure keeps its banner, and the button', (
+        tester,
+      ) async {
+        final count = countCubit();
+        remote
+          ..scriptUnreadCounts([3])
+          ..scriptPages([
+            page([joined('a', read: true)], nextCursor: 'c-1'),
+          ])
+          ..scriptMarkAllRead([offline]);
+
+        await tester.pumpWidget(screen(count: count));
+        await tester.pumpAndSettle();
+        await tester.tap(markAll());
+        await tester.pumpAndSettle();
+
+        expect(markAllFailed(), findsOneWidget);
+        expect(markAll(), findsOneWidget);
+      });
+
+      testWidgets('goes as the count reaches zero, its banner and focus on '
+          'it with it', (tester) async {
+        final count = countCubit();
+        remote
+          ..scriptUnreadCounts([3, 0])
+          ..scriptPages([
+            page([joined('a', read: true)], nextCursor: 'c-1'),
+          ])
+          ..scriptMarkAllRead([offline]);
+
+        await tester.pumpWidget(screen(count: count));
+        await tester.pumpAndSettle();
+        await tester.tap(markAll());
+        await tester.pumpAndSettle();
+        buttonFocus(tester, markAll()).requestFocus();
+        await tester.pump();
+
+        // Read elsewhere, as on another device.
+        await count.refresh();
+        await tester.pumpAndSettle();
+
+        expect(markAll(), findsNothing);
+        expect(markAllFailed(), findsNothing);
+        expect(primaryFocusLabel(), 'Notifications heading');
+      });
+    });
+
     testWidgets('is not offered when every row is read', (tester) async {
       remote.scriptPages([
         page([joined('a', read: true), unknown('odd', read: true)]),
@@ -782,6 +852,49 @@ void main() {
 
       expect(markAll(), findsNothing);
       expect(primaryFocusLabel(), 'Notifications heading');
+    });
+
+    group('focus on it waits on the title when it goes otherwise:', () {
+      testWidgets('a refresh that finds nothing unread', (tester) async {
+        remote.scriptPages([
+          page([joined('a')]),
+          page([joined('a', read: true)]),
+        ]);
+
+        await tester.pumpWidget(screen());
+        await tester.pumpAndSettle();
+        buttonFocus(tester, markAll()).requestFocus();
+        await tester.pump();
+        tester
+            .element(markAll())
+            .read<NotificationListBloc>()
+            .add(const NotificationListRefreshRequested());
+        await tester.pumpAndSettle();
+
+        expect(markAll(), findsNothing);
+        expect(primaryFocusLabel(), 'Notifications heading');
+      });
+
+      testWidgets('the last unread row opened', (tester) async {
+        remote
+          ..scriptPages([
+            page([joined('a')]),
+          ])
+          ..scriptMarkRead([null]);
+
+        await tester.pumpWidget(screen());
+        await tester.pumpAndSettle();
+        buttonFocus(tester, markAll()).requestFocus();
+        await tester.pump();
+        tester
+            .element(markAll())
+            .read<NotificationListBloc>()
+            .add(const NotificationListOpened('a'));
+        await tester.pumpAndSettle();
+
+        expect(markAll(), findsNothing);
+        expect(primaryFocusLabel(), 'Notifications heading');
+      });
     });
 
     testWidgets('a failed mark all keeps focus on it', (tester) async {
@@ -1302,6 +1415,74 @@ void main() {
       expect(loadMoreFailed(), findsNothing);
       expect(dismissOn(loadMoreFailed()), findsNothing);
       expect(buttonFocus(tester, loadMore()).hasPrimaryFocus, isTrue);
+    });
+
+    group('a refresh that retires its banner while its Dismiss has focus', () {
+      /// Fails a Load more, focuses its banner's Dismiss and refreshes
+      /// without moving focus, as a pull or the bell's count can.
+      Future<void> refreshFromDismiss(WidgetTester tester) async {
+        await tester.pumpWidget(screen());
+        await tester.pumpAndSettle();
+        await tester.ensureVisible(loadMore());
+        await tester.tap(loadMore());
+        await tester.pumpAndSettle();
+        buttonFocus(tester, loadMoreFailed()).requestFocus();
+        await tester.pump();
+        tester
+            .element(loadMoreFailed())
+            .read<NotificationListBloc>()
+            .add(const NotificationListRefreshRequested());
+        await tester.pumpAndSettle();
+        expect(loadMoreFailed(), findsNothing);
+      }
+
+      testWidgets('hands it to Load more while there is more', (tester) async {
+        remote.scriptPages([
+          page([joined('a')], nextCursor: 'c-1'),
+          offline,
+          page([joined('z'), joined('a')], nextCursor: 'c-2'),
+        ]);
+
+        await refreshFromDismiss(tester);
+
+        expect(buttonFocus(tester, loadMore()).hasPrimaryFocus, isTrue);
+      });
+
+      testWidgets('hands it to the title when Load more goes too', (
+        tester,
+      ) async {
+        remote.scriptPages([
+          page([joined('a')], nextCursor: 'c-1'),
+          offline,
+          page([joined('z'), joined('a')]),
+        ]);
+
+        await refreshFromDismiss(tester);
+
+        expect(loadMore(), findsNothing);
+        expect(primaryFocusLabel(), 'Notifications heading');
+      });
+    });
+
+    testWidgets('a refresh with no page after it hands focus on it to the '
+        'title', (tester) async {
+      remote.scriptPages([
+        page([joined('a')], nextCursor: 'c-1'),
+        page([joined('z'), joined('a')]),
+      ]);
+
+      await tester.pumpWidget(screen());
+      await tester.pumpAndSettle();
+      buttonFocus(tester, loadMore()).requestFocus();
+      await tester.pump();
+      tester
+          .element(loadMore())
+          .read<NotificationListBloc>()
+          .add(const NotificationListRefreshRequested());
+      await tester.pumpAndSettle();
+
+      expect(loadMore(), findsNothing);
+      expect(primaryFocusLabel(), 'Notifications heading');
     });
 
     testWidgets('a banner for each, stacked in the footer', (tester) async {

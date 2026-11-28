@@ -90,6 +90,11 @@ class NotificationListBloc
   /// was before. A row opened meanwhile leaves it.
   Map<String, UserNotification>? _unreadBeforeAll;
 
+  /// While marking all read is out: the rows opened meanwhile, each sent on
+  /// its own. A read that brings one back unread doesn't put it in
+  /// [_unreadBeforeAll], so it stays read whatever marking all answers.
+  Set<String>? _openedDuringAll;
+
   /// When marking all read, while it is out, showed its rows read.
   DateTime? _markingAllAt;
 
@@ -226,6 +231,7 @@ class NotificationListBloc
     // and leaves what that restores if it fails.
     final readByAll = _unreadBeforeAll?.remove(event.id) != null;
     if (row.read && !readByAll) return;
+    _openedDuringAll?.add(event.id);
     if (!row.read) {
       emit(
         state.copyWith(
@@ -248,6 +254,7 @@ class NotificationListBloc
   ) async {
     final at = _markingAllAt = _now();
     _marksAllSent++;
+    _openedDuringAll = {};
     final before = _unreadBeforeAll = {
       for (final item in state.items)
         if (!item.read) item.id: item,
@@ -265,6 +272,7 @@ class NotificationListBloc
       await _remote.markAllRead();
     } on Object catch (error) {
       _unreadBeforeAll = null;
+      _openedDuringAll = null;
       _markingAllAt = null;
       emit(
         state.copyWith(
@@ -286,6 +294,7 @@ class NotificationListBloc
       return;
     }
     _unreadBeforeAll = null;
+    _openedDuringAll = null;
     _markingAllAt = null;
     _markAllTaken = (sent: _marksAllSent, at: at);
     emit(state.copyWith(markingAll: false));
@@ -302,12 +311,14 @@ class NotificationListBloc
   ///
   /// The server may have answered the read before it marked them, so the
   /// rows may be unread on the page alone. While marking all read is out,
-  /// each row this shows read joins what a failure puts back.
+  /// each row this shows read joins what a failure puts back, but for one
+  /// opened meanwhile, which was sent on its own.
   List<UserNotification> _underMarkAll(
     List<UserNotification> rows,
     int since,
   ) {
     final before = _unreadBeforeAll;
+    final opened = _openedDuringAll;
     final taken = _markAllTaken;
     final DateTime at;
     if (before != null) {
@@ -322,7 +333,7 @@ class NotificationListBloc
       if (row.read) {
         shown.add(row);
       } else {
-        before?[row.id] = row;
+        if (!(opened?.contains(row.id) ?? false)) before?[row.id] = row;
         shown.add(row.markedRead(at));
       }
     }

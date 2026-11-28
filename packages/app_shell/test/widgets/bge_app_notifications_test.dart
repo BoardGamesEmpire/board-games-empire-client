@@ -712,6 +712,55 @@ void main() {
 
       expect(router.state.uri.path, AppRoutes.notifications);
     });
+
+    group("a declined invite whose household role isn't read yet", () {
+      late Completer<HouseholdMember?> read;
+
+      Future<GoRouter> tapInPreview(WidgetTester tester) async {
+        final households = householdsOf();
+        read = Completer<HouseholdMember?>();
+        when(
+          () => households.getCurrentUserMember(_id),
+        ).thenAnswer((_) => read.future);
+        final router = await pumpApp(
+          tester,
+          notifications: _Notifications(unread: 1, items: [_declined('n1')]),
+          households: households,
+        );
+        await tester.tap(_bell);
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(NotificationsPreview.rowKey('n1')));
+        await tester.pump();
+        return router;
+      }
+
+      testWidgets('opens nothing once Back has closed the preview', (
+        tester,
+      ) async {
+        final router = await tapInPreview(tester);
+
+        await tester.binding.handlePopRoute();
+        await tester.pumpAndSettle();
+        expect(find.byKey(NotificationsPreview.contentKey), findsNothing);
+        read.complete(_viewer(HouseholdRole.householdOwner));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(HomeScreen), findsOneWidget);
+        expect(router.state.uri.path, AppRoutes.home);
+      });
+
+      testWidgets('opens it while the preview is still open', (tester) async {
+        final router = await tapInPreview(tester);
+
+        read.complete(_viewer(HouseholdRole.householdOwner));
+        await tester.pumpAndSettle();
+
+        expect(
+          router.state.uri.toString(),
+          AppRoutes.householdInvitesOf(_id, declined: true),
+        );
+      });
+    });
   });
 
   group('sessions (#475)', () {

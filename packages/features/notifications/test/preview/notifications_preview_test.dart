@@ -286,6 +286,25 @@ void main() {
     },
   );
 
+  testWidgets('Mark all read is offered while the count is above zero, '
+      'though every row shown is read', (tester) async {
+    remote
+      ..scriptPages([
+        page([unknown('odd', read: true)]),
+      ])
+      ..scriptMarkAllRead([null]);
+    // Unread notifications past the rows the preview shows.
+    await open(tester, unread: 2, recount: [0]);
+    expect(markAll(), findsOneWidget);
+
+    await tester.tap(markAll());
+    await tester.pumpAndSettle();
+
+    expect(remote.markAllReadCalls, 1);
+    expect(count.state.unread, 0);
+    expect(markAll(), findsNothing);
+  });
+
   testWidgets("a plain row's Mark read marks it read and opens nothing", (
     tester,
   ) async {

@@ -578,6 +578,68 @@ void main() {
         expect(allMarkedRead, 0);
       },
     );
+
+    blocTest<NotificationListBloc, NotificationListState>(
+      'opened while marking all read stays read when a refresh brings it '
+      'back unread and marking all fails',
+      build: build,
+      seed: () => loaded([a, b]),
+      act: (bloc) async {
+        final all = Completer<void>();
+        remote
+          ..scriptMarkAllRead([all.future])
+          ..scriptMarkRead([null])
+          // Read before the server marked a.
+          ..scriptPages([
+            NotificationPage(items: [a, b]),
+          ]);
+        bloc.add(const NotificationListAllMarkedRead());
+        await pumpEventQueue();
+        bloc.add(const NotificationListOpened('a'));
+        await pumpEventQueue();
+        bloc.add(const NotificationListRefreshRequested());
+        await pumpEventQueue();
+        all.completeError(offline);
+      },
+      skip: 3,
+      expect: () => [
+        failed<MarkAllFailed>(
+          loaded([a.markedRead(openedAt), b]),
+          NotificationListFailure.transient,
+        ),
+      ],
+    );
+
+    blocTest<NotificationListBloc, NotificationListState>(
+      'opened while marking all read stays read when a more brings it again '
+      'and marking all fails',
+      build: build,
+      seed: () => loaded([a, b], nextCursor: 'c1'),
+      act: (bloc) async {
+        final all = Completer<void>();
+        remote
+          ..scriptMarkAllRead([all.future])
+          ..scriptMarkRead([null])
+          // An older page that overlaps the first.
+          ..scriptPages([
+            NotificationPage(items: [a, c]),
+          ]);
+        bloc.add(const NotificationListAllMarkedRead());
+        await pumpEventQueue();
+        bloc.add(const NotificationListOpened('a'));
+        await pumpEventQueue();
+        bloc.add(const NotificationListMoreRequested());
+        await pumpEventQueue();
+        all.completeError(offline);
+      },
+      skip: 3,
+      expect: () => [
+        failed<MarkAllFailed>(
+          loaded([a.markedRead(openedAt), b, c]),
+          NotificationListFailure.transient,
+        ),
+      ],
+    );
   });
 
   group('all marked read', () {

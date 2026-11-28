@@ -6,6 +6,7 @@ import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:notifications/l10n/notifications_localizations.dart';
 import 'package:notifications/src/count/notification_count_cubit.dart';
+import 'package:notifications/src/count/notification_count_state.dart';
 import 'package:notifications/src/list/notification_list_bloc.dart';
 import 'package:notifications/src/list/notification_list_event.dart';
 import 'package:notifications/src/list/notification_list_state.dart';
@@ -436,6 +437,7 @@ class _NotificationsViewState extends State<_NotificationsView> {
 
   @override
   Widget build(BuildContext context) => NotificationsMarkAllAnswers(
+    count: _countOf(context),
     showingFailure: () => _markAllFailure != null,
     unread: (state) => state.hasUnread,
     button: _markAll,
@@ -463,6 +465,15 @@ class _NotificationsViewState extends State<_NotificationsView> {
             if (_refreshFailed && _refreshBanner.hasFocus) {
               _heading.requestFocus();
             }
+            // So does the Load more banner, its Dismiss with it, and Load
+            // more with a listing that has no page after it.
+            final more =
+                state.status == NotificationListStatus.loaded && state.hasMore;
+            if (_loadMoreFailure != null && _loadMoreDismiss.hasFocus) {
+              more ? _focusIn(_loadMore) : _heading.requestFocus();
+            } else if (!more && _loadMore.hasFocus) {
+              _heading.requestFocus();
+            }
             _clearOnNewListing(state);
           },
         ),
@@ -485,6 +496,11 @@ class _NotificationsViewState extends State<_NotificationsView> {
     final loaded = state.status == NotificationListStatus.loaded;
     final items = state.items;
     final inset = tokens.spaceLg;
+    // The count, heard here so the button comes and goes with it.
+    final count = context
+        .select<NotificationCountCubit?, NotificationCountState?>(
+          (count) => count?.state,
+        );
 
     return BgePage.slivers(
       title: Focus(focusNode: _heading, child: Text(l10n.notificationsTitle)),
@@ -547,7 +563,12 @@ class _NotificationsViewState extends State<_NotificationsView> {
       slivers: [
         // Above the list at every width, so a resize never moves it between
         // the header and the page while it has focus.
-        if (loaded && (state.hasUnread || state.markingAll))
+        if (loaded &&
+            NotificationsMarkAllAnswers.offered(
+              state,
+              unread: (state) => state.hasUnread,
+              count: count,
+            ))
           SliverToBoxAdapter(
             child: Padding(
               padding: EdgeInsets.only(bottom: tokens.spaceSm),
