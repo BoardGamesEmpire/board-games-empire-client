@@ -159,6 +159,28 @@
       }
     }
   },
+  "notificationUsernameVariantAssignedTitle": "Your username is {username}, because {requestedUsername} was taken",
+  "@notificationUsernameVariantAssignedTitle": {
+    "description": "Title of a notification sent to a new user whose first sign-in through a provider brought a username that another account already had, so the server gave them the nearest free one. {username} is the username the account got, such as jason-2. {requestedUsername} is the one the provider offered, which was taken. Both are user data, inserted as they are and never translated.",
+    "placeholders": {
+      "username": {
+        "type": "String",
+        "example": "jason-2"
+      },
+      "requestedUsername": {
+        "type": "String",
+        "example": "jason"
+      }
+    }
+  },
+  "notificationUsernameVariantAssignedChangeAllowedDetail": "You can change your username",
+  "@notificationUsernameVariantAssignedChangeAllowedDetail": {
+    "description": "Second line of the notification that a new user got a different username from the one they asked for: said when the server lets users change their username, as it did when the notification was sent. It does not say where, because the app has no place to change a username yet; #1145 adds one, and this line is then reworded to point to it. It is not a button."
+  },
+  "notificationUsernameVariantAssignedChangeNotAllowedDetail": "A server admin can change it",
+  "@notificationUsernameVariantAssignedChangeNotAllowedDetail": {
+    "description": "Second line of the notification that a new user got a different username from the one they asked for: said when the server does not let users change their username themselves, so only a server admin can."
+  },
   "notificationReceivedAt": "{date} at {time}",
   "@notificationReceivedAt": {
     "description": "When a notification arrived, on its row on the Notifications page and in the preview the bell in the header opens: the date, then the time of day, in the device's time zone.",

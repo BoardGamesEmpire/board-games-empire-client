@@ -4,6 +4,7 @@ import 'package:notifications/l10n/notifications_localizations.dart';
 import 'package:notifications/src/presentation/data_gateway_presenter.dart';
 import 'package:notifications/src/presentation/household_presenter.dart';
 import 'package:notifications/src/presentation/notification_presentation.dart';
+import 'package:notifications/src/presentation/username_variant_presenter.dart';
 
 /// Words [notification] for its row (#475). Never throws.
 ///
@@ -33,6 +34,7 @@ NotificationPresentation presentNotification(
       l10n,
       payload,
     ),
+    'UsernameVariantAssigned' => presentUsernameVariantAssigned(l10n, payload),
     _ => null,
   };
   return presentation ?? _plain(l10n);

@@ -399,6 +399,110 @@ void main() {
     });
   });
 
+  group('UsernameVariantAssigned', () {
+    const payload = <String, Object?>{
+      'username': 'jason-2',
+      'requestedUsername': 'jason',
+      'usernameChangeAllowed': true,
+    };
+
+    test('names both usernames as-is and opens nothing', () {
+      final presentation = present('UsernameVariantAssigned', payload);
+
+      expect(
+        presentation.title,
+        l10n.notificationUsernameVariantAssignedTitle('jason-2', 'jason'),
+      );
+      expect(presentation.title, contains('jason-2'));
+      expect(presentation.title, contains('jason'));
+      expect(presentation.icon, Icons.alternate_email);
+      expect(presentation.quote, isNull);
+      expect(presentation.target, isNull);
+    });
+
+    test('inserts a username with markup or spaces unchanged', () {
+      final presentation = present('UsernameVariantAssigned', {
+        ...payload,
+        'username': ' <b>j{0}</b> ',
+        'requestedUsername': "O'Neil",
+      });
+
+      expect(
+        presentation.title,
+        l10n.notificationUsernameVariantAssignedTitle(
+          ' <b>j{0}</b> ',
+          "O'Neil",
+        ),
+      );
+    });
+
+    test('says they can change it when the server allows it', () {
+      expect(
+        present('UsernameVariantAssigned', payload).detail,
+        l10n.notificationUsernameVariantAssignedChangeAllowedDetail,
+      );
+    });
+
+    test('says a server admin can change it when the server does not', () {
+      expect(
+        present('UsernameVariantAssigned', {
+          ...payload,
+          'usernameChangeAllowed': false,
+        }).detail,
+        l10n.notificationUsernameVariantAssignedChangeNotAllowedDetail,
+      );
+    });
+
+    test('a usernameChangeAllowed that is not a bool counts as false', () {
+      for (final value in <Object?>[null, 'true', 1, 'yes']) {
+        final presentation = present('UsernameVariantAssigned', {
+          ...payload,
+          'usernameChangeAllowed': value,
+        });
+
+        expect(
+          presentation.detail,
+          l10n.notificationUsernameVariantAssignedChangeNotAllowedDetail,
+          reason: '$value',
+        );
+        expect(presentation.title, isNot(l10n.notificationUnknownTitle));
+      }
+
+      final missing = Map<String, Object?>.of(payload)
+        ..remove('usernameChangeAllowed');
+      expect(
+        present('UsernameVariantAssigned', missing).detail,
+        l10n.notificationUsernameVariantAssignedChangeNotAllowedDetail,
+      );
+    });
+
+    test('missing required field is a plain row', () {
+      expect(
+        present('UsernameVariantAssigned', {...payload, 'username': null}),
+        plain,
+      );
+      expect(
+        present('UsernameVariantAssigned', {...payload, 'username': ' '}),
+        plain,
+      );
+      expect(
+        present('UsernameVariantAssigned', {
+          ...payload,
+          'requestedUsername': 3,
+        }),
+        plain,
+      );
+      expect(
+        present('UsernameVariantAssigned', {
+          'username': 'jason-2',
+          'usernameChangeAllowed': true,
+        }),
+        plain,
+      );
+      expect(present('UsernameVariantAssigned', const {}), plain);
+    });
+  });
+
   group('a plain row', () {
     test('unknown type is a plain row', () {
       final presentation = present('SomethingNew', {'anything': 1});
