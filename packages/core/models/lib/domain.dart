@@ -83,6 +83,7 @@ export 'src/domain/household/member_invite_policy.dart';
 export 'src/domain/list_layout.dart';
 export 'src/domain/notification/mail_test_result.dart';
 export 'src/domain/notification/unread_notification.dart';
+export 'src/domain/notification/user_notification.dart';
 export 'src/domain/push/push_notification.dart';
 export 'src/domain/push/push_permission_status.dart';
 export 'src/domain/push/push_platform.dart';

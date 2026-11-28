@@ -13,27 +13,59 @@ import 'package:models/domain.dart';
 /// | Method | Path | Body |
 /// |---|---|---|
 /// | [fetchUnread] | `GET /api/notifications/unread` | a bare array of `{ id, type, payload, read, createdAt }`, newest first |
-/// | [markRead] | `POST /api/notifications/mark-read` | `{ notificationIds: [...] }` |
+/// | [fetchPage] | `GET /api/notifications?limit=<n>[&cursor=<c>]` | `{ notifications: [{ id, type, payload, read, readAt, createdAt }], pagination: { limit, hasMore, nextCursor } }`, newest first; `nextCursor` is null on the last page |
+/// | [fetchUnreadCount] | `GET /api/notifications/unread/count` | `{ count }` |
+/// | [markRead] | `POST /api/notifications/mark-read` | `{ notificationIds: [...] }`, at most [maxIds] |
+/// | [markAllRead] | `POST /api/notifications/mark-all-read` | none |
+///
+/// The cursor is opaque: pass it back exactly as received.
 ///
 /// ## Failures
 ///
 /// - [NotificationTransientException] and [NotificationPermanentException]:
 ///   the shared rules.
-/// - [ArgumentError], unwrapped, from [markRead]: an empty list.
+/// - [ArgumentError], unwrapped, before any request: from [markRead] for an
+///   empty list or more than [maxIds] ids, and from [fetchPage] for a limit
+///   outside 1 to [maxPageSize].
 abstract class NotificationRemoteDataSource {
+  /// The most ids one [markRead] takes (#1120).
+  static const int maxIds = 100;
+
+  /// The page size [fetchPage] asks for by default.
+  static const int defaultPageSize = 25;
+
+  /// The largest page size [fetchPage] accepts.
+  static const int maxPageSize = 100;
+
   /// The caller's unread notifications, newest first.
   Future<List<UnreadNotification>> fetchUnread();
 
+  /// One page of the caller's notifications, read ones included, newest
+  /// first. [cursor] is the previous page's [NotificationPage.nextCursor],
+  /// or null for the first page.
+  ///
+  /// One malformed entry doesn't fail the page (#475): a payload that isn't
+  /// an object reads as empty, and an entry with no readable id, type or
+  /// creation time is left out. Only a broken page envelope fails it.
+  ///
+  /// Throws [ArgumentError] for a [limit] outside 1 to [maxPageSize], before
+  /// any request.
+  Future<NotificationPage> fetchPage({
+    String? cursor,
+    int limit = defaultPageSize,
+  });
+
+  /// How many notifications the caller has not read.
+  Future<int> fetchUnreadCount();
+
+  /// Marks every notification the caller holds read.
+  Future<void> markAllRead();
+
   /// Marks the notifications [ids] read.
   ///
-  /// Throws [ArgumentError] for an empty list, before any request.
-  ///
-  /// Until BoardGamesEmpire/board-games-empire-backend#584 lands, the
-  /// server's `MarkReadDto` also requires a `userId`, which it ignores (it
-  /// marks the caller's own), so it answers 400 to this body. The field is
-  /// left out on purpose: that change removes it, and the server's pipe then
-  /// refuses any field the DTO doesn't declare. Callers treat a failure as
-  /// non-fatal.
+  /// The body is `{ notificationIds }` alone, and it takes at most [maxIds].
+  /// Throws [ArgumentError] for an empty list or more than [maxIds] ids,
+  /// before any request (#1120).
   Future<void> markRead(List<String> ids);
 }
 
