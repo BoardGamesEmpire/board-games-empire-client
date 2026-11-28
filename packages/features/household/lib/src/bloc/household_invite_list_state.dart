@@ -10,6 +10,10 @@ enum HouseholdInviteFilter {
 
   /// Only the invites waiting on an owner or admin to approve them (#489).
   awaitingApproval,
+
+  /// Only the invites the invitee turned down (#475). Settled, so no row
+  /// under it offers an action.
+  declined,
 }
 
 /// What the household's invite list is showing (#455).

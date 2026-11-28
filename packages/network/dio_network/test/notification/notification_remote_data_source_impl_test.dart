@@ -30,7 +30,14 @@ Dio _statuslessDio(String body) => Dio()
     ),
   );
 
-typedef _Sent = ({String method, String path, Object? data});
+const Object _unset = Object();
+
+typedef _Sent = ({
+  String method,
+  String path,
+  Object? data,
+  Map<String, dynamic> query,
+});
 
 class _RecordingAdapter implements HttpClientAdapter {
   _RecordingAdapter(this.body, this.status);
@@ -45,7 +52,12 @@ class _RecordingAdapter implements HttpClientAdapter {
     Stream<Uint8List>? requestStream,
     Future<void>? cancelFuture,
   ) async {
-    sent.add((method: options.method, path: options.path, data: options.data));
+    sent.add((
+      method: options.method,
+      path: options.path,
+      data: options.data,
+      query: options.queryParameters,
+    ));
     return ResponseBody.fromString(
       body,
       status,
@@ -230,10 +242,9 @@ void main() {
   });
 
   group('markRead', () {
-    // The body without `userId` is deliberate: see the interface's markRead
-    // doc and BoardGamesEmpire/board-games-empire-backend#584.
+    // The server takes the ids alone.
     test('posts the ids', () async {
-      final remote = answering('', status: 201);
+      final remote = answering('');
 
       await remote.markRead(['n1']);
 
@@ -245,10 +256,27 @@ void main() {
     });
 
     test('an empty list is an ArgumentError with nothing sent', () async {
-      final remote = answering('', status: 201);
+      final remote = answering('');
 
       await expectLater(remote.markRead([]), throwsA(isA<ArgumentError>()));
       expect(adapter.sent, isEmpty);
+    });
+
+    test('refuses more than 100 ids before any request', () async {
+      final remote = answering('');
+      final ids = [for (var i = 0; i < 101; i++) 'n$i'];
+
+      await expectLater(remote.markRead(ids), throwsArgumentError);
+      expect(adapter.sent, isEmpty);
+    });
+
+    test('sends exactly 100 ids', () async {
+      final remote = answering('');
+      final ids = [for (var i = 0; i < 100; i++) 'n$i'];
+
+      await remote.markRead(ids);
+
+      expect(adapter.sent.single.data, {'notificationIds': ids});
     });
 
     test('a 503 is transient', () async {
@@ -256,6 +284,355 @@ void main() {
 
       await expectLater(
         remote.markRead(['n1']),
+        throwsA(isA<NotificationTransientException>()),
+      );
+    });
+  });
+
+  group('markAllRead', () {
+    test('posts to /api/notifications/mark-all-read with no body', () async {
+      final remote = answering('');
+
+      await remote.markAllRead();
+
+      expect(adapter.sent.single.method, 'POST');
+      expect(adapter.sent.single.path, '/api/notifications/mark-all-read');
+      expect(adapter.sent.single.data, isNull);
+    });
+
+    // The shared rules read a 401 as an expired session a later attempt can
+    // survive, so it is transient, not permanent.
+    test('maps 401 to NotificationTransientException', () async {
+      final remote = answering('', status: 401);
+
+      await expectLater(
+        remote.markAllRead(),
+        throwsA(isA<NotificationTransientException>()),
+      );
+    });
+
+    test('maps a 400 to NotificationPermanentException', () async {
+      final remote = answering('{}', status: 400);
+
+      await expectLater(
+        remote.markAllRead(),
+        throwsA(isA<NotificationPermanentException>()),
+      );
+    });
+
+    test('maps a timeout to NotificationTransientException', () async {
+      final remote = NotificationRemoteDataSourceImpl(
+        unreachableDio(DioExceptionType.receiveTimeout),
+      );
+
+      await expectLater(
+        remote.markAllRead(),
+        throwsA(isA<NotificationTransientException>()),
+      );
+    });
+  });
+
+  group('fetchPage', () {
+    Map<String, dynamic> page(
+      List<Map<String, dynamic>> notifications, {
+      String? nextCursor,
+      Object? pagination = _unset,
+    }) => {
+      'notifications': notifications,
+      'pagination': identical(pagination, _unset)
+          ? {
+              'limit': 25,
+              'hasMore': nextCursor != null,
+              'nextCursor': nextCursor,
+            }
+          : pagination,
+    };
+
+    test(
+      'sends limit and the cursor as query parameters, the cursor unchanged',
+      () async {
+        final remote = answering(jsonEncode(page([])));
+
+        await remote.fetchPage(cursor: 'a b+c/d=', limit: 10);
+
+        expect(adapter.sent.single.method, 'GET');
+        expect(adapter.sent.single.path, '/api/notifications');
+        expect(adapter.sent.single.query, {'limit': 10, 'cursor': 'a b+c/d='});
+      },
+    );
+
+    test('leaves the cursor out on the first page', () async {
+      final remote = answering(jsonEncode(page([])));
+
+      await remote.fetchPage();
+
+      expect(adapter.sent.single.query, {
+        'limit': NotificationRemoteDataSource.defaultPageSize,
+      });
+    });
+
+    test(
+      'parses notifications with read and readAt, readAt null while unread',
+      () async {
+        final read = _entry('n1')
+          ..['read'] = true
+          ..['readAt'] = '2026-11-13T08:00:00.000Z';
+        final unread = _entry('n2')..['readAt'] = null;
+        final remote = answering(
+          jsonEncode(page([read, unread], nextCursor: 'c')),
+        );
+
+        final result = await remote.fetchPage();
+
+        expect(result.items, [
+          UserNotification(
+            id: 'n1',
+            type: 'MailTestResult',
+            payload: const {'outcome': 'sent', 'message': 'ok'},
+            read: true,
+            readAt: DateTime.utc(2026, 11, 13, 8),
+            createdAt: DateTime.utc(2026, 11, 12, 10, 30),
+          ),
+          UserNotification(
+            id: 'n2',
+            type: 'MailTestResult',
+            payload: const {'outcome': 'sent', 'message': 'ok'},
+            read: false,
+            createdAt: DateTime.utc(2026, 11, 12, 10, 30),
+          ),
+        ]);
+        expect(result.nextCursor, 'c');
+        expect(result.hasMore, isTrue);
+      },
+    );
+
+    test('a null pagination.nextCursor means no more', () async {
+      final remote = answering(jsonEncode(page([_entry('n1')])));
+
+      final result = await remote.fetchPage();
+
+      expect(result.nextCursor, isNull);
+      expect(result.hasMore, isFalse);
+    });
+
+    test('refuses a limit of 0 or 101 before any request', () async {
+      final remote = answering(jsonEncode(page([])));
+
+      await expectLater(remote.fetchPage(limit: 0), throwsArgumentError);
+      await expectLater(remote.fetchPage(limit: 101), throwsArgumentError);
+      expect(adapter.sent, isEmpty);
+    });
+
+    test(
+      'a 400 for a malformed cursor is NotificationPermanentException',
+      () async {
+        final remote = answering('{}', status: 400);
+
+        await expectLater(
+          remote.fetchPage(cursor: 'garbage'),
+          throwsA(isA<NotificationPermanentException>()),
+        );
+      },
+    );
+
+    // One entry the client can't read must not fail the list (#475): a
+    // payload it can't read is a plain row, and an entry it can neither show
+    // nor mark is left out. Only a broken envelope fails the page.
+    test(
+      'a payload that is not an object reads as an empty payload',
+      () async {
+        final missing = _entry('n1')..remove('payload');
+        final text = _entry('n2')..['payload'] = 'sent';
+        final list = _entry('n3')..['payload'] = [1, 2];
+        final nul = _entry('n4')..['payload'] = null;
+        final remote = answering(
+          jsonEncode(page([missing, text, list, nul, _entry('n5')])),
+        );
+
+        final result = await remote.fetchPage();
+
+        expect(result.items.map((n) => n.id), ['n1', 'n2', 'n3', 'n4', 'n5']);
+        expect(
+          result.items.take(4).map((n) => n.payload),
+          everyElement(isEmpty),
+        );
+        expect(result.items.last.payload, {'outcome': 'sent', 'message': 'ok'});
+      },
+    );
+
+    test('a read that is not a bool follows readAt', () async {
+      final readAtOnly = _entry('n1')
+        ..['read'] = 'yes'
+        ..['readAt'] = '2026-11-13T08:00:00.000Z';
+      final neither = _entry('n2')..remove('read');
+      final remote = answering(jsonEncode(page([readAtOnly, neither])));
+
+      final result = await remote.fetchPage();
+
+      expect(result.items.map((n) => n.read), [true, false]);
+      expect(result.items.first.readAt, DateTime.utc(2026, 11, 13, 8));
+    });
+
+    test('a readAt that is missing or unparseable is null', () async {
+      final missing = _entry('n1')..['read'] = true;
+      final garbage = _entry('n2')
+        ..['read'] = true
+        ..['readAt'] = 'yesterday';
+      final number = _entry('n3')
+        ..['read'] = true
+        ..['readAt'] = 42;
+      final remote = answering(jsonEncode(page([missing, garbage, number])));
+
+      final result = await remote.fetchPage();
+
+      expect(result.items.map((n) => n.readAt), [null, null, null]);
+      expect(result.items.map((n) => n.read), [true, true, true]);
+    });
+
+    test(
+      'an entry whose id, type or createdAt cannot be read is left out',
+      () async {
+        final remote = answering(
+          jsonEncode(
+            page([
+              _entry('n1'),
+              _entry('n2')..remove('id'),
+              _entry('n3')..['id'] = 3,
+              _entry('n4')..remove('type'),
+              _entry('n5')..['type'] = ['MailTestResult'],
+              _entry('n6')..remove('createdAt'),
+              _entry('n7')..['createdAt'] = 'last week',
+              _entry('n8')..['createdAt'] = 1700000000,
+              _entry('n9'),
+            ]),
+          ),
+        );
+
+        final result = await remote.fetchPage();
+
+        expect(result.items.map((n) => n.id), ['n1', 'n9']);
+      },
+    );
+
+    test('an entry that is not an object is left out', () async {
+      final remote = answering(
+        jsonEncode({
+          'notifications': [_entry('n1'), 'n2', null, 7, _entry('n3')],
+          'pagination': {'limit': 25, 'hasMore': false, 'nextCursor': null},
+        }),
+      );
+
+      final result = await remote.fetchPage();
+
+      expect(result.items.map((n) => n.id), ['n1', 'n3']);
+    });
+
+    test(
+      'a nextCursor that is not a string fails the page as '
+      'NotificationPermanentException',
+      () async {
+        for (final cursor in [7, true, <String, dynamic>{}]) {
+          final remote = answering(
+            jsonEncode(
+              page(
+                [_entry('n1')],
+                pagination: {
+                  'limit': 25,
+                  'hasMore': true,
+                  'nextCursor': cursor,
+                },
+              ),
+            ),
+          );
+
+          await expectLater(
+            remote.fetchPage(),
+            throwsA(isA<NotificationPermanentException>()),
+            reason: '$cursor',
+          );
+        }
+      },
+    );
+
+    test(
+      'a pagination without hasMore or nextCursor, or with the two '
+      'disagreeing, fails the page as NotificationPermanentException',
+      () async {
+        for (final pagination in [
+          <String, dynamic>{},
+          {'limit': 25, 'nextCursor': null},
+          {'limit': 25, 'hasMore': false},
+          {'limit': 25, 'hasMore': 'no', 'nextCursor': null},
+          {'limit': 25, 'hasMore': true, 'nextCursor': null},
+          {'limit': 25, 'hasMore': false, 'nextCursor': 'c'},
+        ]) {
+          final remote = answering(
+            jsonEncode(page([_entry('n1')], pagination: pagination)),
+          );
+
+          await expectLater(
+            remote.fetchPage(),
+            throwsA(isA<NotificationPermanentException>()),
+            reason: '$pagination',
+          );
+        }
+      },
+    );
+
+    test(
+      'a body with no notifications array, or no pagination object, is '
+      'NotificationPermanentException',
+      () async {
+        for (final body in [
+          {'pagination': <String, dynamic>{}},
+          {'notifications': <Object>[]},
+          {'notifications': <Object>[], 'pagination': 'next'},
+          {'notifications': 'none', 'pagination': <String, dynamic>{}},
+        ]) {
+          final remote = answering(jsonEncode(body));
+
+          await expectLater(
+            remote.fetchPage(),
+            throwsA(isA<NotificationPermanentException>()),
+            reason: '$body',
+          );
+        }
+      },
+    );
+  });
+
+  group('fetchUnreadCount', () {
+    test('reads count from GET /api/notifications/unread/count', () async {
+      final remote = answering(jsonEncode({'count': 7}));
+
+      expect(await remote.fetchUnreadCount(), 7);
+      expect(adapter.sent.single.method, 'GET');
+      expect(adapter.sent.single.path, '/api/notifications/unread/count');
+    });
+
+    test(
+      'a count that is not a non-negative integer is '
+      'NotificationPermanentException',
+      () async {
+        for (final count in <Object?>[-1, 1.5, '3', null]) {
+          final remote = answering(jsonEncode({'count': count}));
+
+          await expectLater(
+            remote.fetchUnreadCount(),
+            throwsA(isA<NotificationPermanentException>()),
+            reason: '$count',
+          );
+        }
+      },
+    );
+
+    test('a timeout is NotificationTransientException', () async {
+      final remote = NotificationRemoteDataSourceImpl(
+        unreachableDio(DioExceptionType.connectionTimeout),
+      );
+
+      await expectLater(
+        remote.fetchUnreadCount(),
         throwsA(isA<NotificationTransientException>()),
       );
     });

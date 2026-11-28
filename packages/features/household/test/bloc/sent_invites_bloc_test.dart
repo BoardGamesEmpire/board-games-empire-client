@@ -31,8 +31,14 @@ void main() {
 
   setUp(() => remote = FakeHouseholdInviteRemote());
 
-  SentInvitesBloc build({int pageSize = 25}) =>
-      SentInvitesBloc(remote: remote, pageSize: pageSize);
+  SentInvitesBloc build({
+    int pageSize = 25,
+    SentInviteFilter initialFilter = SentInviteFilter.openAndExpired,
+  }) => SentInvitesBloc(
+    remote: remote,
+    pageSize: pageSize,
+    initialFilter: initialFilter,
+  );
 
   SentInvitesReady ready(SentInvitesBloc bloc) =>
       bloc.state as SentInvitesReady;
@@ -59,6 +65,37 @@ void main() {
     ],
     verify: (_) => expect(remote.calls, ['fetchSent(null, 1, 25)']),
   );
+
+  blocTest<SentInvitesBloc, SentInvitesState>(
+    'starts on declined when asked (#475)',
+    setUp: () =>
+        listing([_sent('i_1', status: HouseholdInviteStatus.declined)]),
+    build: () => build(initialFilter: SentInviteFilter.declined),
+    act: (bloc) => bloc.add(const SentInvitesLoadRequested()),
+    expect: () => [
+      const SentInvitesLoading(filter: SentInviteFilter.declined),
+      isA<SentInvitesReady>().having(
+        (s) => s.filter,
+        'filter',
+        SentInviteFilter.declined,
+      ),
+    ],
+    verify: (bloc) {
+      expect(bloc.filter, SentInviteFilter.declined);
+      expect(remote.calls, ['fetchSent(declined, 1, 25)']);
+    },
+  );
+
+  test('starts its spinner on the filter it was asked for', () {
+    final bloc = build(initialFilter: SentInviteFilter.declined);
+    addTearDown(bloc.close);
+
+    expect(
+      bloc.state,
+      const SentInvitesLoading(filter: SentInviteFilter.declined),
+    );
+    expect(bloc.filter, SentInviteFilter.declined);
+  });
 
   blocTest<SentInvitesBloc, SentInvitesState>(
     'a filter asks for its status',

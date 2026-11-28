@@ -46,11 +46,15 @@ void main() {
     when(() => repository.watchMembers(_hh)).thenAnswer((_) => roster.stream);
   });
 
-  HouseholdInviteListBloc build({int pageSize = 25}) => HouseholdInviteListBloc(
+  HouseholdInviteListBloc build({
+    int pageSize = 25,
+    HouseholdInviteFilter initialFilter = HouseholdInviteFilter.open,
+  }) => HouseholdInviteListBloc(
     householdId: _hh,
     remote: remote,
     repository: repository,
     pageSize: pageSize,
+    initialFilter: initialFilter,
   );
 
   HouseholdInviteListReady ready(HouseholdInviteListBloc bloc) =>
@@ -101,6 +105,78 @@ void main() {
       verify: (_) => expect(remote.calls, [
         'fetchHouseholdInvites(hh_1, awaitingApproval, 1, 25)',
       ]),
+    );
+
+    blocTest<HouseholdInviteListBloc, HouseholdInviteListState>(
+      'starts on awaitingApproval when asked (#475)',
+      setUp: () => remote.listing([
+        invite('i_2', status: HouseholdInviteStatus.awaitingApproval),
+      ]),
+      build: () => build(initialFilter: HouseholdInviteFilter.awaitingApproval),
+      act: (bloc) => bloc.add(const HouseholdInviteListLoadRequested()),
+      expect: () => [
+        const HouseholdInviteListLoading(
+          filter: HouseholdInviteFilter.awaitingApproval,
+        ),
+        isA<HouseholdInviteListReady>().having(
+          (s) => s.filter,
+          'filter',
+          HouseholdInviteFilter.awaitingApproval,
+        ),
+      ],
+      verify: (bloc) {
+        expect(bloc.filter, HouseholdInviteFilter.awaitingApproval);
+        expect(remote.calls, [
+          'fetchHouseholdInvites(hh_1, awaitingApproval, 1, 25)',
+        ]);
+      },
+    );
+
+    blocTest<HouseholdInviteListBloc, HouseholdInviteListState>(
+      'the declined filter reads that status (#475)',
+      setUp: () => remote.listing([
+        invite('i_3', status: HouseholdInviteStatus.declined),
+      ]),
+      build: build,
+      act: (bloc) => bloc.add(
+        const HouseholdInviteListFilterChanged(HouseholdInviteFilter.declined),
+      ),
+      expect: () => [
+        const HouseholdInviteListLoading(
+          filter: HouseholdInviteFilter.declined,
+        ),
+        isA<HouseholdInviteListReady>()
+            .having((s) => s.filter, 'filter', HouseholdInviteFilter.declined)
+            .having(
+              (s) => s.actionsFor(s.invites.single),
+              'actions on a declined invite',
+              isEmpty,
+            ),
+      ],
+      verify: (_) => expect(remote.calls, [
+        'fetchHouseholdInvites(hh_1, declined, 1, 25)',
+      ]),
+    );
+
+    blocTest<HouseholdInviteListBloc, HouseholdInviteListState>(
+      'starts on declined when asked (#475)',
+      setUp: () => remote.listing(const []),
+      build: () => build(initialFilter: HouseholdInviteFilter.declined),
+      act: (bloc) => bloc.add(const HouseholdInviteListLoadRequested()),
+      expect: () => [
+        const HouseholdInviteListLoading(
+          filter: HouseholdInviteFilter.declined,
+        ),
+        isA<HouseholdInviteListReady>().having(
+          (s) => s.filter,
+          'filter',
+          HouseholdInviteFilter.declined,
+        ),
+      ],
+      verify: (bloc) {
+        expect(bloc.filter, HouseholdInviteFilter.declined);
+        expect(remote.calls, ['fetchHouseholdInvites(hh_1, declined, 1, 25)']);
+      },
     );
 
     blocTest<HouseholdInviteListBloc, HouseholdInviteListState>(

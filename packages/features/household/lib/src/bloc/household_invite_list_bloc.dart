@@ -11,10 +11,17 @@ import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
 
 /// Drives a household's invite list (#455, #454, #489): the server's open
-/// invites, and the withdraw, revoke and approve actions that settle them.
+/// invites, and the withdraw, revoke and approve actions that settle them,
+/// or its declined ones (#475), which offer none.
 ///
 /// Nothing is cached. The list is read whenever the screen opens and
 /// whenever the person comes back from sending an invite.
+///
+/// ## Where it opens
+///
+/// On [HouseholdInviteFilter.open], or on the filter a link names (#475):
+/// a notification that an invite awaits approval opens the list on
+/// "Awaiting approval", and one that an invite was declined on "Declined".
 ///
 /// ## Reads and actions overlap
 ///
@@ -54,9 +61,11 @@ class HouseholdInviteListBloc
     required this._remote,
     required this._repository,
     this._pageSize = HouseholdInviteRemoteDataSource.defaultPageSize,
+    HouseholdInviteFilter initialFilter = HouseholdInviteFilter.open,
     BgeLogger? logger,
-  }) : _logger = logger ?? BgeLogger('bge.household.invites'),
-       super(const HouseholdInviteListLoading()) {
+  }) : _filter = initialFilter,
+       _logger = logger ?? BgeLogger('bge.household.invites'),
+       super(HouseholdInviteListLoading(filter: initialFilter)) {
     _pages = InvitePages(
       fetch: (page, limit) => _remote.fetchHouseholdInvites(
         _householdId,
@@ -81,7 +90,7 @@ class HouseholdInviteListBloc
   final int _pageSize;
   final BgeLogger _logger;
 
-  HouseholdInviteFilter _filter = HouseholdInviteFilter.open;
+  HouseholdInviteFilter _filter;
 
   /// The filter the list is under, including while its first read runs.
   HouseholdInviteFilter get filter => _filter;
@@ -112,6 +121,7 @@ class HouseholdInviteListBloc
     HouseholdInviteFilter.open => null,
     HouseholdInviteFilter.awaitingApproval =>
       HouseholdInviteStatus.awaitingApproval,
+    HouseholdInviteFilter.declined => HouseholdInviteStatus.declined,
   };
 
   Future<void> _onFilterChanged(
@@ -263,6 +273,8 @@ class HouseholdInviteListBloc
     HouseholdInviteFilter.open => invite.status.isOutstanding,
     HouseholdInviteFilter.awaitingApproval =>
       invite.status == HouseholdInviteStatus.awaitingApproval,
+    HouseholdInviteFilter.declined =>
+      invite.status == HouseholdInviteStatus.declined,
   };
 
   /// Runs [action] on [row]. Answers with the invite as the server left it,

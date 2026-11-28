@@ -227,13 +227,27 @@
   "@householdInvitesLoading": {
     "description": "Announced and shown while the household's invites are first being read."
   },
+  "householdInvitesFilterLabel": "Show: {filter}",
+  "@householdInvitesFilterLabel": {
+    "description": "The button on a household's invites screen that opens the menu picking which of the household's invites to list. Names the filter chosen now, one of the householdInvitesFilter… choices.",
+    "placeholders": {
+      "filter": {
+        "type": "String",
+        "example": "Open"
+      }
+    }
+  },
   "householdInvitesFilterOpen": "Open",
   "@householdInvitesFilterOpen": {
-    "description": "Filter showing every open invite: pending or awaiting approval."
+    "description": "A choice in the household invites filter menu, showing every open invite: pending or awaiting approval."
   },
   "householdInvitesFilterAwaiting": "Awaiting approval",
   "@householdInvitesFilterAwaiting": {
-    "description": "Filter showing only the invites waiting for an owner or admin to approve them."
+    "description": "A choice in the household invites filter menu, showing only the invites waiting for an owner or admin to approve them."
+  },
+  "householdInvitesFilterDeclined": "Declined",
+  "@householdInvitesFilterDeclined": {
+    "description": "A choice in the household invites filter menu, showing only the invites the invitee declined."
   },
   "householdInvitesEmpty": "No open invites.",
   "@householdInvitesEmpty": {
@@ -242,6 +256,10 @@
   "householdInvitesEmptyAwaiting": "No invites are awaiting approval.",
   "@householdInvitesEmptyAwaiting": {
     "description": "Shown when the household has no invites waiting for approval."
+  },
+  "householdInvitesEmptyDeclined": "No declined invites.",
+  "@householdInvitesEmptyDeclined": {
+    "description": "Shown when none of the household's invites was declined by its invitee."
   },
   "householdInvitesDenied": "Only this household's owners and admins can see its invites.",
   "@householdInvitesDenied": {

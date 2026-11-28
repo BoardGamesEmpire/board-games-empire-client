@@ -8,7 +8,8 @@ import 'package:network_interface/network_interface.dart';
 ///
 /// Built like `AdminHouseholdRemoteDataSourceImpl`, except that the unread
 /// list is a bare JSON array, which `sendForJson` (it wants an object) does
-/// not take, so [fetchUnread] repeats its steps for an array. It does not
+/// not take, so [fetchUnread] repeats its steps for an array. The page and the
+/// count are objects, and go through it. It does not
 /// build or own its Dio.
 ///
 /// Failure taxonomy per the [NotificationRemoteDataSource] contract.
@@ -19,6 +20,19 @@ class NotificationRemoteDataSourceImpl implements NotificationRemoteDataSource {
 
   static const String _unreadPath = '/api/notifications/unread';
   static const String _markReadPath = '/api/notifications/mark-read';
+  static const String _markAllReadPath = '/api/notifications/mark-all-read';
+  static const String _pagePath = '/api/notifications';
+  static const String _unreadCountPath = '/api/notifications/unread/count';
+
+  // The wire keys of the page and count answers (#475), in one place.
+  static const String _limitParam = 'limit';
+  static const String _cursorParam = 'cursor';
+  static const String _notificationsKey = 'notifications';
+  static const String _paginationKey = 'pagination';
+  static const String _hasMoreKey = 'hasMore';
+  static const String _nextCursorKey = 'nextCursor';
+  static const String _countKey = 'count';
+
   static const _failures = RemoteFailureFamily<NotificationRemoteException>(
     transient: NotificationTransientException.new,
     permanent: NotificationPermanentException.new,
@@ -102,11 +116,17 @@ class NotificationRemoteDataSourceImpl implements NotificationRemoteDataSource {
     if (ids.isEmpty) {
       throw ArgumentError.value(ids, 'ids', 'must not be empty');
     }
+    if (ids.length > NotificationRemoteDataSource.maxIds) {
+      throw ArgumentError.value(
+        ids.length,
+        'ids',
+        'must be at most ${NotificationRemoteDataSource.maxIds}',
+      );
+    }
     await sendForJson(
       () => _dio.post<String>(
         _markReadPath,
-        // No `userId`, deliberately: see the interface's markRead doc and
-        // BoardGamesEmpire/board-games-empire-backend#584.
+        // The server takes the ids alone.
         data: {'notificationIds': ids},
         options: _plainBody,
       ),
@@ -116,8 +136,141 @@ class NotificationRemoteDataSourceImpl implements NotificationRemoteDataSource {
     );
   }
 
-  /// One `{ id, type, payload, read, createdAt }` entry. A malformed one
-  /// throws, which fails the whole read.
+  @override
+  Future<void> markAllRead() async {
+    await sendForJson(
+      () => _dio.post<String>(_markAllReadPath, options: _plainBody),
+      action: 'Notifications mark all read',
+      family: _failures,
+      readBody: false,
+    );
+  }
+
+  @override
+  Future<NotificationPage> fetchPage({
+    String? cursor,
+    int limit = NotificationRemoteDataSource.defaultPageSize,
+  }) async {
+    if (limit < 1 || limit > NotificationRemoteDataSource.maxPageSize) {
+      throw ArgumentError.value(
+        limit,
+        'limit',
+        'must be 1 to ${NotificationRemoteDataSource.maxPageSize}',
+      );
+    }
+    return sendForParsed(
+      () => _dio.get<String>(
+        _pagePath,
+        // Dio encodes the cursor; the server decodes it back to what it sent.
+        queryParameters: {_limitParam: limit, _cursorParam: ?cursor},
+        options: _plainBody,
+      ),
+      action: 'Notifications page fetch',
+      family: _failures,
+      map: (body) {
+        final notifications = body[_notificationsKey];
+        if (notifications is! List) {
+          throw FormatException(
+            '"$_notificationsKey" is ${notifications.runtimeType}, '
+            'expected an array',
+          );
+        }
+        final pagination = body[_paginationKey];
+        if (pagination is! Map<String, dynamic>) {
+          throw FormatException(
+            '"$_paginationKey" is ${pagination.runtimeType}, '
+            'expected an object',
+          );
+        }
+        // Both say whether a page follows. One missing, or the two
+        // disagreeing, would otherwise end the list early with no error.
+        if (!pagination.containsKey(_nextCursorKey)) {
+          throw const FormatException(
+            '"$_paginationKey.$_nextCursorKey" is missing',
+          );
+        }
+        final nextCursor = pagination[_nextCursorKey];
+        if (nextCursor != null && nextCursor is! String) {
+          throw FormatException(
+            '"$_paginationKey.$_nextCursorKey" is ${nextCursor.runtimeType}, '
+            'expected a string or null',
+          );
+        }
+        final hasMore = pagination[_hasMoreKey];
+        if (hasMore is! bool) {
+          throw FormatException(
+            '"$_paginationKey.$_hasMoreKey" is ${hasMore.runtimeType}, '
+            'expected a bool',
+          );
+        }
+        if (hasMore != (nextCursor != null)) {
+          throw FormatException(
+            '"$_paginationKey.$_hasMoreKey" is $hasMore, but '
+            '"$_nextCursorKey" is ${nextCursor == null ? 'null' : 'a cursor'}',
+          );
+        }
+        return NotificationPage(
+          items: [
+            for (final entry in notifications) ?_mapUserEntry(entry),
+          ],
+          nextCursor: nextCursor as String?,
+        );
+      },
+    );
+  }
+
+  @override
+  Future<int> fetchUnreadCount() => sendForParsed(
+    () => _dio.get<String>(_unreadCountPath, options: _plainBody),
+    action: 'Unread notification count fetch',
+    family: _failures,
+    map: (body) {
+      final count = body[_countKey];
+      if (count is! int || count < 0) {
+        throw FormatException(
+          '"$_countKey" is $count, expected a non-negative integer',
+        );
+      }
+      return count;
+    },
+  );
+
+  /// One `{ id, type, payload, read, readAt, createdAt }` entry, or null
+  /// for one the page can't show.
+  ///
+  /// One bad entry doesn't fail the page (#475). A `payload` that isn't an
+  /// object reads as `{}`, which presents as a plain row; a `read` that
+  /// isn't a bool follows `readAt`; a `readAt` that can't be parsed is null.
+  /// An entry that isn't an object, or whose `id`, `type` or `createdAt`
+  /// can't be read, is left out: it could be neither shown nor marked read.
+  static UserNotification? _mapUserEntry(Object? entry) {
+    if (entry is! Map<String, dynamic>) return null;
+    final id = entry['id'];
+    final type = entry['type'];
+    final createdAt = _dateOrNull(entry['createdAt']);
+    if (id is! String || type is! String || createdAt == null) return null;
+    final payload = entry['payload'];
+    final readAt = _dateOrNull(entry['readAt']);
+    final read = entry['read'];
+    return UserNotification(
+      id: id,
+      type: type,
+      payload: payload is Map<String, dynamic>
+          ? payload
+          : const <String, dynamic>{},
+      read: read is bool ? read : readAt != null,
+      readAt: readAt,
+      createdAt: createdAt,
+    );
+  }
+
+  /// [value] as a timestamp, or null when it is not an ISO-8601 string.
+  static DateTime? _dateOrNull(Object? value) =>
+      value is String ? DateTime.tryParse(value) : null;
+
+  /// One `{ id, type, payload, read, createdAt }` entry, validated: an
+  /// object, with an object `payload`, string `id` and `type` and a date
+  /// `createdAt`. Anything else throws, which fails the whole read.
   static UnreadNotification _mapEntry(Object? entry) {
     if (entry is! Map<String, dynamic>) {
       throw FormatException(

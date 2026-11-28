@@ -10,8 +10,8 @@ import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
 /// One invite on a household's invite list (#455): who it is for, the role
-/// it offers, who sent it and when it expires, and the actions the viewer
-/// may take on it.
+/// it offers, who sent it and when it expires, or how it ended (#475), and
+/// the actions the viewer may take on it.
 ///
 /// Presentation only. The caller decides which [actions] to offer and
 /// handles a press, confirming first where it asks to.
@@ -55,7 +55,11 @@ class HouseholdInviteTile extends StatelessWidget {
     final tokens = BgeTokens.of(context);
     final role = invite.role;
     final awaiting = invite.status == HouseholdInviteStatus.awaitingApproval;
-    final expiry = inviteExpiryLine(l10n, invite);
+    // A settled invite, such as a declined one (#475), says how it ended
+    // in place of an expiry, as on the sent invites.
+    final statusLine =
+        inviteExpiryLine(l10n, invite) ??
+        inviteSettledLabel(l10n, invite.status);
     final offline = BgeConnectivityScope.offlineOf(context);
 
     return BgeOutlinedRow(
@@ -71,7 +75,7 @@ class HouseholdInviteTile extends StatelessWidget {
                 if (role != null) Text(householdRoleLabel(l10n, role)),
                 if (awaiting) const HouseholdInviteAwaitingBadge(),
                 Text(l10n.householdInviteFrom(invite.inviter.label)),
-                if (expiry != null) Text(expiry),
+                if (statusLine != null) Text(statusLine),
               ],
             ),
             trailing: busy ? const HouseholdInviteBusyIndicator() : null,

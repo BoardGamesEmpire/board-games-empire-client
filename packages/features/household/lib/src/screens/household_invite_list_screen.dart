@@ -9,6 +9,7 @@ import 'package:household/src/bloc/household_invite_list_state.dart';
 import 'package:household/src/invites/invite_refusal_message.dart';
 import 'package:household/src/permissions/household_actions.dart';
 import 'package:household/src/widgets/household_invite_tile.dart';
+import 'package:household/src/widgets/invite_filter_menu.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
@@ -16,7 +17,8 @@ import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
 /// A household's open invites, for its owners and admins (#455, #454,
-/// #489), with withdraw, revoke and approve.
+/// #489), with withdraw, revoke and approve; or, by its filter, those
+/// awaiting approval or those declined (#475).
 ///
 /// Online-only: read from the server when the screen opens, and again
 /// whenever it comes back into view, so an invite sent from the form it
@@ -31,6 +33,7 @@ class HouseholdInviteListScreen extends StatelessWidget {
     required this.householdId,
     required this.remote,
     required this.repository,
+    this.initialFilter = HouseholdInviteFilter.open,
     this.onInvite,
     super.key,
   });
@@ -56,6 +59,11 @@ class HouseholdInviteListScreen extends StatelessWidget {
   final HouseholdInviteRemoteDataSource remote;
   final HouseholdRepository repository;
 
+  /// The filter the list opens on: Open, or Awaiting approval or Declined
+  /// for a link from a notification (#475). The person changes it from
+  /// there.
+  final HouseholdInviteFilter initialFilter;
+
   /// Opens the send form. Null hides the invite button, as does a viewer
   /// who may not invite.
   final void Function(BuildContext context)? onInvite;
@@ -63,11 +71,17 @@ class HouseholdInviteListScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) => BlocProvider<HouseholdInviteListBloc>(
     // A new id is a new list, not the old household's rows under it (#466).
-    key: ValueKey<String>(householdId),
+    // So is a new opening filter: the route's page key is its path pattern,
+    // so a link to the same household's other filter reuses this State (#475).
+    key: ValueKey<(String, HouseholdInviteFilter)>((
+      householdId,
+      initialFilter,
+    )),
     create: (_) => HouseholdInviteListBloc(
       householdId: householdId,
       remote: remote,
       repository: repository,
+      initialFilter: initialFilter,
     )..add(const HouseholdInviteListLoadRequested()),
     child: Builder(
       builder: (context) => ReadAgainWhenUncovered(
@@ -120,7 +134,7 @@ class _HouseholdInviteListView extends StatelessWidget {
               SliverToBoxAdapter(
                 child: Padding(
                   padding: EdgeInsets.only(bottom: tokens.spaceMd),
-                  child: _FilterControl(filter: bloc.filter),
+                  child: _FilterMenu(filter: bloc.filter),
                 ),
               ),
             if (ready?.outcome case final outcome?)
@@ -165,6 +179,8 @@ class _HouseholdInviteListView extends StatelessWidget {
                       HouseholdInviteFilter.open => l10n.householdInvitesEmpty,
                       HouseholdInviteFilter.awaitingApproval =>
                         l10n.householdInvitesEmptyAwaiting,
+                      HouseholdInviteFilter.declined =>
+                        l10n.householdInvitesEmptyDeclined,
                     },
                   ),
                 ),
@@ -265,8 +281,10 @@ class _HouseholdInviteListView extends StatelessWidget {
   }
 }
 
-class _FilterControl extends StatelessWidget {
-  const _FilterControl({required this.filter});
+/// Which of the household's invites to list, as wide as the pane: the
+/// same menu the sent invites filter with.
+class _FilterMenu extends StatelessWidget {
+  const _FilterMenu({required this.filter});
 
   final HouseholdInviteFilter filter;
 
@@ -274,23 +292,20 @@ class _FilterControl extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = HouseholdLocalizations.of(context);
 
-    return SegmentedButton<HouseholdInviteFilter>(
-      key: HouseholdInviteListScreen.filterKey,
-      segments: [
-        ButtonSegment(
-          value: HouseholdInviteFilter.open,
-          label: Text(l10n.householdInvitesFilterOpen),
-        ),
-        ButtonSegment(
-          value: HouseholdInviteFilter.awaitingApproval,
-          label: Text(l10n.householdInvitesFilterAwaiting),
-        ),
-      ],
-      selected: {filter},
-      showSelectedIcon: false,
-      onSelectionChanged: (selected) => context
-          .read<HouseholdInviteListBloc>()
-          .add(HouseholdInviteListFilterChanged(selected.single)),
+    return InviteFilterMenu<HouseholdInviteFilter>(
+      buttonKey: HouseholdInviteListScreen.filterKey,
+      choices: HouseholdInviteFilter.values,
+      chosen: filter,
+      choiceLabel: (choice) => switch (choice) {
+        HouseholdInviteFilter.open => l10n.householdInvitesFilterOpen,
+        HouseholdInviteFilter.awaitingApproval =>
+          l10n.householdInvitesFilterAwaiting,
+        HouseholdInviteFilter.declined => l10n.householdInvitesFilterDeclined,
+      },
+      buttonLabel: l10n.householdInvitesFilterLabel,
+      onChosen: (choice) => context.read<HouseholdInviteListBloc>().add(
+        HouseholdInviteListFilterChanged(choice),
+      ),
     );
   }
 }

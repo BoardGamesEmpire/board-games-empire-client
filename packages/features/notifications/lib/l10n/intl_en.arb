@@ -1,0 +1,238 @@
+{
+  "@@locale": "en",
+  "notificationsTitle": "Notifications",
+  "@notificationsTitle": {
+    "description": "Title of the page that lists every notification the signed-in user has on this server, read or not, and the label of the navigation menu's entry that opens it. Not the invite inbox, which is a different page."
+  },
+  "notificationUnknownTitle": "A notification this version of the app can't show",
+  "@notificationUnknownTitle": {
+    "description": "Title of a notification's row, on the Notifications page and in the preview the bell in the header opens, for a notification the app can't word: the server sent a kind of notification this version doesn't know, or one whose details it can't read. The row opens nothing; the user can only mark it read."
+  },
+  "notificationHouseholdInviteReceivedTitle": "{inviterName} invited you to {householdName}",
+  "@notificationHouseholdInviteReceivedTitle": {
+    "description": "Title of a notification telling the user they were invited to join a household. Tapping it opens the user's invites, where they can accept or decline. {inviterName} is the name of the person who sent the invite and {householdName} is the household's name, both as the server gives them.",
+    "placeholders": {
+      "inviterName": {
+        "type": "String",
+        "example": "Ana"
+      },
+      "householdName": {
+        "type": "String",
+        "example": "The Smiths"
+      }
+    }
+  },
+  "notificationHouseholdInviteAwaitingApprovalTitle": "{inviterName}'s invite to {householdName} is awaiting approval",
+  "@notificationHouseholdInviteAwaitingApprovalTitle": {
+    "description": "Title of a notification sent to a household's owners and admins when a member invited someone and the invite needs one of them to approve it before it is sent. Tapping it opens the household's invites awaiting approval. {inviterName} is the member who made the invite and {householdName} is the household's name, both as the server gives them. The line under it says who the invite is for.",
+    "placeholders": {
+      "inviterName": {
+        "type": "String",
+        "example": "Ana"
+      },
+      "householdName": {
+        "type": "String",
+        "example": "The Smiths"
+      }
+    }
+  },
+  "notificationInviteeDetail": "For {invitee}",
+  "@notificationInviteeDetail": {
+    "description": "Second line of the notification that a household invite is awaiting approval: who the invite is for. {invitee} is the name the invite was sent with or, when it was sent to an email address with no name, that address, as the server gives it.",
+    "placeholders": {
+      "invitee": {
+        "type": "String",
+        "example": "Bo"
+      }
+    }
+  },
+  "notificationInviteeUnnamedDetail": "For someone the invite doesn't name",
+  "@notificationInviteeUnnamedDetail": {
+    "description": "Second line of the notification that a household invite is awaiting approval, when the server gave neither a name nor an email address for the person invited."
+  },
+  "notificationHouseholdInviteAcceptedTitle": "{memberName} joined {householdName}",
+  "@notificationHouseholdInviteAcceptedTitle": {
+    "description": "Title of a notification sent to a household's members when someone accepted an invite and became a member. Tapping it opens the household. {memberName} is the new member's name and {householdName} is the household's name, both as the server gives them.",
+    "placeholders": {
+      "memberName": {
+        "type": "String",
+        "example": "Bo"
+      },
+      "householdName": {
+        "type": "String",
+        "example": "The Smiths"
+      }
+    }
+  },
+  "notificationHouseholdInviteDeclinedTitle": "{invitee} declined an invite to {householdName}",
+  "@notificationHouseholdInviteDeclinedTitle": {
+    "description": "Title of a notification sent to the person who made a household invite, and to the household's owners and admins, when the person invited declined it. Tapping it opens the invites. {invitee} is the name the invite was sent with or, when it was sent to an email address with no name, that address; {householdName} is the household's name. All come from the server as they are.",
+    "placeholders": {
+      "invitee": {
+        "type": "String",
+        "example": "Bo"
+      },
+      "householdName": {
+        "type": "String",
+        "example": "The Smiths"
+      }
+    }
+  },
+  "notificationHouseholdInviteDeclinedUnnamedTitle": "Someone declined an invite to {householdName}",
+  "@notificationHouseholdInviteDeclinedUnnamedTitle": {
+    "description": "Title of the notification that a household invite was declined, when the server gave neither a name nor an email address for the person invited. Tapping it opens the invites. {householdName} is the household's name as the server gives it.",
+    "placeholders": {
+      "householdName": {
+        "type": "String",
+        "example": "The Smiths"
+      }
+    }
+  },
+  "notificationHouseholdOwnershipTransferredTitle": "Ownership of {householdName} passed to you from {previousOwnerName}",
+  "@notificationHouseholdOwnershipTransferredTitle": {
+    "description": "Title of a notification telling the user they are now the owner of a household, the one member with final say over it. Tapping it opens the household. {householdName} is the household's name and {previousOwnerName} is the name of the member who owned it before, both as the server gives them.",
+    "placeholders": {
+      "householdName": {
+        "type": "String",
+        "example": "The Smiths"
+      },
+      "previousOwnerName": {
+        "type": "String",
+        "example": "Ana"
+      }
+    }
+  },
+  "notificationHouseholdOwnershipTransferredUnnamedTitle": "Ownership of {householdName} passed to you from the previous owner",
+  "@notificationHouseholdOwnershipTransferredUnnamedTitle": {
+    "description": "Title of the notification that the user is now the owner of a household, when the previous owner's account was deleted and the server no longer has their name. Tapping it opens the household. {householdName} is the household's name as the server gives it.",
+    "placeholders": {
+      "householdName": {
+        "type": "String",
+        "example": "The Smiths"
+      }
+    }
+  },
+  "notificationUnreadLabel": "Unread",
+  "@notificationUnreadLabel": {
+    "description": "Read by a screen reader before the title of a notification the user hasn't read yet. On screen, an unread notification's title is bold instead."
+  },
+  "notificationReceivedAt": "{date} at {time}",
+  "@notificationReceivedAt": {
+    "description": "When a notification arrived, on its row on the Notifications page and in the preview the bell in the header opens: the date, then the time of day, in the device's time zone.",
+    "placeholders": {
+      "date": {
+        "type": "DateTime",
+        "format": "yMMMd",
+        "example": "Nov 27, 2026"
+      },
+      "time": {
+        "type": "DateTime",
+        "format": "jm",
+        "example": "3:04 PM"
+      }
+    }
+  },
+  "notificationMarkRead": "Mark read",
+  "@notificationMarkRead": {
+    "description": "Button under a notification that opens nothing, such as one this version of the app can't show, on the Notifications page and in the preview the bell in the header opens. It marks that notification read, so it no longer counts as unread. It shows only while the notification is unread."
+  },
+  "notificationsBellTooltip": "Notifications",
+  "@notificationsBellTooltip": {
+    "description": "Tooltip of the bell button in the header, shown when a mouse rests on it. The bell opens a preview of the latest notifications. Screen readers hear the button's name, which gives the unread count, instead."
+  },
+  "notificationsBellLabel": "{count, plural, =0{Notifications} other{Notifications, {count} unread}}",
+  "@notificationsBellLabel": {
+    "description": "What a screen reader calls the bell button in the header, which opens a preview of the latest notifications. {count} is how many notifications the user hasn't read, always the real number, even when the badge on the bell shows 99+. With none unread, or before the count is known, it is just Notifications.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "format": "decimalPattern",
+        "example": "3"
+      }
+    }
+  },
+  "notificationsLoading": "Loading your notifications…",
+  "@notificationsLoading": {
+    "description": "Shown, and read by a screen reader, while the user's notifications are on their way from the server: on the Notifications page, and in the preview of the latest ones that the bell in the header opens."
+  },
+  "notificationsEmptyTitle": "No notifications yet",
+  "@notificationsEmptyTitle": {
+    "description": "Title shown when the server has no notifications for the user, read or unread: on the Notifications page, and in the preview of the latest ones that the bell in the header opens."
+  },
+  "notificationsEmptyBody": "When something needs you, such as an invite, it shows up here.",
+  "@notificationsEmptyBody": {
+    "description": "Line under the title when the user has no notifications, saying what will appear there: on the Notifications page, and in the preview the bell in the header opens."
+  },
+  "notificationsLoadFailed": "Couldn't load your notifications",
+  "@notificationsLoadFailed": {
+    "description": "Title shown when the user's notifications couldn't be read from the server, so there is nothing to show: on the Notifications page, and in the preview of the latest ones that the bell in the header opens. A Try again button follows."
+  },
+  "notificationsLoadFailedOfflineBody": "Check your connection, then try again.",
+  "@notificationsLoadFailedOfflineBody": {
+    "description": "Line under the title when the notifications couldn't load because the server didn't answer, on the Notifications page or in the preview the bell in the header opens: the device may be offline, or the server down."
+  },
+  "notificationsLoadFailedRefusedBody": "The server wouldn't send your notifications. If trying again doesn't help, tell the server's admin.",
+  "@notificationsLoadFailedRefusedBody": {
+    "description": "Line under the title when the notifications couldn't load because the server answered and refused, on the Notifications page or in the preview the bell in the header opens. Trying again is unlikely to help, so it points to the person who runs the server."
+  },
+  "notificationsRetry": "Try again",
+  "@notificationsRetry": {
+    "description": "Button that reads the notifications from the server again after reading them failed: under the failure on the Notifications page and in the preview the bell in the header opens, and on the banner at the top of the page when a refresh failed."
+  },
+  "notificationsRefresh": "Refresh",
+  "@notificationsRefresh": {
+    "description": "Name and tooltip of the button in the Notifications page's header that reads the notifications from the server again, as pulling the list down does."
+  },
+  "notificationsRefreshing": "Refreshing…",
+  "@notificationsRefreshing": {
+    "description": "Name and tooltip of the Notifications page's refresh button, and the name of the Try again on the page's banner after a refresh failed, while the notifications are being read from the server again."
+  },
+  "notificationsRefreshFailed": "Couldn't refresh your notifications. They may be out of date.",
+  "@notificationsRefreshFailed": {
+    "description": "Banner at the top of the Notifications page when reading the notifications again failed. The notifications already shown stay, and the banner's Try again reads them again. It names no cause."
+  },
+  "notificationsMarkAllRead": "Mark all read",
+  "@notificationsMarkAllRead": {
+    "description": "Button that marks every notification the user has read, shown ones or not, with no confirmation, since nothing is lost: they stay listed, shown read. It sits above the list on the Notifications page, and above the latest notifications in the preview the bell in the header opens, while any notification listed there is unread."
+  },
+  "notificationsMarkingAllRead": "Marking all read…",
+  "@notificationsMarkingAllRead": {
+    "description": "What the Mark all read button says, and is called by a screen reader, while the server is marking every notification read: on the Notifications page and in the preview the bell in the header opens."
+  },
+  "notificationsLoadMore": "Load more",
+  "@notificationsLoadMore": {
+    "description": "Button under the list on the Notifications page that reads the next, older notifications from the server and adds them below."
+  },
+  "notificationsLoadingMore": "Loading more…",
+  "@notificationsLoadingMore": {
+    "description": "What the Load more button says, and is called by a screen reader, while the next notifications are being read from the server."
+  },
+  "notificationsMarkAllFailedOffline": "Couldn't mark your notifications read. Check your connection, then try again.",
+  "@notificationsMarkAllFailedOffline": {
+    "description": "Banner when Mark all read failed because the server didn't answer. The notifications show unread again, and Mark all read can be pressed again. On the Notifications page it sits at the foot of the page, and stays until the next Mark all read answers or the user dismisses it. In the preview the bell in the header opens, it sits under the Mark all read button, and stays until the next Mark all read answers."
+  },
+  "notificationsMarkAllRefused": "The server wouldn't mark your notifications read.",
+  "@notificationsMarkAllRefused": {
+    "description": "Banner when the server answered Mark all read and refused it. The notifications show unread again. On the Notifications page it sits at the foot of the page, and stays until the next Mark all read answers or the user dismisses it. In the preview the bell in the header opens, it sits under the Mark all read button, and stays until the next Mark all read answers."
+  },
+  "notificationsLoadMoreFailedOffline": "Couldn't load more notifications. Check your connection, then choose Load more.",
+  "@notificationsLoadMoreFailedOffline": {
+    "description": "Banner at the foot of the Notifications page when Load more failed because the server didn't answer. The notifications already shown stay, and Load more can be pressed again. Load more is the button's name."
+  },
+  "notificationsLoadMoreRefused": "The server wouldn't load more notifications. Refresh to start again from the newest.",
+  "@notificationsLoadMoreRefused": {
+    "description": "Banner at the foot of the Notifications page when the server answered Load more and refused it, so asking again is unlikely to help. Refreshing reads the newest notifications again, from the top of the list."
+  },
+  "notificationsDismiss": "Dismiss",
+  "@notificationsDismiss": {
+    "description": "Button on a banner at the foot of the Notifications page, saying that Mark all read or Load more failed. It takes the banner away."
+  },
+  "notificationsPreviewTitle": "Notifications",
+  "@notificationsPreviewTitle": {
+    "description": "Heading of the pop-up the bell in the header opens, which shows the five latest notifications, read or not, with a button to the Notifications page for the rest. A screen reader also calls the pop-up this as it opens. Not the invite inbox, which is a different page."
+  },
+  "notificationsPreviewSeeAll": "See all",
+  "@notificationsPreviewSeeAll": {
+    "description": "Button at the foot of the pop-up the bell in the header opens, which shows the five latest notifications. It opens the Notifications page, which lists every notification, read or not, a page at a time."
+  }
+}

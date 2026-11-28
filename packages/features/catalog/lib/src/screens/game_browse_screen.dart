@@ -53,6 +53,7 @@ class GameBrowseScreen extends StatelessWidget {
     this.layouts,
     this.onQuickLook,
     this.initialSort = GameSort.title,
+    this.headerAction,
     super.key,
   });
 
@@ -141,6 +142,10 @@ class GameBrowseScreen extends StatelessWidget {
   /// The order the first read is in.
   final GameSort initialSort;
 
+  /// A control the app adds at the end of the header, such as the
+  /// notifications bell (#475). Last, after the search button.
+  final Widget? headerAction;
+
   @override
   Widget build(BuildContext context) {
     final layouts = this.layouts;
@@ -181,6 +186,7 @@ class GameBrowseScreen extends StatelessWidget {
                 onOpen: onOpen,
                 onSearch: onSearch,
                 onQuickLook: onQuickLook,
+                headerAction: headerAction,
               ),
             ),
       ),
@@ -195,6 +201,7 @@ class _GameBrowsePage extends StatefulWidget {
     this.onOpen,
     this.onSearch,
     this.onQuickLook,
+    this.headerAction,
   });
 
   /// Null until the remembered choice is read.
@@ -204,6 +211,7 @@ class _GameBrowsePage extends StatefulWidget {
   final void Function(BuildContext context)? onSearch;
   final void Function(BuildContext context, GameQuickLookSeed seed)?
   onQuickLook;
+  final Widget? headerAction;
 
   @override
   State<_GameBrowsePage> createState() => _GameBrowsePageState();
@@ -287,10 +295,7 @@ class _GameBrowsePageState extends State<_GameBrowsePage> {
                 icon: const Icon(Icons.search),
                 onPressed: () => search(context),
               ),
-            // In every state, and never disabled: it is how a list that
-            // failed in one order is read in another, and a button that goes
-            // disabled drops the focus it holds (#607).
-            _SortMenu(sort: state.sort),
+            ?widget.headerAction,
           ],
           slivers: [
             // In every state, and first, so that it keeps its place and its
@@ -302,12 +307,31 @@ class _GameBrowsePageState extends State<_GameBrowsePage> {
                 padding: EdgeInsets.only(bottom: tokens.spaceMd),
                 child: Align(
                   alignment: AlignmentDirectional.centerEnd,
-                  child: BgeLayoutToggle(
-                    key: GameBrowseScreen.layoutToggleKey,
-                    thumbnails: thumbnails ?? false,
-                    onChanged: widget.onLayoutChanged,
-                    listLabel: l10n.catalogLayoutList,
-                    thumbnailsLabel: l10n.catalogLayoutThumbnails,
+                  // The sort beside the toggle, at every width: in the app
+                  // bar it left the title too little room at 320dp and 2.0
+                  // text beside the control the app adds there (#475), and
+                  // a control that moves with the window's width would drop
+                  // the focus it holds. Wrapping, so at the largest text
+                  // the two stack rather than overflow.
+                  child: Wrap(
+                    alignment: WrapAlignment.end,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    spacing: tokens.spaceSm,
+                    runSpacing: tokens.spaceSm,
+                    children: [
+                      // In every state, and never disabled: it is how a list
+                      // that failed in one order is read in another, and a
+                      // button that goes disabled drops the focus it holds
+                      // (#607).
+                      _SortMenu(sort: state.sort),
+                      BgeLayoutToggle(
+                        key: GameBrowseScreen.layoutToggleKey,
+                        thumbnails: thumbnails ?? false,
+                        onChanged: widget.onLayoutChanged,
+                        listLabel: l10n.catalogLayoutList,
+                        thumbnailsLabel: l10n.catalogLayoutThumbnails,
+                      ),
+                    ],
                   ),
                 ),
               ),

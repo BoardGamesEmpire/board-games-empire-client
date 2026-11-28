@@ -14,6 +14,8 @@ import 'package:app_shell/src/deep_links/pending_deep_link_holder.dart';
 import 'package:app_shell/src/i18n/active_locale.dart';
 import 'package:app_shell/src/navigation/nav_destination.dart';
 import 'package:app_shell/src/navigation/navigation_shell.dart';
+import 'package:app_shell/src/notifications/notification_target_location.dart';
+import 'package:app_shell/src/notifications/shell_notifications_bell.dart';
 import 'package:app_shell/src/observability/feedback_uncaught_error_reporter.dart';
 import 'package:app_shell/src/observability/shell_observability.dart';
 import 'package:app_shell/src/router/app_router.dart';
@@ -70,6 +72,12 @@ import 'package:interfaces/sync.dart';
 import 'package:models/domain.dart';
 import 'package:models/dto.dart' show AuthUser;
 import 'package:network_interface/network_interface.dart';
+import 'package:notifications/notifications.dart'
+    show
+        NotificationCountHost,
+        NotificationTarget,
+        NotificationsLocalizations,
+        NotificationsScreen;
 import 'package:observability/observability.dart';
 import 'package:profile/profile.dart';
 import 'package:server_onboarding/server_onboarding.dart';
@@ -107,6 +115,7 @@ const List<LocalizationsDelegate<dynamic>> bgeFeatureLocalizationsDelegates = [
   UserSearchLocalizations.delegate,
   DataExportLocalizations.delegate,
   ApiKeysLocalizations.delegate,
+  NotificationsLocalizations.delegate,
 ];
 
 /// The shared application widget.
@@ -508,6 +517,7 @@ class _BgeAppState extends State<BgeApp> {
       editHouseholdBuilder: _buildEditHouseholdRoute,
       inviteInboxBuilder: _buildInviteInboxRoute,
       profileBuilder: _buildProfileRoute,
+      notificationsBuilder: _buildNotificationsRoute,
       sentInvitesBuilder: _buildSentInvitesRoute,
       createHouseholdBuilder: _buildCreateHouseholdRoute,
       collectionListBuilder: _buildCollectionListRoute,
@@ -905,6 +915,14 @@ class _BgeAppState extends State<BgeApp> {
   /// a change will send on its own where no drain would send it. The host
   /// comes and goes with the shell, so a user switched in place takes their
   /// count with them.
+  ///
+  /// #475: the session's unread count is kept over the shell too, under the
+  /// Notifications page's gate ([_notificationsRemote]), so the bell in each
+  /// top-level header and the page pushed under the shell share it. Its host
+  /// is keyed by the server and the session's lease, as the API key list is
+  /// ([_buildApiKeysRoute]): the server's remote is the same object for every
+  /// user who signs in to it, and a new session starts from an unknown count
+  /// rather than the last user's.
   Widget _navigationFor(
     BuildContext context,
     ActiveServer active,
@@ -959,6 +977,32 @@ class _BgeAppState extends State<BgeApp> {
     final DrawerStatusBuilder? drawerStatus = recoverable
         ? (open) => SyncStatusLine(onReview: () => open(AppRoutes.stuckChanges))
         : null;
+    final notifications = _notificationsRemote(container);
+
+    // One shape with an access to ask or without, so the shell keeps its
+    // state whichever a session has.
+    final shell = StreamBuilder<CallerAccess>(
+      stream: access?.changes,
+      builder: (_, _) {
+        final admin =
+            access != null &&
+            visibleAdminSections(access.current, sections).isNotEmpty;
+        return NavigationShell(
+          destinations: destinations,
+          entries: admin ? entries : withoutAdmin,
+          activeServerName: active.displayName,
+          location: location,
+          deferBack: _backHeldAbove,
+          browserOwnsBack: widget.browserOwnsBack,
+          drawerStatus: drawerStatus,
+          // #134: web has no orchestrator, and so no server manager.
+          serversLocation: widget.bootstrapCubit.orchestrator == null
+              ? null
+              : AppRoutes.servers,
+          child: pages,
+        );
+      },
+    );
 
     // A queue or none, the host is there, so the shell below it keeps its
     // state whichever a session has.
@@ -969,30 +1013,16 @@ class _BgeAppState extends State<BgeApp> {
           // An unread count is no count: the strip shows one only above
           // zero.
           : _syncWaiting.report(owner, status.waiting ?? 0),
-      // One shape with an access to ask or without, so the shell keeps its
-      // state whichever a session has.
-      child: StreamBuilder<CallerAccess>(
-        stream: access?.changes,
-        builder: (_, _) {
-          final admin =
-              access != null &&
-              visibleAdminSections(access.current, sections).isNotEmpty;
-          return NavigationShell(
-            destinations: destinations,
-            entries: admin ? entries : withoutAdmin,
-            activeServerName: active.displayName,
-            location: location,
-            deferBack: _backHeldAbove,
-            browserOwnsBack: widget.browserOwnsBack,
-            drawerStatus: drawerStatus,
-            // #134: web has no orchestrator, and so no server manager.
-            serversLocation: widget.bootstrapCubit.orchestrator == null
-                ? null
-                : AppRoutes.servers,
-            child: pages,
-          );
-        },
-      ),
+      // The count's host is there exactly while the session can read its
+      // notifications, which only a session's start or end changes, and
+      // either brings a new shell anyway.
+      child: notifications == null
+          ? shell
+          : NotificationCountHost(
+              key: ValueKey((active, _sessionLease(container))),
+              remote: notifications,
+              child: shell,
+            ),
     );
   }
 
@@ -1096,6 +1126,15 @@ class _BgeAppState extends State<BgeApp> {
           label: profileL10n.profileTitle,
           location: AppRoutes.profile,
         ),
+      // #475: under the page's own gate, which keeps it to a live user
+      // session as the profile's is. Not "Inbox": that is the invites.
+      if (_canReadNotifications(container))
+        HomeMenuEntry(
+          id: 'notifications',
+          icon: Icons.notifications_outlined,
+          label: NotificationsLocalizations.of(context).notificationsTitle,
+          location: AppRoutes.notifications,
+        ),
       if (canReadHouseholds)
         HomeMenuEntry(
           id: 'households',
@@ -1160,6 +1199,79 @@ class _BgeAppState extends State<BgeApp> {
   static bool _canReadEvents(DependencyContainer container) =>
       container.isRegistered<EventRepository>();
 
+  /// Whether [container]'s session can read its notifications (#475): the
+  /// per-server [NotificationRemoteDataSource], and the household repository,
+  /// which keeps it to a live user session, as the profile's gate does. The
+  /// route, the menu entry, the unread count's host and the bell all stand on
+  /// it, so none of them is offered where the others aren't.
+  static bool _canReadNotifications(DependencyContainer container) =>
+      container.isRegistered<HouseholdRepository>() &&
+      container.isRegistered<NotificationRemoteDataSource>();
+
+  /// [container]'s [NotificationRemoteDataSource] where its session can read
+  /// its notifications ([_canReadNotifications]), or null.
+  static NotificationRemoteDataSource? _notificationsRemote(
+    DependencyContainer container,
+  ) => _canReadNotifications(container)
+      ? container.get<NotificationRemoteDataSource>()
+      : null;
+
+  /// The bell for a top-level screen's header (#475), or null where
+  /// [container]'s session can't read its notifications. It shows only where
+  /// the screen is a section's top, as its menu button does, and not where
+  /// the screen was pushed with a way back ([ShellNotificationsBell]).
+  static Widget? _notificationsBell(DependencyContainer container) {
+    final remote = _notificationsRemote(container);
+    if (remote == null) return null;
+    return ShellNotificationsBell(
+      remote: remote,
+      onOpen: _notificationOpener(container),
+    );
+  }
+
+  /// Opens what a notification is about (#475), for [container]'s session:
+  /// pushes the location its target names ([notificationTargetLocation]),
+  /// and completes with the push's future. From the page or from the bell's
+  /// preview alike, so Back from what opened lands where the notification
+  /// was.
+  ///
+  /// That future completes when the pushed page is popped, but not always
+  /// when the router takes it away (the browser's Back, a `go`): go_router
+  /// completes it only on a pop. So nothing waits on it alone. The page
+  /// opens rows again once its route is the top one again, and the preview,
+  /// which doesn't wait on it, removes itself once the page it opened covers
+  /// it.
+  ///
+  /// A push even where the location is another screen's top: the preview
+  /// waits for the page it opens to arrive, and the page's rows wait for its
+  /// route to be the top one again.
+  ///
+  /// The household cache, which a declined invite's location reads, and the
+  /// session's lease are taken now, as the route is built. A session that
+  /// ends while the location is read opens nothing: its pages are leaving,
+  /// and the next session's must not get one. Nor does a tap the user has
+  /// left meanwhile, where the route it was on is no longer the top one, as
+  /// when Back closed the preview. It never throws.
+  static Future<void> Function(BuildContext context, NotificationTarget target)
+  _notificationOpener(DependencyContainer container) {
+    final lease = _sessionLease(container);
+    final households = container.isRegistered<HouseholdRepository>()
+        ? container.get<HouseholdRepository>()
+        : null;
+    return (context, target) async {
+      // Taken now: the context may be gone once the location is known.
+      final router = GoRouter.of(context);
+      final from = ModalRoute.of(context);
+      final location = await notificationTargetLocation(
+        target,
+        households: households,
+      );
+      if (!lease.isLive) return;
+      if (from != null && !from.isCurrent) return;
+      await router.push<void>(location);
+    };
+  }
+
   Widget _buildHome(BuildContext context, ActiveServer active) {
     final container = active.container;
     final canReadCollection = _canReadCollection(container);
@@ -1192,12 +1304,15 @@ class _BgeAppState extends State<BgeApp> {
         ? _buildSomethingToPlay(container)
         : null;
 
+    final bell = _notificationsBell(container);
+
     HomeScreen home({bool canConnect = false}) => HomeScreen(
       notice: notice,
       upcomingEvents: upcomingEvents,
       stats: stats,
       newestGames: newestGames?.call(canConnect: canConnect),
       somethingToPlay: somethingToPlay,
+      headerAction: bell,
     );
 
     // #617: a server with no games offers the connect card while the access
@@ -1662,8 +1777,10 @@ class _BgeAppState extends State<BgeApp> {
   /// the invites.
   Widget? _buildHouseholdInvitesRoute(
     BuildContext context,
-    String householdId,
-  ) {
+    String householdId, {
+    required bool awaitingApproval,
+    required bool declined,
+  }) {
     final active = widget.bootstrapCubit.activeServerScope?.active;
     if (active == null) return null;
 
@@ -1677,6 +1794,11 @@ class _BgeAppState extends State<BgeApp> {
       householdId: householdId,
       remote: invites,
       repository: container.get<HouseholdRepository>(),
+      initialFilter: awaitingApproval
+          ? HouseholdInviteFilter.awaitingApproval
+          : declined
+          ? HouseholdInviteFilter.declined
+          : HouseholdInviteFilter.open,
       onInvite: _canSendInvites(container)
           ? (ctx) => unawaited(
               ctx.push<void>(AppRoutes.householdInviteSendOf(householdId)),
@@ -1758,7 +1880,10 @@ class _BgeAppState extends State<BgeApp> {
   /// two routes are available together. The screen never reads the
   /// [HouseholdRepository]; it is asked for as the inbox's gate is, because
   /// the user tier registers it, so the route opens only in a live session.
-  Widget? _buildSentInvitesRoute(BuildContext context) {
+  Widget? _buildSentInvitesRoute(
+    BuildContext context, {
+    required bool declined,
+  }) {
     final active = widget.bootstrapCubit.activeServerScope?.active;
     if (active == null) return null;
 
@@ -1768,7 +1893,12 @@ class _BgeAppState extends State<BgeApp> {
       return null;
     }
 
-    return SentInvitesScreen(remote: invites);
+    return SentInvitesScreen(
+      remote: invites,
+      initialFilter: declined
+          ? SentInviteFilter.declined
+          : SentInviteFilter.openAndExpired,
+    );
   }
 
   /// The #129 create-household wiring: resolves the [HouseholdRepository]
@@ -1920,6 +2050,7 @@ class _BgeAppState extends State<BgeApp> {
       onRetry: _collectionRetry(container),
       onEnter: _collectionEntryRefresh(container),
       layouts: _listLayouts(container),
+      headerAction: _notificationsBell(container),
     );
   }
 
@@ -2170,6 +2301,7 @@ class _BgeAppState extends State<BgeApp> {
       layouts: _listLayouts(container),
       onQuickLook: _openQuickLook(container),
       initialSort: sort,
+      headerAction: _notificationsBell(container),
     );
   }
 
@@ -2345,6 +2477,7 @@ class _BgeAppState extends State<BgeApp> {
       onCreate: _eventCreate(container),
       onRetry: _eventsRetry(container),
       onEnter: _eventsEntryRefresh(container),
+      headerAction: _notificationsBell(container),
     );
   }
 
@@ -2895,6 +3028,31 @@ class _BgeAppState extends State<BgeApp> {
     return ProfileScreen(
       remote: container.get<UserProfileRemoteDataSource>(),
       confirmSession: _confirmSession(container),
+    );
+  }
+
+  /// The Notifications page (#475), under the menu entry's gate
+  /// ([_canReadNotifications]); null otherwise, which the route shows as not
+  /// yet available. It reads the session's unread count from the shell's host
+  /// above it.
+  ///
+  /// Keyed by the server and the user session's lease, as the API key list
+  /// is ([_buildApiKeysRoute]): the server's remote is the same object for
+  /// every user who signs in to it, so the page's own key, the remote, can't
+  /// tell their sessions apart, and a new session must never see the last
+  /// one's rows.
+  Widget? _buildNotificationsRoute(BuildContext context) {
+    final active = widget.bootstrapCubit.activeServerScope?.active;
+    if (active == null) return null;
+
+    final container = active.container;
+    final remote = _notificationsRemote(container);
+    if (remote == null) return null;
+
+    return NotificationsScreen(
+      key: ValueKey((active, _sessionLease(container))),
+      remote: remote,
+      onOpen: _notificationOpener(container),
     );
   }
 

@@ -31,6 +31,7 @@ class HomeScreen extends StatelessWidget {
     this.stats,
     this.newestGames,
     this.somethingToPlay,
+    this.headerAction,
     super.key,
   });
 
@@ -51,6 +52,10 @@ class HomeScreen extends StatelessWidget {
   /// The "something to play" shelf.
   final Widget? somethingToPlay;
 
+  /// A control the app adds at the end of the header, such as the
+  /// notifications bell (#475). Last, after the screen's own actions.
+  final Widget? headerAction;
+
   /// Key on the sections' column, which is absent with every slot null.
   static const Key sectionsKey = Key('home_sections');
 
@@ -67,6 +72,7 @@ class HomeScreen extends StatelessWidget {
       width: hasSections ? BgePageWidth.pane : BgePageWidth.form,
       centerVertically: !hasSections,
       title: Text(l10n.homeTitle),
+      actions: [?headerAction],
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: hasSections

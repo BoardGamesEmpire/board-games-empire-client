@@ -174,11 +174,11 @@ Know these limits before trusting a green run.
   (its Show and Sort menus and Restore's confirm dialog), the three
   DataGateway screens, event detail, game detail and the two collection
   screens audit every dialog, sheet and menu they open. Elsewhere only
-  home's drawer, game search's filter sheet, sent invites' filter menu,
-  stuck changes' discard dialog and the game quick look are audited. The
-  rest are not: the confirm dialogs of the invite inbox, the household's
-  invite list and the bootstrap error screen, and create event's date and
-  time pickers, among others.
+  home's drawer, game search's filter sheet, the filter menus of sent
+  invites and a household's invites, stuck changes' discard dialog and the
+  game quick look are audited. The rest are not: the confirm dialogs of the
+  invite inbox, the household's invite list and the bootstrap error screen,
+  and create event's date and time pickers, among others.
 - **A pop-up drawn at its own text scale or theme (#794).** The cell check
   holds every `Scaffold` to the cell, and then needs only one piece of drawn
   text anywhere at it. A pop-up has no `Scaffold`, and the page under it
@@ -867,9 +867,9 @@ no false finding.
 `dart run tool/check_a11y_audit.dart` checks every `*_screen.dart`, prints
 how many it checked, and fails on any that is neither audited nor exempt.
 A screen with more than one test file lists each file. Home's four sections,
-household detail's events section and the two quick looks aren't
-`*_screen.dart`, so the check doesn't count them; they are listed after the
-audited screens.
+household detail's events section, the two quick looks and the notifications
+preview aren't `*_screen.dart`, so the check doesn't count them; they are
+listed after the audited screens.
 
 | Screen | Test file | Status |
 |---|---|---|
@@ -898,6 +898,7 @@ audited screens.
 | `HouseholdInviteListScreen` | `packages/features/household/test/widgets/household_invite_list_screen_test.dart` | audited |
 | `HouseholdListScreen` | `packages/features/household/test/widgets/household_list_screen_test.dart` | audited |
 | `InviteInboxScreen` | `packages/features/household/test/widgets/invite_inbox_screen_test.dart` | audited |
+| `NotificationsScreen` | `packages/features/notifications/test/screens/notifications_screen_test.dart` | audited: loading, empty, load failed, loaded with read, unread and plain rows, scrolled to Load more, a refresh failed over the rows, Mark all read and Load more failed in the footer, and offline (#475) |
 | `NotYetAvailableScreen` | `packages/app_shell/test/screens/shell_screens_test.dart` | audited |
 | `OfferGamesScreen` | `packages/features/events/test/widgets/offer_games_screen_test.dart` | audited |
 | `RouteNotFoundScreen` | `packages/app_shell/test/screens/shell_screens_test.dart` | audited |
@@ -915,6 +916,7 @@ audited screens.
 | `GameQuickLook` (pop-up, from home's rows, browse and search) | `packages/features/catalog/test/quick_look/game_quick_look_test.dart` | audited, sheet and dialog (#803; see #794) |
 | `SearchHitQuickLook` (pop-up, from search) | `packages/features/catalog/test/quick_look/search_hit_quick_look_test.dart` | audited, sheet and dialog (#803; see #794) |
 | `HouseholdEventsSection` (household detail) | `packages/features/events/test/household/household_events_section_test.dart` | audited |
+| `NotificationsPreview` (pop-up, from the header bell) | `packages/features/notifications/test/preview/notifications_preview_test.dart` | audited, sheet and dialog when loaded; loading, empty, load failed, Mark all read failed and offline as a sheet (#475) |
 
 `_deferred` in `tool/check_a11y_audit.dart` is empty, so the run prints no
 exemption block.

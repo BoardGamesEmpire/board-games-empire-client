@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:bge_test_support/widgets.dart';
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:household/household.dart';
 import 'package:household/l10n/household_localizations.dart';
@@ -14,6 +16,7 @@ import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
 import '../support/fake_household_invite_remote.dart';
+import '../support/invite_filter_menu_support.dart';
 
 class _MockHouseholdRepository extends Mock implements HouseholdRepository {}
 
@@ -43,6 +46,7 @@ void main() {
 
   Widget harness({
     String householdId = 'hh_1',
+    HouseholdInviteFilter initialFilter = HouseholdInviteFilter.open,
     void Function(BuildContext context)? onInvite,
     ValueListenable<bool>? offline,
     ThemeData? theme,
@@ -66,9 +70,30 @@ void main() {
       householdId: householdId,
       remote: remote,
       repository: repository,
+      initialFilter: initialFilter,
       onInvite: onInvite,
     ),
   );
+
+  /// What the filter control says is chosen.
+  String chosen(WidgetTester tester) => tester
+      .widget<Text>(
+        find.descendant(
+          of: find.byKey(HouseholdInviteListScreen.filterKey),
+          matching: find.byType(Text),
+        ),
+      )
+      .data!;
+
+  /// Opens the filter menu and picks [label] from it.
+  Future<void> choose(WidgetTester tester, String label) async {
+    await tester.tap(find.byKey(HouseholdInviteListScreen.filterKey));
+    await tester.pumpAndSettle();
+    // The menu builds its entries only while it is open, so this fails if
+    // the tap did not open it.
+    await tester.tap(find.widgetWithText(MenuItemButton, label).hitTestable());
+    await tester.pumpAndSettle();
+  }
 
   testWidgets('every row is outlined (#647)', (tester) async {
     remote.listing([invite('i_1'), invite('i_2')]);
@@ -264,14 +289,303 @@ void main() {
     await tester.pumpWidget(harness());
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Awaiting approval'));
+    await choose(tester, 'Awaiting approval');
+
+    expect(
+      remote.calls.last,
+      'fetchHouseholdInvites(hh_1, awaitingApproval, 1, 25)',
+    );
+    expect(chosen(tester), 'Show: Awaiting approval');
+    expect(find.text('No invites are awaiting approval.'), findsOneWidget);
+  });
+
+  testWidgets('the declined filter reads that status (#475)', (tester) async {
+    remote.listing(const []);
+    await tester.pumpWidget(harness());
+    await tester.pumpAndSettle();
+
+    await choose(tester, 'Declined');
+
+    expect(remote.calls.last, 'fetchHouseholdInvites(hh_1, declined, 1, 25)');
+    expect(chosen(tester), 'Show: Declined');
+    expect(
+      find.descendant(
+        of: find.byKey(HouseholdInviteListScreen.emptyKey),
+        matching: find.text('No declined invites.'),
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('a declined row says so and offers no action (#475)', (
+    tester,
+  ) async {
+    // An owner, and the viewer's own invite: either would be offered an
+    // action on an outstanding one.
+    remote.listing([
+      invite('i_1', status: HouseholdInviteStatus.declined),
+      invite('i_2', status: HouseholdInviteStatus.declined, inviterId: _me),
+    ]);
+    await tester.pumpWidget(
+      harness(initialFilter: HouseholdInviteFilter.declined),
+    );
+    await tester.pumpAndSettle();
+
+    for (final id in ['i_1', 'i_2']) {
+      final row = find.byKey(HouseholdInviteListScreen.rowKey(id));
+      expect(
+        find.descendant(of: row, matching: find.text('Declined')),
+        findsOneWidget,
+        reason: id,
+      );
+      expect(
+        find.descendant(of: row, matching: find.byType(ButtonStyleButton)),
+        findsNothing,
+        reason: id,
+      );
+    }
+  });
+
+  testWidgets('choosing the filter already chosen reads nothing', (
+    tester,
+  ) async {
+    remote.listing(const []);
+    await tester.pumpWidget(harness());
+    await tester.pumpAndSettle();
+    final reads = remote.calls.length;
+
+    await choose(tester, 'Open');
+
+    expect(remote.calls.length, reads);
+    expect(find.byType(MenuItemButton), findsNothing);
+    expect(chosen(tester), 'Show: Open');
+  });
+
+  testWidgets('the open menu tells assistive tech which filter is chosen', (
+    tester,
+  ) async {
+    final handle = tester.ensureSemantics();
+    remote.listing(const []);
+    await tester.pumpWidget(harness());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(HouseholdInviteListScreen.filterKey));
+    await tester.pumpAndSettle();
+
+    SemanticsNode entry(String label) => tester.getSemantics(
+      find.widgetWithText(MenuItemButton, label).hitTestable(),
+    );
+    expect(
+      entry('Open'),
+      isSemantics(label: 'Open', hasSelectedState: true, isSelected: true),
+    );
+    for (final label in ['Awaiting approval', 'Declined']) {
+      expect(
+        entry(label),
+        isSemantics(label: label, hasSelectedState: true, isSelected: false),
+        reason: label,
+      );
+    }
+
+    // Dispose inline: flutter_test checks for an open SemanticsHandle when
+    // the body ends, before tearDown callbacks run.
+    handle.dispose();
+  });
+
+  testWidgets('the filter tells assistive tech whether its menu is open', (
+    tester,
+  ) async {
+    final handle = tester.ensureSemantics();
+    remote.listing(const []);
+    await tester.pumpWidget(
+      harness(initialFilter: HouseholdInviteFilter.declined),
+    );
+    await tester.pumpAndSettle();
+    final control = find.byKey(HouseholdInviteListScreen.filterKey);
+
+    expect(
+      tester.getSemantics(control),
+      isSemantics(
+        label: 'Show: Declined',
+        isButton: true,
+        hasExpandedState: true,
+        isExpanded: false,
+      ),
+    );
+
+    await tester.tap(control);
+    await tester.pumpAndSettle();
+
+    expect(
+      tester.getSemantics(control),
+      isSemantics(hasExpandedState: true, isExpanded: true),
+    );
+
+    // Dispose inline: flutter_test checks for an open SemanticsHandle when
+    // the body ends, before tearDown callbacks run.
+    handle.dispose();
+  });
+
+  testWidgets('the filter menu works from the keyboard, over rows with '
+      'actions (#475)', (tester) async {
+    // An owner, so each row offers Revoke: the arrows must not reach them
+    // under the open menu.
+    remote.listing([invite('i_1'), invite('i_2')]);
+    await tester.pumpWidget(harness());
+    await tester.pumpAndSettle();
+    final button = find.byKey(HouseholdInviteListScreen.filterKey);
+    Finder item(String label) => find.widgetWithText(MenuItemButton, label);
+    await tabTo(tester, button);
+
+    // Enter opens it, on the filter chosen now.
+    await press(tester, LogicalKeyboardKey.enter);
+    expect(find.byType(MenuItemButton), findsNWidgets(3));
+    expect(focusIn(item('Open')), isTrue);
+
+    // Down moves through the choices, and Enter picks one and closes it,
+    // with focus back on the button.
+    await press(tester, LogicalKeyboardKey.arrowDown);
+    expect(focusIn(item('Awaiting approval')), isTrue);
+    await press(tester, LogicalKeyboardKey.enter);
+    expect(find.byType(MenuItemButton), findsNothing);
+    expect(
+      remote.calls.last,
+      'fetchHouseholdInvites(hh_1, awaitingApproval, 1, 25)',
+    );
+    expect(chosen(tester), 'Show: Awaiting approval');
+    expect(focusIn(button), isTrue);
+
+    // Open again: Tab stays in the menu, and Escape closes it, with focus
+    // back on the button and nothing asked for.
+    remote.listing([invite('i_1'), invite('i_2')]);
+    await press(tester, LogicalKeyboardKey.enter);
+    expect(focusIn(item('Awaiting approval')), isTrue);
+    await press(tester, LogicalKeyboardKey.tab);
+    expect(focusIn(find.byType(MenuItemButton)), isTrue);
+    final reads = remote.calls.length;
+    await press(tester, LogicalKeyboardKey.escape);
+    expect(find.byType(MenuItemButton), findsNothing);
+    expect(focusIn(button), isTrue);
+    expect(remote.calls.length, reads);
+    expect(find.byType(AlertDialog), findsNothing);
+  });
+
+  testWidgets('the filter stays enabled offline', (tester) async {
+    final offline = ValueNotifier(true);
+    addTearDown(offline.dispose);
+    remote.listing(const []);
+    await tester.pumpWidget(harness(offline: offline));
+    await tester.pumpAndSettle();
+
+    // Choosing what to list is no write.
+    expect(
+      tester
+          .widget<OutlinedButton>(
+            find.byKey(HouseholdInviteListScreen.filterKey),
+          )
+          .onPressed,
+      isNotNull,
+    );
+  });
+
+  // At the default text scale, and at BgeTextScale.maxScaleFactor, the
+  // largest the shell lets through.
+  for (final scale in [1.0, BgeTextScale.maxScaleFactor]) {
+    testWidgets('the filter fits a 320-wide screen at text scale $scale '
+        '(#475)', (tester) async {
+      useViewSize(tester, const Size(320, 640));
+      tester.platformDispatcher.textScaleFactorTestValue = scale;
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      remote.listing(const []);
+      await tester.pumpWidget(
+        harness(initialFilter: HouseholdInviteFilter.awaitingApproval),
+      );
+      await tester.pumpAndSettle();
+
+      final label = find.descendant(
+        of: find.byKey(HouseholdInviteListScreen.filterKey),
+        matching: find.text('Show: Awaiting approval'),
+      );
+      expect(
+        MediaQuery.textScalerOf(tester.element(label)).scale(10),
+        10 * scale,
+        reason: 'the control is drawn at the scale under test',
+      );
+      // The chosen filter wraps inside the control rather than being cut.
+      final control = tester.getRect(
+        find.byKey(HouseholdInviteListScreen.filterKey),
+      );
+      expect(
+        tester.renderObject<RenderParagraph>(label).didExceedMaxLines,
+        isFalse,
+      );
+      expect(control.intersect(tester.getRect(label)), tester.getRect(label));
+      // Every glyph of the test font is an em wide, so whether a word
+      // breaks is checked in the platform's own face, in
+      // household_invite_list_screen_filter_fit_test.dart.
+
+      await tester.tap(find.byKey(HouseholdInviteListScreen.filterKey));
+      await tester.pumpAndSettle();
+      // Its entries wrap within the control's width too, rather than
+      // widening the menu past the screen's edge, where it clips them.
+      for (final choice in ['Open', 'Awaiting approval', 'Declined']) {
+        final entry = find.widgetWithText(MenuItemButton, choice);
+        expect(entry.hitTestable(), findsOneWidget, reason: choice);
+        final words = find.descendant(of: entry, matching: find.text(choice));
+        final text = tester.getRect(words);
+        expect(text.left, greaterThanOrEqualTo(control.left), reason: choice);
+        expect(text.right, lessThanOrEqualTo(control.right), reason: choice);
+      }
+
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('starts on awaitingApproval when asked (#475)', (tester) async {
+    remote.listing(const []);
+
+    await tester.pumpWidget(
+      harness(initialFilter: HouseholdInviteFilter.awaitingApproval),
+    );
+    await tester.pumpAndSettle();
+
+    expect(remote.calls, [
+      'fetchHouseholdInvites(hh_1, awaitingApproval, 1, 25)',
+    ]);
+    expect(chosen(tester), 'Show: Awaiting approval');
+  });
+
+  testWidgets('starts on declined when asked (#475)', (tester) async {
+    remote.listing(const []);
+
+    await tester.pumpWidget(
+      harness(initialFilter: HouseholdInviteFilter.declined),
+    );
+    await tester.pumpAndSettle();
+
+    expect(remote.calls, ['fetchHouseholdInvites(hh_1, declined, 1, 25)']);
+    expect(chosen(tester), 'Show: Declined');
+  });
+
+  testWidgets('a different opening filter is a new list (#475)', (
+    tester,
+  ) async {
+    // The route's page key is its path pattern, so a link to the same
+    // household's other filter reuses this State; the filter keys the bloc.
+    remote.listing(const []);
+    await tester.pumpWidget(harness());
+    await tester.pumpAndSettle();
+
+    await tester.pumpWidget(
+      harness(initialFilter: HouseholdInviteFilter.awaitingApproval),
+    );
     await tester.pumpAndSettle();
 
     expect(
       remote.calls.last,
       'fetchHouseholdInvites(hh_1, awaitingApproval, 1, 25)',
     );
-    expect(find.text('No invites are awaiting approval.'), findsOneWidget);
+    expect(chosen(tester), 'Show: Awaiting approval');
   });
 
   testWidgets('Load more reads the next page', (tester) async {
@@ -429,6 +743,31 @@ void main() {
           tester,
           find.byKey(HouseholdInviteListScreen.moreKey),
         );
+      },
+    );
+
+    auditScreen(
+      'filter menu open',
+      build: ready,
+      arrange: (tester) async {
+        await shown(tester);
+        await tester.tap(find.byKey(HouseholdInviteListScreen.filterKey));
+        await tester.pumpAndSettle();
+        expect(find.byType(MenuItemButton), findsNWidgets(3));
+      },
+    );
+
+    auditScreen(
+      'declined',
+      build: screenWith(
+        () => remote.listing([
+          invite('i_1', status: HouseholdInviteStatus.declined),
+        ]),
+      ),
+      arrange: (tester) async {
+        await shown(tester);
+        await choose(tester, 'Declined');
+        expect(find.text('Show: Declined'), findsOneWidget);
       },
     );
 

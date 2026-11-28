@@ -692,6 +692,60 @@ void main() {
     });
   });
 
+  testWidgets('a link to the sent invites on Declined opens them there '
+      '(#475)', (tester) async {
+    when(
+      () => remote.fetchSent(
+        status: any(named: 'status'),
+        page: any(named: 'page'),
+        limit: any(named: 'limit'),
+      ),
+    ).thenAnswer((_) async => _page(const []));
+    final router = await pumpApp(tester);
+
+    router.go(AppRoutes.invitesSentOf(declined: true));
+    await tester.pumpAndSettle();
+
+    expect(
+      tester
+          .widget<SentInvitesScreen>(find.byType(SentInvitesScreen))
+          .initialFilter,
+      SentInviteFilter.declined,
+    );
+    verify(
+      () => remote.fetchSent(
+        status: HouseholdInviteStatus.declined,
+        page: any(named: 'page'),
+        limit: any(named: 'limit'),
+      ),
+    ).called(1);
+  });
+
+  testWidgets("a link to a household's invites on Declined opens them there "
+      '(#475)', (tester) async {
+    final router = await pumpApp(tester);
+
+    router.go(AppRoutes.householdInvitesOf('hh_a', declined: true));
+    await tester.pumpAndSettle();
+
+    expect(
+      tester
+          .widget<HouseholdInviteListScreen>(
+            find.byType(HouseholdInviteListScreen),
+          )
+          .initialFilter,
+      HouseholdInviteFilter.declined,
+    );
+    verify(
+      () => remote.fetchHouseholdInvites(
+        'hh_a',
+        status: HouseholdInviteStatus.declined,
+        page: any(named: 'page'),
+        limit: any(named: 'limit'),
+      ),
+    ).called(1);
+  });
+
   testWidgets('the invite routes fall back without an invite client', (
     tester,
   ) async {

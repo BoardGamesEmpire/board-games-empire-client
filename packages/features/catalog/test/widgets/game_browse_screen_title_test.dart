@@ -51,6 +51,61 @@ void main() {
       );
     });
   }
+
+  for (final scale in [1.0, 2.0]) {
+    testWidgets('pushed on a 320dp screen at text scale $scale, the title is '
+        'whole beside the header action (#475)', (tester) async {
+      useViewSize(tester, const Size(320, 640));
+      tester.platformDispatcher.textScaleFactorTestValue = scale;
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      const action = Key('header_action');
+      final remote = FakeGamesRemote()
+        ..onFetchPage = (_, _) async => pageOf([game('g_azul')]);
+
+      await tester.pumpWidget(catalogApp(const Scaffold(body: Text('home'))));
+      Navigator.of(tester.element(find.text('home'))).push(
+        MaterialPageRoute<void>(
+          builder: (_) => GameBrowseScreen(
+            remote: remote,
+            onSearch: (_) {},
+            layouts: _Thumbnails(),
+            headerAction: const SizedBox(key: action, width: 48, height: 48),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(BackButton), findsOneWidget);
+      expect(find.byKey(GameBrowseScreen.searchKey), findsOneWidget);
+      expect(find.byKey(GameBrowseScreen.sortKey), findsOneWidget);
+      expect(find.byKey(action), findsOneWidget);
+
+      // The control that left the app bar is in the content row, whole
+      // within the screen, with nothing overflowing.
+      final moved = find.byKey(GameBrowseScreen.sortKey);
+      expect(
+        find.descendant(of: find.byType(AppBar), matching: moved),
+        findsNothing,
+      );
+      for (final control in [
+        moved,
+        find.byKey(GameBrowseScreen.layoutToggleKey),
+      ]) {
+        final rect = tester.getRect(control);
+        expect(rect.left, greaterThanOrEqualTo(0));
+        expect(rect.right, lessThanOrEqualTo(320));
+      }
+      expect(tester.takeException(), isNull);
+
+      final title = tester.renderObject<RenderParagraph>(
+        find.descendant(of: find.byType(AppBar), matching: find.text('Games')),
+      );
+      expect(
+        title.getMaxIntrinsicWidth(double.infinity),
+        lessThanOrEqualTo(title.size.width + 0.5),
+        reason: 'the title has ${title.size.width}dp',
+      );
+    });
+  }
 }
 
 /// A user who keeps the thumbnails.

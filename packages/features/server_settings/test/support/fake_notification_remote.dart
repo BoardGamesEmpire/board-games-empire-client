@@ -43,6 +43,18 @@ class FakeNotificationRemote implements NotificationRemoteDataSource {
   }
 
   @override
+  Future<NotificationPage> fetchPage({
+    String? cursor,
+    int limit = NotificationRemoteDataSource.defaultPageSize,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<int> fetchUnreadCount() => throw UnimplementedError();
+
+  @override
+  Future<void> markAllRead() => throw UnimplementedError();
+
+  @override
   Future<void> markRead(List<String> ids) async {
     markReadCalls.add(ids);
     final gate = markReadGate;
