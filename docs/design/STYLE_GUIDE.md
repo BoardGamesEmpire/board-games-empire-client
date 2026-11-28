@@ -557,6 +557,8 @@ The pages that pin, and this list is where a new one is added:
 - the game search screen, whose footer says why a search shows only this
   server's games, how a streamed search is going and how it ended (#795,
   #473);
+- the Notifications page, whose footer holds the banners that answer Mark
+  all read and Load more, actions on a list of any length (#475);
 - a search result's quick look, a pop-up whose Import counts the expansions
   ticked (#1037).
 
