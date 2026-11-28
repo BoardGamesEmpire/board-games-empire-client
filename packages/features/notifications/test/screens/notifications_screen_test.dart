@@ -640,6 +640,31 @@ void main() {
         expect(markAllFailed(), findsNothing);
         expect(primaryFocusLabel(), 'Notifications heading');
       });
+
+      testWidgets("focus on its banner's Dismiss goes to the title as the "
+          'count reaches zero', (tester) async {
+        final count = countCubit();
+        remote
+          ..scriptUnreadCounts([3, 0])
+          ..scriptPages([
+            page([joined('a', read: true)], nextCursor: 'c-1'),
+          ])
+          ..scriptMarkAllRead([offline]);
+
+        await tester.pumpWidget(screen(count: count));
+        await tester.pumpAndSettle();
+        await tester.tap(markAll());
+        await tester.pumpAndSettle();
+        buttonFocus(tester, markAllFailed()).requestFocus();
+        await tester.pump();
+
+        // Read elsewhere, as on another device.
+        await count.refresh();
+        await tester.pumpAndSettle();
+
+        expect(markAllFailed(), findsNothing);
+        expect(primaryFocusLabel(), 'Notifications heading');
+      });
     });
 
     testWidgets('is not offered when every row is read', (tester) async {

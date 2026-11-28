@@ -555,6 +555,31 @@ void main() {
     );
 
     test(
+      'a pagination without hasMore or nextCursor, or with the two '
+      'disagreeing, fails the page as NotificationPermanentException',
+      () async {
+        for (final pagination in [
+          <String, dynamic>{},
+          {'limit': 25, 'nextCursor': null},
+          {'limit': 25, 'hasMore': false},
+          {'limit': 25, 'hasMore': 'no', 'nextCursor': null},
+          {'limit': 25, 'hasMore': true, 'nextCursor': null},
+          {'limit': 25, 'hasMore': false, 'nextCursor': 'c'},
+        ]) {
+          final remote = answering(
+            jsonEncode(page([_entry('n1')], pagination: pagination)),
+          );
+
+          await expectLater(
+            remote.fetchPage(),
+            throwsA(isA<NotificationPermanentException>()),
+            reason: '$pagination',
+          );
+        }
+      },
+    );
+
+    test(
       'a body with no notifications array, or no pagination object, is '
       'NotificationPermanentException',
       () async {

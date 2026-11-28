@@ -443,7 +443,12 @@ class _NotificationsViewState extends State<_NotificationsView> {
     button: _markAll,
     heading: _heading,
     onFailed: _onMarkAllFailed,
-    onRetired: () => setState(() => _markAllFailure = null),
+    onRetired: () {
+      // Dismiss goes with the banner, and would take focus with it; Mark
+      // all read may go with them.
+      if (_markAllDismiss.hasFocus) _heading.requestFocus();
+      setState(() => _markAllFailure = null);
+    },
     child: MultiBlocListener(
       listeners: [
         BlocListener<NotificationListBloc, NotificationListState>(

@@ -29,6 +29,7 @@ class NotificationRemoteDataSourceImpl implements NotificationRemoteDataSource {
   static const String _cursorParam = 'cursor';
   static const String _notificationsKey = 'notifications';
   static const String _paginationKey = 'pagination';
+  static const String _hasMoreKey = 'hasMore';
   static const String _nextCursorKey = 'nextCursor';
   static const String _countKey = 'count';
 
@@ -181,11 +182,31 @@ class NotificationRemoteDataSourceImpl implements NotificationRemoteDataSource {
             'expected an object',
           );
         }
+        // Both say whether a page follows. One missing, or the two
+        // disagreeing, would otherwise end the list early with no error.
+        if (!pagination.containsKey(_nextCursorKey)) {
+          throw const FormatException(
+            '"$_paginationKey.$_nextCursorKey" is missing',
+          );
+        }
         final nextCursor = pagination[_nextCursorKey];
         if (nextCursor != null && nextCursor is! String) {
           throw FormatException(
             '"$_paginationKey.$_nextCursorKey" is ${nextCursor.runtimeType}, '
             'expected a string or null',
+          );
+        }
+        final hasMore = pagination[_hasMoreKey];
+        if (hasMore is! bool) {
+          throw FormatException(
+            '"$_paginationKey.$_hasMoreKey" is ${hasMore.runtimeType}, '
+            'expected a bool',
+          );
+        }
+        if (hasMore != (nextCursor != null)) {
+          throw FormatException(
+            '"$_paginationKey.$_hasMoreKey" is $hasMore, but '
+            '"$_nextCursorKey" is ${nextCursor == null ? 'null' : 'a cursor'}',
           );
         }
         return NotificationPage(
