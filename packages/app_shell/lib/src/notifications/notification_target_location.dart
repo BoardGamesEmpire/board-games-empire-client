@@ -30,6 +30,11 @@ Future<String> notificationTargetLocation(
       householdId,
       awaitingApproval: awaitingApproval,
     ),
+  DataGatewayTarget(:final gatewayId) => AppRoutes.dataGatewayDetailOf(
+    gatewayId,
+  ),
+  EventTarget(:final eventId, :final tab, :final date) =>
+    AppRoutes.eventDetailOf(eventId, tab: tab, date: date),
   DeclinedInviteTarget(:final householdId) => await _declinedInviteLocation(
     householdId,
     households,

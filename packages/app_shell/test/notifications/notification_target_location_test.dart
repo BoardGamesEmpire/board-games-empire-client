@@ -44,6 +44,57 @@ void main() {
     );
   });
 
+  test("a DataGateway notification opens the DataGateway's own page", () async {
+    expect(
+      await notificationTargetLocation(
+        const DataGatewayTarget('gw 1'),
+        households: households,
+      ),
+      AppRoutes.dataGatewayDetailOf('gw 1'),
+    );
+    expect(
+      AppRoutes.dataGatewayDetailOf('gw 1'),
+      '/admin/data-gateways/gw%201',
+    );
+  });
+
+  group('an event notification (#504)', () {
+    Future<String> open(EventTarget target) =>
+        notificationTargetLocation(target, households: households);
+
+    test("opens the event's own page", () async {
+      expect(
+        await open(const EventTarget('e1')),
+        AppRoutes.eventDetailOf('e1'),
+      );
+      expect(await open(const EventTarget('e1')), '/events/e1');
+    });
+
+    test('about a date opens the lineup on that date', () async {
+      const target = EventTarget('e1', tab: 'lineup', date: 'o1');
+
+      expect(
+        await open(target),
+        AppRoutes.eventDetailOf('e1', tab: 'lineup', date: 'o1'),
+      );
+      expect(await open(target), '/events/e1?tab=lineup&date=o1');
+    });
+
+    test(
+      'names the tab alone, and encodes an id that is not path-safe',
+      () async {
+        expect(
+          await open(const EventTarget('e 1', tab: 'nominations')),
+          '/events/e%201?tab=nominations',
+        );
+        expect(
+          await open(const EventTarget('e1', tab: 'lineup', date: 'o/1')),
+          '/events/e1?tab=lineup&date=o%2F1',
+        );
+      },
+    );
+  });
+
   test('a household notification opens the household', () async {
     expect(
       await notificationTargetLocation(

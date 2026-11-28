@@ -99,7 +99,7 @@ class NotificationRowFocus {
 ///
 /// A tap on a row with somewhere to go gives [onOpen] its target. A plain
 /// row's "Mark read" runs [onMarkRead], and hands focus on as it goes: see
-/// [NotificationRowFocus]. [quoteMaxLines] is the tile's.
+/// [NotificationRowFocus]. [quoteMaxLines] and [offersCopy] are the tile's.
 ///
 /// It draws no outline: the page puts it in a `BgeOutlinedRow`, and the
 /// preview leaves it plain.
@@ -110,6 +110,7 @@ class NotificationRow extends StatefulWidget {
     required this.onOpen,
     required this.onMarkRead,
     this.quoteMaxLines,
+    this.offersCopy = false,
     super.key,
   });
 
@@ -118,6 +119,7 @@ class NotificationRow extends StatefulWidget {
   final ValueChanged<NotificationTarget> onOpen;
   final VoidCallback onMarkRead;
   final int? quoteMaxLines;
+  final bool offersCopy;
 
   @override
   State<NotificationRow> createState() => _NotificationRowState();
@@ -154,6 +156,7 @@ class _NotificationRowState extends State<NotificationRow> {
           widget.onMarkRead();
         },
         quoteMaxLines: widget.quoteMaxLines,
+        offersCopy: widget.offersCopy,
       ),
     );
   }

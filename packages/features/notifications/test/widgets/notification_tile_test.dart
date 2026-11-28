@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:bge_test_support/widgets.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:intl/intl.dart';
 import 'package:notifications/l10n/notifications_localizations_en.dart';
@@ -363,6 +366,238 @@ void main() {
       expect(copies, isNotEmpty);
       expect(copies.last, contains('ECONNREFUSED'));
       expect(opened, 1, reason: 'a drag to select opens nothing');
+    });
+  });
+
+  // A DataGateway's upstream error (#545). Tests run on Android, a touch
+  // platform, where the app's selection region isn't built (#322): the
+  // button is the only way to copy it there.
+  group('an error quote', () {
+    const error = 'connect ECONNREFUSED 10.0.0.7:443 — retrying';
+    const failed = NotificationPresentation(
+      icon: Icons.power_off_outlined,
+      title: _title,
+      quote: error,
+      quoteIsError: true,
+      target: InviteInboxTarget(),
+    );
+
+    Finder copyButton() =>
+        find.widgetWithText(TextButton, _l10n.notificationCopyError);
+
+    Future<void> pump(
+      WidgetTester tester, {
+      NotificationPresentation presentation = failed,
+      bool offersCopy = true,
+      VoidCallback? onOpen,
+    }) => tester.pumpWidget(
+      _host(
+        NotificationTile(
+          presentation: presentation,
+          read: false,
+          createdAt: _createdAt,
+          onOpen: onOpen ?? () {},
+          offersCopy: offersCopy,
+        ),
+      ),
+    );
+
+    /// Fails every clipboard write, until the test ends.
+    void refuseClipboard(WidgetTester tester) {
+      final messenger = tester.binding.defaultBinaryMessenger
+        ..setMockMethodCallHandler(SystemChannels.platform, (call) async {
+          if (call.method == 'Clipboard.setData') {
+            throw PlatformException(code: 'denied');
+          }
+          return null;
+        });
+      addTearDown(
+        () => messenger.setMockMethodCallHandler(SystemChannels.platform, null),
+      );
+    }
+
+    testWidgets('Copy error, under the row, copies all of it and says so, '
+        'and opens nothing', (tester) async {
+      final semantics = tester.ensureSemantics();
+      final copies = captureClipboardCopies();
+      var opened = 0;
+      await pump(tester, onOpen: () => opened++);
+
+      expect(find.byType(SelectableRegion), findsNothing);
+      expect(copyButton(), findsOneWidget);
+      // Its own node after the row's, not part of the row's tap.
+      expect(
+        find.descendant(of: find.byType(ListTile), matching: copyButton()),
+        findsNothing,
+      );
+      expect(
+        _rowNode(tester).label,
+        isNot(contains(_l10n.notificationCopyError)),
+      );
+      expect(
+        tester.getTopLeft(copyButton()).dy,
+        greaterThan(tester.getBottomLeft(find.byType(ListTile)).dy - 1),
+      );
+
+      await tester.tap(copyButton());
+      await tester.pumpAndSettle();
+
+      expect(copies, [error]);
+      expect(find.text(_l10n.notificationErrorCopied), findsOneWidget);
+      expect(opened, 0);
+      semantics.dispose();
+    });
+
+    testWidgets('keeps focus through its press, and a second press leaves '
+        'one bar', (tester) async {
+      final copies = captureClipboardCopies();
+      await pump(tester);
+
+      // The button's own node, the nearest Focus above its label.
+      final node = Focus.of(
+        tester.element(find.text(_l10n.notificationCopyError)),
+      )..requestFocus();
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(node.hasPrimaryFocus, isTrue);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+
+      expect(copies, [error, error]);
+      expect(find.text(_l10n.notificationErrorCopied), findsOneWidget);
+      expect(node.hasPrimaryFocus, isTrue);
+    });
+
+    testWidgets('a copy that fails says so, and raises nothing', (
+      tester,
+    ) async {
+      refuseClipboard(tester);
+      await pump(tester);
+
+      await tester.tap(copyButton());
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(find.text(_l10n.notificationErrorCopyFailed), findsOneWidget);
+      expect(find.text(_l10n.notificationErrorCopied), findsNothing);
+    });
+
+    testWidgets('a copy that answers after a later one says nothing over '
+        "the later one's answer", (tester) async {
+      final writes = <Completer<void>>[];
+      final messenger = tester.binding.defaultBinaryMessenger
+        ..setMockMethodCallHandler(SystemChannels.platform, (call) async {
+          if (call.method == 'Clipboard.setData') {
+            final write = Completer<void>();
+            writes.add(write);
+            await write.future;
+          }
+          return null;
+        });
+      addTearDown(
+        () => messenger.setMockMethodCallHandler(SystemChannels.platform, null),
+      );
+      await pump(tester);
+
+      await tester.tap(copyButton());
+      await tester.pump();
+      await tester.tap(copyButton());
+      await tester.pump();
+      expect(writes, hasLength(2));
+
+      // The second fails first; the first then goes through.
+      writes[1].completeError(PlatformException(code: 'denied'));
+      await tester.pumpAndSettle();
+      writes[0].complete();
+      await tester.pumpAndSettle();
+
+      expect(find.text(_l10n.notificationErrorCopyFailed), findsOneWidget);
+      expect(find.text(_l10n.notificationErrorCopied), findsNothing);
+    });
+
+    testWidgets('works offline: copying is not a write', (tester) async {
+      final copies = captureClipboardCopies();
+      await tester.pumpWidget(
+        _host(
+          BgeConnectivityScope(
+            offline: true,
+            noticeShowing: true,
+            onlineOnlyReason: 'offline',
+            child: NotificationTile(
+              presentation: failed,
+              read: false,
+              createdAt: _createdAt,
+              onOpen: () {},
+              offersCopy: true,
+            ),
+          ),
+        ),
+      );
+
+      expect(
+        tester.widget<TextButton>(copyButton()).onPressed,
+        isNotNull,
+      );
+      await tester.tap(copyButton());
+      await tester.pumpAndSettle();
+      expect(copies, [error]);
+    });
+
+    testWidgets('is not offered where offersCopy is unset, as in the preview', (
+      tester,
+    ) async {
+      await pump(tester, offersCopy: false);
+
+      expect(find.text(error), findsOneWidget);
+      expect(copyButton(), findsNothing);
+    });
+
+    testWidgets('is not offered for a quote that is not an error', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        presentation: const NotificationPresentation(
+          icon: Icons.event_busy_outlined,
+          title: _title,
+          quote: 'Wasserschaden im Keller',
+          target: InviteInboxTarget(),
+        ),
+      );
+
+      expect(find.text('Wasserschaden im Keller'), findsOneWidget);
+      expect(copyButton(), findsNothing);
+    });
+
+    testWidgets('on a plain unread row, sits above Mark read', (tester) async {
+      await pump(
+        tester,
+        presentation: const NotificationPresentation(
+          icon: Icons.power_off_outlined,
+          title: _title,
+          quote: error,
+          quoteIsError: true,
+        ),
+      );
+
+      expect(copyButton(), findsOneWidget);
+      expect(_markRead, findsOneWidget);
+      expect(
+        tester.getTopLeft(copyButton()).dy,
+        lessThan(tester.getTopLeft(_markRead).dy),
+      );
+    });
+
+    testWidgets('320dp at 2.0 lays out without overflow', (tester) async {
+      useViewSize(tester, const Size(320, 800));
+      tester.platformDispatcher.textScaleFactorTestValue = 2;
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      await pump(tester);
+
+      expect(tester.takeException(), isNull);
+      expect(copyButton(), findsOneWidget);
     });
   });
 }
