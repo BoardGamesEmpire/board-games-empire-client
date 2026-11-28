@@ -70,6 +70,34 @@ NotificationPresentation presentNotification(
       payload,
       EventDateChange.rescheduled,
     ),
+    'GameNominated' => presentGameNominated(l10n, payload),
+    'GameNominationApproved' => presentNominationOutcome(
+      l10n,
+      payload,
+      NominationOutcome.approved,
+    ),
+    'GameNominationRejected' => presentNominationOutcome(
+      l10n,
+      payload,
+      NominationOutcome.rejected,
+    ),
+    'GameNominationPassed' => presentNominationOutcome(
+      l10n,
+      payload,
+      NominationOutcome.passed,
+    ),
+    'GameNominationFailed' => presentNominationOutcome(
+      l10n,
+      payload,
+      NominationOutcome.failed,
+    ),
+    'GameNominationQuorumNotMet' => presentNominationOutcome(
+      l10n,
+      payload,
+      NominationOutcome.quorumNotMet,
+    ),
+    'GameAddedToEvent' => presentGameAddedToEvent(l10n, payload),
+    'GameRemovedFromEvent' => presentGameRemovedFromEvent(l10n, payload),
     'UsernameVariantAssigned' => presentUsernameVariantAssigned(l10n, payload),
     _ => null,
   };

@@ -236,6 +236,10 @@ void main() {
       final presentation = present('DataGatewayAutoDisabled', payload);
 
       expect(presentation.title, contains('BoardGameGeek'));
+      expect(
+        presentation.title,
+        'BoardGameGeek was switched off automatically',
+      );
       expect(presentation.icon, Icons.power_off_outlined);
       expect(presentation.target, const DataGatewayTarget('g1'));
     });
@@ -339,11 +343,11 @@ void main() {
       );
       expect(
         l10n.notificationDataGatewayCapabilitiesLostDetail(1),
-        contains('1 '),
+        '1 thing the server was using it for is gone',
       );
       expect(
         l10n.notificationDataGatewayCapabilitiesLostDetail(2),
-        contains('2 '),
+        '2 things the server was using it for are gone',
       );
     });
 
@@ -356,6 +360,25 @@ void main() {
       expect(
         presentation.detail,
         l10n.notificationDataGatewayCapabilitiesLostDetail(2),
+      );
+    });
+
+    test('does not count an entry with only whitespace in it', () {
+      final presentation = present('DataGatewayCapabilitiesLost', {
+        ...payload,
+        'lostCapabilities': ['Search', '   ', '\t\n', 'Fetch'],
+      });
+
+      expect(
+        presentation.detail,
+        l10n.notificationDataGatewayCapabilitiesLostDetail(2),
+      );
+      expect(
+        present('DataGatewayCapabilitiesLost', {
+          ...payload,
+          'lostCapabilities': ['  '],
+        }).detail,
+        isNull,
       );
     });
 
@@ -575,7 +598,7 @@ void main() {
       expect(presentation.target, const EventTarget('e1'));
     });
 
-    test('EventRsvpReceived with no attendee name says a guest', () {
+    test('EventRsvpReceived with no attendee name says no account', () {
       for (final name in <Object?>[null, '', '   ']) {
         final presentation = present('EventRsvpReceived', {
           ...event,
@@ -584,15 +607,21 @@ void main() {
 
         expect(
           presentation.title,
-          l10n.notificationEventRsvpReceivedGuestTitle('Friday Night Games'),
+          l10n.notificationEventRsvpReceivedNoAccountTitle(
+            'Friday Night Games',
+          ),
           reason: '$name',
         );
-        expect(presentation.title, contains('A guest'));
+        expect(
+          presentation.title,
+          'Someone without an account replied to Friday Night Games',
+        );
+        expect(presentation.title.toLowerCase(), isNot(contains('guest')));
         expect(presentation.target, const EventTarget('e1'));
       }
       expect(
         present('EventRsvpReceived', event).title,
-        contains('A guest'),
+        contains('without an account'),
       );
     });
 
@@ -857,7 +886,7 @@ void main() {
       'occurrenceId': 'o1',
       'occurrenceLabel': 'Saturday Evening',
     };
-    const target = EventTarget('e1', tab: 'games', date: 'o1');
+    const target = EventTarget('e1', tab: 'lineup', date: 'o1');
 
     const titles = {
       'EventOccurrenceProposed': 'proposed',
@@ -915,6 +944,360 @@ void main() {
       });
 
       expect(presentation.detail, 'Date:   {Freitag} <b>4.</b>  ');
+    });
+  });
+
+  group('nomination notifications', () {
+    const eventPayload = <String, Object?>{
+      'eventId': 'e1',
+      'eventTitle': 'Friday Night Games',
+      'nominationId': 'n9',
+      'nominatedGameTitle': 'Catan',
+    };
+    const target = EventTarget('e1', tab: 'nominations');
+
+    test('GameNominated names the game and the event, and opens the '
+        'nominations', () {
+      final presentation = present('GameNominated', eventPayload);
+
+      expect(presentation.title, 'Catan was nominated for Friday Night Games');
+      expect(presentation.detail, isNull);
+      expect(presentation.quote, isNull);
+      expect(presentation.icon, Icons.how_to_vote_outlined);
+      expect(presentation.target, target);
+    });
+
+    test('GameNominated missing a required field is a plain row', () {
+      for (final key in ['eventId', 'eventTitle', 'nominatedGameTitle']) {
+        for (final value in <Object?>[null, '', '  ', 4]) {
+          expect(
+            present('GameNominated', {...eventPayload, key: value}),
+            plain,
+            reason: '$key $value',
+          );
+        }
+        final absent = {...eventPayload}..remove(key);
+        expect(present('GameNominated', absent), plain, reason: key);
+      }
+      expect(present('GameNominated', const {}), plain);
+    });
+
+    test('GameNominated puts the game and event in unchanged', () {
+      final presentation = present('GameNominated', {
+        ...eventPayload,
+        'eventTitle': ' {Freitag} <b>1</b> ',
+        'nominatedGameTitle': ' 7 Wonders {x} ',
+      });
+
+      expect(
+        presentation.title,
+        ' 7 Wonders {x}  was nominated for  {Freitag} <b>1</b> ',
+      );
+    });
+
+    // The outcome payload names the nomination and the game but not the
+    // event, so these rows can't either.
+    const outcomePayload = <String, Object?>{
+      'eventId': 'e1',
+      'nominationId': 'n9',
+      'nominatedGameTitle': 'Catan',
+    };
+    const outcomes = {
+      'GameNominationApproved': 'Your nomination of Catan was approved',
+      'GameNominationRejected': 'Your nomination of Catan was turned down',
+      'GameNominationPassed': 'Your nomination of Catan passed the vote',
+      'GameNominationFailed': "Your nomination of Catan didn't pass the vote",
+      'GameNominationQuorumNotMet':
+          'Too few people voted on your nomination of Catan',
+    };
+
+    for (final MapEntry(:key, :value) in outcomes.entries) {
+      test('$key words the outcome and opens the nominations', () {
+        final presentation = present(key, outcomePayload);
+
+        expect(presentation.title, value);
+        expect(presentation.detail, isNull);
+        expect(presentation.quote, isNull);
+        expect(presentation.target, target);
+      });
+
+      test('$key missing a required field is a plain row', () {
+        for (final field in ['eventId', 'nominatedGameTitle']) {
+          for (final bad in <Object?>[null, '', '  ', 4]) {
+            expect(
+              present(key, {...outcomePayload, field: bad}),
+              plain,
+              reason: '$field $bad',
+            );
+          }
+          final absent = {...outcomePayload}..remove(field);
+          expect(present(key, absent), plain, reason: field);
+        }
+        expect(present(key, const {}), plain);
+      });
+    }
+
+    test('words each outcome and its icon differently', () {
+      final titles = {
+        for (final type in outcomes.keys) present(type, outcomePayload).title,
+      };
+      final icons = {
+        for (final type in outcomes.keys) present(type, outcomePayload).icon,
+      };
+
+      expect(titles, hasLength(outcomes.length));
+      expect(icons, hasLength(outcomes.length));
+    });
+  });
+
+  group('lineup notifications', () {
+    const added = <String, Object?>{
+      'eventId': 'e1',
+      'eventTitle': 'Friday Night Games',
+      'nominatedGameTitle': 'Catan',
+      'nominatedGameSubtitle': null,
+    };
+
+    test('GameAddedToEvent names the game and the event, and opens the '
+        'lineup', () {
+      final presentation = present('GameAddedToEvent', added);
+
+      expect(
+        presentation.title,
+        'Catan was added to the lineup for Friday Night Games',
+      );
+      expect(presentation.detail, isNull);
+      expect(presentation.icon, Icons.playlist_add_outlined);
+      expect(presentation.target, const EventTarget('e1', tab: 'lineup'));
+    });
+
+    test('GameAddedToEvent with a subtitle shows it after the title', () {
+      final presentation = present('GameAddedToEvent', {
+        ...added,
+        'nominatedGameSubtitle': 'Seafarers',
+      });
+
+      expect(
+        presentation.title,
+        'Catan: Seafarers was added to the lineup for '
+        'Friday Night Games',
+      );
+    });
+
+    test('GameAddedToEvent with no subtitle key shows the title alone', () {
+      final payload = {...added}..remove('nominatedGameSubtitle');
+      final blank = {...added, 'nominatedGameSubtitle': '  '};
+
+      expect(present('GameAddedToEvent', payload).title, contains('Catan was'));
+      expect(present('GameAddedToEvent', blank).title, contains('Catan was'));
+    });
+
+    test('GameAddedToEvent puts the subtitle in unchanged', () {
+      final presentation = present('GameAddedToEvent', {
+        ...added,
+        'nominatedGameSubtitle': ' {2nd} <i>ed.</i> ',
+      });
+
+      expect(presentation.title, contains('Catan:  {2nd} <i>ed.</i> '));
+    });
+
+    test('GameAddedToEvent with a subtitle that is not a string is a plain '
+        'row', () {
+      for (final value in <Object?>[
+        3,
+        true,
+        ['a'],
+        {'a': 1},
+      ]) {
+        expect(
+          present('GameAddedToEvent', {
+            ...added,
+            'nominatedGameSubtitle': value,
+          }),
+          plain,
+          reason: '$value',
+        );
+      }
+    });
+
+    test('GameAddedToEvent missing a required field is a plain row', () {
+      for (final key in ['eventId', 'eventTitle', 'nominatedGameTitle']) {
+        for (final value in <Object?>[null, '', '  ', 4]) {
+          expect(
+            present('GameAddedToEvent', {...added, key: value}),
+            plain,
+            reason: '$key $value',
+          );
+        }
+        final absent = {...added}..remove(key);
+        expect(present('GameAddedToEvent', absent), plain, reason: key);
+      }
+      expect(present('GameAddedToEvent', const {}), plain);
+    });
+
+    const removed = <String, Object?>{
+      'eventId': 'e1',
+      'eventTitle': 'Friday Night Games',
+      'lineupGameId': 'l1',
+      'occurrenceId': null,
+      'gameTitle': 'Catan',
+      'gameSubtitle': null,
+      'reason': 'SupplierLeft',
+    };
+
+    test('GameRemovedFromEvent on the event itself opens its lineup', () {
+      final presentation = present('GameRemovedFromEvent', removed);
+
+      expect(
+        presentation.title,
+        'Catan left the lineup for Friday Night Games',
+      );
+      expect(presentation.icon, Icons.playlist_remove_outlined);
+      expect(presentation.target, const EventTarget('e1', tab: 'lineup'));
+    });
+
+    test('GameRemovedFromEvent on one date opens that date', () {
+      final presentation = present('GameRemovedFromEvent', {
+        ...removed,
+        'occurrenceId': 'o1',
+      });
+
+      expect(
+        presentation.target,
+        const EventTarget('e1', tab: 'lineup', date: 'o1'),
+      );
+    });
+
+    test('GameRemovedFromEvent with no or a blank occurrenceId opens the '
+        'event lineup', () {
+      final absent = {...removed}..remove('occurrenceId');
+
+      expect(
+        present('GameRemovedFromEvent', absent).target,
+        const EventTarget('e1', tab: 'lineup'),
+      );
+      expect(
+        present('GameRemovedFromEvent', {
+          ...removed,
+          'occurrenceId': ' ',
+        }).target,
+        const EventTarget('e1', tab: 'lineup'),
+      );
+    });
+
+    test('GameRemovedFromEvent with an occurrenceId that is not a string is '
+        'a plain row', () {
+      expect(
+        present('GameRemovedFromEvent', {...removed, 'occurrenceId': 7}),
+        plain,
+      );
+    });
+
+    test('GameRemovedFromEvent with a subtitle shows it after the title', () {
+      final presentation = present('GameRemovedFromEvent', {
+        ...removed,
+        'gameSubtitle': 'Seafarers',
+      });
+
+      expect(
+        presentation.title,
+        'Catan: Seafarers left the lineup for Friday Night Games',
+      );
+      expect(
+        present('GameRemovedFromEvent', {...removed, 'gameSubtitle': 4}),
+        plain,
+      );
+    });
+
+    test('TakenOut says it was taken out, and never the host', () {
+      final presentation = present('GameRemovedFromEvent', {
+        ...removed,
+        'reason': 'TakenOut',
+      });
+
+      expect(
+        presentation.title,
+        'Catan was taken out of the lineup for Friday Night Games',
+      );
+      expect(presentation.detail, isNull);
+      expect(presentation.target, const EventTarget('e1', tab: 'lineup'));
+      for (final text in [presentation.title, presentation.detail ?? '']) {
+        expect(text.toLowerCase(), isNot(contains('host')));
+      }
+    });
+
+    test('SupplierLeft says whoever was bringing it left the event', () {
+      final presentation = present('GameRemovedFromEvent', removed);
+
+      expect(presentation.detail, 'Whoever was bringing it left the event');
+    });
+
+    test('NobodyBringing says nobody is bringing it now', () {
+      final presentation = present('GameRemovedFromEvent', {
+        ...removed,
+        'reason': 'NobodyBringing',
+      });
+
+      expect(presentation.detail, 'Nobody is bringing it now');
+    });
+
+    test('RemovedFromCollection says it left their collection', () {
+      final presentation = present('GameRemovedFromEvent', {
+        ...removed,
+        'reason': 'RemovedFromCollection',
+      });
+
+      expect(
+        presentation.detail,
+        'Whoever was bringing it removed it from their collection',
+      );
+    });
+
+    test(
+      'an unknown reason has generic wording and still opens the lineup',
+      () {
+        final presentation = present('GameRemovedFromEvent', {
+          ...removed,
+          'reason': 'DateRemoved',
+        });
+
+        expect(
+          presentation.title,
+          'Catan left the lineup for Friday Night Games',
+        );
+        expect(presentation.detail, isNull);
+        expect(presentation.target, const EventTarget('e1', tab: 'lineup'));
+      },
+    );
+
+    test('each reason, and an unknown one, is worded differently', () {
+      final seen = {
+        for (final reason in [
+          'TakenOut',
+          'SupplierLeft',
+          'NobodyBringing',
+          'RemovedFromCollection',
+          'DateRemoved',
+        ])
+          present('GameRemovedFromEvent', {...removed, 'reason': reason}),
+      };
+
+      expect(seen, hasLength(5));
+    });
+
+    test('GameRemovedFromEvent missing a required field is a plain row', () {
+      for (final key in ['eventId', 'eventTitle', 'gameTitle', 'reason']) {
+        for (final value in <Object?>[null, '', '  ', 4]) {
+          expect(
+            present('GameRemovedFromEvent', {...removed, key: value}),
+            plain,
+            reason: '$key $value',
+          );
+        }
+        final absent = {...removed}..remove(key);
+        expect(present('GameRemovedFromEvent', absent), plain, reason: key);
+      }
+      expect(present('GameRemovedFromEvent', const {}), plain);
     });
   });
 
@@ -1029,17 +1412,17 @@ void main() {
       );
       expect(const EventTarget('e1'), const EventTarget('e1'));
       expect(
-        const EventTarget('e1', tab: 'games', date: 'o1'),
-        const EventTarget('e1', tab: 'games', date: 'o1'),
+        const EventTarget('e1', tab: 'lineup', date: 'o1'),
+        const EventTarget('e1', tab: 'lineup', date: 'o1'),
       );
       expect(const EventTarget('e1'), isNot(const EventTarget('e2')));
       expect(
         const EventTarget('e1'),
-        isNot(const EventTarget('e1', tab: 'games')),
+        isNot(const EventTarget('e1', tab: 'lineup')),
       );
       expect(
-        const EventTarget('e1', tab: 'games', date: 'o1'),
-        isNot(const EventTarget('e1', tab: 'games', date: 'o2')),
+        const EventTarget('e1', tab: 'lineup', date: 'o1'),
+        isNot(const EventTarget('e1', tab: 'lineup', date: 'o2')),
       );
     });
   });

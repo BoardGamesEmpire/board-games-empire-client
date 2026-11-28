@@ -116,9 +116,9 @@
   "@notificationUnreadLabel": {
     "description": "Read by a screen reader before the title of a notification the user hasn't read yet. On screen, an unread notification's title is bold instead."
   },
-  "notificationDataGatewayAutoDisabledTitle": "{gatewayName} was switched off",
+  "notificationDataGatewayAutoDisabledTitle": "{gatewayName} was switched off automatically",
   "@notificationDataGatewayAutoDisabledTitle": {
-    "description": "Title of a notification sent to server admins when a data gateway, a source the server gets game information from, was switched off automatically after repeated failures. Tapping it opens that data gateway's page. {gatewayName} is the data gateway's name as the server gives it. The line under it says why, and the text under that is the error the data gateway last gave.",
+    "description": "Title of a notification sent to server admins when a data gateway, a source the server gets game information from, was switched off automatically after repeated failures, not by an admin's choice, so the title says it happened automatically. Tapping it opens that data gateway's page. {gatewayName} is the data gateway's name as the server gives it. The line under it says why, and the text under that is the error the data gateway last gave.",
     "placeholders": {
       "gatewayName": {
         "type": "String",
@@ -148,7 +148,7 @@
       }
     }
   },
-  "notificationDataGatewayCapabilitiesLostDetail": "{count, plural, =1{1 thing the server was using it for is gone} other{{count} things the server was using it for are gone}}",
+  "notificationDataGatewayCapabilitiesLostDetail": "{count, plural, one{{count} thing the server was using it for is gone} other{{count} things the server was using it for are gone}}",
   "@notificationDataGatewayCapabilitiesLostDetail": {
     "description": "Second line of the notification that a data gateway lost capabilities: how many of the things the server was using it for, such as searching, it can no longer do. {count} is at least 1.",
     "placeholders": {
@@ -364,9 +364,9 @@
       }
     }
   },
-  "notificationEventRsvpReceivedGuestTitle": "A guest replied to {eventTitle}",
-  "@notificationEventRsvpReceivedGuestTitle": {
-    "description": "Title of a notification sent to an event's hosts and co-hosts when someone without an account replied to the event, to say whether they are coming, so the server has no name for them. Tapping it opens the event. {eventTitle} is the event's title as the server gives it.",
+  "notificationEventRsvpReceivedNoAccountTitle": "Someone without an account replied to {eventTitle}",
+  "@notificationEventRsvpReceivedNoAccountTitle": {
+    "description": "Title of a notification sent to an event's hosts and co-hosts when someone without an account, such as a person invited by link who has not registered, replied to the event to say whether they are coming, so the server has no name for them. The title does not call them a guest, which is a role in events and households. Tapping it opens the event. {eventTitle} is the event's title as the server gives it.",
     "placeholders": {
       "eventTitle": {
         "type": "String",
@@ -515,5 +515,137 @@
         "example": "Saturday Evening"
       }
     }
+  },
+  "notificationGameNameWithSubtitle": "{gameTitle}: {gameSubtitle}",
+  "@notificationGameNameWithSubtitle": {
+    "description": "A game's name when it has a subtitle: the title, a colon and the subtitle, which tells two editions of a game that share a title apart. Used inside the title of a notification about a game in an event. {gameTitle} and {gameSubtitle} are as the server gives them.",
+    "placeholders": {
+      "gameTitle": {
+        "type": "String",
+        "example": "Catan"
+      },
+      "gameSubtitle": {
+        "type": "String",
+        "example": "Seafarers"
+      }
+    }
+  },
+  "notificationGameNominatedTitle": "{gameName} was nominated for {eventTitle}",
+  "@notificationGameNominatedTitle": {
+    "description": "Title of a notification telling the user that someone nominated a game for an event they are going to, so it can be voted on. Tapping it opens the event on the nominations of its Games tab. {gameName} is the game's title as the server gives it. {eventTitle} is the event's title as the server gives it.",
+    "placeholders": {
+      "gameName": {
+        "type": "String",
+        "example": "Catan"
+      },
+      "eventTitle": {
+        "type": "String",
+        "example": "Friday Night Games"
+      }
+    }
+  },
+  "notificationGameNominationApprovedTitle": "Your nomination of {gameName} was approved",
+  "@notificationGameNominationApprovedTitle": {
+    "description": "Title of a notification telling the user that a game they nominated for an event was approved by someone who runs the event, so the game is on the lineup. Tapping it opens the event on the nominations of its Games tab. {gameName} is the game's title as the server gives it. The server doesn't send the event's title with it.",
+    "placeholders": {
+      "gameName": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "notificationGameNominationRejectedTitle": "Your nomination of {gameName} was turned down",
+  "@notificationGameNominationRejectedTitle": {
+    "description": "Title of a notification telling the user that a game they nominated for an event was turned down by someone who runs the event, so the game is not on the lineup. Tapping it opens the event on the nominations of its Games tab. {gameName} is the game's title as the server gives it. The server doesn't send the event's title with it.",
+    "placeholders": {
+      "gameName": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "notificationGameNominationPassedTitle": "Your nomination of {gameName} passed the vote",
+  "@notificationGameNominationPassedTitle": {
+    "description": "Title of a notification telling the user that the attendees voted for a game they nominated for an event, so the game is on the lineup. Tapping it opens the event on the nominations of its Games tab. {gameName} is the game's title as the server gives it. The server doesn't send the event's title with it.",
+    "placeholders": {
+      "gameName": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "notificationGameNominationFailedTitle": "Your nomination of {gameName} didn't pass the vote",
+  "@notificationGameNominationFailedTitle": {
+    "description": "Title of a notification telling the user that the attendees voted against a game they nominated for an event, so the game is not on the lineup. Tapping it opens the event on the nominations of its Games tab. {gameName} is the game's title as the server gives it. The server doesn't send the event's title with it.",
+    "placeholders": {
+      "gameName": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "notificationGameNominationQuorumNotMetTitle": "Too few people voted on your nomination of {gameName}",
+  "@notificationGameNominationQuorumNotMetTitle": {
+    "description": "Title of a notification telling the user that voting on a game they nominated for an event ended without enough attendees voting, so the game is not on the lineup, whatever the votes said. Tapping it opens the event on the nominations of its Games tab. {gameName} is the game's title as the server gives it. The server doesn't send the event's title with it.",
+    "placeholders": {
+      "gameName": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "notificationGameAddedToEventTitle": "{gameName} was added to the lineup for {eventTitle}",
+  "@notificationGameAddedToEventTitle": {
+    "description": "Title of a notification telling the user that a game was added to the lineup of an event they are going to, the games the event will play. Tapping it opens the event on the lineup of its Games tab. {gameName} is the game's title as the server gives it, followed by its subtitle when it has one, which tells two editions of a game apart. {eventTitle} is the event's title as the server gives it.",
+    "placeholders": {
+      "gameName": {
+        "type": "String",
+        "example": "Catan"
+      },
+      "eventTitle": {
+        "type": "String",
+        "example": "Friday Night Games"
+      }
+    }
+  },
+  "notificationGameRemovedFromEventTitle": "{gameName} left the lineup for {eventTitle}",
+  "@notificationGameRemovedFromEventTitle": {
+    "description": "Title of a notification telling the user that a game left the lineup of an event they are going to, the games the event will play, for a reason the line under it gives, or for one this version of the app doesn't know. Tapping it opens the event on the lineup of its Games tab, on the date the game was on when it has one. {gameName} is the game's title as the server gives it, followed by its subtitle when it has one, which tells two editions of a game apart. {eventTitle} is the event's title as the server gives it.",
+    "placeholders": {
+      "gameName": {
+        "type": "String",
+        "example": "Catan"
+      },
+      "eventTitle": {
+        "type": "String",
+        "example": "Friday Night Games"
+      }
+    }
+  },
+  "notificationGameTakenOutOfEventTitle": "{gameName} was taken out of the lineup for {eventTitle}",
+  "@notificationGameTakenOutOfEventTitle": {
+    "description": "Title of a notification telling the user that someone with a say over the event, such as a host, a moderator or an owner of its household, took a game out of the lineup of an event they are going to. It doesn't say who, because it could be any of them. Tapping it opens the event on the lineup of its Games tab, on the date the game was on when it has one. {gameName} is the game's title as the server gives it, followed by its subtitle when it has one, which tells two editions of a game apart. {eventTitle} is the event's title as the server gives it.",
+    "placeholders": {
+      "gameName": {
+        "type": "String",
+        "example": "Catan"
+      },
+      "eventTitle": {
+        "type": "String",
+        "example": "Friday Night Games"
+      }
+    }
+  },
+  "notificationGameRemovedSupplierLeftDetail": "Whoever was bringing it left the event",
+  "@notificationGameRemovedSupplierLeftDetail": {
+    "description": "Second line of a notification about a game that left an event's lineup: the person who was bringing the game left the event, or isn't coming to it any more."
+  },
+  "notificationGameRemovedNobodyBringingDetail": "Nobody is bringing it now",
+  "@notificationGameRemovedNobodyBringingDetail": {
+    "description": "Second line of a notification about a game that left an event's lineup: a change to the event's dates brought the game up again, and nobody is bringing it on the new dates, so it was taken off the lineup."
+  },
+  "notificationGameRemovedFromCollectionDetail": "Whoever was bringing it removed it from their collection",
+  "@notificationGameRemovedFromCollectionDetail": {
+    "description": "Second line of a notification about a game that left an event's lineup: the person who was bringing the game took it out of their game collection."
   }
 }
