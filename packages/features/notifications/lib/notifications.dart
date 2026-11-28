@@ -8,3 +8,5 @@ export 'src/list/notification_list_state.dart';
 export 'src/presentation/notification_presentation.dart';
 export 'src/presentation/notification_target.dart';
 export 'src/presentation/present_notification.dart';
+export 'src/widgets/notification_tile.dart';
+export 'src/widgets/notifications_bell.dart';

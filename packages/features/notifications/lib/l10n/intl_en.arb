@@ -111,5 +111,44 @@
         "example": "The Smiths"
       }
     }
+  },
+  "notificationUnreadLabel": "Unread",
+  "@notificationUnreadLabel": {
+    "description": "Read by a screen reader before the title of a notification the user hasn't read yet. On screen, an unread notification's title is bold instead."
+  },
+  "notificationReceivedAt": "{date} at {time}",
+  "@notificationReceivedAt": {
+    "description": "When a notification arrived, on its row in the notifications list: the date, then the time of day, in the device's time zone.",
+    "placeholders": {
+      "date": {
+        "type": "DateTime",
+        "format": "yMMMd",
+        "example": "Nov 27, 2026"
+      },
+      "time": {
+        "type": "DateTime",
+        "format": "jm",
+        "example": "3:04 PM"
+      }
+    }
+  },
+  "notificationMarkRead": "Mark read",
+  "@notificationMarkRead": {
+    "description": "Button under a notification that opens nothing, such as one this version of the app can't show. It marks that notification read, so it no longer counts as unread. It shows only while the notification is unread."
+  },
+  "notificationsBellTooltip": "Notifications",
+  "@notificationsBellTooltip": {
+    "description": "Tooltip of the bell button in the header, shown when a mouse rests on it. The bell opens a preview of the latest notifications. Screen readers hear the button's name, which gives the unread count, instead."
+  },
+  "notificationsBellLabel": "{count, plural, =0{Notifications} other{Notifications, {count} unread}}",
+  "@notificationsBellLabel": {
+    "description": "What a screen reader calls the bell button in the header, which opens a preview of the latest notifications. {count} is how many notifications the user hasn't read, always the real number, even when the badge on the bell shows 99+. With none unread, or before the count is known, it is just Notifications.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "format": "decimalPattern",
+        "example": "3"
+      }
+    }
   }
 }
